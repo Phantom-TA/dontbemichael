@@ -60,6 +60,23 @@ export type BridgeDescriptor =
       inboxDelivery: 'terminal' | 'serve';
     };
 
+/** How the agent's identity, house rules, folder boundaries, work style and
+ *  standing goal are delivered so they survive compaction and resume (#298):
+ *   - 'system-level'           → delivered via a native system/developer instructions
+ *                                channel (Claude's `--append-system-prompt`, Codex's
+ *                                `developer_instructions` in `config.toml`,
+ *                                Gemini CLI's `GEMINI.md` context file).
+ *   - 're-injected on compact' → no native system prompt CLI channel; the full
+ *                                protocol is delivered in the initial turn and
+ *                                re-injected on `SessionStart` (compact/resume)
+ *                                via hook bridge `additionalContext`. */
+export type InstructionsDelivery = 'system-level' | 're-injected on compact';
+
+/** Short initial turn prompt used when the agent's full protocol is delivered
+ *  at the system level (Codex / Gemini), keeping the session active without
+ *  duplicating the system prompt in conversation history (#298). */
+export const ON_SHIFT_PROMPT = "You're on shift; check your inbox";
+
 export interface AgentProviderPreset {
   id: AgentProvider;
   label: string;
@@ -166,6 +183,8 @@ export interface AgentProviderPreset {
    *  flag is not appended). Defaults to the auto flag's own leading token. */
   autoStanceTokens?: string[];
   resumeSubcommand?: string; // CLIs that resume via a subcommand instead of a flag (Codex: `codex resume [OPTIONS] [SESSION_ID]`)
+  /** How the agent's identity and rules are delivered so they survive compaction and resume (#298). */
+  instructionsDelivery?: InstructionsDelivery;
 }
 
 /** The engines this build offers the owner. Only Claude Code is supported for
@@ -211,7 +230,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
       posix: 'curl -fsSL https://claude.ai/install.sh | bash',
       win32: 'powershell -c irm https://claude.ai/install.ps1 ^| iex'
     },
-    docsUrl: 'https://docs.claude.com/en/docs/claude-code'
+    docsUrl: 'https://docs.claude.com/en/docs/claude-code',
+    instructionsDelivery: 'system-level'
   },
   {
     id: 'codex',
@@ -262,7 +282,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     resumeSubcommand: 'resume',
     // Official OpenAI Codex CLI install (npm global). Used by the missing-CLI auto-install.
     installCommand: 'npm install -g @openai/codex',
-    docsUrl: 'https://github.com/openai/codex'
+    docsUrl: 'https://github.com/openai/codex',
+    instructionsDelivery: 'system-level'
   },
   {
     id: 'grok',
@@ -283,7 +304,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // `grok [PROMPT]` accepts the initial hive protocol as a positional prompt.
     positionalInitialPrompt: true,
     // Grok resumes interactively with `grok --resume <session-id-or-title>`.
-    resumeFlag: '--resume'
+    resumeFlag: '--resume',
+    instructionsDelivery: 're-injected on compact'
   },
   {
     id: 'kimi',
@@ -300,7 +322,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // Kimi's interactive TUI has no positional initial-prompt form. It supports
     // lifecycle hooks, but Munder Difflin does not yet install a Kimi hook bridge,
     // so mail must bounce rather than being delivered with no drain path.
-    canReceiveInbox: false
+    canReceiveInbox: false,
+    instructionsDelivery: 're-injected on compact'
   },
   {
     // Google's official Gemini CLI. Unlike Antigravity (`agy`), this is the
@@ -323,7 +346,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     recommendedOrchestratorModel: 'pro',
     resumeFlag: '--resume',
     installCommand: 'npm install -g @google/gemini-cli',
-    docsUrl: 'https://github.com/google-gemini/gemini-cli'
+    docsUrl: 'https://github.com/google-gemini/gemini-cli',
+    instructionsDelivery: 'system-level'
   },
   {
     id: 'antigravity',
@@ -339,7 +363,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     canReceiveInbox: true, // via the agy-hook bridge (Stop→drain); verified agy honors hook decisions
     initialPromptFlag: '-i', // agy --prompt-interactive: orient the session, then continue
     recommendedOrchestratorModel: 'Gemini 3.1 Pro (High)', // agy takes the display-name label
-    resumeFlag: '--conversation' // agy: resume a previous conversation by ID
+    resumeFlag: '--conversation', // agy: resume a previous conversation by ID
+    instructionsDelivery: 're-injected on compact'
   },
   {
     // qwen-code — the Qwen CLI (a gemini-cli fork) driving any OpenAI-compatible
@@ -363,7 +388,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     initialPromptFlag: '-i',
     // Qwen's long-context coder model for the orchestrator. // TODO-verify
     recommendedOrchestratorModel: 'qwen3-coder-plus',
-    resumeFlag: undefined
+    resumeFlag: undefined,
+    instructionsDelivery: 're-injected on compact'
   },
   {
     // OpenCode — the TypeScript AI coding agent (opencode.ai / anomalyco/opencode,
@@ -432,7 +458,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
       posix: 'curl -fsSL https://opencode.ai/install | bash',
       win32: 'choco install opencode -y'
     },
-    docsUrl: 'https://opencode.ai/docs'
+    docsUrl: 'https://opencode.ai/docs',
+    instructionsDelivery: 're-injected on compact'
   },
   {
     // Crush — Charmbracelet's Go TUI coding agent (charmbracelet/crush), successor to
@@ -477,7 +504,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     seedDelivery: 'type-into-tui',
     resumeFlag: '--session', // Crush supports resume by id (also --continue for most-recent)
     installCommand: 'npm install -g @charmland/crush', // trusted, hardcoded (brew/go/winget also valid)
-    docsUrl: 'https://github.com/charmbracelet/crush'
+    docsUrl: 'https://github.com/charmbracelet/crush',
+    instructionsDelivery: 're-injected on compact'
   },
   {
     // Pi (Pi Coding Agent, earendil-works; npm @earendil-works/pi-coding-agent).
@@ -521,7 +549,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     resumeFlag: '--session',
     // --ignore-scripts: don't run the package's postinstall on the user's machine.
     installCommand: 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent',
-    docsUrl: 'https://pi.dev/docs/latest'
+    docsUrl: 'https://pi.dev/docs/latest',
+    instructionsDelivery: 're-injected on compact'
   },
   {
     // GitHub Copilot CLI (`copilot`, npm @github/copilot). Driven in print mode:
@@ -551,7 +580,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // copilot worker can't receive routed inbox mail (it bounces to the god).
     canReceiveInbox: false,
     installCommand: 'npm install -g @github/copilot', // trusted, hardcoded
-    docsUrl: 'https://docs.github.com/copilot/concepts/agents/about-copilot-cli'
+    docsUrl: 'https://docs.github.com/copilot/concepts/agents/about-copilot-cli',
+    instructionsDelivery: 're-injected on compact'
   },
   {
     // Cursor Agent CLI (`cursor-agent`, https://cursor.com/docs/cli). The official
@@ -590,7 +620,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
       posix: 'curl https://cursor.com/install -fsS | bash',
       win32: 'irm https://cursor.com/install?win32=true | iex'
     },
-    docsUrl: 'https://cursor.com/docs/cli/install'
+    docsUrl: 'https://cursor.com/docs/cli/install',
+    instructionsDelivery: 're-injected on compact'
   },
   {
     id: 'custom',
@@ -601,7 +632,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     supportsModel: false,
     autoFlag: '',
     hiveAware: false,
-    canReceiveInbox: false // no inbox-drain path → mail bounces to the god
+    canReceiveInbox: false, // no inbox-drain path → mail bounces to the god
+    instructionsDelivery: 're-injected on compact'
   }
 ];
 

@@ -25,6 +25,7 @@ import { HOOK_PATH_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, isTer
 export { TERMINAL_PROMPT_TYPES, isTerminalPrompt };
 import { resolveGodName } from '../shared/godIdentity';
 import { APP_NAME } from '../shared/appName';
+import { providerPreset } from '../shared/agentProvider';
 
 /** The same terminal prompt is relayed to Michael at most once in this window. */
 const PROMPT_RELAY_DEDUPE_MS = 10 * 60_000;
@@ -877,12 +878,28 @@ export class HookServer {
       ? this.hive.knowledgeUpdate(agentId, this.getKnowledge())
       : null;
 
-    if (steer || roster || goal || knowledgeNote || profile || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards) {
+    // Protocol re-injection for engines with no native system prompt channel (#298).
+    // On compaction or resume, auto-compaction summarizes history and drops initial
+    // rules; engines whose instructions delivery is 're-injected on compact'
+    // re-receive their protocol via additionalContext here.
+    let reInjectedProtocol: string | null = null;
+    if (event === 'SessionStart' && (p.source === 'compact' || p.source === 'resume') && agentId) {
+      const reg = this.hive.registry?.();
+      const meta = reg?.agents[agentId];
+      const provider = meta?.provider ?? 'claude';
+      const preset = providerPreset(provider);
+      if (preset.instructionsDelivery === 're-injected on compact') {
+        reInjectedProtocol = this.hive.injectedPromptFor?.(agentId) ?? null;
+      }
+    }
+
+    if (steer || roster || goal || knowledgeNote || profile || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards || reInjectedProtocol) {
       this.emit(agentId, event, p);
+      const liveContext = [roster, profile, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean);
       return {
         hookSpecificOutput: {
           hookEventName: event,
-          additionalContext: [roster, profile, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean).join('\n\n')
+          additionalContext: [reInjectedProtocol, ...liveContext].filter(Boolean).join('\n\n')
         }
       };
     }
