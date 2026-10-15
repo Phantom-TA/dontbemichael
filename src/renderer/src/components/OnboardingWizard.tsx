@@ -800,7 +800,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     placeholder={t('onboarding.home.placeholder')}
                     className="cth-input"
                     // A folder path: mono, as DESIGN.md 4.1 sets for paths.
-                    style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)', fontSize: 12.5 }}
+                    style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)', fontSize: 14 }}
                   />
                   <PixelButton variant="secondary" size="md" onClick={pickHome}>
                     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
@@ -808,7 +808,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     </span>
                   </PixelButton>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>
                   {t('onboarding.home.note')}
                 </div>
 
@@ -835,10 +835,10 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     <Icon name="info" />
                   </span>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, lineHeight: '16px', marginBottom: 3 }}>
+                    <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', marginBottom: 3 }}>
                       {t('onboarding.home.syncWarningTitle')}
                     </div>
-                    <div style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
+                    <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
                       {t('onboarding.home.syncWarning')}
                     </div>
                   </div>
@@ -900,11 +900,11 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                           <ProviderLogo provider={p.id} size={18} />
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 11 }}>
+                          <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 14 }}>
                             {p.label}
                           </span>
                           {PROVIDER_BLURB_KEYS[p.id] && (
-                            <span style={{ display: 'block', fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                            <span style={{ display: 'block', fontSize: 14, color: 'var(--cth-ink-500)' }}>
                               {t(PROVIDER_BLURB_KEYS[p.id]!)}
                             </span>
                           )}
@@ -917,7 +917,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                           return (
                             <span title={a.path ?? undefined} style={{
                               borderRadius: 'var(--cth-r-md)',
-                              fontSize: 10, padding: '1px 5px', lineHeight: '16px',
+                              fontSize: 14, padding: '1px 5px', lineHeight: '20px',
                               background: a.state === 'installed' ? 'var(--cth-mint-light)' : bad ? 'var(--cth-paper-100)' : 'var(--cth-cream-200)',
                               color: bad ? 'var(--cth-ink-500)' : 'var(--cth-ink-900)',
                               boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
@@ -928,7 +928,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                         {p.id === 'claude' && (
                           <span style={{
                             borderRadius: 'var(--cth-r-md)',
-                            fontSize: 10, padding: '1px 5px', lineHeight: '16px',
+                            fontSize: 14, padding: '1px 5px', lineHeight: '20px',
                             background: 'var(--cth-lemon)',
                             boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
                             fontFamily: 'var(--cth-font-display)', flexShrink: 0
@@ -958,16 +958,16 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                         <ProviderLogo provider={p.id} size={18} />
                       </span>
                       <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                        <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 14, color: 'var(--cth-ink-500)' }}>
                           {p.label}
                         </span>
-                        <span style={{ display: 'block', fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                        <span style={{ display: 'block', fontSize: 14, color: 'var(--cth-ink-500)' }}>
                           {t('onboarding.orchestrator.workersOnlyHint')}
                         </span>
                       </span>
                       <span style={{
                         borderRadius: 'var(--cth-r-md)',
-                        fontSize: 10, padding: '1px 5px', lineHeight: '16px',
+                        fontSize: 14, padding: '1px 5px', lineHeight: '20px',
                         background: 'var(--cth-paper-100)', color: 'var(--cth-ink-500)',
                         boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
                         fontFamily: 'var(--cth-font-display)', flexShrink: 0
@@ -980,7 +980,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     borderRadius: 'var(--cth-r-md)',
                     display: 'flex', flexDirection: 'column', gap: 8, padding: 10,
                     background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)',
-                    fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-900)'
+                    fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-900)'
                   }}>
                     <span>{engineMissingWords(selectedEngine, providerPreset(godProvider).label, t)}</span>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -996,7 +996,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                   </div>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{t('onboarding.orchestrator.model')}</div>
+                  <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>{t('onboarding.orchestrator.model')}</div>
                   <select
                     value={godModel ?? ''}
                     onChange={(e) => setGodModel(e.target.value || undefined)}
@@ -1014,7 +1014,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                       ));
                     })()}
                   </select>
-                  <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                  <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>
                     {t('onboarding.orchestrator.modelNote')}
                   </div>
                 </div>

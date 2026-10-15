@@ -41,3 +41,8 @@ test('Welcome and Permissions setup text stays at 14px', () => {
   assertFloor('Permissions', between("{step === 'permissions' && (", '{error && ('));
   assertFloor('ToggleRow', between('function ToggleRow', 'function Dots'));
 });
+
+test('Home and Manager setup text meets the 14px floor (#416)', () => {
+  assertFloor('Home', between("{step === 'home' && (", "{step === 'orchestrator' && ("));
+  assertFloor('Manager (orchestrator)', between("{step === 'orchestrator' && (", "{step === 'team' && ("));
+});
