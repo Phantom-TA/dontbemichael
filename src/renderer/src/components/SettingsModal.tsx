@@ -27,7 +27,8 @@ import { InfoTip } from './InfoTip';
 import { KnowledgeDocList } from './KnowledgeDocList';
 import { PixelButton } from './PixelButton';
 import { SettingsHeroCard } from './SettingsHeroCard';
-import { CompanyProfileSettings } from './CompanyProfileSettings';
+import { CompanyProfileSettings, type CompanyProfileDraft } from './CompanyProfileSettings';
+import { cityLine, cleanCompanyProfile, mergeEditedProfile } from '@shared/companyProfile';
 import { SetupPanel } from './SetupPanel';
 import { Icon } from './Icon';
 import { McpDefaultsSettings } from './McpDefaultsSettings';
@@ -275,9 +276,19 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [autoCompactPending, setAutoCompactPending] = useState<boolean | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveNote, setSaveNote] = useState('');
-  /** True once a control that USED to persist on click has been changed. Only
-   *  those need the close guard: the text fields always needed a Save. */
-  const dirty = Object.keys(pending).length > 0 || autoCompactPending !== null;
+  // Keep the raw profile draft across section changes. Cleaning on each key
+  // would eat spaces and blank lines while the owner is still typing.
+  const [companyDraft, setCompanyDraft] = useState<CompanyProfileDraft>(() => ({
+    name: config.businessName ?? '', profile: cleanCompanyProfile(config.companyProfile)
+  }));
+  const [savedCompanyDraft, setSavedCompanyDraft] = useState(companyDraft);
+  const companyProfileDirty = companyDraft !== savedCompanyDraft;
+  const editCompanyProfile = (next: CompanyProfileDraft): void => {
+    setCompanyDraft(next);
+    setSaveNote('');
+  };
+  /** Staged controls and the company profile share the close guard. */
+  const dirty = Object.keys(pending).length > 0 || autoCompactPending !== null || companyProfileDirty;
   const stage = (patch: Partial<HarnessConfig>): void =>
     setPending((prev) => ({ ...prev, ...patch }));
 
@@ -400,6 +411,17 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
         ...budgetPatch(),
         ...pending
       };
+      if (companyProfileDirty) {
+        // Apply only owner edits to the latest profile: foundations may have
+        // recorded other fields while Settings was open.
+        const latest = cleanCompanyProfile((await window.cth.getConfig()).companyProfile);
+        const clean = mergeEditedProfile(cleanCompanyProfile(savedCompanyDraft.profile), cleanCompanyProfile(companyDraft.profile), latest);
+        Object.assign(patch, {
+          businessName: companyDraft.name.trim() || config.businessName,
+          companyProfile: clean,
+          businessCity: cityLine(clean.address) ?? config.businessCity
+        });
+      }
       if (autoCompactPending !== null) {
         // Read-modify-write against disk, not against a stale copy: another
         // window (or main) may have edited a different mission meanwhile.
@@ -409,6 +431,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
         );
       }
       await window.cth.updateConfig(patch);
+      // Mark only the submitted draft saved. An edit made while the write
+      // was running must still be shown as unsaved and included next time.
+      if (companyProfileDirty) setSavedCompanyDraft(companyDraft);
       setPending({});
       setAutoCompactPending(null);
       setSaveNote(t('settings.saved'));
@@ -1557,7 +1582,12 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   {/* MEMORY & KNOWLEDGE */}
                   {/* COMPANY PROFILE: key facts every agent works from. */}
                   {activeSection === 'Company profile' && (
-                    <CompanyProfileSettings config={config} onOpenKnowledge={() => setActiveSection('Memory & Knowledge')} />
+                    <CompanyProfileSettings
+                      value={companyDraft}
+                      needsIndustry={!config.businessType}
+                      onChange={editCompanyProfile}
+                      onOpenKnowledge={() => setActiveSection('Memory & Knowledge')}
+                    />
                   )}
 
                   {activeSection === 'Memory & Knowledge' && (
