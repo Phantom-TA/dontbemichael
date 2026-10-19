@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const ts = require('typescript');
 const loadTs = require('./load-ts.cjs');
 
 const {
@@ -119,4 +122,50 @@ test('terminal output follows only when already at the bottom', () => {
   assert.equal(shouldFollowTerminalOutput(100, 100), true);
   assert.equal(shouldFollowTerminalOutput(99, 100), true);
   assert.equal(shouldFollowTerminalOutput(80, 100), false);
+});
+
+// The pool can't load under node, so run its keystroke handler on a fake entry.
+function keystrokeHandler() {
+  const src = fs.readFileSync(path.join(__dirname, '../src/renderer/src/components/terminalPool.ts'), 'utf8');
+  const start = src.indexOf('term.onData((raw) => {') + 'term.onData('.length;
+  const end = src.lastIndexOf('});', src.indexOf('pool.set(ptyId, entry);', start)) + 1;
+  const js = ts.transpileModule(`const onData = ${src.slice(start, end)};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 }
+  }).outputText;
+  const prompts = [];
+  const entry = {
+    exited: false, inputLocked: false, lineBuf: '', automationBlocked: false, automationBlockedAt: 0,
+    automationSettleUntil: 0, inputDirty: false, inputDirtyAt: 0, onPrompt: (t) => prompts.push(t)
+  };
+  const window = { cth: { writePty: () => {}, trackMessageSent: async () => {} } };
+  const onData = new Function('entry', 'window', 'watchOnlyData', 'releasePickerBlock', 'opensInteractiveTerminalUi', 'ptyId',
+    `${js}\nreturn onData;`)(entry, window, (d) => d, (e) => { e.automationBlocked = false; }, opensInteractiveTerminalUi, 'pty1');
+  const block = () => terminalAutomationBlock({
+    exited: false, pickerOpen: entry.automationBlocked, inputDirty: entry.inputDirty,
+    inputDirtyAt: entry.inputDirtyAt, settleUntil: 0
+  }, entry.inputDirtyAt);
+  return { onData, entry, prompts, block };
+}
+
+test('a pasted block is a draft, not several sent prompts', () => {
+  const { onData, entry, prompts, block } = keystrokeHandler();
+  // xterm turns pasted newlines into \r and wraps the text in bracketed paste markers.
+  onData('\x1b[200~first line\rsecond line\rthird line\r\x1b[201~');
+  assert.deepEqual(prompts, []);
+  assert.equal(entry.inputDirty, true);
+  assert.equal(block(), 'draft', 'the queue must not type after the pasted text');
+  // The owner's own Enter sends the whole paste as one prompt.
+  onData('\r');
+  assert.deepEqual(prompts, ['first line\nsecond line\nthird line']);
+  assert.equal(block(), null);
+});
+
+test('a typed line and Enter is still a submit', () => {
+  const { onData, entry, prompts, block } = keystrokeHandler();
+  for (const ch of 'fix the build') onData(ch);
+  assert.equal(block(), 'draft');
+  onData('\r');
+  assert.deepEqual(prompts, ['fix the build']);
+  assert.equal(entry.inputDirty, false);
+  assert.equal(block(), null);
 });

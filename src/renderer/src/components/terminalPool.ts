@@ -385,7 +385,11 @@ export function acquireTerminal(ptyId: string, theme?: ThemeMap, fontSize = 14):
     let submitted = false;
     for (let i = 0; i < input.length; i++) {
       const ch = input[i];
-      if (ch === '\r' || ch === '\n') {
+      if ((ch === '\r' || ch === '\n') && pasted) {
+        // A pasted line break stays in the draft, so the prompt stays dirty and
+        // the queue waits for the owner's real Enter.
+        entry.lineBuf += '\n';
+      } else if (ch === '\r' || ch === '\n') {
         const t = entry.lineBuf.trim();
         entry.lineBuf = '';
         if (entry.automationBlocked) {
