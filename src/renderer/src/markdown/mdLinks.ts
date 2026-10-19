@@ -81,6 +81,14 @@ export function resolveLocalImageRel(baseRel: string | undefined, src: string | 
   return rel || null;
 }
 
+/** Workspace-relative path a `.md` link opens. Like an image src, the href
+ *  arrives percent-encoded and a leading `/` means the workspace root. */
+export function resolveMdLinkRel(baseRel: string | undefined, href: string): string {
+  let clean = href.split('#')[0].split('?')[0];
+  try { clean = decodeURIComponent(clean); } catch { /* a stray % stays as written */ }
+  return resolveRel(clean.startsWith('/') ? undefined : baseRel, clean);
+}
+
 // ─── Named links (docs/designs/named-links.md) ──────────────────────────────
 // Owner, 2026-10-11: a card showing a raw record URL is ugly; show a name such
 // as HubSpot that takes you there. Display only: the agent's text is unchanged.

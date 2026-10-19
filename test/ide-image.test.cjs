@@ -23,7 +23,7 @@ const loadTs = require('./load-ts.cjs');
 
 const { urlExtensionOf, imageMimeForPath, isImagePath, isSvgPath, formatBytes } = loadTs('src/shared/imageTypes.ts');
 const { readFileBinary } = loadTs('src/main/fs.ts');
-const { resolveLocalImageRel, resolveRel } = loadTs('src/renderer/src/markdown/mdLinks.ts');
+const { resolveLocalImageRel, resolveMdLinkRel, resolveRel } = loadTs('src/renderer/src/markdown/mdLinks.ts');
 
 // ─── extension → mime ───────────────────────────────────────────────────────
 
@@ -140,6 +140,18 @@ test('`..` can never climb above the workspace root textually', () => {
   // Not the security boundary (safeResolve is), but it must not even try.
   assert.equal(resolveRel('a/b/c.md', '../../../../../etc/passwd'), 'etc/passwd');
   assert.equal(resolveLocalImageRel('a/b.md', '../../../../x.png'), 'x.png');
+});
+
+test('a .md link opens the file as named, the same way an image src does', () => {
+  // [plan](<Q3 plan.md>) reaches the link component as Q3%20plan.md.
+  assert.equal(resolveMdLinkRel('docs/designs/index.md', 'Q3%20plan.md'), 'docs/designs/Q3 plan.md');
+  assert.equal(resolveMdLinkRel('docs/designs/index.md', 'notes%20(draft).md'), 'docs/designs/notes (draft).md');
+  assert.equal(resolveMdLinkRel('docs/designs/index.md', '%D8%AA%D9%82%D8%B1%D9%8A%D8%B1.md'), 'docs/designs/تقرير.md');
+  assert.equal(resolveMdLinkRel('docs/designs/index.md', '/docs/spec.md'), 'docs/spec.md', 'a leading slash is the workspace root');
+  assert.equal(resolveMdLinkRel('docs/designs/index.md', 'spec.md#open-questions'), 'docs/designs/spec.md');
+  assert.equal(resolveMdLinkRel('docs/designs/index.md', '../README.md'), 'docs/README.md');
+  assert.equal(resolveMdLinkRel('docs/designs/index.md', '100%.md'), 'docs/designs/100%.md', 'a stray % does not throw');
+  assert.equal(resolveMdLinkRel('docs/designs/index.md', '%2e%2e/%2e%2e/%2e%2e/x.md'), 'x.md', 'never above the root');
 });
 
 // ─── the binary read itself ─────────────────────────────────────────────────

@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkspaceImage } from '@/hooks/useWorkspaceImage';
-import { isBareLink, isExternal, isRelativeMd, labelMismatch, linkName, resolveLocalImageRel, resolveRel } from './mdLinks';
+import { isBareLink, isExternal, isRelativeMd, labelMismatch, linkName, resolveLocalImageRel, resolveMdLinkRel } from './mdLinks';
 import { Icon } from '@/components/Icon';
 import { remarkSoftBreaks } from './remarkSoftBreaks';
 import { remarkFileChips } from './remarkFileChips';
@@ -98,7 +98,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
               e.preventDefault();
               if (isExternal(h)) { void window.cth.openExternal?.(h); return; }
               if (isRelativeMd(h) && onOpenMarkdownLink) {
-                onOpenMarkdownLink(resolveRel(baseRel, h.replace(/#.*$/, '')));
+                onOpenMarkdownLink(resolveMdLinkRel(baseRel, h));
               }
               // anything else (file:, anchors into self, unknown schemes): inert
             };
