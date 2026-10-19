@@ -144,6 +144,10 @@ const SAFE_FLAG_NAMES: ReadonlySet<string> = new Set([
   '--verbose'
 ]);
 
+/** The safe flags that take a value. `--verbose` takes none, so a bare token
+ *  after it would reach the engine as its opening prompt. */
+const VALUE_FLAG_NAMES: ReadonlySet<string> = new Set(['--model', '--max-turns', '--output-format']);
+
 /** True if a commandFlags token is an allowed flag. Handles `--x` and `--x=value`
  *  (matches the NAME before `=`, case-insensitive); short `-x` forms are not in
  *  the allowlist and so are rejected by default. */
@@ -228,7 +232,8 @@ export function validateHireManifest(raw: unknown): HireValidation {
             continue;
           }
           commandFlags.push(f);
-          valueAllowed = !f.includes('='); // a `--flag value` form may take one value next
+          // A `--flag value` form may take one value next, only for a flag that takes one.
+          valueAllowed = !f.includes('=') && VALUE_FLAG_NAMES.has(f.toLowerCase());
         } else {
           if (!valueAllowed) {
             errors.push(`commandFlags entry ${JSON.stringify(f)} is not allowed here (a value may only follow an allowed flag such as "--model")`);
