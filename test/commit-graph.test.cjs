@@ -56,6 +56,28 @@ test('every row reports the lane each of its parents landed in', () => {
   assert.equal(m.parents[1].lane, laneOf(out, 'p2'));
 });
 
+test('merged PRs point at the shared parent where it is drawn and keep the graph narrow', () => {
+  // A "merge pull request" history: each feature branch forks from and merges
+  // back into the main line, so its parent is already expected in lane 0.
+  const out = layoutGraph([
+    c('m2', 'm1', 'f2'), c('f2', 'm1'),
+    c('m1', 'base', 'f1'), c('f1', 'base'),
+    c('base', 'root'), c('root')
+  ]);
+  for (const r of out.rows) {
+    for (const p of r.parents) assert.equal(p.lane, laneOf(out, p.sha), `${r.sha} -> ${p.sha}`);
+  }
+  assert.equal(out.maxLane, 1);
+});
+
+test('two branch tips on one commit both point at its lane', () => {
+  const out = layoutGraph([c('a', 'base'), c('b', 'base'), c('base', 'root'), c('root')]);
+  const b = out.rows.find((r) => r.sha === 'b');
+  assert.equal(b.parents[0].lane, laneOf(out, 'base'));
+  assert.equal(laneOf(out, 'base'), 0);
+  assert.equal(out.maxLane, 1);
+});
+
 test('an empty history is not a crash', () => {
   const out = layoutGraph([]);
   assert.deepEqual(out.rows, []);

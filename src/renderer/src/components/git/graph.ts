@@ -46,7 +46,13 @@ export function layoutGraph(commits: CommitInput[]): GraphLayout {
     } else {
       for (let i = 0; i < c.parents.length; i++) {
         const p = c.parents[i];
-        if (i === 0) {
+        // A parent another lane already expects is drawn in that lane, so
+        // point at it there and leave our lane free instead of opening a new one.
+        const held = lanes.indexOf(p);
+        if (held !== -1) {
+          if (i === 0) lanes[lane] = undefined;
+          parents.push({ sha: p, lane: held });
+        } else if (i === 0) {
           lanes[lane] = p;
           parents.push({ sha: p, lane });
         } else {
