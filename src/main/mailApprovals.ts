@@ -46,6 +46,9 @@ export interface MailApprovalDeps {
    *  grant). Absent: assumed, as before. The late sweep skips one that can't,
    *  so Michael is never sent on a dead errand (OV6). */
   canSend?: (agentId: string, mailbox: string, proposalId: string) => boolean;
+  /** Every owner decision and withdrawal, for Pulse's kept as is (E2). No
+   *  subject or body: the member, the decision and whether it was edited. */
+  onDecision?: (agentId: string, decision: 'approve' | 'approve-edited' | 'changes' | 'decline' | 'cancelled') => void;
   now?: () => number;
 }
 
@@ -208,6 +211,7 @@ export class MailApprovals implements ProposalStore {
     if (!gone.length) return [];
     const ids = new Set(gone.map((p) => p.id));
     this.write(list.map((p) => (ids.has(p.id) ? { ...p, state: 'cancelled' as const, decidedAt: this.now(), cancelReason: reason } : p)));
+    for (const p of gone) { try { this.deps.onDecision?.(p.agentId, 'cancelled'); } catch { /* best-effort */ } }
     return gone;
   }
 
@@ -379,6 +383,7 @@ export class MailApprovals implements ProposalStore {
     this.save({ proposals: list.map((x) => (x.id === id ? next : x)), ...(standing ? { standing: [...this.load().standing, standing] } : {}) });
     const msg = decisionMessage(p, decision, edits, note, standing);
     try { this.deps.send({ to: p.agentId, ...msg }); } catch (e) { console.error('[mail] approval message:', e); }
+    try { this.deps.onDecision?.(p.agentId, decision === 'approve' ? (edits ? 'approve-edited' : 'approve') : decision === 'changes' ? 'changes' : 'decline'); } catch { /* best-effort */ }
     const line = memoryLine(p, decision, edits, note, this.today());
     if (line) { try { this.deps.remember(p.agentId, line); } catch { /* the decision stands */ } }
     if (standing) { try { this.deps.remember(p.agentId, standingMemoryLine(standing, true, this.today())); } catch { /* the approval stands */ } }
