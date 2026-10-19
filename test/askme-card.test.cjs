@@ -42,6 +42,17 @@ test('the headline keeps underscores in file names and addresses, and drops them
   assert.equal(askHeadline('__Approve__ the *new* price?'), 'Approve the new price?');
 });
 
+test('an ask that opens with a list item or a quote shows its question', () => {
+  assert.equal(askHeadline('1. Should I renew the Acme contract? It ends Friday.'), 'Should I renew the Acme contract?');
+  assert.equal(askHeadline('2) Pay the $480 invoice from Dunder? It is due.'), 'Pay the $480 invoice from Dunder?');
+  assert.equal(askHeadline('- Approve the refund for Kelly? Details below.'), 'Approve the refund for Kelly?');
+  assert.equal(askHeadline('> Can I send the quote today? The client asked.'), 'Can I send the quote today?');
+  assert.equal(askHeadline('> - Can I send the quote today?'), 'Can I send the quote today?');
+  assert.equal(askHeadline('1. **Renew the Acme contract?** It ends Friday.'), 'Renew the Acme contract?');
+  // Not a marker: no space after it.
+  assert.equal(askHeadline('1.5 hours were billed twice. Should I dispute it?'), '1.5 hours were billed twice.');
+});
+
 test('how long ago, in plain words', () => {
   const now = Date.parse('2026-09-30T12:00:00Z');
   assert.equal(askedAgo('2026-09-30T11:59:30Z', now, 'en'), 'just now');

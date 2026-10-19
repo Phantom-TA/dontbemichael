@@ -8,7 +8,8 @@
 const SENTENCE_LEAD = /^[\s\S]*?(?:(?<!\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|inc|ltd|co|corp|approx|dept|est|etc|u\.s|u\.k|e\.g|i\.e|a\.m|p\.m)|\bno(?=\.\s*\d))[.?!](?=\s|$)|\n|$)/i;
 
 export function askHeadline(q: string): string {
-  const text = q.trim();
+  // A quote or list marker opening the ask is layout, not its first words.
+  const text = q.trim().replace(/^(?:>\s*|[-*+]\s+|\d{1,3}[.)]\s+)+/, '');
   const bold = /^\*\*([\s\S]+?)\*\*/.exec(text);
   const lead = bold ? bold[1] : (SENTENCE_LEAD.exec(text)?.[0] ?? text);
   return lead
