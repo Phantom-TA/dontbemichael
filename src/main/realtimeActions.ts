@@ -44,6 +44,7 @@ import { resolveGodName } from '../shared/godIdentity';
 import { cleanFocus } from '../shared/missions';
 import { cardConversation, openAskIndexes } from '../shared/askMeRouting';
 import { ownerChangeNote } from '../shared/ownerRequests';
+import { RESEARCH_ID } from '../shared/research';
 
 export const VOICE_ACTOR = 'michael-voice';
 
@@ -757,6 +758,11 @@ function proposeDestructive(deps: RealtimeActionDeps, verb: string, a: Record<st
     const to = str(a.to) || str(a.agentId) || 'god';
     const target = resolveAgent(to, reg);
     const targetId = 'error' in target ? 'god' : target.id;
+    // Research gets no schedules (design review D19); voice refuses one as
+    // missions:upsert and agent schedule requests do.
+    if (!('error' in target) && target.id === RESEARCH_ID) {
+      return { ok: false, spoken: `${target.name} has no schedules. They answer the questions teammates send them.` };
+    }
     const mission: ScheduledMission = {
       id: `voice-${slug(label)}-${shortId()}`,
       label,
