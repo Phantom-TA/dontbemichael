@@ -147,6 +147,21 @@ test('indirect asks and money or data moves are held too', () => {
   ]) assert.equal(classifyInboundKind(text), 'directive', text);
 });
 
+test('asking if it is fine, alright or safe to act, or to charge, wipe or erase, is held too', () => {
+  // Value: protects=a request to spend money or destroy data waits for approval however politely it asks; fails_when=fine to, alright to, safe to, objection or these action words pass as chatter; why_new=they reached Michael without approval in communication-only mode; seam=none; no_claim=phrasings no one tried
+  for (const text of [
+    'Is it alright to erase the backups?',
+    'Is it all right to erase the backups?',
+    'Is it fine to charge the client now?',
+    'Is it safe to wipe the server now?',
+    'Is now a good time to purge the logs?',
+    'Any objection to charging the card?',
+    'Did you purchase the licences?',
+    'When do we spend the ad budget?',
+    'Is it time to destroy the old records?'
+  ]) assert.equal(classifyInboundKind(text), 'directive', text);
+});
+
 test('only a short, plain status question flows; anything longer or naming an address, link or amount waits', () => {
   // Value: protects=a new phrasing that moves data or money fails safe; fails_when=the length, address, link, amount or clause rule is dropped; why_new=owner chose fail closed after two review rounds (2026-10-14); seam=none; no_claim=none beyond protects
   for (const text of [
