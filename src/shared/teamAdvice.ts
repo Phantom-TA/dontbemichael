@@ -145,7 +145,9 @@ export function adviceFor(input: {
   for (const p of input.members) {
     // Claude only for now (memory 2026-10-10: never across providers).
     if (p.provider !== 'claude' || !p.model) continue;
-    const down = !p.isGod && p.pieces >= 20 && p.mailDecisions >= 10 && p.keptShare !== null && p.keptShare >= 0.9 && p.reopens === 0
+    // A cheaper model only from the top tier (design table): a middle tier member doing well stays put.
+    const top = input.ladder.find((m) => m.provider === p.provider && m.id === p.model)?.tier === 'top';
+    const down = top && !p.isGod && p.pieces >= 20 && p.mailDecisions >= 10 && p.keptShare !== null && p.keptShare >= 0.9 && p.reopens === 0
       ? nextTier(input.ladder, p.provider, p.model, -1) : null;
     if (down) {
       const a = input.priceOf(p.model), b = input.priceOf(down.id);
