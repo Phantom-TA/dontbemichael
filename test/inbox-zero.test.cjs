@@ -118,6 +118,34 @@ test('a starter job\'s timing follows the pack\'s office hours, and a hire gets 
   assert.match(read('src/renderer/src/hooks/useHive.ts'), /if \(cardPack\) \{\n      await seedStarterJobs\(`\$\{cardPack\.businessType\}\/\$\{id\}`, id\);/);
 });
 
+test('a second hire into a teammate\'s job gets the jobs that teammate already runs switched off', () => {
+  // Value: protects=hiring Erin as a copy of Pam doesn't run Pam's jobs twice (two lists of tomorrow's jobs, inbox zero every 2h with no mailbox); fails_when=a job a teammate runs arrives on, a job nobody runs arrives off, or someone hired in a closed member's place gets the jobs off; why_new=a copy of a teammate's job carries their pack card, so the hire seeded the same running jobs again; seam=none
+  const { teamJobs } = loadTs('src/shared/hireTemplates.ts');
+  const { pauseMissionsOf } = loadTs('src/shared/missions.ts');
+  const { starterMissions: jobs, officeHours: hours } = pack('home-services');
+  const pamJobs = starterMissionsFor(jobs, hours, 'pam', 'pam', [], 'god', (i) => `p${i}`);
+  const pam = { id: 'pam', name: 'Pam', character: 'pam', sourceCard: 'home-services/pam', description: 'Customer Support: Pam sorts the business inbox.' };
+  const copy = teamJobs([pam]).find((j) => j.key === 'team:pam');
+  assert.equal(copy.sourceCard, 'home-services/pam', 'a copy of Pam\'s job seeds from her card');
+
+  const erin = starterMissionsFor(jobs, hours, 'pam', 'erin-1', pamJobs, 'god', (i) => `e${i}`);
+  assert.deepEqual(erin.map((m) => [m.label, m.to, m.enabled, !!m.focus]), [['Inbox to zero', 'erin-1', false, true], ["Tomorrow's jobs", 'erin-1', false, true]]);
+  assert.deepEqual(erin[0].times, pamJobs[0].times, 'kept with its times, for the owner to turn on');
+
+  // The owner turned Pam's evening list off: Erin's comes on, inbox zero stays off.
+  const listOff = pamJobs.map((m) => (m.label === "Tomorrow's jobs" ? { ...m, enabled: false } : m));
+  assert.deepEqual(starterMissionsFor(jobs, hours, 'pam', 'erin-1', listOff, 'god', (i) => `e${i}`).map((m) => [m.label, m.enabled]), [['Inbox to zero', false], ["Tomorrow's jobs", true]]);
+
+  // Pam closed: her jobs are paused, so whoever is hired in her place runs them.
+  const closed = pauseMissionsOf(pamJobs, 'pam', 'god').missions;
+  assert.deepEqual(starterMissionsFor(jobs, hours, 'pam', 'erin-1', closed, 'god', (i) => `e${i}`).map((m) => m.enabled), [true, true]);
+
+  // Only the same job counts, by name as the once check reads it; another teammate's other job doesn't.
+  const oscar = [{ id: 'o1', label: ' INBOX to zero ', to: 'oscar', intervalMs: 0, body: '', enabled: true }, { id: 'o2', label: 'Weekly money summary', to: 'oscar', intervalMs: 0, body: '', enabled: true }];
+  assert.deepEqual(starterMissionsFor(jobs, hours, 'pam', 'erin-1', oscar, 'god', (i) => `e${i}`).map((m) => [m.label, m.enabled]), [['Inbox to zero', false], ["Tomorrow's jobs", true]]);
+  assert.deepEqual(starterMissionsFor(jobs, hours, 'pam', 'pam', oscar.slice(1), 'god', (i) => `p${i}`).map((m) => m.enabled), [true, true], 'a first hire runs its jobs');
+});
+
 test('offices that already hired her are offered the new text once, never given it silently', () => {
   // Value: protects=an owner's edited Work style is never overwritten without asking; fails_when=the offer is skipped, repeats after a decision, shows when the text is already current, or reaches Michael or another card; why_new=new offer; seam=none
   const def = pack('saas-consulting').agents.find((a) => a.id === 'pam');
