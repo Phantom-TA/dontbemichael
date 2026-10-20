@@ -125,7 +125,8 @@ export function adviceFor(input: {
       });
       continue;
     }
-    if (didWork / mine.length >= 0.9 && !m.timed && m.intervalMs / 2 >= MIN_INTERVAL_MS) {
+    // A timed schedule has no clean halving, so it opens the editor; the 15 minute floor is for intervals.
+    if (didWork / mine.length >= 0.9 && (m.timed || m.intervalMs / 2 >= MIN_INTERVAL_MS)) {
       const mid = since + ADVICE_WINDOW_MS / 2;
       const median = (xs: number[]): number => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
       const last = median(mine.filter((r) => r.start >= mid).map((r) => r.workCount));
@@ -134,7 +135,7 @@ export function adviceFor(input: {
         out.push({
           id: `run-more:${m.to}:${m.id}`, kind: 'run-more', agentId: m.to, missionId: m.id,
           evidence: { runs: mine.length, didWork },
-          change: { kind: 'interval', fromMs: m.intervalMs, toMs: Math.max(MIN_INTERVAL_MS, m.intervalMs / 2) },
+          change: m.timed ? { kind: 'editor', direction: 'more' } : { kind: 'interval', fromMs: m.intervalMs, toMs: Math.max(MIN_INTERVAL_MS, m.intervalMs / 2) },
           savesPerWeek: null,
           band: didWork
         });
