@@ -87,6 +87,7 @@ export const ASK_TOOL_REFUSAL =
   "Don't ask the owner here: nobody answers your terminal. File it as one new file in the hive's triage folder (your questions as one \"ask\", what you were doing in \"description\"). Michael checks it and puts it on the owner's ASK ME board.";
 
 import { GUARDED_TOOLS, harnessWriteDecision } from './harnessGuard';
+import { TurnCap } from './turnCap';
 import { FOLDER_READ_TOOLS, FOLDER_WRITE_TOOLS, agentTmpDecision, agentTmpName, folderDecision, folderToolTarget, AGENT_TMP_DIR, isSharedTempSave, researchFolderDecision, sharedTempWriteDecision, tempFolders, researchWallDecision, memberWallDecision } from '../shared/folderAccess';
 import { REFUSAL_WEB_TOOL, REFUSAL_WEB_TOOL_OFF, RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_SANDBOX_ONLY, RESEARCH_UNCHECKED_TOOL, researchText } from '../shared/research';
 import { folderLayoutFor } from './officeFile';
@@ -168,6 +169,8 @@ export type PlanSignal =
 
 export class HookServer {
   private server: Server | null = null;
+  /** Max turns per run, counted per agent (turnCap.ts). */
+  private turnCap = new TurnCap();
   /** agentId → the live session's transcript file, learned from hook payloads.
    *  Lets the harness read per-agent telemetry (e.g. current context size)
    *  even when several agents share one cwd. */
@@ -550,6 +553,7 @@ export class HookServer {
       return {};
     }
     if (event === 'UserPromptSubmit' && agentId && !subagent) this.plan({ kind: 'prompt', agentId });
+    if ((event === 'UserPromptSubmit' || event === 'SessionStart') && agentId && !subagent) this.turnCap.newRun(agentId);
     if (event === 'Stop' && agentId && !subagent && !p.stop_hook_active) this.plan({ kind: 'turn', agentId });
 
     // 7C.3 — a graceful operator HALT overrides everything (incl. the inbox
@@ -658,6 +662,28 @@ export class HookServer {
             hookEventName: 'PreToolUse',
             permissionDecision: 'deny',
             permissionDecisionReason: d.reason ?? 'Denied by operator.'
+          }
+        };
+      }
+    }
+
+    // Max turns per run (turnCap.ts): Claude Code ignores --max-turns outside
+    // print mode, so the cap is counted here. Refuse the call AND stop the run;
+    // continue:false alone still lets this one call run first. An unreadable
+    // config skips only this cap; the gates below still refuse on their own.
+    if (event === 'PreToolUse' && agentId && !subagent) {
+      let max: number | undefined;
+      try { max = this.getConfig().maxTurns; } catch { max = undefined; }
+      const d = this.turnCap.toolCall(agentId, max);
+      if (d.stop) {
+        this.emitRefused(agentId, event, p);
+        return {
+          continue: false,
+          stopReason: d.reason,
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: d.reason
           }
         };
       }
