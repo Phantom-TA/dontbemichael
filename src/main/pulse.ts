@@ -142,6 +142,9 @@ export class PulseService {
   snapshot(period: Period, compare = false): PulseView {
     const office = this.d.office();
     const now = this.now();
+    // A window that has reset since its last status line says nothing about
+    // the plan now: a quiet office would show it used up until an agent spoke.
+    if (this.reading && this.reading.resetsAt <= now) this.reading = null;
     const billing = this.d.billing();
     const godId = this.d.godId();
     const db = this.d.db();
