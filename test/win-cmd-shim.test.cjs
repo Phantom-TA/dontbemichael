@@ -169,6 +169,41 @@ test('the win32 branch is genuinely platform-gated', () => {
   assert.equal(probe(`${NPM_DIR}\\opencode`), null);
 });
 
+test('Node the app just installed is found without a restart', () => {
+  // Value: protects=after the app installs Node on Windows, node and npm are found at once instead of the install being offered again; fails_when=%ProgramFiles%\nodejs drops out of the Windows fallbacks, or it wins over a PATH hit; why_new=msiexec only updates PATH for new processes, so the running app missed it until a restart; seam=process.platform, process.env, fs.existsSync and spawnSync (where)
+  const fs = require('node:fs');
+  const cp = require('node:child_process');
+  const { resolveCommand } = loadTs('src/main/shellEnv.ts');
+  const NODE = 'C:\\Program Files\\nodejs\\node.exe';
+  const NPM = 'C:\\Program Files\\nodejs\\npm.cmd';
+  const ON_PATH = 'C:\\Tools\\node.exe';
+  let onPath = [];
+  const keys = ['PATH', 'APPDATA', 'LOCALAPPDATA', 'USERPROFILE', 'ProgramFiles'];
+  const saved = keys.map((k) => process.env[k]);
+  const real = { platform: Object.getOwnPropertyDescriptor(process, 'platform'), exists: fs.existsSync, spawn: cp.spawnSync };
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  Object.assign(process.env, { PATH: '', APPDATA: 'C:\\Users\\Sam\\AppData\\Roaming', LOCALAPPDATA: 'C:\\Users\\Sam\\AppData\\Local', USERPROFILE: 'C:\\Users\\Sam', ProgramFiles: 'C:\\Program Files' });
+  fs.existsSync = (p) => [NODE, NPM, ...onPath].includes(p);
+  // `where` searches the PATH the app started with, which predates the install.
+  cp.spawnSync = (cmd, args) => ({ stdout: cmd === 'where' ? onPath.filter((p) => p.endsWith(`\\${args[0]}.exe`)).join('\r\n') : '', status: 0 });
+  try {
+    const pm = new PtyManager();
+    assert.equal(pm.commandPath('node'), NODE);
+    assert.equal(pm.commandPath('npm'), NPM);
+    assert.equal(resolveCommand('node'), NODE);
+    assert.equal(resolveCommand('npm'), NPM);
+    // A node on PATH still comes first.
+    onPath = [ON_PATH];
+    assert.equal(new PtyManager().commandPath('node'), ON_PATH);
+    assert.equal(resolveCommand('node'), ON_PATH);
+  } finally {
+    Object.defineProperty(process, 'platform', real.platform);
+    keys.forEach((k, i) => { if (saved[i] === undefined) delete process.env[k]; else process.env[k] = saved[i]; });
+    fs.existsSync = real.exists;
+    cp.spawnSync = real.spawn;
+  }
+});
+
 // ── the payload: does a hostile prompt actually survive? ─────────────────────
 
 /** Everything about the injected hive prompt that breaks cmd.exe, in miniature:
