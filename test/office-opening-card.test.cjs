@@ -99,6 +99,16 @@ test('an office with no team ends quietly once Michael is in, and waits while he
   assert.deepEqual(O.nextOpening(o, input([]), t0 + 30_000), { kind: 'over' });
 });
 
+test('Michael alone on the floor is still no team: no Everyone\'s in, 1 of 1', () => {
+  // Value: protects=the card gets the whole floor, Michael included, so an empty office must not flash the green card once he is in; fails_when=the no team check counts Michael as a team; why_new=bug found by repro (the card reads agents, not []); seam=pure nextOpening()
+  const t0 = 1_000_000;
+  const o = { kind: 'opening', since: t0 };
+  const michael = { ...member('god'), isGod: true };
+  assert.equal(O.nextOpening(o, input([michael], { michaelStarting: true }), t0 + 30_000), o, 'waits while he starts');
+  assert.deepEqual(O.nextOpening(o, input([michael]), t0 + 30_000), { kind: 'over' });
+  assert.deepEqual(O.nextOpening(o, input([michael, member('toby')]), t0 + 30_000), { kind: 'done', at: t0 + 30_000, total: 2 }, 'a real team still counts Michael');
+});
+
 test('who is still coming: roster order, the first three, and how many more', () => {
   // Value: protects=the names line ties the card to the dark desks; fails_when=order changes, more than three show, or the count is wrong; why_new=new line; seam=pure stillOut() and namesShown()
   const team = [member('god'), member('toby', M), member('ryan', M), member('oscar', M), member('nick', M), member('sadiq', M)];
