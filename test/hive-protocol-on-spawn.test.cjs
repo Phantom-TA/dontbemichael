@@ -117,16 +117,6 @@ test('every engine that claims the hive is spawned with the protocol', async (t)
           'codex: the protocol must not also ride argv when delivered at system-level');
         return;
       }
-      if (preset.id === 'gemini') {
-        const agentDir = path.dirname(path.dirname(injection.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH));
-        const geminiMd = path.join(agentDir, 'GEMINI.md');
-        assert.ok(fs.existsSync(geminiMd), 'gemini: GEMINI.md must exist in agent dir');
-        const content = fs.readFileSync(geminiMd, 'utf8');
-        assert.ok(isProtocol(content), 'gemini: GEMINI.md must carry the protocol');
-        assert.deepEqual(injection.args.filter(isProtocol), [],
-          'gemini: the protocol must not also ride argv when delivered at system-level');
-        return;
-      }
       const carried = injection.args.filter(isProtocol);
       assert.equal(carried.length, 1,
         `${preset.id}: the protocol must be on argv exactly once, got args ${JSON.stringify(summarise(injection.args))}`);

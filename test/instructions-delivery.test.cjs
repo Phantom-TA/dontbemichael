@@ -3,14 +3,14 @@
  * Test instructions delivery channels across agent providers (#298).
  *
  * Verifies that:
- * - Engines with native system instructions (Claude, Codex, Gemini) deliver the hive
+ * - Engines with native system instructions (Claude, Codex) deliver the hive
  *   protocol at the system/developer level, so roles and house rules survive compaction
  *   and session resume.
  * - Codex spawn argv does not carry the protocol positional; CODEX_HOME/config.toml
  *   carries developer_instructions with role and house rules.
  * - Codex resume after editing work style updates the config.toml with the new text.
- * - Gemini CLI spawn sets GEMINI_SYSTEM_MD pointing to system.md containing the protocol.
- * - Engines without a native system channel (Grok, Crush, etc.) receive protocol
+ * - Gemini CLI spawn delivers the protocol seed via -i and re-injects on compaction/resume.
+ * - Engines without a native system channel (Gemini, Grok, Crush, etc.) receive protocol
  *   re-injection via HookServer additionalContext on compaction and resume.
  */
 const test = require('node:test');
@@ -102,7 +102,7 @@ test('Codex writeCodexInstructions updates developer_instructions in config.toml
   assert.ok(!configContent.includes('HOUSE RULES'), 'updated config.toml replaced previous instructions');
 });
 
-test('Gemini CLI spawn writes GEMINI.md in agent dir and uses short shift prompt', async (t) => {
+test('Gemini CLI spawn delivers full protocol via -i and re-injects on compact/resume', async (t) => {
   const home = tmpHome();
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
 
@@ -117,20 +117,39 @@ test('Gemini CLI spawn writes GEMINI.md in agent dir and uses short shift prompt
     cwd
   });
 
-  // GEMINI.md context file must exist in the agent directory
+  // Gemini must not write GEMINI.md in the agent directory
   const agentDir = hive.agentDir('support-1');
   const geminiMdPath = path.join(agentDir, 'GEMINI.md');
-  assert.ok(fs.existsSync(geminiMdPath), 'GEMINI.md context file must exist in agent dir');
-
-  const content = fs.readFileSync(geminiMdPath, 'utf8');
-  assert.ok(content.includes('HOUSE RULES'), 'GEMINI.md must contain house rules');
+  assert.ok(!fs.existsSync(geminiMdPath), 'GEMINI.md must not be written in agent dir');
   assert.equal(injection.env.GEMINI_SYSTEM_MD, undefined, 'GEMINI_SYSTEM_MD must not be set');
 
-  // Argv uses -i with the short on-shift prompt
+  // Argv uses -i with the full protocol prompt
   const flagIndex = injection.args.indexOf('-i');
   assert.ok(flagIndex !== -1, 'Gemini args must contain -i');
-  assert.equal(injection.args[flagIndex + 1], ON_SHIFT_PROMPT, '-i prompt must be the short on-shift prompt');
-  assert.ok(!injection.args.some((arg) => arg.includes('HOUSE RULES')), 'argv must not contain the protocol');
+  assert.ok(injection.args[flagIndex + 1].includes('HOUSE RULES'), '-i prompt must contain the full protocol');
+
+  // Re-injected on SessionStart compact
+  const server = new HookServer(hive, () => null, () => ({}), undefined, undefined);
+  const compactRes = server.handle({
+    agent_id: 'support-1',
+    hook_event_name: 'SessionStart',
+    source: 'compact',
+    session_id: 'sess-gemini'
+  });
+  const compactContext = compactRes?.hookSpecificOutput?.additionalContext;
+  assert.ok(compactContext && compactContext.includes('HOUSE RULES'),
+    'Gemini must re-inject protocol on SessionStart compact');
+
+  // Re-injected on SessionStart resume
+  const resumeRes = server.handle({
+    agent_id: 'support-1',
+    hook_event_name: 'SessionStart',
+    source: 'resume',
+    session_id: 'sess-gemini'
+  });
+  const resumeContext = resumeRes?.hookSpecificOutput?.additionalContext;
+  assert.ok(resumeContext && resumeContext.includes('HOUSE RULES'),
+    'Gemini must re-inject protocol on SessionStart resume');
 });
 
 test('Engine with no system channel re-injects protocol on SessionStart compact and resume', async (t) => {

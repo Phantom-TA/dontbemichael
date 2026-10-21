@@ -1029,10 +1029,11 @@ export class HookServer {
 
     if (steer || roster || goal || knowledgeNote || profile || foundations || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards || reInjectedProtocol) {
       this.emit(agentId, event, p);
+      const liveContext = [roster, profile, foundations, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean);
       return {
         hookSpecificOutput: {
           hookEventName: event,
-          additionalContext: [reInjectedProtocol, roster, profile, foundations, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean).join('\n\n')
+          additionalContext: [reInjectedProtocol, ...liveContext].filter(Boolean).join('\n\n')
         }
       };
     }

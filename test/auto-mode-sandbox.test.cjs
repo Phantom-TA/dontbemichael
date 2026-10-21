@@ -95,9 +95,9 @@ test('a Gemini agent gets its agent dir and the hive root in its workspace, in i
     path.join('..', 'Office', 'hive')
   ]);
   assert.ok(included.every((d) => !d.includes(',')));
-  // The shift prompt comes last, after Gemini's own flags (#298).
+  // The protocol seed still comes last, after Gemini's own flags.
   assert.equal(inj.args[inj.args.length - 2], '-i');
-  assert.match(inj.args[inj.args.length - 1], /on shift/i);
+  assert.match(inj.args[inj.args.length - 1], /HIVE PROTOCOL/);
 });
 
 test('geminiIncludeDirArg keeps a plain path and moves a comma out of the way when it can', () => {

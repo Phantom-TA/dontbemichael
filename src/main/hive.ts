@@ -1489,7 +1489,7 @@ export class HiveManager {
               // the bridge is trusted and ~/.gemini/settings.json stays untouched.
               const writable = this.sandboxWritableDirs(meta, dir, root, opts.extraWritableDirs);
               env.GEMINI_CLI_TRUST_WORKSPACE = "true";
-              env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = this.installGeminiHooks(dir, writable, prompt);
+              env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = this.installGeminiHooks(dir, writable);
               // The agent folder and hive root join its workspace, the folders
               // codex gets with --add-dir above. On argv too: Gemini CLI 0.60
               // and later skip a system settings file in a folder the user owns.
@@ -1553,8 +1553,8 @@ export class HiveManager {
       // → `Unknown command`. So DROP the positional and hand the protocol back as
       // seedPrompt; the renderer types it into the TUI after boot (ondev-b).
       //
-      // For engines with system-level instructions delivery (Codex / Gemini), the
-      // full protocol lives in developer_instructions / GEMINI_SYSTEM_MD, so argv
+      // For engines with system-level instructions delivery (Codex), the
+      // full protocol lives in developer_instructions, so argv
       // carries only the short shift seed prompt instead of the full protocol (#298).
       const userPrompt = preset.instructionsDelivery === 'system-level' ? ON_SHIFT_PROMPT : prompt;
       const deg = degraded ? { degraded } : {};
@@ -5176,14 +5176,11 @@ export class HiveManager {
    *  Gemini CLI 0.60 and later read a system settings file only from a folder
    *  owned by root or an administrator, and skip this one (hooks included).
    *  The spawn also passes the folders as --include-directories for them. */
-  private installGeminiHooks(dir: string, writableDirs: string[] = [], instructions?: string): string {
+  private installGeminiHooks(dir: string, writableDirs: string[] = []): string {
     const home = join(dir, '.gemini-hive');
     const settingsPath = join(home, 'system-settings.json');
     try {
       mkdirSync(home, { recursive: true });
-      if (instructions) {
-        writeFileSync(join(dir, 'GEMINI.md'), instructions, 'utf8');
-      }
       const shim = join(home, 'gemini-hook.cjs');
       writeFileSync(shim, GEMINI_HOOK_SHIM, 'utf8');
       const hook = (name: string, matcher?: string) => ({

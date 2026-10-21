@@ -64,16 +64,16 @@ export type BridgeDescriptor =
  *  standing goal are delivered so they survive compaction and resume (#298):
  *   - 'system-level'           → delivered via a native system/developer instructions
  *                                channel (Claude's `--append-system-prompt`, Codex's
- *                                `developer_instructions` in `config.toml`,
- *                                Gemini CLI's `GEMINI.md` context file).
+ *                                `developer_instructions` in `config.toml`).
  *   - 're-injected on compact' → no native system prompt CLI channel; the full
  *                                protocol is delivered in the initial turn and
  *                                re-injected on `SessionStart` (compact/resume)
- *                                via hook bridge `additionalContext`. */
+ *                                via hook bridge `additionalContext` (e.g. Gemini CLI,
+ *                                Antigravity, OpenCode, Pi, Grok). */
 export type InstructionsDelivery = 'system-level' | 're-injected on compact';
 
 /** Short initial turn prompt used when the agent's full protocol is delivered
- *  at the system level (Codex / Gemini), keeping the session active without
+ *  at the system level (Codex), keeping the session active without
  *  duplicating the system prompt in conversation history (#298). */
 export const ON_SHIFT_PROMPT = "You're on shift; check your inbox";
 
@@ -351,7 +351,7 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     resumeFlag: '--resume',
     installCommand: 'npm install -g @google/gemini-cli',
     docsUrl: 'https://github.com/google-gemini/gemini-cli',
-    instructionsDelivery: 'system-level'
+    instructionsDelivery: 're-injected on compact'
   },
   {
     id: 'antigravity',
