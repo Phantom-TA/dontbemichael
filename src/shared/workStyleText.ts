@@ -219,16 +219,16 @@ export function thirdPerson(text: string, label: string): string {
     return `${verb}s`;
   };
   return text
-    .replace(/\b[Yy]ou are\b/g, `${label} is`)
-    .replace(/\b[Yy]ou're\b/g, `${label} is`)
-    .replace(/\b[Yy]ou have\b/g, `${label} has`)
+    .replace(/\b[Yy]ou are\b/g, () => `${label} is`)
+    .replace(/\b[Yy]ou're\b/g, () => `${label} is`)
+    .replace(/\b[Yy]ou have\b/g, () => `${label} has`)
     .replace(/\b[Yy]ourself\b/g, (m) => (m[0] === 'Y' ? 'Themselves' : 'themselves'))
-    .replace(/\b[Yy]our\b/g, `${label}'s`)
+    .replace(/\b[Yy]our\b/g, () => `${label}'s`)
     // "you don't" is "doesn't"; "you won't" and "you can't" stay as they are.
     .replace(/\b[Yy]ou (do|have|are|were)n(['’])t\b/g, (_m, verb: string, q: string) => `${label} ${irregular[verb]}n${q}t`)
     .replace(/\b[Yy]ou['’](ll|d|ve)\b/g, (_m, c: string) => `${label} ${contracted[c]}`)
     .replace(new RegExp(`\\b[Yy]ou ((?:${adverbs.join('|')}) )?([a-z]+)\\b(?!['’])`, 'g'), (_m, adverb: string | undefined, verb: string) => `${label} ${adverb ?? ''}${third(verb)}`)
-    .replace(/\b[Yy]ou\b/g, label);
+    .replace(/\b[Yy]ou\b/g, () => label);
 }
 
 const LABEL_HEADING: Array<[RegExp, string]> = [

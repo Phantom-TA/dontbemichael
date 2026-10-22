@@ -1,5 +1,5 @@
-- **Clocking in** shows your team arriving.
-- **Waiting cards** come back on their date.
-- **Pulse** lists what the team learned.
-- **Run a job now** from its schedule.
-- **Members' notes** stay their own.
+- **Reset memory** gives the team a first day.
+- **Pulse** shows which emails were organized.
+- **Tasks board** search and filters.
+- **Every file chip** opens.
+- Contributor fixes across the app.
