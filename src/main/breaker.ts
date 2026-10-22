@@ -200,6 +200,12 @@ export class CircuitBreaker {
     this.get(agentId).errorCount += 1;
   }
 
+  /** The errors so far were the account refusing this agent's turn (the office
+   *  stopped on it), not a storm of its own. */
+  clearErrors(agentId: string): void {
+    this.get(agentId).errorCount = 0;
+  }
+
   /** A human submitted a prompt to this agent (UserPromptSubmit hook). Stamps
    *  the conversation progress clock the no-progress arm reads (#376). Only
    *  that arm gains a way to see this work — the loop, error-storm, velocity
