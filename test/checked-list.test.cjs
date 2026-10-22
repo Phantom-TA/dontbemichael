@@ -413,7 +413,7 @@ test('checks from before the lists kept words are put together once from the off
   assert.equal(rows(home).length, 0, 'once per office');
   const { PRIVATE_ENTRIES } = loadTs('src/main/factoryReset.ts');
   assert.ok(PRIVATE_ENTRIES.includes('checked-backfill.json'));
-  assert.match(read('src/main/homeFolder.ts'), /'checked-archive', 'checked-backfill\.json'\]/);
+  assert.match(read('src/main/homeFolder.ts'), /'checked-archive', 'checked-backfill\.json'[,\]]/);
   assert.match(read('src/main/index.ts'), /ensureCheckedBackfill\(privateRoot\(home\), \{/);
   assert.equal(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse.checked.found, "Put together later from the office's files: what kind of detail was taken out wasn't recorded then.");
 });
@@ -486,4 +486,15 @@ test('word changes put back together give both texts, whatever is shared at the 
     assert.equal(sq(parts.filter((p) => p.op !== 'del').map((p) => p.text).join('')), sq(b), `new side ${k}`);
   }
   assert.deepEqual(wordChanges('same words here', 'same words here'), [{ op: 'same', text: 'same words here' }]);
+});
+
+test('a folded row opens to the whole question or answer it stands for', () => {
+  // Value: protects=the owner can read what an unchanged answer said (owner, 2026-10-20: "see answer does not show anything useful like what was it"); fails_when=a folded row is a one line label again, or its text is not shown or is cut without a way to see the rest; why_new=the fold showed only a clipped subject while up to 4,000 characters were kept; seam=source pins; no_claim=pixel layout
+  const view = read('src/renderer/src/components/pulse/PulseView.tsx');
+  const fold = view.slice(view.indexOf('{foldOpen && rest.map('));
+  assert.match(fold, /<button type="button" aria-expanded=\{opened\} onClick=\{\(\) => toggle\(setOpenRows, k\)\}/, 'each folded row is a button that opens');
+  assert.match(fold, /\{opened && <>\s*<div dir="auto" style=\{textStyle\}>\{all \? text : `\$\{text\.slice\(0, 600\)\}…`\}<\/div>/, 'the text as it went, long ones shortened with Show the whole');
+  assert.match(fold, /pulse\.checked\.showWholeAnswer/);
+  assert.match(fold, /\{r\.cut && <div[^>]*>\{t\('pulse\.checked\.cut'\)\}<\/div>\}/, 'a text cut at the cap says so');
+  assert.match(fold, /\{next\(r\)\}/, 'and what happened next');
 });

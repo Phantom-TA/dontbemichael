@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
 import { cutText } from '../shared/cutText';
+import { MAX_NAMES } from '../shared/askFiles';
 import { copyableLink, DEFAULT_COPY_LINK_LABEL, menuLabel } from '../shared/linkMenu';
 import { readCodexContext } from './codexUsage';
 import { execFile, spawn } from 'node:child_process';
@@ -19,6 +20,10 @@ import { PtyManager, type ProcessLaunch, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath } from './shellEnv';
 import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
+import { Foundations, publishCopy } from './foundations';
+import { KnowledgeEdits } from './knowledgeEdits';
+import { FOUNDATION_JOBS, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
   claudeAuthStatusCommand, findClaudeFast, isEngineSetupPty, makeClaudeAuthReader, makeNoticeCoalescer, readEngineSetupStatus,
@@ -32,10 +37,10 @@ import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
   readConfig, damagedConfigCopy, writeConfig, setAgentTokenCap, resetConfig, onConfigWritten, ensureHarnessHome, ensureClaudePermissionsAccepted, approveClaudeApiKey,
-  modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission
+  modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, heartbeatMessage, COMPACT_MAINTENANCE_MISSION, FOUNDATIONS_CHECK_MISSION, type HarnessConfig, type ScheduledMission
 } from './config';
 import { terminalLaunches } from './terminalAtFolder';
-import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
+import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileByName, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
 import { answerMessages, cardConversation, mergeHumanQA, MICHAEL_ID, raiserOf } from '../shared/askMeRouting';
 import { FIRST_TASK_EDITED_MAX, firstTaskCard, firstTaskCardFromText } from '../shared/firstTask';
 import { answerKey, catchUpRequests, OwnerAnswerRetry, ownerWorkOrder } from '../shared/ownerRequests';
@@ -43,6 +48,7 @@ import {
   agentMcpDir, legacyMdMailMcpPath, mdMailMcpPath, privateRoot
 } from '../shared/agentPrivatePaths';
 import { CHECKED_FILE } from '../shared/checkedRecord';
+import { ORGANIZED_FILE } from '../shared/organizedRecord';
 import { HELD_FILE } from '../shared/heldRecord';
 import { ensureCheckedBackfill } from './checkedBackfill';
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
@@ -76,6 +82,7 @@ import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
 import { TelemetryStore } from './telemetryStore';
 import { TelemetryProcessor } from './telemetryProcessor';
+import { PulseHealth } from '../shared/pulseHealth';
 import { PulseService } from './pulse';
 import { knownPrice } from './pricing';
 import bakedModelCatalog from '../shared/modelCatalog.json';
@@ -128,6 +135,8 @@ import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, IN
 import { RosterStore } from './roster';
 import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
 import { CHECK_FOLDERS, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
+import { autoMemoryFolders, eraseMemoryTargets, foldersFromRoster, gitTopOf, idsFromCostRows, idsFromRecord, memberIdsIn, memoryResetTargets } from './memoryReset';
+import { groupMembers, hardKillTree, isAlive, KILL_GRACE_MS, snapshotRemains } from './procKill';
 import { buildWorkerLaunch } from './workerLaunch';
 import { ControlRegistry } from './control';
 import { WorkerWakeWatchdog, type WorkerWakeFacts } from './workerWake';
@@ -472,18 +481,18 @@ const hookServer = new HookServer(
   control,
   breaker,
   standingGoalFor,
-  (agentId, event, message, toolName) => {
+  (agentId, event, message, toolName, subagent) => {
     // Pulse: turns and tool uses (authenticated frames only, #61).
     if (agentId) {
       if (event === 'UserPromptSubmit') pulseTelemetry.record({ agentId, kind: 'prompt', ts: Date.now() });
       else if (event === 'PostToolUse') pulseTelemetry.record({ agentId, kind: 'tool', ts: Date.now(), attrs: { tool: toolName ?? '' } });
       else if (event === 'Stop') pulseTelemetry.record({ agentId, kind: 'stop', ts: Date.now() });
     }
-    workerWake.noteHook(agentId, event, message);
+    workerWake.noteHook(agentId, event, message, Date.now(), subagent);
     // Any event, a Claude status tick included, is a check in (issue #326);
     // the event name tells it when a long tool call starts and ends.
     silentWatch?.noteHook(agentId, event);
-    safeClearer.noteHook(agentId, event, message);
+    safeClearer.noteHook(agentId, event, message, subagent);
     if (agentId && event === 'UserPromptSubmit') promptSubmits.note(agentId);
     if (agentId && (event === 'Notification' || event === 'PermissionRequest')) promptSubmits.noteAttention(agentId);
   },
@@ -491,7 +500,8 @@ const hookServer = new HookServer(
   companyProfileForAgents,
   (agentId) => booksReadRoleIds().has(agentId),
   memberPresent,
-  (signal) => onPlanSignal(signal)
+  (signal) => onPlanSignal(signal),
+  (agentId) => foundationsForAgent(agentId)
 );
 // Pulse's Kept safe: each step a setting stopped, by gate (proposal 3).
 hookServer.onRefused = (agentId, gate) => pulseTelemetry.record({ agentId: agentId ?? null, kind: 'refused', ts: Date.now(), attrs: { gate } });
@@ -504,7 +514,9 @@ hookServer.restartStuck = (agentId) => {
 };
 const memory = new MemoryManager(
   () => readConfig().harnessHome,
-  () => { const c = readConfig(); return { enabled: c.semanticMemory !== false, model: c.embeddingModel ?? 'minilm' }; },
+  // Search by meaning runs whenever MemPalace is installed (owner, 2026-10-19:
+  // no switch; installing it in Prerequisites is the choice).
+  () => ({ enabled: true, model: readConfig().embeddingModel ?? 'minilm' }),
   // Company knowledge, indexed into the palace for searching by meaning.
   () => knowledge.meaningMirror()
 );
@@ -532,14 +544,29 @@ function companyProfileForAgents(): string | null {
 }
 
 /** MemPalace, for agents to search company knowledge by meaning: only when it's
- *  installed and on, and company knowledge is on. */
-function meaningSearch(): { bin: string; palace: string } | undefined {
+ *  installed and company knowledge holds a document. */
+function meaningSearch(): { bin: string; palace: string; model: string } | undefined {
   const bin = memory.bin();
   const palace = memory.palacePath();
-  return memory.active() && knowledge.active() && bin && palace ? { bin, palace } : undefined;
+  return memory.active() && knowledge.hasDocuments() && bin && palace ? { bin, palace, model: memory.model() } : undefined;
 }
 // Company knowledge: file-backed store + agent CLI (default ON).
 const knowledge = new KnowledgeManager();
+/** Documents the owner opened from Settings: a save is read in again (owner, 2026-10-19). */
+const knowledgeEdits = new KnowledgeEdits({
+  docFile: (id) => knowledge.docFile(id),
+  textFile: (id) => knowledge.textFile(id),
+  reindex: (id) => knowledge.reindex(id),
+  openPath: (p) => shell.openPath(p),
+  tempDir: () => app.getPath('temp'),
+  changed: (id, error) => {
+    if (!error) memory.companyKnowledgeChanged(); // search by meaning reads the new text
+    try { liveWebContents()?.send('kg:changed', { id, ...(error ? { error } : {}) }); } catch { /* window gone */ }
+  }
+});
+// Read only copies hold the office's text: none outlives the run that made it.
+knowledgeEdits.clearCopies(true);
+app.on('will-quit', () => { knowledgeEdits.stopAll(); knowledgeEdits.clearCopies(); });
 // Keeps each agent's memory index useful (owner, 2026-09-25): agents add notes
 // to memory/inbox.md and this turns them into itemised changes on Haiku, in
 // the background. It replaces the old whole-file condenser (reflect.ts).
@@ -695,6 +722,72 @@ ipcMain.handle('silent:checkAgain', (_evt, id: unknown) => { if (typeof id === '
 const pulseOffice = (): string | null => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; };
 const pulseTelemetry = new TelemetryStore(() => persist.database(), pulseOffice);
 const pulseProcessor = new TelemetryProcessor(() => persist.database(), pulseTelemetry);
+
+/** The team as Company foundations reads it, from one read of the registry
+ *  and the roster (the hook asks on every prompt): each member's job (read
+ *  like its studio department; Michael, Research and assistants have none),
+ *  the jobs the office has, and names. */
+function foundationsTeam(): { jobs: Record<string, FoundationJob[]>; office: FoundationJob[]; nameOf: (id: string) => string; godId: string | null } {
+  const reg = hive.registry();
+  const jobs: Record<string, FoundationJob[]> = {};
+  const entries = (roster.read()?.agents ?? []).filter((e): e is DepartmentSource & { isGod?: boolean } => !!e && typeof e === 'object' && typeof (e as { id?: unknown }).id === 'string');
+  for (const e of entries) {
+    const meta = reg.agents?.[e.id];
+    if (e.isGod || e.id === RESEARCH_ID || meta?.isGod || meta?.isAssistant || meta?.isResearch || e.id === reg.godId) continue;
+    const job = jobOf(e);
+    jobs[e.id] = job ? [job] : [];
+  }
+  const all = new Set(Object.values(jobs).flat());
+  return { jobs, office: FOUNDATION_JOBS.filter((j) => all.has(j)), nameOf: (id) => foundationsNameOf(id, reg), godId: reg.godId ?? null };
+}
+/** A member's or Michael's name for the foundations, from the registry alone. */
+function foundationsNameOf(id: string, reg = hive.registry()): string {
+  if (id === 'owner') return 'the owner';
+  return id === reg.godId || id === 'god' ? resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name) : (reg.agents?.[id]?.name ?? id);
+}
+/** Company foundations' one writer (main/foundations.ts). */
+const foundations = new Foundations({
+  home: () => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; },
+  record: (ev) => pulseTelemetry.record(ev),
+  publish: (text) => publishCopy(knowledge, text, () => memory.companyKnowledgeChanged()),
+  exists: (id) => !!knowledge.get(id),
+  jobs: () => foundationsTeam().office,
+  jobsOf: (id) => foundationsTeam().jobs[id] ?? [],
+  // Names only: the registry, not the whole team (a document names each learned answer's member).
+  nameOf: (id) => foundationsNameOf(id),
+  godId: () => hive.registry().godId ?? null,
+  profile: () => cleanCompanyProfile(readConfig().companyProfile),
+  // office.json too, as a Settings save does: an adopted office restores the profile from it.
+  setProfile: (patch) => { const next = writeConfig({ companyProfile: { ...cleanCompanyProfile(readConfig().companyProfile), ...patch } }); syncOfficeRecord(next); },
+  ownerSaid: (id, recipient) => hive.ownerSaid(id, recipient),
+  inOffice: (path, agentId) => {
+    try { if (!statSync(path).isFile()) return false; } catch { return false; }
+    const cfg = readConfig();
+    const cwd = hive.registry().agents?.[agentId]?.cwd;
+    return [cfg.businessFolder, cfg.officeFolder, cwd].some((root) => typeof root === 'string' && !!root && isSameOrInside(expandTilde(root), path));
+  },
+  tell: (to, subject, body) => { if (hive.enabled()) hive.send({ to, act: 'inform', subject, body }, 'foundations'); },
+  changed: () => { try { liveWebContents()?.send('foundations:changed'); } catch { /* window gone */ } }
+});
+/** What an agent carries of the foundations: its job's part, or all of it for
+ *  Michael. Research is left out by the hook itself. */
+function foundationsForAgent(agentId: string): string | null {
+  const team = foundationsTeam();
+  if (agentId === team.godId || agentId === 'god') return michaelFoundations(foundations.read(), team.office, team.nameOf);
+  return sectionFor(foundations.read(), team.jobs[agentId] ?? [], team.nameOf);
+}
+// Whether points are flowing, for telemetry:health and the stall warning (T9).
+const pulseHealth = new PulseHealth();
+pulseTelemetry.onRecord = (office) => pulseHealth.point(office);
+/** One processor pass, noted for the health readout; a pass that read
+ *  something logs one line. */
+function pulseTick(office: string): number {
+  const started = Date.now();
+  const n = pulseProcessor.tick(office);
+  const line = pulseHealth.batch(n, Date.now() - started);
+  if (line) console.log(line);
+  return n;
+}
 /** Pulse's backfill (proposal 3): once per office, the weeks before Pulse began,
  *  read in the background from the office log, members' sessions and the cost
  *  ledger. The view refreshes when it lands. */
@@ -708,7 +801,7 @@ function pulseBackfillOnce(office: string): void {
   void runBackfill({ db, office, hiveRoot: root, projectsRoot: claudeProjectsRoot(), members: new Set(Object.keys(hive.registry().agents ?? {})), now: Date.now() })
     .then((n) => {
       console.log(`[pulse] backfill wrote ${n} points for ${office}`);
-      if (n > 0 && pulseProcessor.tick(office) > 0) liveWebContents()?.send('pulse:updated');
+      if (n > 0 && pulseTick(office) > 0) liveWebContents()?.send('pulse:updated');
     })
     .catch((e) => console.error('[pulse] backfill:', e))
     .finally(() => { if (pulseBackfilling === office) pulseBackfilling = null; });
@@ -743,6 +836,8 @@ const pulse = new PulseService({
   processor: pulseProcessor,
   office: pulseOffice,
   members: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived && !a.isAssistant).map(([id, a]) => ({ id, isGod: !!a.isGod })),
+  memberJobs: () => foundationsTeam().jobs,
+  foundationsAnswers: () => foundations.read().answers,
   godId: () => hive.registry().godId ?? null,
   tasks: () => { const t = hive.tasks() as { tasks?: unknown }; return Array.isArray(t?.tasks) ? (t.tasks as never) : []; },
   missions: () => readConfig().missions ?? [],
@@ -775,6 +870,12 @@ const pulse = new PulseService({
     // No file yet is an empty record; any other failure is the list's error (DD5).
     // Read without blocking the main process (ship review 2026-10-17).
     return fsPromises.readFile(join(privateRoot(home), CHECKED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
+  },
+  readOrganized: () => {
+    const home = readConfig().harnessHome;
+    if (!home) return '';
+    // No file yet is an empty record; any other failure is the list's error.
+    return fsPromises.readFile(join(privateRoot(home), ORGANIZED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
   }
 });
 // The office log kinds Pulse counts, and the board each tick reads.
@@ -1005,7 +1106,9 @@ function researchFolders(): string[] {
 const integrationBroker = new IntegrationBroker({
   getRecord: integrations.getRecord,
   getSecret: integrations.getSecret,
-  mail: SHOW_MAILBOXES ? (agentId, op, body) => handleMailRequest(mailService, { getConfig: () => readConfig(), audit: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }, proposals: mailApprovals, fitCheck: standingFit, present: memberPresent, log: (line) => console.log(line) }, agentId, op, body) : undefined
+  // Same folder as the mail send journal, never the hive agents can read.
+  journalPath: join(app.getPath('userData'), 'broker-write-journal.json'),
+  mail: SHOW_MAILBOXES ? (agentId, op, body) => handleMailRequest(mailService, { getConfig: () => readConfig(), audit: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }, organized: (moved) => hive.recordOrganized(moved), proposals: mailApprovals, fitCheck: standingFit, present: memberPresent, log: (line) => console.log(line), tellMichael: (subject, text) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body: text }, 'mail'); } }, agentId, op, body) : undefined
 });
 
 /** Absolute path to the bundled md-mail MCP server (same resolution as the
@@ -1769,6 +1872,17 @@ function ensureDefaultMissions(): void {
     });
   }
 
+  // The weekly Foundations check (office-foundations.md, eng D3), once.
+  const cfgF = readConfig();
+  if (!cfgF.foundationsCheckSeeded) {
+    const missions = cfgF.missions ?? [];
+    const has = missions.some((m) => m.id === FOUNDATIONS_CHECK_MISSION.id);
+    writeConfig({
+      missions: has ? missions : [...missions, { ...FOUNDATIONS_CHECK_MISSION, lastFiredAt: Date.now() }],
+      foundationsCheckSeeded: true
+    });
+  }
+
   // maint-1 RETIREMENT: `compact-maintenance` is no longer a mission. Scheduled
   // compaction is now the CONTEXT TRIGGER's job, so the operator has exactly one
   // control (a cadence + a pressure gate + an editable message) instead of two
@@ -2384,7 +2498,9 @@ function armHeartbeat(m: ScheduledMission): void {
       // worker's reply doesn't sit unread while other agents keep the floor busy.
       const actionable = godActionableInboxCount();
       if (isFloorQuiet(quiet) || actionable > 0) {
-        reengageGod(buildHeartbeatDigest(quiet, actionable));
+        // Read each beat, so an edit to the heartbeat box counts from the next one.
+        const body = readConfig().missions?.find((x) => x.id === m.id)?.body;
+        reengageGod(heartbeatMessage(body, buildHeartbeatDigest(quiet, actionable)));
         next = Math.round(base * 2.5);            // back off after re-engaging
       } else if (looksStuck(quiet)) {
         next = Math.max(30_000, Math.round(base / 4)); // tighten when an agent is wedged
@@ -3479,36 +3595,29 @@ function createWindow(): BrowserWindow {
     return true;
   });
 
-  // The window persists its geometry (kv `window.bounds`). Skip while
-  // maximized/minimized so a restore doesn't save the fullscreen rect.
+  // The window keeps its smaller size (kv `window.bounds`) for when it is not
+  // filling the screen. Skip while maximized, minimized or full screen so a
+  // restore never saves the screen's own rect.
   {
+    const unsized = (): boolean => win.isDestroyed() || win.isMinimized() || win.isMaximized() || win.isFullScreen();
     const saveBounds = debounce(() => {
-      if (win.isDestroyed() || win.isMinimized() || win.isMaximized()) return;
+      if (unsized()) return;
       try { persist.setKv('window.bounds', win.getBounds()); } catch { /* DB best-effort */ }
     }, 400);
     win.on('resized', saveBounds);
     win.on('moved', saveBounds);
-    // Whether it was left filling the screen (kv `window.maximized`), so the
-    // next launch opens the same way.
-    const saveMaximized = () => {
-      if (win.isDestroyed() || win.isMinimized()) return;
-      try { persist.setKv('window.maximized', win.isMaximized()); } catch { /* DB best-effort */ }
-    };
-    win.on('maximize', saveMaximized);
-    win.on('unmaximize', saveMaximized);
     win.on('close', () => {
-      saveMaximized();
-      if (win.isDestroyed() || win.isMinimized() || win.isMaximized()) return;
+      if (unsized()) return;
       try { persist.setKv('window.bounds', win.getBounds()); } catch { /* DB best-effort */ }
     });
   }
 
-  // The office opens filling the screen (owner, 2026-10-03: it always came
-  // back at about 70%), unless the owner last left it at a smaller size.
-  let openMaximized = true;
-  try { openMaximized = persist.getKv('window.maximized') !== false; } catch { /* DB best-effort: fill the screen */ }
+  // Every launch opens filling the screen (owner, 2026-10-03 and 2026-10-20:
+  // it kept coming back smaller). It no longer follows how the last run was
+  // left: a dragged title bar, a display change or quitting from full screen
+  // all read as "not maximized", and that one moment stuck for every launch.
   win.once('ready-to-show', () => {
-    if (openMaximized) win.maximize();
+    win.maximize();
     win.show();
   });
 
@@ -4069,7 +4178,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
             homedir()
           )
         } : {
-          knowledgeGraph: knowledge.active(),
+          knowledgeGraph: knowledge.hasDocuments(),
           // Bake the ABSOLUTE KG CLI path into the agent's prompt. The prompt used
           // to spell it `$KG_CLI`, which is POSIX-only: under cmd.exe/PowerShell it
           // expands to nothing, so every knowledge-graph instruction was dead on a
@@ -4591,7 +4700,10 @@ ipcMain.handle('terminal:openAtFolder', async (_evt, cwd: unknown) => {
 // returned over IPC. `list` redacts secretRef to a `hasSecret` boolean.
 ipcMain.handle('integrations:list', () => integrations.listRecordsRedacted());
 ipcMain.handle('integrations:templates', () => INTEGRATION_TEMPLATES);
-ipcMain.handle('integrations:upsert', (_evt, record: unknown) => integrations.upsertRecord(record));
+// The form says whether this is a new integration: a new one never replaces
+// one already registered under its id (upsertRecord).
+ipcMain.handle('integrations:upsert', (_evt, record: unknown, opts: unknown) =>
+  integrations.upsertRecord(record, { isNew: (opts as { isNew?: unknown } | null | undefined)?.isNew === true }));
 ipcMain.handle('integrations:canStoreSecrets', () =>
   integrations.canStoreSecrets() ? { ok: true as const } : { ok: false as const, error: cannotStoreReason() });
 ipcMain.handle('integrations:setSecret', (_evt, payload: unknown) => {
@@ -4690,14 +4802,23 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   // transition so ordinary config writes never re-enter it.
   const hiveWasEnabled = hive.enabled();
   const wasOnboarded = readConfig().onboardingComplete;
+  const modelBefore = readConfig().embeddingModel ?? 'minilm';
+  const profileBefore = cleanCompanyProfile(readConfig().companyProfile);
   const next = writeConfig(patch);
   // The office describes itself in <home>/office.json, so a reinstall finds it
   // by folder rather than by the business name typed into setup. Only a save
   // that changes the office's own fields writes it: switching offices changes
   // harnessHome alone, and must not copy one office's team into another.
   if (touchesOffice(patch)) syncOfficeRecord(next);
-  // Company knowledge just turned on: index it for search by meaning now.
-  if (patch && typeof patch === 'object' && 'knowledgeGraph' in patch) memory.companyKnowledgeChanged();
+  // The store moved (rootPath): index it for search by meaning now.
+  if (patch && typeof patch === 'object' && 'knowledgeGraph' in patch) {
+    memory.companyKnowledgeChanged();
+    // Opened documents belong to the old store: a save there would be read into nothing.
+    knowledgeEdits.stopAll();
+  }
+  // A new search language: the index was built with the other model, which
+  // MemPalace refuses to search with, so it is built again (owner, 2026-10-19).
+  if (patch && typeof patch === 'object' && 'embeddingModel' in patch && (next.embeddingModel ?? 'minilm') !== modelBefore) memory.modelChanged();
   // Live opt-in/out from Settings (TELEMETRY.md); stays off while
   // COLLECT_USAGE_STATS is false.
   if (typeof patch?.telemetryEnabled === 'boolean') analytics.setEnabled(COLLECT_USAGE_STATS && patch.telemetryEnabled);
@@ -4711,6 +4832,8 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   // config per tick so it gates immediately; this is for the PROMPT, which is
   // built per spawn, so flipping the toggle reaches god the next time he starts.
   if (typeof patch?.orchestratorMaySpawn === 'boolean') hive.setOrchestratorMaySpawn(patch.orchestratorMaySpawn);
+  // The company profile and the foundations hold one set of facts (eng finding 6).
+  if (patch && typeof patch === 'object' && 'companyProfile' in patch) { try { foundations.profileChanged(profileBefore); } catch (e) { console.error('[foundations] profile', e); } }
   if (!hiveWasEnabled && hive.enabled()) {
     console.log('[hive] harnessHome configured — bootstrapping hive services');
     try { bootstrapHiveServices(); } catch (e) { console.error('[hive] bootstrap after onboarding:', e); }
@@ -4936,6 +5059,19 @@ ipcMain.handle('fs:askFiles', async (_evt, paths: unknown, who: unknown) => {
   return Promise.all(paths.slice(0, 20).map((p) => (askFilePathOk(p)
     ? askFileVerdict(p, roots).then((r) => ({ verdict: r.verdict, tab: r.tab, path: r.path }))
     : { verdict: 'missing' as const, tab: false, path: String(p) })));
+});
+
+/** Files a question names without their ending (owner, 2026-10-19): each name
+ *  found in the office's folders, with what it can do; a name with no file is
+ *  left out, so it stays plain text. */
+ipcMain.handle('fs:askFileNames', async (_evt, names: unknown, who: unknown) => {
+  if (!Array.isArray(names)) return {};
+  const roots = await resolveAskFileRoots(askFileRoots(who));
+  const out: Record<string, { verdict: 'open' | 'reveal' | 'missing'; tab: boolean; path: string }> = {};
+  const wanted = [...new Set(names.slice(0, MAX_NAMES).filter((n): n is string => askFilePathOk(n)))];
+  const found = await Promise.all(wanted.map((n) => askFileByName(n, roots)));
+  wanted.forEach((n, i) => { const f = found[i]; if (f) out[n] = f; });
+  return out;
 });
 
 /** Where a file sits, in office terms, for the file tab's folder line
@@ -5453,6 +5589,14 @@ function turnResearchOff(): number {
   try { return hive.returnResearchInbox(); } catch (e) { console.error('[research] return inbox failed', e); return 0; }
 }
 ipcMain.handle('research:off', () => ({ ok: true, returned: turnResearchOff() }));
+// Company knowledge has no switch (owner, 2026-10-19): an owner who had turned
+// it off, with documents of their own in it, is told once that the team can
+// search them now.
+ipcMain.handle('kg:notice', () => {
+  const cfg = readConfig();
+  try { return { notice: knowledgeNoticeDue(cfg.knowledgeGraph?.enabled, cfg.knowledgeOnNoticeSeen, () => knowledge.list()) }; } catch { return { notice: false }; }
+});
+ipcMain.handle('kg:noticeSeen', () => { writeConfig({ knowledgeOnNoticeSeen: true }); return { ok: true }; });
 /** The one time update card was read (Got it or Open Research settings). */
 ipcMain.handle('research:noticeSeen', () => {
   const cfg = readConfig();
@@ -5510,7 +5654,8 @@ ipcMain.handle('hive:rememberOwnerAnswer', (_evt, p: unknown) => {
 ipcMain.handle('hive:send', (_evt, partial: Partial<HiveMessage>, from: unknown) => {
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
   const sender = typeof from === 'string' ? from : 'system';
-  const msg = hive.send(partial ?? {}, sender);
+  // A 'human' send from the window is the owner's own (ownerSaid trusts only these).
+  const msg = hive.send(partial ?? {}, sender, undefined, sender === 'human');
   // Count only what a PERSON sent. Every renderer surface that dispatches on a
   // human's behalf passes 'human' (Command Center dispatch, thread replies, ASK
   // ME answers); agent-to-agent traffic passes the agent id and would swamp the
@@ -6180,10 +6325,6 @@ ipcMain.handle('tools:status', (): ToolStatus[] => {
 // the mine loop that boot's start() had to skip — otherwise the pill reads
 // "getting ready" until the app is restarted.
 ipcMain.handle('hive:memoryStatus', () => memory.refresh());
-ipcMain.handle('hive:searchMemory', (_evt, query: unknown, wing: unknown) => {
-  if (typeof query !== 'string' || !query.trim()) return { ok: false, output: '', error: 'empty query' };
-  return memory.search(query, { wing: typeof wing === 'string' ? wing : undefined });
-});
 ipcMain.handle('hive:memoryWakeUp', (_evt, wing: unknown) =>
   memory.wakeUp(typeof wing === 'string' ? wing : undefined));
 ipcMain.handle('hive:mineNow', () => { memory.mineNow(); return { ok: true }; });
@@ -6201,7 +6342,11 @@ ipcMain.handle('kg:search', (_evt, query: unknown, limit: unknown) => {
 });
 ipcMain.handle('kg:get', (_evt, id: unknown) =>
   (typeof id === 'string' && id ? knowledge.get(id) : null));
+// Open a document in the owner's own app; a save there is read in again.
+ipcMain.handle('kg:open', (_evt, id: unknown) =>
+  (typeof id === 'string' && id ? knowledgeEdits.open(id).catch((e) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) })) : { ok: false as const, error: 'missing' }));
 ipcMain.handle('kg:remove', (_evt, id: unknown) => {
+  if (typeof id === 'string') knowledgeEdits.stop(id);
   const ok = typeof id === 'string' && id ? knowledge.remove(id) : false;
   if (ok) memory.companyKnowledgeChanged(); // drop it from search by meaning too
   return { ok };
@@ -6376,29 +6521,48 @@ ipcMain.handle('app:cancelClosingTime', () => closingTime.cancel());
 /** The closing-time dialog's Remind and Close without them (owner, 2026-09-29). */
 ipcMain.handle('app:closingTimeRemind', (_evt, id: unknown) => closingTime.remind(id));
 ipcMain.handle('app:closingTimeExcuse', (_evt, id: unknown) => closingTime.excuse(id));
+// The last thing each waiting agent said and when, so the owner can tell a
+// long job from a stuck one (closing time rows).
+ipcMain.handle('app:closingTimeSaid', (_evt, ids: unknown) => {
+  const said: Record<string, { text: string; at?: number }> = {};
+  if (!Array.isArray(ids)) return said;
+  for (const id of ids.slice(0, 50)) {
+    const line = typeof id === 'string' ? hookServer.latestLine(id) : undefined;
+    if (line) said[id] = line;
+  }
+  return said;
+});
+
+/** What both resets stop first, so nothing writes back into what they erase
+ *  (Reset & start over and Reset memory, reset-agent-memory.md). Reset memory
+ *  keeps the store open: it reads Pulse's records, then closes it itself. */
+function stopForReset(tag: string, opts: { keepPersist?: boolean } = {}): void {
+  const step = (name: string, fn: () => void): void => { try { fn(); } catch (e) { console.error(`[${tag}] ${name}:`, e); } };
+  step('clearMissionTimers', () => clearMissionTimers());
+  step('clearContextTimers', () => clearContextTimers());
+  step('stopWebhookDoneObserver', () => stopWebhookDoneObserver());
+  step('stopWorkerWatcher', () => stopEphemeralWorkerWatcher());
+  step('broker.stop', () => integrationBroker.stop());
+  step('mail.closeAll', () => mailService.closeAll());
+  step('stopRouter', () => hive.stopRouter());
+  step('hookServer.stop', () => hookServer.stop());
+  step('telemetry.stop', () => telemetry.stop());
+  step('slack.stop', () => stopSlackServer());
+  step('memory.stop', () => memory.stop());
+  step('memoryTidy.stop', () => memoryTidy.stop());
+  if (!opts.keepPersist) step('persist.close', () => persist.close());
+  // The same stops as quitting (teardownAndQuit): proxy sidecars and the
+  // webhook server would otherwise outlive the relaunch.
+  step('stopAllProxyBridges', () => hive.stopAllProxyBridges());
+  step('webhook.stop', () => stopWebhookServer());
+  step('killAll', () => ptyManager.killAll());
+}
 
 // ─── IPC: full reset (wipe data + config, relaunch into onboarding) ──────────
 ipcMain.handle('app:resetAll', () => {
   allowQuit = true;
   // Tear everything down first so nothing writes back into the dirs we wipe.
-  try { clearMissionTimers(); } catch (e) { console.error('[reset] clearMissionTimers:', e); }
-  try { clearContextTimers(); } catch (e) { console.error('[reset] clearContextTimers:', e); }
-  try { stopWebhookDoneObserver(); } catch (e) { console.error('[reset] stopWebhookDoneObserver:', e); }
-  try { stopEphemeralWorkerWatcher(); } catch (e) { console.error('[reset] stopWorkerWatcher:', e); }
-  try { integrationBroker.stop(); } catch (e) { console.error('[reset] broker.stop:', e); }
-  try { mailService.closeAll(); } catch (e) { console.error('[reset] mail.closeAll:', e); }
-  try { hive.stopRouter(); } catch (e) { console.error('[reset] stopRouter:', e); }
-  try { hookServer.stop(); } catch (e) { console.error('[reset] hookServer.stop:', e); }
-  try { telemetry.stop(); } catch (e) { console.error('[reset] telemetry.stop:', e); }
-  try { stopSlackServer(); } catch (e) { console.error('[reset] slack.stop:', e); }
-  try { memory.stop(); } catch (e) { console.error('[reset] memory.stop:', e); }
-  try { memoryTidy.stop(); } catch (e) { console.error('[reset] memoryTidy.stop:', e); }
-  try { persist.close(); } catch (e) { console.error('[reset] persist.close:', e); }
-  // The same stops as quitting (teardownAndQuit): proxy sidecars and the
-  // webhook server would otherwise outlive the relaunch.
-  try { hive.stopAllProxyBridges(); } catch (e) { console.error('[reset] stopAllProxyBridges:', e); }
-  try { stopWebhookServer(); } catch (e) { console.error('[reset] webhook.stop:', e); }
-  try { ptyManager.killAll(); } catch (e) { console.error('[reset] killAll:', e); }
+  stopForReset('reset');
   try { hive.removeExposedCodexData(); } catch (e) { console.error('[reset] removeExposedCodexData:', e); }
   // The roster is the renderer's half of the same state, so it retires with the
   // hive — archived into roster-backups/ rather than deleted, and cleared as the
@@ -6414,6 +6578,8 @@ ipcMain.handle('app:resetAll', () => {
   const resetHome = readConfig().harnessHome;
   const userData = app.getPath('userData');
   const kgRoot = knowledge.root();
+  knowledgeEdits.stopAll();
+  knowledgeEdits.clearCopies(true);
   const failed = eraseOfficeData({
     home: resetHome ? expandTilde(resetHome) : null,
     userData,
@@ -6431,6 +6597,84 @@ ipcMain.handle('app:resetAll', () => {
   // re-bootstrap from scratch and the renderer lands on onboarding.
   resetConfig();
   restartApp(app);
+});
+
+/** Each member's working folders, from the roster only (memory reset R5). */
+function memoryResetFolders(): Map<string, string[]> {
+  return foldersFromRoster(roster.read());
+}
+
+// The folders whose Claude Code notes a memory reset erases (R2), named in
+// its confirm.
+ipcMain.handle('app:memoryResetFolders', () => autoMemoryFolders(memoryResetFolders(), gitTopOf));
+
+// ─── IPC: memory reset (every member starts as on its first day) ─────────────
+// docs/designs/reset-agent-memory.md: notes, handled messages, recorded
+// conversations and Claude Code's auto memory go; the team, cards, waiting
+// messages, schedules, settings and Company knowledge stay. Then a relaunch.
+ipcMain.handle('app:resetMemory', async () => {
+  const home = readConfig().harnessHome;
+  const hiveRoot = hive.root();
+  if (!home || !hiveRoot) return { ok: false };
+  allowQuit = true;
+  // A tidy pass waiting on its model writes nothing when it returns.
+  try { memoryTidy.halt(); } catch (e) { console.error('[memory reset] memoryTidy.halt:', e); }
+  // Buffered cost samples reach the store before their ids are read.
+  try { pulseTelemetry.flush(); } catch (e) { console.error('[memory reset] pulse flush:', e); }
+  // killAll forgets each terminal as it signals it, so the wait watches the
+  // processes themselves, snapshotted first (Codex adversarial, ship).
+  const trees = ptyManager.list().map((s) => ({ id: s.id, pid: s.pid, before: process.platform === 'win32' ? null : groupMembers(s.pid) }));
+  stopForReset('memory reset', { keepPersist: true });
+  // Members still stopping could write a note back: wait past the kill grace,
+  // when the sweep reaps a tree that ignored the hangup. A tree that can't be
+  // told apart from a recycled pid (no snapshot, `ps` failing) waits the whole
+  // grace and is never forced; one still holding its own processes is.
+  const until = Date.now() + KILL_GRACE_MS + 2000;
+  const running = (t: (typeof trees)[number]): boolean => snapshotRemains(t.pid, t.before) ?? (Date.now() < until || isAlive(t.pid));
+  let left = trees;
+  while ((left = left.filter(running)).length && Date.now() < until) await new Promise((r) => setTimeout(r, 200));
+  for (const t of left) if (snapshotRemains(t.pid, t.before) === true) hardKillTree(t.pid);
+  const stillRunning = left.map((t) => t.id);
+
+  // Session ids only from records members can't write (R5): Pulse's cost
+  // samples for this office and the private session record.
+  const sessions = idsFromRecord(hive.privateSessionsText());
+  try {
+    const db = persist.database();
+    const office = pulseOffice();
+    if (db && office) {
+      idsFromCostRows(db.prepare(
+        "SELECT agent_id, json_extract(attrs, '$.s') AS s FROM telemetry_events WHERE office = ? AND kind = 'cost' GROUP BY agent_id, s"
+      ).all(office) as Array<{ agent_id: unknown; s: unknown }>, sessions);
+    }
+  } catch (e) { console.error('[memory reset] reading session ids:', e); }
+  try { persist.close(); } catch (e) { console.error('[memory reset] persist.close:', e); }
+
+  const memberIds = memberIdsIn(hiveRoot);
+  const targets = memoryResetTargets({
+    hiveRoot,
+    memberIds,
+    folders: memoryResetFolders(),
+    sessions,
+    projectDirsOf: projectDirs,
+    gitTop: gitTopOf,
+    research: { id: RESEARCH_ID, desk: researchDesk() }
+  });
+  // Marked before the erase, so a reset cut short (the app killed, power lost)
+  // still shows in the log.
+  hive.appendLog({ kind: 'memory-reset-start', members: memberIds, targets: targets.length });
+  const result = eraseMemoryTargets(targets, [hiveRoot, claudeProjectsRoot()]);
+  if (result.failed.length) console.error('[memory reset] could not remove:', result.failed);
+  if (result.refused.length) console.error('[memory reset] refused (outside its folders):', result.refused);
+  hive.forgetSessions({
+    members: memberIds,
+    removed: result.removed,
+    failed: result.failed.length,
+    refused: result.refused.length,
+    stillRunning
+  });
+  restartApp(app);
+  return { ok: true };
 });
 
 // ─── IPC: token telemetry (real usage + est. cost from CC transcripts) ───────
@@ -6631,12 +6875,29 @@ ipcMain.handle('pulse:learned', (_evt, from: unknown, to: unknown) => {
 // checked here. A record that can't be read rejects, so the list says so.
 ipcMain.handle('pulse:checked', (_evt, fromMs: unknown, toMs: unknown, way: unknown) =>
   (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) && (way === 'in' || way === 'out') ? pulse.checked(fromMs, toMs, way) : { rows: [], since: null }));
+// The emails organized list (owner, 2026-10-21): two times and, for one
+// member's list, their id, checked here. A record that can't be read rejects.
+ipcMain.handle('pulse:organized', (_evt, fromMs: unknown, toMs: unknown, agentId: unknown) =>
+  (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs)
+    ? pulse.organized(fromMs, toMs, typeof agentId === 'string' && agentId ? agentId : undefined) : { rows: [], since: null }));
+// Company foundations (office-foundations.md): the foundation card reads the
+// record and writes the owner's answer, a draft request or Not now.
+ipcMain.handle('foundations:get', () => foundations.view());
+ipcMain.handle('foundations:answer', (_evt, id: unknown, text: unknown) => foundations.ownerAnswer(id, text));
+ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
+ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
   // Opening Pulse starts the backfill too, not only the 30 s beat, so a first
   // look right after an update gets the past weeks (the view refreshes when
   // they land).
-  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) { pulseBackfillOnce(office); pulseProcessor.tick(office); } } catch (e) { console.error('[pulse] snapshot tick', e); }
+  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) { pulseBackfillOnce(office); pulseTick(office); } } catch (e) { console.error('[pulse] snapshot tick', e); }
   return pulse.snapshot(isPeriod(period) ? period : 'this-week', compare === true);
+});
+// Whether Pulse's points are flowing (T9): the last batch, failed writes by
+// day and hook frames refused per member.
+ipcMain.handle('telemetry:health', () => {
+  const office = pulseOffice();
+  return pulseHealth.view(office, office ? pulseTelemetry.failedWrites(office) : {}, hookServer.rejectedFrames());
 });
 ipcMain.handle('pulse:apply', (_evt, id: unknown, expected: unknown) => (typeof id === 'string' ? pulse.apply(id, expected) : { ok: false, error: 'stale' }));
 ipcMain.handle('pulse:modelApplied', (_evt, id: unknown, agentId: unknown, from: unknown, to: unknown) =>
@@ -7792,6 +8053,8 @@ function bootstrapHiveServices(): void {
   // A business office gets the plain PROTOCOL.md and no COMMANDS.md.
   hive.setBusinessOffice(!!(readConfig().businessFolder || readConfig().officeFolder));
   hive.onScheduleRequest(receiveScheduleRequest);
+  hive.onFoundations((actor, payload) => foundations.handle(actor, payload));
+  try { foundations.seed(); } catch (e) { console.error('[foundations] seed', e); }
   hive.setTrustLayer(trustLayer);
   hive.setResearchEnabled(() => !!readConfig().research?.on);
   hive.setResearchName(() => readConfig().research?.name);
@@ -8060,11 +8323,15 @@ function armAlwaysOnBeats(): void {
   pulseFlushTimer = setInterval(() => { try { pulseTelemetry.flush(); } catch (e) { console.error('[pulse] flush', e); } }, 1_000);
   if (pulseTickTimer) clearInterval(pulseTickTimer);
   pulseTickTimer = setInterval(() => {
+    let office: string | null = null;
     try {
-      const office = pulseOffice();
+      office = pulseOffice();
       if (office) pulseBackfillOnce(office);
-      if (office && pulseProcessor.tick(office) > 0) liveWebContents()?.send('pulse:updated');
+      if (office && pulseTick(office) > 0) liveWebContents()?.send('pulse:updated');
     } catch (e) { console.error('[pulse] tick', e); }
+    // Points unread for 5 minutes: warned once, until a batch reads them.
+    const stalled = pulseHealth.stallWarning(office);
+    if (stalled) console.warn(stalled);
   }, 30_000);
   if (pulsePresenceTimer) clearInterval(pulsePresenceTimer);
   pulsePresenceTimer = setInterval(() => { try { pulseTelemetry.presence(powerMonitor.getSystemIdleTime(), false); } catch { /* presence is best-effort */ } }, 60_000);

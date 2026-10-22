@@ -6,6 +6,82 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [0.2.5] (2026-10-21)
+
+### Added
+
+- **Email an agent reads is labelled as written by someone outside the business.** Each message reaches the agent with a note that its text is information, never instructions, and any lines plainly written to steer an AI are listed so the agent skips them and carries on. Michael is told once per such email; you are not (contributed in #188). Research's web answers are checked against the same list.
+- **Michael's conversation keeps your place when new replies arrive.** Reading an earlier answer, you are no longer pulled to the bottom: a "2 new replies" button appears above the message box, and clicking it or scrolling down catches up. Moving the conversation between the bar and the center opens on the same line (contributed in #209).
+- **A change an agent makes in a connected app goes out once.** Writes to QuickBooks and other connected apps are recorded before they are sent, so an agent's retry, or a restart before the answer came back, never creates a second invoice, booking or contact. A write that may already have gone out is refused, and the agent tells Michael (contributed in #212).
+- **Team members can no longer read each other's conversations.** The engine's session records and prompt history are closed to every member's tools and shell, Michael included, even when the Claude folder is a link. The app still reads them itself (contributed in #387).
+- **Closing time shows what each waiting agent last said, and how long ago,** so a long job reads differently from a stuck one (contributed in #390).
+- **Pulse shows which emails were organized.** "See the emails" on the emails organized tile lists each email archived, marked read or moved to junk in the period: its subject, its sender, where it went, who moved it and when. A name under the bar lists only that member's. Senders and subjects are kept in the office's private folder for 62 days, then in a monthly archive that only a reset erases; mail organized before this update is counted as having no details.
+- **A team member with no schedules gets up to three starter jobs to add in one click,** taken from its office pack. Each is added paused, so nothing runs until you turn it on (contributed in #407).
+- **The Tasks board can be searched and filtered,** and says when it shows only some tasks, such as "Showing 4 of 12 tasks", or that none match (contributed in #173).
+- **Reset memory in Settings gives the whole team a first day again, office intact.** Every member, Michael and Research included, forgets its notes, its conversations and the messages it has handled, along with Claude Code's own notes for its working folders; your conversation with Michael starts over too. Everyone stops and the app restarts. The team, cards, waiting messages, schedules, settings and Company knowledge stay. It cannot be undone, and only conversations the app recorded are deleted, never one of your own.
+
+### Fixed
+- Your answer on Ask me goes into the asking member's notes before Michael is told it is there, so a request to Michael that has to be sent again never points at a note that was not written (contributed in #511).
+- When a Pulse number looks wrong, the app can now say whether its records stopped coming in, failed to save, or were turned away, and it notes once if they wait unread for five minutes (contributed in #509).
+- Team members' notes are no longer kept in the office's history, where any member could read another's with git. Notes from before this update stay in the old history.
+
+- An agent can no longer write into the office's own files (the board, the task list, memory) through a link in its folder that points into the office, even a link to a file that doesn't exist yet (contributed in #444).
+- A card number written next to its expiry date or security code, such as `4111 1111 1111 1111 12/27`, is now caught before a question reaches Research (contributed in #447).
+- A link into Settings that names a section that is unknown or switched off opens General instead of a blank window (contributed in #474).
+- Adding an integration never replaces one already registered, or its saved key: the new one gets a free id, and an add that still lands on a taken id, from a second window or before the list loaded, is refused with a note to change the label (contributed in #476).
+- Restoring an older office on Windows keeps its team when the folder paths differ only in letter case, such as `C:\Biz` and `c:\biz`, and a bare network share is never taken as the business folder (contributed in #477).
+- A file link whose path has parentheses, such as `Q3 (final)/report.md`, opens instead of staying greyed out (contributed in #478).
+- Every file an agent's message shows as a chip can be opened: the app checks exactly the files the message draws, so a link written with spaces, such as `[report]( /Users/me/report.md )`, no longer stays greyed out.
+- A message that only mentions closing time, such as "What is the closing time for this deal?", shows in Messages instead of being filed with the closing time notices; every note closing time itself sends is still filed there (contributed in #479).
+- A team member waiting on you at a permission prompt is never typed into while a helper it started keeps working: only the member's own next step ends the wait, for the wake up nudge (contributed in #507) and for the conversation clear's handoff request alike. Either one ends with Enter, which would answer the prompt "Yes".
+- Zooming a terminal with a bad value, such as one left by a damaged setting, keeps the current size instead of breaking it (contributed in #480).
+- A Claude command whose path is in quotes and has spaces, such as `"/Applications/My Tools/claude"`, now works for the app's background tasks too, not only for team members (contributed in #484).
+- The last small text in setup is raised to the 14px minimum, like the rest of setup (contributed in #491).
+- Company knowledge search ranks a whole word in a document's title above part of one, so a search for `art` puts "Art Guide" ahead of "Article Guide" (contributed in #494).
+- A file name with a long extension, such as `application.properties`, opens whole from an agent's output instead of being cut short (contributed in #190).
+- A schedule an agent asks for with `monthly` or `sunset` is refused instead of becoming a Monday or Sunday job; `Mondays`, `weds` and `mon.` still work (contributed in #193).
+- A team member's name, role or business name with a dollar sign, such as `Ca$$h Cuts`, is written as typed in Work styles, the first task and Michael's briefing (contributed in #198).
+- Text you write in the heartbeat box in Schedules now reaches Michael ahead of the floor summary; the box's own default text is not sent (contributed in #200).
+- A running schedule that checks the inbox says "Pam cannot check email" beside it when that team member has no mailbox (or its mailbox was removed in Settings) and no Gmail connector, instead of failing every run without a word (contributed in #218, with the removed mailbox case from #348).
+- On Windows, a folder named like `CON.txt` or `NUL.log` is made safe as `CON-folder.txt`, since Windows reserves those names even with an extension (contributed in #291).
+- In Arabic, dragging the side panel's edge and its arrow keys now resize it the right way, and its hint is short in all three languages (contributed in #299).
+- Adding a second time to a schedule that runs every few days shortens that line to every 1 day, so the schedule can still be saved, and a note under the line says so (contributed in #329).
+- The memory tidy pass skips a note already in the index (ignoring case and spacing), and its log counts the changes it had to throw away, by reason (contributed in #353).
+- A skill install or catalog fetch no longer hangs on a redirect loop: it stops after five hops, follows a relative redirect, and stops reading past 8 MB (contributed in #362 and #363).
+- The Activity tab no longer redraws the office log every 3 seconds when nothing changed (contributed in #350).
+- Each empty column on the Tasks board says something of its own instead of "Nothing here" (contributed in #369).
+- On Windows, the Research screen says that the team's commands can still reach the internet (contributed in #389).
+- When you answer on Ask me, Michael gets the question as one line marked as card text, so a line break in it can never pass for your words. Your answer still goes as you wrote it (contributed in #391).
+- A long tool call, such as a test run, stays on a team member's row at closing time while shorter calls start and end around it. A call that failed or that Claude Code refused leaves the row as soon as it ends (contributed in #401).
+- **The office opens filling the screen on every launch again.** It came back at a smaller size once a single moment had read as not filling the screen (a dragged title bar, a display change, or quitting from full screen). Now every launch fills the screen; un-maximizing still goes back to your last smaller size.
+- **Pulse's Questions to you is part of Your time.** Both counted the same questions you were asked. Your time now shows how many, and at its foot two small figures: the typical wait for your answer and how many per 100 requests the team took, with the period before's rate under it when Compare is on. The wait was labelled "on average"; it is the typical (middle) wait, and now says so.
+- **With Compare on, a Pulse card from the span before shows only when its bars show a change.** A web answers card showed 0 Yesterday and 0 Today because yesterday had an answer with nothing to take out; such a card is now a quiet chip.
+- **Pulse's lists of questions and answers open each one that went as written.** A question or answer that went unchanged showed as one cut off line you could not open. Click it to read the whole text as it went, with Show the whole answer for a long one.
+
+## [0.2.4] (2026-10-20)
+
+### Added
+
+- **Company foundations: one document of what each job needs to know about your business.** Every office now has a Company foundations document in company knowledge, with plain questions for each job, such as who we sell to, how we sound, or our financial year, and no product named anywhere. A question two jobs share has one answer. It starts with what the company profile already says (opening hours, financial year), and the two stay in step. When a team member's work needs an empty answer, a card on Needs you asks you for it, shows what the work did without it, and lets you save an answer, have that member draft one from what the office holds, or put it off for a week; it comes back weekly until answered. What you teach the team and what they find in the office's own files fills it too, each answer marked with who and when; anything from outside the office is checked by Michael first. Pulse shows the jobs whose work hit an empty answer, a "Foundations 2 of 6" count under each member on Team at work, and in a member's detail the missing questions and, once there is enough work, how much was kept as is without the answer and with it. (Agent behavior, four changes: every team member carries its job's part of the document, Michael all of it, Research none; a member whose work needs an empty answer does the work, adds one line saying what was missing, and reports it once; Michael raises one card per empty question the work hit, and a new weekly Foundations check on his schedule brings each still empty one back; members send what you teach them or what they find in the office's files to the document, filling only empty answers. After the ship review: only Michael can change an answer you wrote, and only by quoting a message you sent him yourself, never one of the app's own notices; a member quoting a message of yours fills only an empty answer, marked as taught to that member; a member answers and reports gaps only for its own job's questions; only the member you asked, or Michael, fills a draft; answers are kept to one plain line; when a question is answered another way, in the company profile, by a member or by Michael himself, Michael is told to close its card, and the pod's for you count and Pulse leave that card out; a waiting foundation card no longer stops the app from clearing a member's conversation. The app keeps the ids of the messages you send in its private folder, out of the team's reach, and only those count as your words.)
+- **See and open what's in company knowledge.** Settings, Memory & Knowledge lists every document your team searches, with its file and when it was added. Open opens it in your own app; save it there and the app reads it in again, so the team searches the new version. Company foundations opens as a read only copy, since the app keeps it up to date, and so does anything that is not a document, so Open never runs a program. If you had turned company knowledge off, a one time card in Needs you says it is always on now, with a link to the list.
+- **Windows reads scans and photos in company knowledge** with the text recognition built into Windows (contributed in #501).
+- **Pulse shows what it sees in your first two weeks.** Before recommendations can start, Pulse runs the same checks on the days so far and shows what they find, under a bold "What Pulse sees so far, not advice yet.": for example a scheduled check that has found nothing on 6 of 8 runs, or how much of a member's work you kept as is. These are facts with nothing to apply; on day 14 the recommendations take over.
+
+### Changed
+
+- **Company knowledge and search by meaning have no switches.** Company knowledge is always on, and team members are pointed at it once it holds a document. Search by meaning runs whenever MemPalace is installed (Prerequisites); Settings shows whether it is ready. The separate Semantic memory section is gone: search by meaning and its search language now sit under Company knowledge, the only thing it ever searches, and the wording says so. A document you edit is searched by meaning in its new version too. Each member's own memory stays private and is never searched by meaning, so the By meaning search on Michael's Memory tab is gone too; exact words still search the team's notes. Changing the search language now builds the index again with the new language; before, search by meaning stopped working after a change. (Agent behavior: members are told about company knowledge once it holds a document, and told again if it empties; a member that is already running gets the new search command when the language changes or MemPalace is installed, with no restart.)
+- **Pulse shows only what has something to say.** Tiles with nothing in the period fold into a row of small quiet chips under the others ("emails sent 0"); a chip opens its tile. Spent always shows, and with Compare on a tile stays while the span before had something. Team at work folds members with no working time into one "9 more were quiet" row and says "Nobody has worked yet today" when that is so. Before advice starts, Recommendations is one short line, with the why behind its (i).
+
+### Fixed
+
+- **A file an Ask me question names opens from its chip even without its ending.** A question that named a draft by its title, such as `First contact follow up draft 2026-10-19`, showed the name as plain text. The app now finds the file in the office's folders and shows the Open chip in its place. (Agent behavior: Michael names each file in an ask by its full path with its file ending, as he already did in your conversation and in reports.)
+- A message a team member sent is delivered once even if the app quits between delivering it and filing it away, and a schedule request is never filed twice.
+- An answer you give on Ask me reaches Michael in the same launch even if its first send was lost (contributed in #508).
+- Michael hears when a restart that timed out worked after all (contributed in #506).
+- Pulse starts filling in its earlier weeks when you open it (contributed in #504), and drops the saved cost totals of sessions that went quiet (contributed in #505).
+- The counts of refused hook messages are kept within a bound (contributed in #502).
+- Pulse's Apply, Not now, Undo and Try again use the app's own buttons (contributed in #497).
+
 ## [0.2.3] (2026-10-18)
 
 ### Added

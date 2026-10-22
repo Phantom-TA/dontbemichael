@@ -60,6 +60,19 @@ test('the chip replaces exactly the path, from the source, in text, code spans a
   assert.deepEqual(chips('Saved to C:/Reports/q3.csv. See [notes](D:/Reports/notes.md).').out,
     ['C:/Reports/q3.csv', 'D:/Reports/notes.md'], 'Windows forward slash paths become chips in prose and links');
   assert.deepEqual(chips('See [site](https://example.com/C:/Reports/q3.csv).').out, [], 'a URL containing a drive path stays a link');
+  for (const md of [
+    'See [report](/Users/me/Q3(final)/report.md)',
+    'See [report](/Users/me/Q3\\(final\\)/report.md "review")',
+    'See [report](C:\\Reports\\_q3.md)',
+    'See [report](/Users/me/report.md\n "Q3")',
+    'See [report](</Users/me/Harbor & Pine/Q3 (final)/report.md>)'
+  ]) {
+    assert.deepEqual(askFilePaths(md), chips(md).out, 'paths checked by main match rendered chip paths');
+  }
+  for (const depth of [32, 33]) {
+    const md = `See [report](/Users/me/Q3${'('.repeat(depth)}final${')'.repeat(depth)}/report.md)`;
+    assert.deepEqual(askFilePaths(md), chips(md).out, `destination nesting depth ${depth} matches the renderer`);
+  }
   assert.deepEqual(chips('```\n/Users/me/skip.md\n```').out, [], 'code fences stay code');
   // 2026-10-11: Michael wrote **... 10 Oct (`/path/report.md`).** and the chip
   // wrapped to its own line, stranding "(" above it and ")." below it.
@@ -211,4 +224,20 @@ test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, w
     assert.match(f.close, /\{\{name\}\}/);
     assert.doesNotMatch(JSON.stringify(f), /[–—]/, `${loc}: no dashes`);
   }
+});
+
+test('the files checked for chips are the files drawn as chips, from the same parse', () => {
+  // Value: protects=every chip drawn is checked, so none greys out for a link the renderer reads differently; fails_when=the chip check goes back to its own reader of link syntax; why_new=a link with spaces inside its parentheses drew a chip the old reader never checked; seam=none
+  const { chipPaths } = loadTs('src/renderer/src/markdown/chipPaths.ts');
+  const { askFilePaths } = loadTs('src/shared/askFiles.ts');
+  const spaced = 'Report: [here]( /Users/me/sp.md )';
+  assert.deepEqual(askFilePaths(spaced), [], 'the old reader missed it');
+  assert.deepEqual(chipPaths(spaced), ['/Users/me/sp.md'], 'the drawn chip is checked');
+  // A reference definition draws no chip, so it is not checked either.
+  assert.deepEqual(chipPaths('See /Users/me/x.md\n\n[r]: /Users/me/ref.md\n\n[ref][r]'), ['/Users/me/x.md']);
+  assert.deepEqual(chipPaths('Open [the report](</Users/me/Q3 (final)/report.md>) and `/Users/me/a.md`, twice: /Users/me/a.md'), ['/Users/me/Q3 (final)/report.md', '/Users/me/a.md']);
+  const chip = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/src/components/FileChip.tsx'), 'utf8');
+  assert.match(chip, /for \(const p of chipPaths\(e\.q\)\)/, 'Ask me cards');
+  assert.match(chip, /const paths = useMemo\(\(\) => chipPaths\(shown\), \[shown\]\);/, 'agent text');
+  assert.doesNotMatch(chip, /askFilePaths\(/);
 });
