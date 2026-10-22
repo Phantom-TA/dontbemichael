@@ -83,7 +83,7 @@ import { resolveGodName } from '../shared/godIdentity';
 import { ALLOW_TEMP_WORKERS } from '../shared/buildFeatures';
 import { OFFICE_ROLES } from '../shared/officeRoles';
 import { APP_NAME } from '../shared/appName';
-import { isPeerAssignment, rerouteToMichael, hopDropNotice } from '../shared/handoffRule';
+import { isPeerAssignment, rerouteToMichael, hopDropNotice, replyHops } from '../shared/handoffRule';
 import {
   legacyOwnerSentDir, legacyOwnerStatePath, pluginsDisabledForSession,
   privateOwnerSentDir, privateOwnerStatePath, privateRoot
@@ -521,6 +521,9 @@ export interface SpawnInjection {
 }
 
 const HOP_CAP = 12;
+/** How many routed messages' hop counts the router keeps, so a reply can be
+ *  counted from the message it answers. Oldest go first. */
+const HOPS_REMEMBERED = 5000;
 /** The owner's sent message ids and who got each, in the private folder: a
  *  member's shell can write the hive log, never this (Company foundations). */
 const OWNER_SAID_FILE = 'owner-said.jsonl';
@@ -2521,6 +2524,8 @@ export class HiveManager {
   }
   /** Ids of clean copies the trust layer produced; only these reach Research. */
   private researchCleared = new Set<string>();
+  /** Each routed message's hop count by id, this run only (replyHops). */
+  private hopsById = new Map<string, number>();
   /** The sender's message behind each clean copy, by the copy's id and its
    *  thread, so Research's answer lands back in the sender's thread while
    *  Research never sees the sender's thread id (ship review). */
@@ -3391,6 +3396,12 @@ export class HiveManager {
       } catch { /* best-effort notice */ }
       return;
     }
+    this.hopsById.delete(msg.id);
+    this.hopsById.set(msg.id, msg.hops);
+    if (this.hopsById.size > HOPS_REMEMBERED) {
+      const oldest = this.hopsById.keys().next().value;
+      if (oldest !== undefined) this.hopsById.delete(oldest);
+    }
     const reg = this.registry();
     const godId = reg.godId ?? 'god';
     // The hive has no separate human-approval queue — approvals are native to
@@ -3830,6 +3841,12 @@ export class HiveManager {
           // could close the owner's next question or hide a message (Codex
           // review, ship 2026-10-18).
           msg.created_at = new Date().toISOString();
+          // So is the hop count (HIVE.md section 4, PROTOCOL.md): one more than
+          // the message it answers, so two agents replying to each other meet
+          // the loop guard. Michael's answers to the owner are never counted.
+          reg ??= this.registry();
+          const toOwner = id === (reg.godId ?? 'god') && this.ownerAliases().has(String(msg.to).toLowerCase());
+          msg.hops = replyHops(msg.in_reply_to, typeof msg.in_reply_to === 'string' ? this.hopsById.get(msg.in_reply_to) : undefined, toOwner);
           // A file this pass already chose an id for (a pass that died before
           // archiving it) keeps that id and time; a new one is journaled before
           // it is delivered.
