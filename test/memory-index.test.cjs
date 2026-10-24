@@ -290,6 +290,12 @@ test('agents are told to add notes, not logs, and closing time no longer writes 
   assert.match(prompt, /add at most three short notes to .*memory.inbox\.md/);
   assert.match(prompt, /Don't write session logs or status updates/);
   assert.doesNotMatch(prompt, /append what you learned to memory\.md/);
+  // Memory evidence D3: each note says what showed it; Research keeps its own sources rule.
+  assert.equal(prompt.split('End each note with "Why:" and what showed it').length, 3, 'asked in the memory rule and at the end of a task');
+  const skill = fs.readFileSync(path.resolve(__dirname, '../resources/skills/md-hive-sync/SKILL.md'), 'utf8');
+  assert.match(skill, /End each note with "Why:" and what showed it/);
+  const research = fs.readFileSync(path.resolve(__dirname, '../src/main/hive.ts'), 'utf8').split('\n').find((l) => l.includes('When you finish a question, add at most three short notes'));
+  assert.ok(research && !research.includes('Why:'), 'Research is not asked for a Why line');
   const closing = fs.readFileSync(path.resolve(__dirname, '../src/main/closingTime.ts'), 'utf8');
   assert.doesNotMatch(closing, /append (its|your) (current state|shift summary)[^']*memory\.md/);
 });
