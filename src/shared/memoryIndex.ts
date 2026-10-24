@@ -42,7 +42,7 @@ export interface MemoryEntry {
 
 export type MemoryOp =
   | { op: 'add'; kind: MemoryKind; text: string; source: MemorySource; expires?: string; evidence?: string }
-  | { op: 'update'; id: string; text?: string; kind?: MemoryKind; expires?: string; repeat?: boolean; evidence?: string }
+  | { op: 'update'; id: string; text?: string; kind?: MemoryKind; expires?: string; repeat?: boolean; evidence?: string; source?: MemorySource }
   | { op: 'delete'; id: string; reason: string }
   | { op: 'procedure'; name: string; steps: string; source: MemorySource };
 
@@ -200,7 +200,9 @@ export interface ValidatedOps {
  *  `ownerWords` false (no note from the owner in this pass, memory evidence
  *  D5, D9): nothing can be the owner's, so an add marked owner is filed as the
  *  member's own, and an owner entry is never deleted or reworded; a repeat or
- *  a new expiry on it still lands. */
+ *  a new expiry on it still lands. Evidence holds too (D5): an update that
+ *  rewords an entry with evidence, from the same kind of source, lands only
+ *  with evidence of its own. */
 export function validateOps(raw: unknown, entries: MemoryEntry[], ownerWords = true): ValidatedOps {
   const list = raw && typeof raw === 'object' && Array.isArray((raw as { ops?: unknown }).ops) ? (raw as { ops: unknown[] }).ops : [];
   const ids = new Set(entries.map((e) => e.id));
@@ -218,6 +220,13 @@ export function validateOps(raw: unknown, entries: MemoryEntry[], ownerWords = t
     if (!v) { drop('bad-evidence'); return {}; }
     return { evidence: v };
   };
+  // An update may move an entry to another source: to the owner's when the
+  // owner's note corrects it, never without the owner's words in the pass.
+  const updateSource = (r: Record<string, unknown>): { source?: MemorySource } => {
+    if (!(MEMORY_SOURCES as readonly string[]).includes(r.source as string)) return {};
+    if (r.source === 'owner' && !ownerWords) { drop('not-owner'); return {}; }
+    return { source: r.source as MemorySource };
+  };
   for (const o of list) {
     if (!o || typeof o !== 'object') { drop('malformed'); continue; }
     const r = o as Record<string, unknown>;
@@ -230,18 +239,22 @@ export function validateOps(raw: unknown, entries: MemoryEntry[], ownerWords = t
       out.push({ op: 'add', kind: k, text, source: src, ...(dateOr(r.expires) ? { expires: dateOr(r.expires) } : {}), ...evidence(r) });
     } else if (r.op === 'update') {
       if (typeof r.id !== 'string' || !ids.has(r.id)) { drop('unknown-id'); continue; }
-      if (!ownerWords && ownerIds.has(r.id)) {
-        const before = entries.find((e) => e.id === r.id)!;
-        const text = oneLine(r.text);
-        if ((text && text !== before.text) || (kind(r.kind) && r.kind !== before.kind) || r.evidence !== undefined) { drop('owner-entry'); continue; }
-      }
+      const was = entries.find((e) => e.id === r.id)!;
+      const words = oneLine(r.text);
+      if (!ownerWords && ownerIds.has(r.id)
+        && ((words && words !== was.text) || (kind(r.kind) && r.kind !== was.kind) || r.evidence !== undefined
+          || (r.source !== undefined && r.source !== 'owner'))) { drop('owner-entry'); continue; }
+      const src = updateSource(r);
+      const ev = evidence(r);
+      if (was.evidence && words && words !== was.text && !ev.evidence && (!src.source || src.source === was.source)) { drop('needs-evidence'); continue; }
       out.push({
         op: 'update', id: r.id,
-        ...(oneLine(r.text) ? { text: oneLine(r.text) } : {}),
+        ...(words ? { text: words } : {}),
         ...(kind(r.kind) && r.kind !== 'procedure' ? { kind: kind(r.kind) } : {}),
         ...(dateOr(r.expires) ? { expires: dateOr(r.expires) } : {}),
         ...(r.repeat === true ? { repeat: true } : {}),
-        ...evidence(r)
+        ...ev,
+        ...src
       });
     } else if (r.op === 'delete') {
       if (typeof r.id !== 'string' || !ids.has(r.id)) { drop('unknown-id'); continue; }
@@ -304,6 +317,7 @@ export function applyOps(entries: MemoryEntry[], ops: MemoryOp[], today: string)
         ...(op.text ? { text: op.text } : {}),
         ...(op.kind ? { kind: op.kind } : {}),
         ...(op.expires ? { expires: op.expires } : {}),
+        ...(op.source ? { source: op.source } : {}),
         date: today
       };
       // New words take the op's evidence or none: the old evidence was for

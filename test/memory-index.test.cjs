@@ -414,15 +414,32 @@ test('without a note from the owner in the pass, nothing becomes the owner\'s an
     { op: 'update', id: 'm1', text: 'Pay suppliers late' },
     { op: 'update', id: 'm1', evidence: 'a note said so' },
     { op: 'update', id: 'm1', repeat: true },
-    { op: 'update', id: 'm2', text: 'Cutoff is 1pm', evidence: 'supplier email, 2026-10-20' }
+    { op: 'update', id: 'm1', repeat: true, source: 'task' },
+    { op: 'update', id: 'm2', text: 'Cutoff is 1pm', evidence: 'supplier email, 2026-10-20', source: 'owner' }
   ] };
   const { ops, dropped } = mi.validateOps(raw, entries, false);
   assert.deepEqual(ops.map((o) => [o.op, o.id ?? o.source]), [['add', 'task'], ['update', 'm1'], ['update', 'm2']]);
   assert.equal(ops[1].repeat, true, 'a repeat still lands');
-  assert.deepEqual(dropped, { 'not-owner': 1, 'owner-entry': 3 });
+  assert.equal(ops[2].source, undefined, 'a member\'s note cannot make an entry the owner\'s');
+  assert.deepEqual(dropped, { 'not-owner': 2, 'owner-entry': 4 });
   const withOwner = mi.validateOps(raw, entries, true);
   assert.equal(withOwner.ops.length, 6, 'with the owner\'s words in the pass, the owner may change their own entry');
+  assert.deepEqual(withOwner.dropped, { 'needs-evidence': 1 }, 'a reword with nothing behind it still waits for evidence');
   assert.equal(withOwner.ops[0].source, 'owner');
+  // The owner's correction of a member's entry makes it the owner's.
+  const after = mi.applyOps(entries, [withOwner.ops[5]], '2026-10-23').entries.find((e) => e.id === 'm2');
+  assert.deepEqual([after.text, after.source, after.evidence], ['Cutoff is 1pm', 'owner', 'supplier email, 2026-10-20']);
+});
+
+test('a reword of an entry with evidence needs evidence of its own, unless it comes from another kind of source', () => {
+  // Value: protects=the second step of the conflict order holds even when the model misses it; fails_when=an update with no evidence rewords an entry that has a why line from the same kind of source; why_new=memory evidence D5 (the Haiku eval let an "I think" note replace a checked fact 1 run in 6); seam=none
+  const entries = [{ id: 'm1', kind: 'fact', text: 'The warehouse closes at 5pm', source: 'task', date: '2026-10-20', evidence: 'warehouse website, 2026-10-20' }];
+  const r = (op) => mi.validateOps({ ops: [op] }, entries, false);
+  assert.deepEqual(r({ op: 'update', id: 'm1', text: 'The warehouse closes at 4pm' }).dropped, { 'needs-evidence': 1 });
+  assert.deepEqual(r({ op: 'update', id: 'm1', text: 'The warehouse closes at 4pm', source: 'task' }).dropped, { 'needs-evidence': 1 });
+  assert.equal(r({ op: 'update', id: 'm1', text: 'The warehouse closes at 4pm', evidence: 'warehouse sign, 2026-10-24' }).ops.length, 1, 'with evidence it lands');
+  assert.equal(r({ op: 'update', id: 'm1', text: 'The warehouse closes at 4pm', source: 'michael' }).ops.length, 1, 'another kind of source: the newer one wins');
+  assert.equal(r({ op: 'update', id: 'm1', expires: '2026-12-01' }).ops.length, 1, 'no new words, nothing to back');
 });
 
 test('the owner\'s notes reach the tidy-up as the owner\'s, with their Why, and are filed once the index lands', async (t) => {
@@ -460,8 +477,9 @@ test('the tidy prompt files owner notes under their own heading and asks for the
   // Value: protects=the model is told which notes are the owner's and how conflicts resolve; fails_when=the heading, the evidence field or the order is dropped from the prompt; why_new=memory evidence D5; seam=source text; no_claim=how the model follows it (the eval)
   const src = fs.readFileSync(path.resolve(__dirname, '../src/main/memoryTidy.ts'), 'utf8');
   assert.match(src, /'--- FROM THE OWNER ---'/);
-  assert.match(src, /only a note under FROM THE OWNER may replace or delete an owner entry\. Next, between notes or entries from the same kind of source, the one with evidence wins over one without\. Otherwise the newer one wins/);
+  assert.match(src, /decide in this order\. 1\. The owner\\'s words win: only a note under FROM THE OWNER may replace or delete an owner entry\. 2\. Evidence wins: a note with no Why never replaces, rewords or deletes an entry from the same kind of source that has a why line; keep that entry\. 3\. Otherwise the newer one wins/);
   assert.match(src, /"op":"add",[^']*"evidence":"\.\.\."/);
-  assert.match(src, /"op":"update",[^']*"evidence":"\.\.\."/);
+  assert.match(src, /"op":"update",[^']*"evidence":"\.\.\.","source":"owner\|michael\|task\|tool"/);
+  assert.match(src, /When one changes an entry, its update has "source": "owner"\./);
   assert.match(src, /entries\.length \? entriesWithEvidence\(entries\)/);
 });
