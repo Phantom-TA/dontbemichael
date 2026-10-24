@@ -725,7 +725,9 @@
     "deleteInfo": "立即停止 {{name}} 并将其永久移出团队。其日程会暂停，由你的办公室经理跟进其卡片。此操作无法撤销。",
     "deleteConfirm": "永久删除 {{name}}？对方会立即停止并离开团队。此操作无法撤销。",
     "deleteConfirmSchedules": "永久删除 {{name}}？对方会立即停止并离开团队，其 {{count}} 个日程会暂停。此操作无法撤销。",
-    "deleteConfirmSchedulesPlural": "永久删除 {{name}}？对方会立即停止并离开团队，其 {{count}} 个日程会暂停。此操作无法撤销。"
+    "deleteConfirmSchedulesPlural": "永久删除 {{name}}？对方会立即停止并离开团队，其 {{count}} 个日程会暂停。此操作无法撤销。",
+    "getsFrom": "来自 {{name}}：",
+    "getsFromInfo": "{{from}} 把这些交给 {{name}}，而不是自己处理。在 {{from}} 的职责里设置，请在那里修改。"
   },
   "onboarding": {
     "damagedConfig": "无法读取你保存的设置，因此需要重新设置。旧文件保存在",
@@ -3130,6 +3132,23 @@
       "reading": "正在读你写的内容",
       "writing": "正在写 {{name}} 的工作"
     },
-    "soFar": "目前"
+    "soFar": "目前",
+    "explain": "说明他们如何分工",
+    "explainTitle": "{{names}} 如何分工？",
+    "explainPlaceholder": "说明谁做什么，例如：{{other}} 回答技术问题；{{who}} 转交给对方并跟进。",
+    "back": "返回",
+    "goesToGroup": "交给同事",
+    "goesTo": "交给 {{name}}：{{scope}}",
+    "noLongerGoesTo": "不再交给 {{name}}：{{scope}}",
+    "noSplit_one": "没有写出分工；{{names}} 可能仍会收到这些工作。",
+    "noSplit_other": "没有写出分工；{{names}} 可能仍会收到这些工作。",
+    "noAccess": "{{name}} 还不能使用 {{tool}}。",
+    "openAccess": "打开权限",
+    "homeFolder": "{{name}} 文件夹里的表格",
+    "homeTools": "已连接的工具",
+    "homeOff": "已关闭",
+    "homeOffLabel": "{{tool}}，已关闭",
+    "homeShowAll_one": "显示全部 {{count}} 个工具",
+    "homeShowAll_other": "显示全部 {{count}} 个工具"
   }
 }

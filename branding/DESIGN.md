@@ -1279,7 +1279,17 @@ focus. Working: "Working out what changes for Pam…", then its three real steps
 disclosure, and Cancel and Apply in a row that sticks to the preview's bottom. A clash: "One
 thing first", the question, two or three option rows (`cth-askme-opt`, one with a green
 "Suggested" pill) plus Something else with a text field, Cancel and Continue. An overlap:
-"Kelly already does part of this", the reason, Edit my change and Leave it with Kelly. Couldn't
+"Kelly already does part of this", the reason, then Edit my change as a link at the start and
+Leave it with Kelly (secondary) and Explain how they split it (primary) at the end, wrapping under
+the link when narrow. Explain opens a box in the card: "How do Pam and Kelly split it?", the reason
+as a note, the box (the check's split suggestion, or empty with a placeholder), Back (link) and See
+what changes; not an alert. The preview then lists "Goes to a teammate" under What Pam handles, one
+line each with a 16 px green-soft + or neutral-soft − (aria-hidden), and, above Cancel and Apply,
+white notes (card fill, r-md, info mark, not alerts) for "No split was written" and "Pam can't use
+HubSpot yet." with Open Access. A tracking question lists Pam's folder (Suggested), then Connected
+tools: on in Settings A to Z, then off ones greyed with an "Off" tag, aria-disabled and skipped by
+the arrows; four tools then Show all. Under What Kelly handles in Edit agent, "Gets from Pam:" (600
+ink-2) and the scopes in the field hint style, with an InfoTip (overlap split, 2026-10-24). Couldn't
 work out the change, and Pam's job changed meanwhile (the typed change shown on `card`), are
 `role=alert` with Cancel and Try again or See what changes again. After Apply or Undo the box
 comes back empty with one `role=status` line ("Pam's job is updated.") and takes focus. In the

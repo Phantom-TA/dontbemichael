@@ -95,7 +95,7 @@ test('the change box: a stopped or replaced run shows nothing, a card is promise
   assert.match(src, /const stop = \(\): void => \{ runSeq\.current\+\+;/);
   assert.match(src, /const cancel = \(\): void => \{ runSeq\.current\+\+;/);
   assert.match(src, /\{sendsTask && ok\.oneTimeTask && <li/);
-  assert.match(src, /const change = \[typed\.trim\(\), \.\.\.extras, \.\.\.\(answered \? \[`\(\$\{answered\}\)`\] : \[\]\)\]/);
+  assert.match(src, /const change = \[typed\.trim\(\), \.\.\.extras, explanation\.trim\(\), \.\.\.answered\]\.filter\(Boolean\)\.join\(' '\);/);
   assert.match(src, /aria-label=\{p\.box\.label\}/);
   assert.match(src, /aria-expanded=\{all\} onClick=\{\(\) => setAll/);
   assert.match(read('src/renderer/src/components/EditAgentModal.tsx'), /sendsTask=\{!agent\.isGod\}/);

@@ -78,7 +78,7 @@ test('Edit agent: the job saves only through Apply, refused when it moved, routi
   assert.ok(apply.indexOf('hivePatchAgentRole') < apply.indexOf('updateAgent(agent.id, patch)'), 'the registry first');
   assert.match(apply, /setStatus\(t\('jobChange\.applied', \{ name: cur\.name \}\)\);/);
   const undo = src.slice(src.indexOf('const undoChange = async'), src.indexOf('const save = async'));
-  assert.match(undo, /const patch = undoJob\(cur\);/);
+  assert.match(undo, /const patch = undoJob\(cur, nameOf\);/, 'Undo knows who is on the team, for handoffs (eng SC2)');
   assert.match(undo, /setStatus\(t\('jobChange\.undone', \{ name: cur\.name \}\)\);\s*setFocusKey\(\(k\) => k \+ 1\);/, 'focus back in the box (DR10)');
   assert.match(src, /current: \{ instructions: effectiveWorkStyle\(cur\), handles: lead \? '' : split\.roleDescription \},/);
   assert.match(src, /checkOverlap=\{lead \? undefined : checkOverlap\}/);

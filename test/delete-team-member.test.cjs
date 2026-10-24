@@ -83,7 +83,9 @@ test('Edit agent shows the Danger zone under the engine, behind canDeleteTeamMem
   assert.match(zone, /<PixelButton variant="destructive"/);
   assert.match(src, /if \(!confirm\(deleteConfirmText\(agent\.id, agent\.name, t\)\)\) return;/);
   // Off the floor, the archived list and the restore list: nothing brings them back.
-  assert.match(src, /forget: \(id\) => \{ st\.archiveAgent\(id\); st\.removeArchivedAgent\(id\); st\.removeRestorableAgent\(id\); \}/);
+  assert.match(src, /forget: \(id\) => \{\s+st\.archiveAgent\(id\); st\.removeArchivedAgent\(id\); st\.removeRestorableAgent\(id\);/);
+  // Handoffs to them go too (overlap split plan): no entry points at nobody.
+  assert.match(src, /if \(a\.handoffs\?\.some\(\(h\) => h\.toId === id\)\) st\.updateAgent\(a\.id, \{ handoffs: handoffsWithout\(a\.handoffs, id\) \}\);/);
 });
 
 test('the delete strings exist in every language, with no dashes', () => {
