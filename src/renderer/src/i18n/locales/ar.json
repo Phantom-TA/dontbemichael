@@ -1956,6 +1956,7 @@
       "tool": "من أداة"
     },
     "sourceLine": "{{source}}، {{date}}",
+    "evidence": "ما الذي بيّن ذلك",
     "checkAgain": "راجِعه مجددًا في {{date}}",
     "outOfDate": "قد يكون قديمًا ({{date}})",
     "stepsMissing": "لم تُحفظ خطوات هذا بعد.",

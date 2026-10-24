@@ -1956,6 +1956,7 @@
       "tool": "来自工具"
     },
     "sourceLine": "{{source}}，{{date}}",
+    "evidence": "依据",
     "checkAgain": "{{date}} 再核对",
     "outOfDate": "可能已过时（{{date}}）",
     "stepsMissing": "这项的步骤还没有保存。",
