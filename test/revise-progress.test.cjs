@@ -140,7 +140,7 @@ test('the overlap line agrees with one, two or more teammates, in every language
   }
   const src = read('src/renderer/src/components/JobChangeReview.tsx');
   assert.match(src, /const listOf = \(items: string\[\]\): string => \{ try \{ return new Intl\.ListFormat\(i18n\.language, \{ type: 'conjunction' \}\)\.format\(items\); \}/);
-  assert.match(src, /const names = listOf\(state\.names\);/);
+  assert.match(src, /const names = overlap \? listOf\(overlap\.names\) : '';/);
   assert.match(src, /t\('jobChange\.overlapTitle', \{ names, count \}\)/);
   assert.match(src, /t\('jobChange\.leaveWithChange', \{ names, count \}\)/);
 });

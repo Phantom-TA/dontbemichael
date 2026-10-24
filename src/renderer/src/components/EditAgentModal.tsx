@@ -21,7 +21,7 @@ import {
 import { BUILD_ENGINES } from '@shared/agentProvider';
 import { splitAgentRole, joinAgentRole } from '@shared/agentRole';
 import { roleLabel, plainFallback } from '@shared/workStyleText';
-import { applyJob, handoffsTo, handoffsWithout, jobBase, jobFingerprint, liveHandoffs, plainFor, undoJob } from '@shared/jobChange';
+import { addedOverlaps, applyJob, handoffsTo, handoffsWithout, jobBase, jobFingerprint, liveHandoffs, plainFor, undoJob } from '@shared/jobChange';
 import { connectorGranted, connectorOn, type ConnectorConfig } from '@shared/claudeConnectors';
 import { JobChangeReview, type HomeChoice, type ReviseOk, type ReviseRun, type Teammate } from './JobChangeReview';
 import { Field, JobParts, Panel as SoftPanel, fieldLabel, hint, jobPartsFold, readBody } from './fieldText';
@@ -187,8 +187,13 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       askHome: !lead
     });
   };
+  /** The job as it was, checked once per job: an overlap it already had is
+   *  teamwork the owner set up before, never charged to this change. */
+  const beforeCheck = useRef<{ of: string; names: Promise<string[]> } | null>(null);
   /** New duties are checked against every teammate's, as a hire is (D6), in
-   *  the check's change mode: work handed on between them is not an overlap. */
+   *  the check's change mode: work handed on between them is not an overlap.
+   *  Only teammates the change adds are returned, and they never block Apply:
+   *  the preview names them with a way to explain the split (owner, 2026-10-24). */
   const checkOverlap = async (ok: ReviseOk): Promise<{ names: string[]; why: string; suggestion?: string; teammates: Teammate[] } | null> => {
     const cur = current();
     const mailboxes = config?.mailboxes ?? [];
@@ -199,14 +204,30 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       return { name: a.name, title: split.role, routing: split.roleDescription, workStyle: a.goal, mailbox: email?.enabled ? mailboxes.find((m) => m.id === email.mailboxes[0])?.address : undefined };
     });
     if (!team.length || !ok.handles) return null;
-    const v = await window.cth.hireCheckDistinct({ name: cur.name, title: splitAgentRole(cur.description).role, routing: ok.handles, workStyle: ok.instructions }, team, undefined, 'change');
-    if (!v.overlapsWith.length) return null;
+    const title = splitAgentRole(cur.description).role;
+    const was = splitAgentRole(cur.description).roleDescription;
+    const of = jobBase(cur);
+    if (beforeCheck.current?.of !== of) {
+      beforeCheck.current = {
+        of,
+        names: was.trim()
+          ? window.cth.hireCheckDistinct({ name: cur.name, title, routing: was, workStyle: cur.goal }, team, undefined, 'change', 'before')
+            .then((v) => v.overlapsWith).catch(() => [])
+          : Promise.resolve([])
+      };
+    }
+    const [v, before] = await Promise.all([
+      window.cth.hireCheckDistinct({ name: cur.name, title, routing: ok.handles, workStyle: ok.instructions }, team, undefined, 'change', 'after'),
+      beforeCheck.current.names
+    ]);
+    const added = addedOverlaps(v.overlapsWith, before);
+    if (!added.length) return null;
     // Names are unique on the floor (a rename refuses a taken name).
-    const named = v.overlapsWith.flatMap((n) => {
+    const named = added.flatMap((n) => {
       const a = mates.find((m) => m.name === n);
       return a ? [{ id: a.id, name: a.name, title: splitAgentRole(a.description).role || undefined }] : [];
     });
-    return { names: v.overlapsWith, why: v.why, suggestion: v.suggestion, teammates: named };
+    return { names: added, why: v.why, suggestion: v.suggestion, teammates: named };
   };
   /** Where tracked numbers can live (design D5): the member's own folder,
    *  then every connector on the Claude account; switched off in Settings

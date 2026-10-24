@@ -680,9 +680,11 @@ const api = {
     team: Array<{ name: string; title: string; routing: string; workStyle?: string; mailbox?: string }>,
     requestId?: string,
     /** 'change' from Edit agent: handoffs between them are not an overlap. */
-    mode?: 'hire' | 'change'
+    mode?: 'hire' | 'change',
+    /** For a change: which job this reads, the one before it or after (logged). */
+    phase?: 'before' | 'after'
   ): Promise<{ distinct: boolean; overlapsWith: string[]; why: string; suggestion?: string; source: 'ai' | 'rules' }> =>
-    ipcRenderer.invoke('hire:checkDistinct', { job, team, requestId, mode }),
+    ipcRenderer.invoke('hire:checkDistinct', { job, team, requestId, mode, phase }),
   /** Stop a check the owner moved past (another job picked, or back a step). */
   hireCheckStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('hire:checkStop', requestId),
   /** Rewrite a work style: the agent's instructions as the owner's plain
