@@ -586,7 +586,9 @@ const memoryTidy = new MemoryTidy(
     return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
   },
   // Learning counts notes from the app's own record (owner, 2026-10-18).
-  (agentId, added) => { const ts = Date.now(); for (const n of added) pulseTelemetry.record({ agentId, kind: 'note-added', ts, attrs: { id: n.id, source: n.source } }); }
+  (agentId, added) => { const ts = Date.now(); for (const n of added) pulseTelemetry.record({ agentId, kind: 'note-added', ts, attrs: { id: n.id, source: n.source } }); },
+  // The owner's notes, the only ones a pass reads as the owner's (memory evidence, D9).
+  () => ownerNotes
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.

@@ -196,10 +196,15 @@ export interface ValidatedOps {
 }
 
 /** The model's ops, checked: unknown ops, ids and kinds are dropped, each
- *  counted by reason so a tidy run shows how much of the reply was usable. */
-export function validateOps(raw: unknown, entries: MemoryEntry[]): ValidatedOps {
+ *  counted by reason so a tidy run shows how much of the reply was usable.
+ *  `ownerWords` false (no note from the owner in this pass, memory evidence
+ *  D5, D9): nothing can be the owner's, so an add marked owner is filed as the
+ *  member's own, and an owner entry is never deleted or reworded; a repeat or
+ *  a new expiry on it still lands. */
+export function validateOps(raw: unknown, entries: MemoryEntry[], ownerWords = true): ValidatedOps {
   const list = raw && typeof raw === 'object' && Array.isArray((raw as { ops?: unknown }).ops) ? (raw as { ops: unknown[] }).ops : [];
   const ids = new Set(entries.map((e) => e.id));
+  const ownerIds = new Set(entries.filter((e) => e.source === 'owner').map((e) => e.id));
   const kind = (v: unknown): MemoryKind | undefined => ((MEMORY_KINDS as readonly string[]).includes(v as string) ? v as MemoryKind : undefined);
   const source = (v: unknown): MemorySource => ((MEMORY_SOURCES as readonly string[]).includes(v as string) ? v as MemorySource : 'task');
   const out: MemoryOp[] = [];
@@ -220,9 +225,16 @@ export function validateOps(raw: unknown, entries: MemoryEntry[]): ValidatedOps 
       const k = kind(r.kind); const text = oneLine(r.text);
       if (!k || k === 'procedure') { drop('bad-kind'); continue; }
       if (!text) { drop('missing-text'); continue; }
-      out.push({ op: 'add', kind: k, text, source: source(r.source), ...(dateOr(r.expires) ? { expires: dateOr(r.expires) } : {}), ...evidence(r) });
+      let src = source(r.source);
+      if (src === 'owner' && !ownerWords) { drop('not-owner'); src = 'task'; }
+      out.push({ op: 'add', kind: k, text, source: src, ...(dateOr(r.expires) ? { expires: dateOr(r.expires) } : {}), ...evidence(r) });
     } else if (r.op === 'update') {
       if (typeof r.id !== 'string' || !ids.has(r.id)) { drop('unknown-id'); continue; }
+      if (!ownerWords && ownerIds.has(r.id)) {
+        const before = entries.find((e) => e.id === r.id)!;
+        const text = oneLine(r.text);
+        if ((text && text !== before.text) || (kind(r.kind) && r.kind !== before.kind) || r.evidence !== undefined) { drop('owner-entry'); continue; }
+      }
       out.push({
         op: 'update', id: r.id,
         ...(oneLine(r.text) ? { text: oneLine(r.text) } : {}),
@@ -233,6 +245,7 @@ export function validateOps(raw: unknown, entries: MemoryEntry[]): ValidatedOps 
       });
     } else if (r.op === 'delete') {
       if (typeof r.id !== 'string' || !ids.has(r.id)) { drop('unknown-id'); continue; }
+      if (!ownerWords && ownerIds.has(r.id)) { drop('owner-entry'); continue; }
       out.push({ op: 'delete', id: r.id, reason: oneLine(r.reason) ?? 'replaced' });
     } else if (r.op === 'procedure') {
       const name = oneLine(r.name);

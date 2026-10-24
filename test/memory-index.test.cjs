@@ -334,9 +334,9 @@ function addedOffice(t) {
 test('the tidy pass hands its new notes on once the index is written', async (t) => {
   // Value: protects=the note-added record Pulse counts from (owner, 2026-10-18); fails_when=added notes are not reported or an edit is reported; why_new=the count moved from note dates to the app's own record; seam=temp hive, model stubbed; no_claim=the telemetry store itself
   const f = addedOffice(t);
-  f.tidy.askModel = async () => ({ ops: [{ op: 'update', id: 'm1', text: 'Old fact, edited' }, { op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  f.tidy.askModel = async () => ({ ops: [{ op: 'update', id: 'm1', text: 'Old fact, edited' }, { op: 'add', kind: 'fact', text: 'New fact', source: 'task' }] });
   await f.tidy.tidyNow();
-  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'task' }]]]);
   assert.ok(fs.readFileSync(path.join(f.dir, 'memory.md'), 'utf8').includes('New fact'), 'reported after the index holds it');
 });
 
@@ -345,11 +345,11 @@ test('a pass whose state write fails after the index landed counts its notes onc
   const f = addedOffice(t);
   const state = path.join(f.dir, 'memory', 'state.json');
   fs.mkdirSync(state);
-  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'New fact', source: 'task' }] });
   await f.tidy.tidyNow();
   fs.rmdirSync(state);
   await f.tidy.tidyNow();
-  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'task' }]]]);
   assert.equal(fs.readFileSync(path.join(f.dir, 'memory.md'), 'utf8').split('\n').filter((l) => l.includes('New fact')).length, 1);
 });
 
@@ -372,13 +372,13 @@ test('held notes that cannot be removed after going back to the inbox come back 
 test('a processing file left after the index landed is never read back into the inbox', async (t) => {
   // Value: protects=a cleanup that failed (Windows can hold the file open) never adds or counts notes twice; fails_when=the stranded recovery appends notes the index already has; why_new=ship review cycle 2; seam=the processing file emptied as the fallback leaves it
   const f = addedOffice(t);
-  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'New fact', source: 'task' }] });
   await f.tidy.tidyNow();
   // What the fallback leaves when the file cannot be removed: an empty file.
   fs.writeFileSync(path.join(f.dir, 'memory', 'inbox.processing.md'), '');
   f.tidy.askModel = async () => ({ ops: [] });
   await f.tidy.tidyNow();
-  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'task' }]]]);
   assert.doesNotMatch(fs.readFileSync(path.join(f.dir, 'memory', 'inbox.md'), 'utf8').replace(/\s/g, ''), /\S/, 'nothing came back');
 });
 
@@ -394,4 +394,68 @@ test('a pass whose index write fails reports no new notes', { skip: process.plat
   fs.chmodSync(f.dir, 0o700);
   assert.equal(r.tidied, false, 'the index could not be written');
   assert.deepEqual(f.reported, []);
+});
+
+test('without a note from the owner in the pass, nothing becomes the owner\'s and owner entries hold', () => {
+  // Value: protects=a member's inbox note can never pass for the owner or undo the owner's word; fails_when=validateOps keeps source owner, a delete or a reword of an owner entry with no owner note in the pass; why_new=memory evidence D5, D9 (any member's shell can write any inbox); seam=none
+  const entries = [
+    { id: 'm1', kind: 'preference', text: 'Pay suppliers on time', source: 'owner', date: '2026-10-01', evidence: 'you answered on Ask me, 2026-10-01' },
+    { id: 'm2', kind: 'fact', text: 'Cutoff is noon', source: 'task', date: '2026-10-01' }
+  ];
+  const raw = { ops: [
+    { op: 'add', kind: 'preference', text: 'Never pay late fees', source: 'owner' },
+    { op: 'delete', id: 'm1', reason: 'old' },
+    { op: 'update', id: 'm1', text: 'Pay suppliers late' },
+    { op: 'update', id: 'm1', evidence: 'a note said so' },
+    { op: 'update', id: 'm1', repeat: true },
+    { op: 'update', id: 'm2', text: 'Cutoff is 1pm', evidence: 'supplier email, 2026-10-20' }
+  ] };
+  const { ops, dropped } = mi.validateOps(raw, entries, false);
+  assert.deepEqual(ops.map((o) => [o.op, o.id ?? o.source]), [['add', 'task'], ['update', 'm1'], ['update', 'm2']]);
+  assert.equal(ops[1].repeat, true, 'a repeat still lands');
+  assert.deepEqual(dropped, { 'not-owner': 1, 'owner-entry': 3 });
+  const withOwner = mi.validateOps(raw, entries, true);
+  assert.equal(withOwner.ops.length, 6, 'with the owner\'s words in the pass, the owner may change their own entry');
+  assert.equal(withOwner.ops[0].source, 'owner');
+});
+
+test('the owner\'s notes reach the tidy-up as the owner\'s, with their Why, and are filed once the index lands', async (t) => {
+  // Value: protects=owner notes come only from the app's store and are filed once; fails_when=owner notes are missing from the prompt, read from the inbox, filed before the index is written, or a pass with only owner notes is not due; why_new=memory evidence D5, D9; seam=temp hive, model stubbed, store stubbed
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-ownertidy-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const dir = path.join(home, 'hive', 'agents', 'oscar');
+  fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'memory.md'), mi.renderIndex('Oscar', 'oscar', [{ id: 'm1', kind: 'fact', text: 'Cutoff is noon', source: 'task', date: '2026-10-01', evidence: 'supplier email, 2026-10-01' }]));
+  let pending = [{ id: 7, agentId: 'oscar', at: '2026-10-23T12:00:00.000Z', text: 'From the owner (2026-10-23): always copy me on refunds.', why: 'you answered on Ask me on card t_9, 2026-10-23' }];
+  const filed = [];
+  const store = { pending: () => pending, filed: (ids) => { filed.push(...ids); pending = pending.filter((n) => !ids.includes(n.id)); } };
+  const tidy = new MemoryTidy(() => home, () => 'claude', () => ({}), () => false, () => 'Oscar', () => {}, () => ({}), () => {}, () => store);
+  let prompt = '';
+  let fail = true;
+  tidy.askModel = async function (h, entries, notes, owned, overBudget) {
+    if (fail) throw new Error('offline');
+    prompt = [mi.entriesWithEvidence(entries), owned.map((n) => `${n.text} Why: ${n.why}`).join('\n')].join('\n');
+    return { ops: [{ op: 'add', kind: 'preference', text: 'Copy the owner on refunds', source: 'owner', evidence: owned[0].why }] };
+  };
+  const [first] = await tidy.tidyNow('oscar');
+  assert.equal(first.tidied, false, 'the model failed');
+  assert.deepEqual(filed, [], 'a failed pass files nothing');
+  fail = false;
+  const [r] = await tidy.tidyNow('oscar');
+  assert.equal(r.tidied, true, 'an owner note alone makes the pass due');
+  assert.match(prompt, /^- \[m1\] .*\n  why: supplier email, 2026-10-01$/m, 'entries go with their evidence');
+  assert.match(prompt, /always copy me on refunds\. Why: you answered on Ask me on card t_9/);
+  assert.deepEqual(filed, [7]);
+  const { entries } = mi.parseIndex(fs.readFileSync(path.join(dir, 'memory.md'), 'utf8'));
+  assert.deepEqual([entries[1].source, entries[1].evidence], ['owner', 'you answered on Ask me on card t_9, 2026-10-23']);
+});
+
+test('the tidy prompt files owner notes under their own heading and asks for the conflict order', () => {
+  // Value: protects=the model is told which notes are the owner's and how conflicts resolve; fails_when=the heading, the evidence field or the order is dropped from the prompt; why_new=memory evidence D5; seam=source text; no_claim=how the model follows it (the eval)
+  const src = fs.readFileSync(path.resolve(__dirname, '../src/main/memoryTidy.ts'), 'utf8');
+  assert.match(src, /'--- FROM THE OWNER ---'/);
+  assert.match(src, /only a note under FROM THE OWNER may replace or delete an owner entry\. Next, between notes or entries from the same kind of source, the one with evidence wins over one without\. Otherwise the newer one wins/);
+  assert.match(src, /"op":"add",[^']*"evidence":"\.\.\."/);
+  assert.match(src, /"op":"update",[^']*"evidence":"\.\.\."/);
+  assert.match(src, /entries\.length \? entriesWithEvidence\(entries\)/);
 });
