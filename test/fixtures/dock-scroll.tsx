@@ -50,6 +50,8 @@ Object.defineProperty(Element.prototype, 'scrollTop', {
   }
 });
 document.addEventListener('scroll', (e) => { if (e.target === listEl()) note('scroll event'); }, true);
+note(`page ${document.visibilityState}, fonts ${document.fonts.status}`);
+document.fonts.addEventListener('loadingdone', () => note(`fonts loaded (${document.fonts.size})`));
 const NativeResizeObserver = window.ResizeObserver;
 window.ResizeObserver = class extends NativeResizeObserver {
   constructor(callback: ResizeObserverCallback) {
