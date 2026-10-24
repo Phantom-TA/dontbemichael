@@ -36,6 +36,61 @@ test('an index round-trips, and an older free-form file is recognised as not one
   assert.match(mi.entryLine(entries[1]), /\| expires 2026-12-31$/);
 });
 
+test('an entry\'s evidence is the line under it: saved in the file, never in the session block', () => {
+  // Value: protects=evidence survives the file and stays out of what the agent loads (owner D4, D7, 2026-10-24); fails_when=renderIndex or parseIndex loses the why line, or entriesBlock carries it; why_new=evidence is a new field; seam=none; no_claim=the Memory tab's display (memory-tab-readable)
+  const entries = [
+    e('m1', 'preference', 'Refunds over $200 need the owner', 'owner'),
+    { ...e('m2', 'fact', 'Supplier cutoff is Thursday noon', 'task', '2026-09-02', '2026-12-31'), evidence: 'the supplier site, checked 2026-09-02' }
+  ];
+  const text = mi.renderIndex('Oscar', 'oscar', entries);
+  assert.match(text, /\| expires 2026-12-31\n {2}why: the supplier site, checked 2026-09-02\n/);
+  assert.deepEqual(mi.parseIndex(text), { isIndex: true, entries });
+  assert.doesNotMatch(mi.entriesBlock(entries), /why/, 'the session block and the budget count leave evidence out');
+  assert.match(mi.entriesWithEvidence(entries), /\n {2}why: the supplier site/, 'the tidy-up gets it');
+  // A why line belongs only to the entry right above it.
+  const stray = mi.parseIndex(`${mi.INDEX_MARKER}\nsome hand-written line\n  why: not anyone's\n${mi.entryLine(entries[0])}`);
+  assert.equal(stray.entries[0].evidence, undefined);
+  // An older build's parser reads the entry line and skips the why line, so
+  // going back to it keeps every note.
+  const OLD_ENTRY = /^- \[(m\d+)\] (\w+) \| (.+?) \| (\w+) \| (\d{4}-\d{2}-\d{2})(?: \| expires (\d{4}-\d{2}-\d{2}))?$/;
+  assert.equal(text.split('\n').filter((l) => OLD_ENTRY.test(l.trim())).length, 2);
+  // The Memory tab lists an attached why line under its entry, never as Other.
+  assert.deepEqual(mi.memoryView(text).other, []);
+});
+
+test('evidence from the model is one short clean line; unusable evidence is left off and the change still lands', () => {
+  // Value: protects=a garbled field never breaks the index or loses the note; fails_when=validateOps passes raw evidence or drops the op; why_new=new field; seam=none; no_claim=what Haiku returns (ops are fixtures)
+  const entries = [e('m1', 'fact', 'a')];
+  const long = `owner said | so ${'x'.repeat(200)}`;
+  const { ops, dropped } = mi.validateOps({ ops: [
+    { op: 'add', kind: 'fact', text: 'one', source: 'task', evidence: `${long}\nmore` },
+    { op: 'add', kind: 'fact', text: 'two', source: 'task', evidence: 42 },
+    { op: 'update', id: 'm1', text: 'b', evidence: 'the invoice of 2026-10-20' }
+  ] }, entries);
+  assert.equal(ops.length, 3, 'every op lands');
+  assert.equal(ops[0].evidence.length, mi.MAX_EVIDENCE_CHARS);
+  assert.doesNotMatch(ops[0].evidence, /\||\n/);
+  assert.equal(ops[1].evidence, undefined);
+  assert.equal(ops[2].evidence, 'the invoice of 2026-10-20');
+  assert.deepEqual(dropped, { 'bad-evidence': 1 });
+});
+
+test('an add keeps its evidence; new words take new evidence or none, and the archive keeps the old pair', () => {
+  // Value: protects=evidence always describes the words beside it; fails_when=an update keeps stale evidence on new text, or the archive loses it; why_new=new field; seam=none; no_claim=none beyond protects
+  const entries = [{ ...e('m1', 'fact', 'Price list is v1'), evidence: 'the v1 PDF' }, { ...e('m2', 'fact', 'Cutoff Thursday'), evidence: 'supplier email' }];
+  const out = mi.applyOps(entries, [
+    { op: 'update', id: 'm1', text: 'Price list is v2' },
+    { op: 'update', id: 'm2', expires: '2026-12-31' },
+    { op: 'add', kind: 'fact', text: 'Rent is due on the 1st', source: 'task', evidence: 'the lease, page 2' }
+  ], '2026-10-24');
+  assert.equal(out.entries[0].evidence, undefined, 'new words, no evidence given: none');
+  assert.equal(out.entries[1].evidence, 'supplier email', 'same words: the evidence stays');
+  assert.equal(out.entries[2].evidence, 'the lease, page 2');
+  assert.match(mi.archiveLines(out.archived, '2026-10-24'), /Price list is v1 .*archived 2026-10-24: updated\n {2}why: the v1 PDF$/);
+  const again = mi.applyOps(out.entries, [{ op: 'update', id: 'm1', text: 'Price list is v3', evidence: 'the v3 PDF' }], '2026-10-25');
+  assert.equal(again.entries[0].evidence, 'the v3 PDF');
+});
+
 test('notes: each bullet or paragraph is one; the old header is not a note', () => {
   assert.deepEqual(mi.parseInbox('- one\n- two\n  continued\n\nthree'), ['one', 'two continued', 'three']);
   assert.deepEqual(mi.legacyNotes('# Memory — Oscar (oscar)\n\n_Append durable facts, decisions, and context below._\n\n## 2026-09-24 — Closing time\n- State: idle'), ['State: idle']);

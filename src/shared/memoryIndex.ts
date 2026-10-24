@@ -34,11 +34,15 @@ export interface MemoryEntry {
   date: string;
   /** YYYY-MM-DD after which a fact that changes (a price, a rate) needs checking again. */
   expires?: string;
+  /** What showed it ("the owner said so on Ask me, card c12, 2026-10-24"),
+   *  the way harness2 keeps a lesson only with its evidence. Saved in the file
+   *  and the archive for tidy and the Memory tab; never in the session block. */
+  evidence?: string;
 }
 
 export type MemoryOp =
-  | { op: 'add'; kind: MemoryKind; text: string; source: MemorySource; expires?: string }
-  | { op: 'update'; id: string; text?: string; kind?: MemoryKind; expires?: string; repeat?: boolean }
+  | { op: 'add'; kind: MemoryKind; text: string; source: MemorySource; expires?: string; evidence?: string }
+  | { op: 'update'; id: string; text?: string; kind?: MemoryKind; expires?: string; repeat?: boolean; evidence?: string }
   | { op: 'delete'; id: string; reason: string }
   | { op: 'procedure'; name: string; steps: string; source: MemorySource };
 
@@ -48,6 +52,8 @@ export const INDEX_BUDGET_TOKENS = 2000;
 export const INDEX_PRUNE_AT = 0.9;
 /** One entry is one line. */
 export const MAX_ENTRY_CHARS = 200;
+/** An entry's evidence is one short line. */
+export const MAX_EVIDENCE_CHARS = 120;
 /** A procedure file stays under this. */
 export const MAX_PROCEDURE_CHARS = 16_000;
 
@@ -61,26 +67,46 @@ export function estimateTokens(text: string): number {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ENTRY = /^- \[(m\d+)\] (\w+) \| (.+?) \| (\w+) \| (\d{4}-\d{2}-\d{2})(?: \| expires (\d{4}-\d{2}-\d{2}))?$/;
+// An entry's evidence is the indented line right under it. On a line of its
+// own, an older build that can't read it skips just that line and keeps the
+// entry; a field at the end of the entry line would lose the whole entry.
+const EVIDENCE = /^\s+why: (.+)$/;
 
 /** The entries in an index, and whether the file is one (an older free-form
  *  memory.md is not, and is migrated by its first tidy-up). */
 export function parseIndex(text: string): { isIndex: boolean; entries: MemoryEntry[] } {
   const isIndex = text.includes(INDEX_MARKER);
   const entries: MemoryEntry[] = [];
+  let last: MemoryEntry | null = null;
   for (const line of text.split('\n')) {
+    const why = EVIDENCE.exec(line);
+    if (why) {
+      const evidence = evidenceText(why[1]);
+      if (last && evidence) last.evidence = evidence;
+      last = null;
+      continue;
+    }
+    last = null;
     const m = ENTRY.exec(line.trim());
     if (!m) continue;
     const [, id, kind, body, source, date, expires] = m;
     if (!(MEMORY_KINDS as readonly string[]).includes(kind)) continue;
     if (!(MEMORY_SOURCES as readonly string[]).includes(source)) continue;
-    entries.push({ id, kind: kind as MemoryKind, text: body, source: source as MemorySource, date, ...(expires ? { expires } : {}) });
+    last = { id, kind: kind as MemoryKind, text: body, source: source as MemorySource, date, ...(expires ? { expires } : {}) };
+    entries.push(last);
   }
   return { isIndex, entries };
 }
 
-/** One entry as its index line. */
+/** One entry as its index line, as the agent is given it: no evidence. */
 export function entryLine(e: MemoryEntry): string {
   return `- [${e.id}] ${e.kind} | ${e.text} | ${e.source} | ${e.date}${e.expires ? ` | expires ${e.expires}` : ''}`;
+}
+
+/** One entry as memory.md and the tidy-up hold it: its line, then its
+ *  evidence on the line below when it has any. */
+export function entryLines(e: MemoryEntry): string {
+  return e.evidence ? `${entryLine(e)}\n  why: ${e.evidence}` : entryLine(e);
 }
 
 /** The whole index file. */
@@ -91,14 +117,20 @@ export function renderIndex(name: string, id: string, entries: MemoryEntry[]): s
     INDEX_MARKER,
     'The app keeps this file. Add notes to memory/inbox.md; they are sorted in here in the background.',
     '',
-    ...entries.map(entryLine),
+    ...entries.map(entryLines),
     ''
   ].join('\n');
 }
 
-/** Just the entries, as an agent is given them at session start. */
+/** Just the entries, as an agent is given them at session start, and as the
+ *  index budget counts them: without evidence, so evidence costs no session room. */
 export function entriesBlock(entries: MemoryEntry[]): string {
   return entries.map(entryLine).join('\n');
+}
+
+/** The entries with their evidence, for the tidy-up to weigh. */
+export function entriesWithEvidence(entries: MemoryEntry[]): string {
+  return entries.map(entryLines).join('\n');
 }
 
 /** Candidate notes in an inbox: each bullet or paragraph is one note. */
@@ -150,6 +182,12 @@ const oneLine = (v: unknown): string | undefined => {
   return s ? s.slice(0, MAX_ENTRY_CHARS) : undefined;
 };
 const dateOr = (v: unknown): string | undefined => (typeof v === 'string' && DATE.test(v) ? v : undefined);
+/** Evidence as one clean line under MAX_EVIDENCE_CHARS, or undefined. */
+export function evidenceText(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const s = v.replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
+  return s ? s.slice(0, MAX_EVIDENCE_CHARS) : undefined;
+}
 
 export interface ValidatedOps {
   ops: MemoryOp[];
@@ -167,6 +205,14 @@ export function validateOps(raw: unknown, entries: MemoryEntry[]): ValidatedOps 
   const out: MemoryOp[] = [];
   const dropped: Record<string, number> = {};
   const drop = (reason: string) => { dropped[reason] = (dropped[reason] ?? 0) + 1; };
+  // Evidence that can't be used is left off and counted; the op still lands,
+  // because dropping it would lose the note the tidy-up already took in.
+  const evidence = (r: Record<string, unknown>): { evidence?: string } => {
+    if (r.evidence === undefined) return {};
+    const v = evidenceText(r.evidence);
+    if (!v) { drop('bad-evidence'); return {}; }
+    return { evidence: v };
+  };
   for (const o of list) {
     if (!o || typeof o !== 'object') { drop('malformed'); continue; }
     const r = o as Record<string, unknown>;
@@ -174,7 +220,7 @@ export function validateOps(raw: unknown, entries: MemoryEntry[]): ValidatedOps 
       const k = kind(r.kind); const text = oneLine(r.text);
       if (!k || k === 'procedure') { drop('bad-kind'); continue; }
       if (!text) { drop('missing-text'); continue; }
-      out.push({ op: 'add', kind: k, text, source: source(r.source), ...(dateOr(r.expires) ? { expires: dateOr(r.expires) } : {}) });
+      out.push({ op: 'add', kind: k, text, source: source(r.source), ...(dateOr(r.expires) ? { expires: dateOr(r.expires) } : {}), ...evidence(r) });
     } else if (r.op === 'update') {
       if (typeof r.id !== 'string' || !ids.has(r.id)) { drop('unknown-id'); continue; }
       out.push({
@@ -182,7 +228,8 @@ export function validateOps(raw: unknown, entries: MemoryEntry[]): ValidatedOps 
         ...(oneLine(r.text) ? { text: oneLine(r.text) } : {}),
         ...(kind(r.kind) && r.kind !== 'procedure' ? { kind: kind(r.kind) } : {}),
         ...(dateOr(r.expires) ? { expires: dateOr(r.expires) } : {}),
-        ...(r.repeat === true ? { repeat: true } : {})
+        ...(r.repeat === true ? { repeat: true } : {}),
+        ...evidence(r)
       });
     } else if (r.op === 'delete') {
       if (typeof r.id !== 'string' || !ids.has(r.id)) { drop('unknown-id'); continue; }
@@ -231,13 +278,14 @@ export function applyOps(entries: MemoryEntry[], ops: MemoryOp[], today: string)
       const key = norm(op.text);
       if (next.some((x) => norm(x.text) === key)) { stats.dupes++; continue; }
       const id = newId();
-      next.push({ id, kind: op.kind, text: op.text, source: op.source, date: today, ...(op.expires ? { expires: op.expires } : {}) });
+      next.push({ id, kind: op.kind, text: op.text, source: op.source, date: today, ...(op.expires ? { expires: op.expires } : {}), ...(op.evidence ? { evidence: op.evidence } : {}) });
       added.push({ id, source: op.source });
       stats.added++;
     } else if (op.op === 'update') {
       const i = next.findIndex((e) => e.id === op.id);
       if (i < 0) continue;
       const before = next[i];
+      const rewritten = !!op.text && op.text !== before.text;
       const after: MemoryEntry = {
         ...before,
         ...(op.text ? { text: op.text } : {}),
@@ -245,7 +293,11 @@ export function applyOps(entries: MemoryEntry[], ops: MemoryOp[], today: string)
         ...(op.expires ? { expires: op.expires } : {}),
         date: today
       };
-      if (op.text && op.text !== before.text) archived.push({ entry: before, reason: 'updated' });
+      // New words take the op's evidence or none: the old evidence was for
+      // the old words, and the archive keeps the two together.
+      if (op.evidence) after.evidence = op.evidence;
+      else if (rewritten) delete after.evidence;
+      if (rewritten) archived.push({ entry: before, reason: 'updated' });
       next[i] = after;
       stats.updated++;
       if (op.repeat) stats.repeats++;
@@ -280,7 +332,7 @@ export function applyOps(entries: MemoryEntry[], ops: MemoryOp[], today: string)
 
 /** Archive lines for replaced or deleted entries. */
 export function archiveLines(archived: TidyOutcome['archived'], today: string): string {
-  return archived.map(({ entry, reason }) => `${entryLine(entry)} | archived ${today}: ${reason.replace(/\|/g, '/')}`).join('\n');
+  return archived.map(({ entry, reason }) => `${entryLine(entry)} | archived ${today}: ${reason.replace(/\|/g, '/')}${entry.evidence ? `\n  why: ${entry.evidence}` : ''}`).join('\n');
 }
 
 // ─── Reading it: the Memory tab (docs/designs/memory-tab-readable.md) ────────
@@ -308,11 +360,16 @@ export function memoryView(text: string): MemoryView {
   const other: string[] = [];
   if (isIndex) {
     const kept = new Set(entries.map((e) => e.id));
+    // An evidence line belongs to the entry right above it, which shows it.
+    let underEntry = false;
     for (const raw of text.split('\n')) {
       const line = raw.trim();
+      const attached = underEntry && EVIDENCE.test(raw);
+      underEntry = false;
+      if (attached) continue;
       if (!line || line.startsWith('#') || line === INDEX_MARKER || INDEX_NOTE.test(line)) continue;
       const m = ENTRY.exec(line);
-      if (m && kept.has(m[1])) continue;
+      if (m && kept.has(m[1])) { underEntry = true; continue; }
       const body = line.replace(/^[-*]\s+/, '').trim();
       if (body) other.push(body);
     }
