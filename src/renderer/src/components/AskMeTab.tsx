@@ -238,7 +238,7 @@ export function AskMeTab() {
       //    is there, and a request that fails to go is sent again later.
       const agents = useStore.getState().agents;
       const raiser = raiserOf(open, task, new Set(agents.map((a) => a.id)));
-      await window.cth.hiveRememberOwnerAnswer({ agentId: raiser, task: task.title, q: asked, a: text }).catch(() => undefined);
+      await window.cth.hiveRememberOwnerAnswer({ agentId: raiser, task: task.title, taskId: task.id, q: asked, a: text }).catch(() => undefined);
       const raiserName = agents.find((a) => a.id === raiser)?.name ?? raiser;
       for (const m of answerMessages({ raiser, raiserName, taskId: task.id, title: task.title, q: asked, a: text, answeredAt })) {
         await window.cth.hiveSend({
