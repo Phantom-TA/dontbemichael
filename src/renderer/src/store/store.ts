@@ -376,8 +376,9 @@ interface State {
   openTaskDetail: (id: string) => void;
   /** Open Edit {name} for a member from outside its panel (a Needs you card's
    *  Change engine, issue #326): its panel opens and Edit with it. */
-  editAgentRequest: { agentId: string; engine: boolean; seq: number } | null;
-  requestEditAgent: (agentId: string, opts?: { engine?: boolean }) => void;
+  editAgentRequest: { agentId: string; engine: boolean; change?: string; seq: number } | null;
+  /** `change` fills "What should change?" (a run comparison's suggestion). */
+  requestEditAgent: (agentId: string, opts?: { engine?: boolean; change?: string }) => void;
   /** Edit opened for the request: it is used once (ship review 2026-10-17). */
   clearEditAgentRequest: () => void;
   /** "Change on Access" (edit-agent-scheduled-jobs.md, SJ3): the member's
@@ -1278,7 +1279,7 @@ export const useStore = create<State>((set, get) => ({
     get().select(agentId);
     // After the select applies, so Keep editing drops the request with it; the
     // panel clears it once it opens Edit (ship review 2026-10-17).
-    afterLeave(() => set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, seq: (s.editAgentRequest?.seq ?? 0) + 1 } })));
+    afterLeave(() => set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, ...(opts?.change ? { change: opts.change } : {}), seq: (s.editAgentRequest?.seq ?? 0) + 1 } })));
   },
   clearEditAgentRequest: () => set({ editAgentRequest: null }),
   schedulesRequest: null,

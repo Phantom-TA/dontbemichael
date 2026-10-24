@@ -80,6 +80,10 @@ moving, and brings you only the decisions that need you.
 - Run now sends a job at once, exactly as its clock would, so you see it work without waiting. A
   job at set times keeps them; a job that runs every few hours counts again from the run.
 - Closing time pauses the office; opening it runs a missed job once, never a backlog.
+- When a job's run goes wrong, say so: "Went wrong" under the job's last run (with a line on what
+  was wrong, if you like). Michael compares it with an earlier run of the same job that went well
+  and suggests a change to the member's work style in Pulse. Review the change opens Edit agent
+  with it typed in; nothing changes until you Apply, and Undo puts it back. For members on Claude.
 
 ### 5. Memory that gets better
 - Each team member keeps a short list of lasting notes: your preferences and corrections, facts it

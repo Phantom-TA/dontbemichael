@@ -51,6 +51,9 @@ export interface JobChangeReviewProps {
   focusKey?: number;
   /** Something typed or shown that leaving would lose. */
   onDraft?: (draft: boolean) => void;
+  /** A change to start the box with (a run comparison's suggestion from
+   *  Pulse). Only fills the box: nothing runs until the owner asks. */
+  initialTyped?: string;
   /** A run or a preview is up: the parent holds its own buttons. */
   onBusy?: (busy: boolean) => void;
   /** False where Apply sends no card for a one-time task (Michael's own job,
@@ -80,7 +83,7 @@ const SUMMARY_SHOWN = 6;
 export function JobChangeReview(p: JobChangeReviewProps) {
   const { t, i18n } = useTranslation();
   const rtl = useRtl();
-  const [typed, setTyped] = useState('');
+  const [typed, setTyped] = useState(p.initialTyped ?? '');
   const [extras, setExtras] = useState<string[]>([]);
   const [state, setState] = useState<State>({ at: p.autoRun ? 'working' : 'idle' });
   const [applying, setApplying] = useState(false);

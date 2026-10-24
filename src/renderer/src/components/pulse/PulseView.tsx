@@ -33,6 +33,7 @@ import { Toggle } from '../triggers/ui';
 import { AgentAvatar } from '../AgentAvatar';
 import { InfoTip } from '../InfoTip';
 import { PixelButton } from '../PixelButton';
+import { RunSuggestions } from './RunSuggestions';
 import { Icon, type IconName } from '../Icon';
 import { useDialog } from '@/shell/useDialog';
 import { godNameNow } from '@/i18n';
@@ -583,6 +584,8 @@ export function PulseView() {
 
         {/* Before any advice: one short line, the why behind the (i) (1D). */}
         <Section title={t('pulse.recommendations')} tip={noAdvice && view.adviceFrom ? t('pulse.adviceStarts', { day: fmtDay(view.adviceFrom), since: fmtDay(view.liveSince ?? Date.now()) }) : t('pulse.recommendationsTip')}>
+          {/* Run comparisons the owner asked for with "Went wrong" (runCompare.ts). */}
+          <RunSuggestions />
           {/* Before advice: what the advice rules see so far (owner, 2026-10-19),
               as insight cards under a lit header (design A): the Early look pill,
               the bold line and the countdown to advice; one card per pattern,

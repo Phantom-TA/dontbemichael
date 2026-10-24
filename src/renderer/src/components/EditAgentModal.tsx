@@ -45,6 +45,8 @@ export interface EditAgentModalProps {
   docked?: boolean;
   /** Open with the engine unfolded (Change engine on a not reporting card). */
   engineOpen?: boolean;
+  /** Open with "What should change?" filled in (a run comparison from Pulse). */
+  initialChange?: string;
 }
 
 /**
@@ -60,7 +62,7 @@ export interface EditAgentModalProps {
  * lays over the wide panel in two columns, and leaving with unsaved changes,
  * by any way out, asks first.
  */
-export function EditAgentModal({ agent, onClose, docked = true, engineOpen: openEngine = false }: EditAgentModalProps) {
+export function EditAgentModal({ agent, onClose, docked = true, engineOpen: openEngine = false, initialChange }: EditAgentModalProps) {
   const { t, i18n } = useTranslation();
   const researchName = useResearchName();
   const updateAgent = useStore((s) => s.updateAgent);
@@ -380,6 +382,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       onDraft={setDraft}
       onBusy={(b) => { setChanging(b); if (b) setStatus(null); }}
       sendsTask={!agent.isGod}
+      initialTyped={initialChange}
     />
   );
   // In its parts, folded to the first (H4), with Undo and the last change
