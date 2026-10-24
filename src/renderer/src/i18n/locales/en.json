@@ -3131,5 +3131,27 @@
       "writing": "Writing {{name}}'s job"
     },
     "soFar": "So far"
+  },
+  "runCompare": {
+    "cardsLabel": "{{godName}}'s suggested job changes",
+    "title": "{{godName}} suggests a change to {{name}}'s job \"{{job}}\"",
+    "titleNoJob": "{{godName}} suggests a change to {{name}}'s job",
+    "review": "Review the change",
+    "lastRun": "Last run {{when}}",
+    "wentWrong": "Went wrong",
+    "tryAgain": "Try again",
+    "claudeOnly": "Comparing runs works for members on Claude for now.",
+    "notePlaceholder": "What was wrong? (optional)",
+    "noteLabel": "What was wrong",
+    "compare": "Ask {{godName}}",
+    "cancel": "Cancel",
+    "working": "{{godName}} is comparing it with an earlier run that went well.",
+    "ready": "{{godName}}'s suggestion is in Pulse.",
+    "putOff": "You put this suggestion off.",
+    "held": "{{godName}} was told instead: the suggestion read like an outside message.",
+    "failed": "Couldn't compare these runs.",
+    "noGoodRun": "No earlier run of this job went well to compare with.",
+    "noTranscript": "This run's conversation is no longer on this computer.",
+    "noDifference": "The two runs show nothing to change in the job."
   }
 }

@@ -1,4 +1,5 @@
 import type { Period } from '../shared/teamPerformance';
+import type { JobRun, RunSuggestion } from '../shared/runCompare';
 import type { HeldRow } from '../shared/heldRecord';
 import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
@@ -1477,6 +1478,16 @@ const api = {
   pulseUndo: (appliedId: number): Promise<{ ok: true; kind: 'schedule' } | { ok: true; kind: 'model'; agentId: string; to: string | null } | { ok: false; error: 'stale' | 'unavailable' }> =>
     ipcRenderer.invoke('pulse:undo', appliedId),
   pulseDismiss: (id: string): Promise<boolean> => ipcRenderer.invoke('pulse:dismiss', id),
+  /** Each of a member's jobs with its last finished run and any "Went wrong" on it (shared/runCompare.ts). */
+  runCompareLastRuns: (agentId: string): Promise<Array<{ run: JobRun; suggestion: RunSuggestion | null }>> =>
+    ipcRenderer.invoke('runCompare:lastRuns', agentId),
+  /** The owner's "Went wrong": compares the run with an earlier good one; resolves when done. */
+  runCompareWentWrong: (p: { runId: number; agentId: string; note?: string; workStyle: string; previousWorkStyle?: string; changes?: Array<{ text: string; at: string }> }): Promise<RunSuggestion | null> =>
+    ipcRenderer.invoke('runCompare:wentWrong', p),
+  /** Suggestions ready for Pulse. */
+  runCompareSuggestions: (): Promise<RunSuggestion[]> => ipcRenderer.invoke('runCompare:suggestions'),
+  /** Not now on a suggestion. */
+  runCompareDismiss: (runId: number): Promise<boolean> => ipcRenderer.invoke('runCompare:dismiss', runId),
   /** Whether Pulse's points are flowing: the last batch, failed writes, refused hook frames. */
   telemetryHealth: (): Promise<PulseHealthView> => ipcRenderer.invoke('telemetry:health'),
   /** Fires when new telemetry was folded, so an open Pulse view refreshes. */

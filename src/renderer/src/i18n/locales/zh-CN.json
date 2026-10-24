@@ -3131,5 +3131,27 @@
       "writing": "正在写 {{name}} 的工作"
     },
     "soFar": "目前"
+  },
+  "runCompare": {
+    "cardsLabel": "{{godName}} 建议的工作更改",
+    "title": "{{godName}} 建议更改 {{name}} 的工作“{{job}}”",
+    "titleNoJob": "{{godName}} 建议更改 {{name}} 的工作",
+    "review": "查看更改",
+    "lastRun": "上次运行 {{when}}",
+    "wentWrong": "出了问题",
+    "tryAgain": "重试",
+    "claudeOnly": "目前只有使用 Claude 的成员可以比较运行。",
+    "notePlaceholder": "哪里出了问题？（可选）",
+    "noteLabel": "哪里出了问题",
+    "compare": "交给 {{godName}}",
+    "cancel": "取消",
+    "working": "{{godName}} 正在把它与之前一次顺利的运行进行比较。",
+    "ready": "{{godName}} 的建议已在 Pulse 中。",
+    "putOff": "你推迟了这条建议。",
+    "held": "已改为告知 {{godName}}：这条建议看起来像来自外部消息。",
+    "failed": "无法比较这两次运行。",
+    "noGoodRun": "这项工作之前没有可供比较的顺利运行。",
+    "noTranscript": "这次运行的对话已不在这台电脑上。",
+    "noDifference": "两次运行没有显示需要更改工作的地方。"
   }
 }

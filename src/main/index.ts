@@ -118,6 +118,8 @@ import { initCompletionWatcher } from './realtimeCompletionWatcher';
 import type { TaskCard, InboxMessage } from './realtimeCompletionWatcher';
 import { TelemetryCollector } from './telemetry';
 import { CostLedgerTotals } from './costLifetime';
+import { RUN_COMPARE_MODEL, RUN_COMPARE_TIMEOUT_MS, RunCompare } from './runCompare';
+import { runHiddenModel } from './hiddenModel';
 import { CostLedgerStore } from './costLedger';
 import { analytics, isRendererMessageSurface } from './analytics';
 import type { SpawnFailReason } from './analytics';
@@ -6961,6 +6963,60 @@ ipcMain.handle('pulse:modelApplied', (_evt, id: unknown, agentId: unknown, from:
   typeof id === 'string' && typeof agentId === 'string' && typeof to === 'string' ? pulse.modelApplied(id, agentId, typeof from === 'string' ? from : null, to) : 0);
 ipcMain.handle('pulse:undo', (_evt, appliedId: unknown) => (typeof appliedId === 'number' ? pulse.undo(appliedId) : { ok: false, error: 'stale' }));
 ipcMain.handle('pulse:dismiss', (_evt, id: unknown) => (typeof id === 'string' ? pulse.dismiss(id) : false));
+
+// Compare runs we already have (eng review 2026-10-24, src/shared/runCompare.ts):
+// the owner's "Went wrong" on a job's last run, one isolated hidden call on
+// Michael's engine, a suggestion Pulse shows and Edit agent applies.
+const runCompare = new RunCompare({
+  db: () => persist.database(),
+  office: pulseOffice,
+  getKv: (key) => persist.getKv(key),
+  setKv: (key, value) => persist.setKv(key, value),
+  // The private record only: hive/log.jsonl is writable by members' shells.
+  sessionsOf: (agentId) => [...(idsFromRecord(hive.privateSessionsText()).get(agentId) ?? [])],
+  projectsRoot: claudeProjectsRoot,
+  runModel: (prompt) => {
+    const cfg = readConfig();
+    return runHiddenModel(prompt, {
+      engine: cfg.godProvider ?? 'claude',
+      engineModel: cfg.godModel,
+      model: RUN_COMPARE_MODEL,
+      cwd: cfg.harnessHome ?? app.getPath('home'),
+      command: cfg.defaultCommand ?? 'claude',
+      noTools: true,
+      // The runs hold customers' text: only the owner's user settings, no
+      // hooks, no transcript, and nothing in Claude Code's history (D4).
+      settingSources: 'user',
+      settingsJson: JSON.stringify({ disableAllHooks: true }),
+      dropTranscript: true,
+      isolateConfig: true,
+      thinking: false,
+      env: memory.env(),
+      timeoutMs: RUN_COMPARE_TIMEOUT_MS
+    });
+  },
+  memberName: (agentId) => { try { return hive.registry().agents[agentId]?.name?.trim() || agentId; } catch { return agentId; } },
+  mission: (missionId) => { const m = (readConfig().missions ?? []).find((x) => x.id === missionId); return m ? { label: m.label, focus: m.focus } : null; },
+  tellMichael: (subject, body) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body }, 'system'); },
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+});
+ipcMain.handle('runCompare:lastRuns', (_evt, agentId: unknown) => (typeof agentId === 'string' ? runCompare.lastRuns(agentId) : []));
+ipcMain.handle('runCompare:wentWrong', async (_evt, p: unknown) => {
+  const o = (p ?? {}) as { runId?: unknown; agentId?: unknown; note?: unknown; workStyle?: unknown; previousWorkStyle?: unknown; changes?: unknown };
+  if (typeof o.runId !== 'number' || typeof o.agentId !== 'string') return null;
+  const changes = Array.isArray(o.changes)
+    ? o.changes.flatMap((c) => (c && typeof c === 'object' && typeof (c as { text?: unknown }).text === 'string' && typeof (c as { at?: unknown }).at === 'string'
+      ? [{ text: String((c as { text: string }).text).slice(0, 1500), at: String((c as { at: string }).at).slice(0, 40) }] : [])).slice(0, 40)
+    : [];
+  return runCompare.wentWrong({
+    runId: o.runId, agentId: o.agentId, note: o.note,
+    workStyle: typeof o.workStyle === 'string' ? o.workStyle.slice(0, 20_000) : '',
+    previousWorkStyle: typeof o.previousWorkStyle === 'string' ? o.previousWorkStyle.slice(0, 20_000) : undefined,
+    changes
+  });
+});
+ipcMain.handle('runCompare:suggestions', () => runCompare.suggestions());
+ipcMain.handle('runCompare:dismiss', (_evt, runId: unknown) => (typeof runId === 'number' ? runCompare.dismiss(runId) : false));
 ipcMain.handle('missions:delete', (_evt, id: unknown): MissionOpResult =>
   typeof id === 'string' ? applyMissions((list) => deleteMission(list, id)) : { ok: false, error: 'invalid id' });
 ipcMain.handle('missions:setEnabled', (_evt, id: unknown, on: unknown): MissionOpResult =>
