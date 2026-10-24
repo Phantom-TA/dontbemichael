@@ -227,5 +227,5 @@ test('Change engine\'s Edit request waits with the select and is used once', () 
   const store = read('src/renderer/src/store/store.ts');
   assert.match(store, /requestEditAgent: \(agentId, opts\) => \{\n\s*get\(\)\.select\(agentId\);\n(\s*\/\/[^\n]*\n)*\s*afterLeave\(\(\) => set\(\(s\) => \(\{ editAgentRequest: \{ agentId, engine: !!opts\?\.engine/);
   assert.match(store, /clearEditAgentRequest: \(\) => set\(\{ editAgentRequest: null \}\),/);
-  assert.match(read('src/renderer/src/components/AgentDetailPanel.tsx'), /setEditEngine\(editRequest\.engine\); setEditOpen\(true\); clearEditRequest\(\); \}/);
+  assert.match(read('src/renderer/src/components/AgentDetailPanel.tsx'), /setEditEngine\(editRequest\.engine\); setEditChange\(editRequest\.change\); setEditOpen\(true\); clearEditRequest\(\); \}/);
 });

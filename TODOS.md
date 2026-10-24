@@ -73,6 +73,18 @@
 
 ## Team performance (from the CEO review of docs/designs/team-performance.md, 2026-10-15)
 
+### Compare runs for members on other engines
+
+**What:** Read Codex (and other engines') session files for a run's window, so "Went wrong" can compare their runs too.
+
+**Why:** Run comparison (src/main/runCompare.ts) reads only Claude Code's conversations, so members on other engines get no suggestions; the jobs list shows an info icon for them.
+
+**Context:** From the eng review of "Compare runs we already have", 2026-10-24 (D8). The slicer finds a member's sessions through the private session record and reads `<claude projects>/<folder>/<session>.jsonl`; `pulseBackfill.ts` has the same limit. Each engine needs its own folder and line format, and its own `runEntry` reading.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P3
+**Depends on:** Run comparison (this feature)
+
 ### Give Fable a tier and a price
 
 **What:** Add Fable's tier (top, middle or small) to `modelCatalog.json` and its price rows to `pricing.ts`, from Anthropic's published pricing.
