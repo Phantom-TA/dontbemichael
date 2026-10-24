@@ -46,6 +46,7 @@ test('a note waits for its member until the tidy-up files it, per office', (t) =
   // Value: protects=the owner's notes reach the right member once; fails_when=pending ignores the office or member, or a filed note comes back; why_new=memory evidence D9; seam=none; no_claim=the tidy-up's use of them (memory-tidy tests)
   const { persist, store, setOffice } = setup(t);
   assert.equal(persist.database().prepare("SELECT name FROM sqlite_master WHERE name = 'owner_notes'").get()?.name, 'owner_notes');
+  assert.equal(persist.database().prepare("SELECT name FROM sqlite_master WHERE name = 'cost_ledger'").get()?.name, 'cost_ledger', 'migration 5 still runs first');
   assert.equal(store.add('oscar', '- From the owner (2026-10-23): pay on time.\n', 'you decided proposal p_1 on Ask me, 2026-10-23'), true);
   assert.equal(store.add('pam', 'Write short emails', 'you told Michael in the dock, 2026-10-23'), true);
   const [n] = store.pending('oscar');
