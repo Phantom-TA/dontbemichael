@@ -679,9 +679,11 @@ const api = {
   hireCheckDistinct: (
     job: { name: string; title: string; routing: string; workStyle?: string; mailbox?: string },
     team: Array<{ name: string; title: string; routing: string; workStyle?: string; mailbox?: string }>,
-    requestId?: string
+    requestId?: string,
+    /** 'change' from Edit agent: handoffs between them are not an overlap. */
+    mode?: 'hire' | 'change'
   ): Promise<{ distinct: boolean; overlapsWith: string[]; why: string; suggestion?: string; source: 'ai' | 'rules' }> =>
-    ipcRenderer.invoke('hire:checkDistinct', { job, team, requestId }),
+    ipcRenderer.invoke('hire:checkDistinct', { job, team, requestId, mode }),
   /** Stop a check the owner moved past (another job picked, or back a step). */
   hireCheckStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('hire:checkStop', requestId),
   /** Rewrite a work style: the agent's instructions as the owner's plain
@@ -703,10 +705,23 @@ const api = {
     current: { instructions: string; handles: string };
     changes: string[];
     answer?: { question: string; answer: string };
+    /** Every answer the owner gave this change, oldest first (a clash and
+     *  where tracked numbers live). */
+    answers?: Array<{ question: string; answer: string }>;
     lead?: boolean;
+    /** How the owner says the work splits with the teammates the overlap
+     *  check named (`teammates`), and the member's live handoffs that a change
+     *  may take back (overlap split plan). */
+    explanation?: string;
+    teammates?: Array<{ id: string; name: string; title?: string }>;
+    handoffList?: Array<{ toId: string; scope: string; line: string; toTitle?: string }>;
+    /** Edit agent only: ask where tracked numbers live when the job doesn't say. */
+    askHome?: boolean;
   }): Promise<
-    | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string }
+    | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string;
+      handoffs?: Array<{ toId: string; scope: string }>; drops?: Array<{ toId: string; scope: string }> }
     | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> }
+    | { kind: 'home'; question: string }
     | { kind: 'error'; reason: 'failed' | 'cancelled' }
   > => ipcRenderer.invoke('workStyle:convert', { ...req, to: 'revise' }),
   /** Where a rewrite is (starting, reading, writing) and what it has written

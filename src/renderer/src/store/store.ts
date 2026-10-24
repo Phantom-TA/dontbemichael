@@ -22,7 +22,7 @@ import type { ScheduledMission } from '@shared/missions';
 import { refocusAfterRemoval, focusOnLoad, restoreFocus } from './focusMode';
 import { chooseRosterSource } from './rosterSource';
 import { renamePatches, swapName } from '@shared/hireTemplates';
-import type { JobChangeEntry, JobVersion, PlainWords } from '@shared/jobChange';
+import type { Handoff, JobChangeEntry, JobVersion, PlainWords } from '@shared/jobChange';
 import { canOpen } from '../shell/closingFloor';
 import type { CenterClaim } from '../shell/wideCenter';
 import { closeTab, openTab, type FileTab, type FixedView } from './fileTabs';
@@ -136,6 +136,10 @@ export interface Agent {
   jobPrevious?: JobVersion;
   /** The owner's applied change requests, oldest first (eng D7). */
   jobChanges?: JobChangeEntry[];
+  /** Work this member sends on to a teammate, as the owner explained it
+   *  (shared/jobChange.ts, overlap split plan): live while its line is in the
+   *  role line and the teammate is on the team. */
+  handoffs?: Handoff[];
   /** The office pack card this agent's job was copied from when it was hired,
    *  `<businessType>/<cardId>` (hire redesign E2): its Profile shows that card's
    *  does, asks first and connections. Setup's pack members need none, since

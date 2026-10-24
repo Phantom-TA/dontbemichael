@@ -725,7 +725,9 @@
     "deleteInfo": "Stops {{name}} now and takes them off the team for good. Their schedules pause and your office manager follows up on their cards. This can't be undone.",
     "deleteConfirm": "Delete {{name}} for good? They stop now and leave the team. This can't be undone.",
     "deleteConfirmSchedules": "Delete {{name}} for good? They stop now and leave the team, and their {{count}} schedule pauses. This can't be undone.",
-    "deleteConfirmSchedulesPlural": "Delete {{name}} for good? They stop now and leave the team, and their {{count}} schedules pause. This can't be undone."
+    "deleteConfirmSchedulesPlural": "Delete {{name}} for good? They stop now and leave the team, and their {{count}} schedules pause. This can't be undone.",
+    "getsFrom": "Gets from {{name}}:",
+    "getsFromInfo": "{{from}} sends these to {{name}} instead of doing them. Set in {{from}}'s job; change it there."
   },
   "onboarding": {
     "damagedConfig": "Your saved settings could not be read, so setup starts again. The old file is kept at",
@@ -3131,7 +3133,24 @@
       "reading": "Reading what you wrote",
       "writing": "Writing {{name}}'s job"
     },
-    "soFar": "So far"
+    "soFar": "So far",
+    "explain": "Explain how they split it",
+    "explainTitle": "How do {{names}} split it?",
+    "explainPlaceholder": "Say who does what, for example: {{other}} answers technical questions; {{who}} passes them on and tracks them.",
+    "back": "Back",
+    "goesToGroup": "Goes to a teammate",
+    "goesTo": "Goes to {{name}}: {{scope}}",
+    "noLongerGoesTo": "No longer goes to {{name}}: {{scope}}",
+    "noSplit_one": "No split was written; {{names}} may still get this work.",
+    "noSplit_other": "No split was written; {{names}} may still get this work.",
+    "noAccess": "{{name}} can't use {{tool}} yet.",
+    "openAccess": "Open Access",
+    "homeFolder": "A sheet in {{name}}'s folder",
+    "homeTools": "Connected tools",
+    "homeOff": "Off",
+    "homeOffLabel": "{{tool}}, switched off",
+    "homeShowAll_one": "Show all {{count}} tool",
+    "homeShowAll_other": "Show all {{count}} tools"
   },
   "runCompare": {
     "cardsLabel": "{{godName}}'s suggested job changes",

@@ -8,6 +8,7 @@ import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useRtl } from '@/i18n/useDirection';
 import { JobParts, fieldLabel, hint } from './fieldText';
 import { Spinner } from './GetMichaelReady';
+import { homeRows, type HomeChoice } from '@shared/jobChange';
 
 export type ReviseResult = Awaited<ReturnType<Window['cth']['workStyleRevise']>>;
 export type ReviseOk = Extract<ReviseResult, { kind: 'ok' }>;
@@ -15,12 +16,20 @@ type Question = Extract<ReviseResult, { kind: 'question' }>;
 type Progress = Parameters<Parameters<Window['cth']['onWorkStyleProgress']>[1]>[0];
 type Answer = { question: string; answer: string };
 
+/** A teammate the overlap check named, by id for the handoffs. */
+export interface Teammate { id: string; name: string; title?: string }
+
+export type { HomeChoice };
+
 /** What a run is given: the typed change, any change added on the way (Leave
- *  it with Kelly), the owner's answer to a question, and its stop id. */
+ *  it with Kelly), the owner's answers so far, how the work splits with the
+ *  teammates the check named, and its stop id. */
 export interface ReviseRun {
   typed: string;
   extras: string[];
-  answer?: Answer;
+  answers: Answer[];
+  explanation?: string;
+  teammates?: Teammate[];
   requestId: string;
 }
 
@@ -35,8 +44,15 @@ export interface JobChangeReviewProps {
   previewTitle?: string;
   /** The rewrite: main's revise call, or the pack card's own. */
   run: (r: ReviseRun) => Promise<ReviseResult>;
-  /** Only when the duties changed (eng D6): who already does the new work. */
-  checkOverlap?: (ok: ReviseOk) => Promise<{ names: string[]; why: string } | null>;
+  /** Only when the duties changed (eng D6): who already does the new work,
+   *  the check's split suggestion, and those teammates by id. */
+  checkOverlap?: (ok: ReviseOk) => Promise<{ names: string[]; why: string; suggestion?: string; teammates?: Teammate[] } | null>;
+  /** A teammate's name now, for the preview's handoff lines. */
+  nameOf?: (id: string) => string | undefined;
+  /** Where tracked numbers can live, when a run asks (Edit agent only). */
+  homeChoices?: () => HomeChoice[];
+  /** Opens the member's Access tab, from the preview's access note. */
+  onOpenAccess?: () => void;
   /** The job the run starts from, compared again at Apply (A3). */
   base?: () => string;
   /** Saves the job: 'moved' when it changed since `startedFrom`. */
@@ -66,7 +82,9 @@ type State =
   | { at: 'working'; progress?: Progress }
   | { at: 'ok'; ok: ReviseOk; from: string }
   | { at: 'question'; q: Question }
-  | { at: 'overlap'; names: string[]; why: string }
+  | { at: 'home'; question: string }
+  | { at: 'overlap'; names: string[]; why: string; suggestion?: string }
+  | { at: 'explain'; names: string[]; why: string; suggestion?: string }
   | { at: 'error' }
   | { at: 'moved' };
 
@@ -85,6 +103,10 @@ export function JobChangeReview(p: JobChangeReviewProps) {
   const rtl = useRtl();
   const [typed, setTyped] = useState(p.initialTyped ?? '');
   const [extras, setExtras] = useState<string[]>([]);
+  // How the owner says the work splits (design D3: asked in the overlap card).
+  // `explainText` is the box; `explanation` is what the last run was given.
+  const [explainText, setExplainText] = useState('');
+  const [explanation, setExplanation] = useState('');
   const [state, setState] = useState<State>({ at: p.autoRun ? 'working' : 'idle' });
   const [applying, setApplying] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -94,7 +116,18 @@ export function JobChangeReview(p: JobChangeReviewProps) {
   const runSeq = useRef(0);
   const box = useRef<HTMLTextAreaElement>(null);
   const heading = useRef<HTMLDivElement>(null);
-  const answerRef = useRef<Answer | undefined>(undefined);
+  const answersRef = useRef<Answer[]>([]);
+  /** Every teammate the overlap check named during this change (eng S5). */
+  const named = useRef(new Map<string, Teammate>());
+  /** Where the owner said tracked numbers live, for the access note. */
+  const homePick = useRef<HomeChoice | undefined>(undefined);
+  /** Back to a fresh change: nothing explained, answered or named. */
+  const resetSplit = (): void => {
+    setExplainText('');
+    setExplanation('');
+    named.current.clear();
+    homePick.current = undefined;
+  };
 
   const stopRun = (): void => {
     const id = runId.current;
@@ -104,13 +137,14 @@ export function JobChangeReview(p: JobChangeReviewProps) {
   // Closing the dialog mid rewrite stops it (eng D9).
   useEffect(() => () => stopRun(), []);
 
-  const start = async (more: string[] = extras, answer?: Answer): Promise<void> => {
+  const start = async (more: string[] = extras, answers: Answer[] = [], expl: string = explanation): Promise<void> => {
     if (!p.autoRun && !typed.trim()) return;
     stopRun();
     const seq = ++runSeq.current;
     const requestId = `revise-${crypto.randomUUID()}`;
     runId.current = requestId;
-    answerRef.current = answer;
+    answersRef.current = answers;
+    if (!answers.length) homePick.current = undefined;
     setFailed(false);
     setState({ at: 'working' });
     // Real steps and the words as they are written, from main (owner,
@@ -120,36 +154,45 @@ export function JobChangeReview(p: JobChangeReviewProps) {
       setState((s) => (s.at === 'working' ? { at: 'working', progress } : s));
     });
     const from = p.base?.() ?? '';
-    const res = await p.run({ typed: typed.trim(), extras: more, answer, requestId }).catch((): ReviseResult => ({ kind: 'error', reason: 'failed' }));
+    const res = await p.run({
+      typed: typed.trim(), extras: more, answers, requestId,
+      ...(expl ? { explanation: expl, teammates: [...named.current.values()] } : {})
+    }).catch((): ReviseResult => ({ kind: 'error', reason: 'failed' }));
     off?.();
     if (runId.current !== requestId) return; // stopped, or a newer run
     runId.current = null;
     if (res.kind === 'error') { setState(res.reason === 'cancelled' ? { at: 'idle' } : { at: 'error' }); return; }
     if (res.kind === 'question') { setState({ at: 'question', q: res }); return; }
+    if (res.kind === 'home') { setState(p.homeChoices ? { at: 'home', question: res.question } : { at: 'error' }); return; }
     if (res.handles && p.checkOverlap) {
       const overlap = await p.checkOverlap(res).catch(() => null);
       if (runSeq.current !== seq) return; // stopped or replaced during the check
-      if (overlap?.names.length) { setState({ at: 'overlap', names: overlap.names, why: overlap.why }); return; }
+      if (overlap?.names.length) {
+        for (const m of overlap.teammates ?? []) named.current.set(m.id, m);
+        setState({ at: 'overlap', names: overlap.names, why: overlap.why, suggestion: overlap.suggestion });
+        return;
+      }
     }
     setState({ at: 'ok', ok: res, from });
   };
   useEffect(() => { if (p.autoRun) void start([]); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stop = (): void => { runSeq.current++; stopRun(); setState({ at: 'idle' }); if (p.autoRun) p.onCancel?.(); };
-  const cancel = (): void => { runSeq.current++; setState({ at: 'idle' }); setExtras([]); if (p.autoRun) p.onCancel?.(); };
+  const cancel = (): void => { runSeq.current++; setState({ at: 'idle' }); setExtras([]); resetSplit(); if (p.autoRun) p.onCancel?.(); };
   const doApply = async (ok: ReviseOk, from: string): Promise<void> => {
     setApplying(true);
     setFailed(false);
-    // The owner's answer to a clash goes with the change, so a pack update
-    // that replays the list never asks the same clash again.
-    const answered = answerRef.current?.answer.trim();
-    const change = [typed.trim(), ...extras, ...(answered ? [`(${answered})`] : [])].filter(Boolean).join(' ');
+    // The owner's answers and split go with the change, so a pack update that
+    // replays the list never asks the same thing again.
+    const answered = answersRef.current.map((a) => a.answer.trim()).filter(Boolean).map((a) => `(${a})`);
+    const change = [typed.trim(), ...extras, explanation.trim(), ...answered].filter(Boolean).join(' ');
     const r = await p.apply(ok, change, from).catch(() => 'failed' as const);
     setApplying(false);
     if (r === 'moved') { setState({ at: 'moved' }); return; }
     if (r === 'failed') { setFailed(true); return; }
     setTyped('');
     setExtras([]);
+    resetSplit();
     setState({ at: 'idle' });
   };
 
@@ -178,31 +221,86 @@ export function JobChangeReview(p: JobChangeReviewProps) {
     <div ref={heading} tabIndex={-1} style={{ ...headStyle, color: tone === 'coral' ? 'var(--cth-coral-text)' : 'var(--cth-ink)' }}>{text}</div>
   );
 
+  // The language's own list ("Pam, Erin and Dwight").
+  const listOf = (items: string[]): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(items); } catch { return items.join(', '); } };
+  const splitNames = listOf([...named.current.values()].map((m) => m.name));
+
   let panel: ReactNode = null;
   if (state.at === 'working') {
     panel = <Working who={p.who} progress={state.progress} heading={head(t('jobChange.working', { name: p.who }))} onStop={stop} />;
   } else if (state.at === 'ok') {
+    // A split explained but none written (design D6), and a picked tool the
+    // member can't use yet (eng re-run D1): white notes above Apply.
+    const noSplit = !!explanation && !state.ok.handoffs?.length && named.current.size > 0;
+    const pick = homePick.current;
     panel = <Preview ok={state.ok} who={p.who} lead={p.lead} sendsTask={p.sendsTask ?? true} title={p.previewTitle ?? t('jobChange.previewTitle')} heading={heading}
-      applyLabel={p.applyLabel} applying={applying} failed={failed} onCancel={cancel} onApply={() => { void doApply(state.ok, state.from); }} />;
+      applyLabel={p.applyLabel} applying={applying} failed={failed} onCancel={cancel} onApply={() => { void doApply(state.ok, state.from); }}
+      nameOf={(id) => p.nameOf?.(id) ?? named.current.get(id)?.name}
+      noSplit={noSplit ? t('jobChange.noSplit', { names: splitNames, count: named.current.size }) : undefined}
+      noAccess={pick?.noAccess && pick.tool ? t('jobChange.noAccess', { name: p.who, tool: pick.tool }) : undefined}
+      onOpenAccess={p.onOpenAccess} />;
   } else if (state.at === 'question') {
     panel = <Clash q={state.q} who={p.who} heading={heading} onCancel={cancel}
-      onAnswer={(answer) => { void start(extras, { question: state.q.question, answer }); }} />;
+      onAnswer={(answer) => { void start(extras, [...answersRef.current, { question: state.q.question, answer }]); }} />;
+  } else if (state.at === 'home') {
+    panel = <Home question={state.question} choices={p.homeChoices?.() ?? []} heading={heading} onCancel={cancel}
+      onAnswer={(choice) => { homePick.current = choice; void start(extras, [...answersRef.current, { question: state.question, answer: choice.label }]); }} />;
   } else if (state.at === 'overlap') {
-    // The language's own list ("Pam, Erin and Dwight") and the verb agreeing
-    // with how many (owner, 2026-10-23: "Pam and Erin already does").
-    const names = ((): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(state.names); } catch { return state.names.join(', '); } })();
+    // The verb agrees with how many (owner, 2026-10-23: "Pam and Erin already does").
+    const names = listOf(state.names);
     const count = state.names.length;
+    const { why, suggestion } = state;
+    // Explain is the main way out: most overlaps are two members who hand
+    // work to each other (design D2). Edit my change is a quiet link.
     panel = (
       <div role="alert" style={panelStyle}>
         {head(t('jobChange.overlapTitle', { names, count }))}
         {state.why && <span style={bodyStyle}>{state.why}</span>}
-        <div style={rowEnd}>
-          <PixelButton variant="secondary" size="sm" onClick={() => { setExtras([]); setState({ at: 'idle' }); }}>{t('jobChange.editMine')}</PixelButton>
-          <PixelButton variant="primary" size="sm" onClick={() => {
-            const more = [...extras, t('jobChange.leaveWithChange', { names, count })];
-            setExtras(more);
-            void start(more, answerRef.current);
-          }}>{t('jobChange.leaveWith', { names })}</PixelButton>
+        <div style={{ ...rowEnd, justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 8 }}>
+          <button type="button" onClick={() => { setExtras([]); resetSplit(); setState({ at: 'idle' }); }} style={{ ...linkStyle, alignSelf: 'center' }}>{t('jobChange.editMine')}</button>
+          <div style={{ ...rowEnd, flexWrap: 'wrap', marginInlineStart: 'auto' }}>
+            <PixelButton variant="secondary" size="sm" onClick={() => {
+              const more = [...extras, t('jobChange.leaveWithChange', { names, count })];
+              setExtras(more);
+              void start(more, answersRef.current);
+            }}>{t('jobChange.leaveWith', { names })}</PixelButton>
+            <PixelButton variant="primary" size="sm" onClick={() => {
+              setExplainText((v) => v || explanation || suggestion || '');
+              setState({ at: 'explain', names: state.names, why, suggestion });
+            }}>{t('jobChange.explain')}</PixelButton>
+          </div>
+        </div>
+      </div>
+    );
+  } else if (state.at === 'explain') {
+    // In the card, with the check's reason still in view (design D3); not an
+    // alert, so a screen reader doesn't read a text box out as a warning.
+    const back = { at: 'overlap' as const, names: state.names, why: state.why, suggestion: state.suggestion };
+    const see = (): void => {
+      const text = explainText.trim();
+      if (!text) return;
+      setExplanation(text);
+      void start(extras, answersRef.current, text);
+    };
+    const title = t('jobChange.explainTitle', { names: listOf([p.who, ...state.names]) });
+    panel = (
+      <div style={panelStyle}>
+        {head(title)}
+        {state.why && <span style={noteStyle}>{state.why}</span>}
+        <textarea
+          value={explainText}
+          onChange={(e) => setExplainText(e.target.value)}
+          onKeyDown={(e) => { if (isComposingKey(e)) return; if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); see(); } }}
+          placeholder={t('jobChange.explainPlaceholder', { who: p.who, other: listOf(state.names) })}
+          aria-label={title}
+          rows={3}
+          className="cth-input"
+          dir={rtl ? 'auto' : undefined}
+          style={{ width: '100%', minHeight: 74, padding: '7px 10px', background: 'var(--cth-card)', border: 'none', outline: 'none', borderRadius: 'var(--cth-r-md)', boxSizing: 'border-box', fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink)', resize: 'vertical' }}
+        />
+        <div style={{ ...rowEnd, justifyContent: 'space-between' }}>
+          <button type="button" onClick={() => setState(back)} style={{ ...linkStyle, alignSelf: 'center' }}>{t('jobChange.back')}</button>
+          <PixelButton variant="primary" size="sm" onClick={see} disabled={!explainText.trim()}>{t('jobChange.see')}</PixelButton>
         </div>
       </div>
     );
@@ -213,7 +311,7 @@ export function JobChangeReview(p: JobChangeReviewProps) {
         <span style={noteStyle}>{t(p.autoRun ? 'jobChange.errorNoteCard' : 'jobChange.errorNote')}</span>
         <div style={rowEnd}>
           <PixelButton variant="secondary" size="sm" onClick={cancel}>{t('jobChange.cancel')}</PixelButton>
-          <PixelButton variant="primary" size="sm" onClick={() => { void start(extras, answerRef.current); }}>{t('jobChange.tryAgain')}</PixelButton>
+          <PixelButton variant="primary" size="sm" onClick={() => { void start(extras, answersRef.current); }}>{t('jobChange.tryAgain')}</PixelButton>
         </div>
       </div>
     );
@@ -225,7 +323,7 @@ export function JobChangeReview(p: JobChangeReviewProps) {
         {!p.autoRun && <span style={{ ...bodyStyle, padding: '8px 10px', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card)' }}>{typed}</span>}
         <div style={rowEnd}>
           <PixelButton variant="secondary" size="sm" onClick={cancel}>{t('jobChange.cancel')}</PixelButton>
-          <PixelButton variant="primary" size="sm" onClick={() => { void start(extras, answerRef.current); }}>{t('jobChange.seeAgain')}</PixelButton>
+          <PixelButton variant="primary" size="sm" onClick={() => { void start(extras, answersRef.current); }}>{t('jobChange.seeAgain')}</PixelButton>
         </div>
       </div>
     );
@@ -309,9 +407,10 @@ function Working({ who, progress, heading, onStop }: { who: string; progress?: P
 }
 
 /** The new job: what changes, the new "What X handles", the whole job folded. */
-function Preview({ ok, who, lead, sendsTask, title, heading, applyLabel, applying, failed, onCancel, onApply }: {
+function Preview({ ok, who, lead, sendsTask, title, heading, applyLabel, applying, failed, onCancel, onApply, nameOf, noSplit, noAccess, onOpenAccess }: {
   ok: ReviseOk; who: string; lead?: boolean; sendsTask: boolean; title: string; heading: React.RefObject<HTMLDivElement>;
   applyLabel: string; applying: boolean; failed: boolean; onCancel: () => void; onApply: () => void;
+  nameOf?: (id: string) => string | undefined; noSplit?: string; noAccess?: string; onOpenAccess?: () => void;
 }) {
   const { t } = useTranslation();
   const manager = useResolvedGodName();
@@ -336,15 +435,123 @@ function Preview({ ok, who, lead, sendsTask, title, heading, applyLabel, applyin
             : <span style={unchangedTag}>{t('jobChange.unchanged')}</span>}
         </div>
       )}
+      {/* Routing to a teammate is its own kind of change: a labelled group
+          under What X handles, + added and − taken back (design D4). The
+          marks are for the eye; the words say it. */}
+      {!lead && (ok.handoffs?.length || ok.drops?.length) ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={fieldLabel}>{t('jobChange.goesToGroup')}</span>
+          {(ok.handoffs ?? []).map((h) => (
+            <div key={`+${h.toId}${h.scope}`} style={handoffRow}>
+              <span aria-hidden="true" style={{ ...handoffMark, background: 'var(--cth-green-soft)', color: 'var(--cth-green-text)' }}>+</span>
+              <span>{t('jobChange.goesTo', { name: nameOf?.(h.toId) ?? h.toId, scope: h.scope })}</span>
+            </div>
+          ))}
+          {(ok.drops ?? []).map((h) => (
+            <div key={`-${h.toId}${h.scope}`} style={{ ...handoffRow, color: 'var(--cth-ink-2)' }}>
+              <span aria-hidden="true" style={{ ...handoffMark, background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-3)' }}>{'\u2212'}</span>
+              <span>{t('jobChange.noLongerGoesTo', { name: nameOf?.(h.toId) ?? h.toId, scope: h.scope })}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <button type="button" aria-expanded={whole} onClick={() => setWhole((v) => !v)} style={{ ...linkStyle, display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}>
         <Disclosure open={whole} />{t('jobChange.seeWhole')}
       </button>
       {whole && <div style={{ padding: '8px 10px', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card)' }}><JobParts plain={ok.plain} /></div>}
+      {noSplit && <Note>{noSplit}</Note>}
+      {noAccess && (
+        <Note>
+          {noAccess}{' '}
+          {onOpenAccess && <button type="button" onClick={onOpenAccess} style={{ ...linkStyle, display: 'inline' }}>{t('jobChange.openAccess')}</button>}
+        </Note>
+      )}
       {failed && <span role="alert" style={{ fontSize: 12, color: 'var(--cth-coral-text)' }}>{t('jobChange.applyFailed')}</span>}
       {/* The decision stays in reach on a short window (DR11). */}
       <div style={{ ...rowEnd, position: 'sticky', bottom: 0, paddingTop: 6, background: 'var(--cth-indigo-soft)' }}>
         <PixelButton variant="secondary" size="sm" onClick={onCancel} disabled={applying}>{t('jobChange.cancel')}</PixelButton>
         <PixelButton variant="primary" size="sm" onClick={onApply} disabled={applying}>{applyLabel}</PixelButton>
+      </div>
+    </div>
+  );
+}
+
+/** A calm warning in the preview: white on indigo, above Apply, not an alert
+ *  (design D6). */
+function Note({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card)', ...noteStyle }}>
+      <span aria-hidden="true" style={infoMark}>i</span>
+      <span style={{ flex: 1, minWidth: 0 }}>{children}</span>
+    </div>
+  );
+}
+
+/**
+ * Where the member keeps what a change asks them to track (design D5, D8):
+ * their own folder first (suggested), then every connector, the ones on in
+ * Settings > Connections A to Z, then the ones switched off there, greyed.
+ * Four tools show before Show all. Off rows stay in the group, read out as
+ * switched off, and the arrow keys pass them by.
+ */
+function Home({ question, choices, heading, onCancel, onAnswer }: {
+  question: string; choices: HomeChoice[]; heading: React.RefObject<HTMLDivElement>;
+  onCancel: () => void; onAnswer: (choice: HomeChoice) => void;
+}) {
+  const { t } = useTranslation();
+  const [pick, setPick] = useState<number | undefined>(undefined);
+  const [all, setAll] = useState(false);
+  const rows = homeRows(choices, all);
+  const refs = useRef<(HTMLDivElement | null)[]>([]);
+  const live = rows.map((r, i) => (r.choice.off ? -1 : i)).filter((i) => i >= 0);
+  const send = (): void => { if (pick !== undefined && rows[pick]) onAnswer(rows[pick].choice); };
+  const move = (from: number, step: 1 | -1): void => {
+    if (!live.length) return;
+    const at = live.indexOf(from);
+    const next = live[((at < 0 ? (step > 0 ? -1 : 0) : at) + step + live.length) % live.length];
+    setPick(next);
+    refs.current[next]?.focus();
+  };
+  const onKey = (e: KeyboardEvent<HTMLDivElement>, i: number): void => {
+    if (isComposingKey(e)) return;
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); move(i, 1); return; }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); move(i, -1); return; }
+    if ((e.key === ' ' || e.key === 'Enter') && !rows[i]?.choice.off) { e.preventDefault(); setPick(i); }
+  };
+  const first = live[0];
+  return (
+    <div style={panelStyle}>
+      <div ref={heading} tabIndex={-1} style={headStyle}>{t('jobChange.questionTitle')}</div>
+      <span style={bodyStyle}>{question}</span>
+      <div role="radiogroup" aria-label={question} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {rows.map((r, i) => {
+          const on = pick === i;
+          const off = !!r.choice.off;
+          return (
+            <div key={`${r.choice.label}${i}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {r.toolsStart && <span style={{ ...hint, fontWeight: 600 }}>{t('jobChange.homeTools')}</span>}
+              <div ref={(el) => { refs.current[i] = el; }} role="radio" aria-checked={on} aria-disabled={off || undefined}
+                aria-label={off ? t('jobChange.homeOffLabel', { tool: r.choice.label }) : undefined}
+                tabIndex={off ? -1 : on || (pick === undefined && i === first) ? 0 : -1}
+                onClick={() => { if (!off) setPick(i); }} onKeyDown={(e) => onKey(e, i)}
+                className={on ? 'cth-askme-opt is-on' : 'cth-askme-opt'}
+                style={off ? { color: 'var(--cth-ink-3)', background: 'var(--cth-card-2)', cursor: 'default' } : undefined}>
+                <span className="cth-askme-dot" aria-hidden="true" style={off ? { borderStyle: 'dashed' } : undefined} />
+                <span style={{ flex: 1, minWidth: 0 }}>{r.choice.label}</span>
+                {i === 0 && !r.choice.tool && <span style={suggestedTag}>{t('jobChange.suggested')}</span>}
+                {off && <span aria-hidden="true" style={{ ...unchangedTag, alignSelf: 'center' }}>{t('jobChange.homeOff')}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {!all && rows.hidden > 0 && (
+        <button type="button" aria-expanded={false} onClick={() => setAll(true)} style={linkStyle}>{t('jobChange.homeShowAll', { count: rows.tools })}</button>
+      )}
+      <div style={rowEnd}>
+        <PixelButton variant="secondary" size="sm" onClick={onCancel}>{t('jobChange.cancel')}</PixelButton>
+        <PixelButton variant="primary" size="sm" onClick={send} disabled={pick === undefined}>{t('jobChange.continue')}</PixelButton>
       </div>
     </div>
   );
@@ -423,6 +630,15 @@ const linkStyle: CSSProperties = {
 const unchangedTag: CSSProperties = {
   alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: 'var(--cth-r-pill)',
   background: 'var(--cth-card)', color: 'var(--cth-ink-3)', fontSize: 11.5, fontWeight: 600
+};
+const handoffRow: CSSProperties = { display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink)' };
+const handoffMark: CSSProperties = {
+  flexShrink: 0, width: 16, height: 16, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  fontSize: 11, fontWeight: 700, lineHeight: 1, transform: 'translateY(2px)'
+};
+const infoMark: CSSProperties = {
+  flexShrink: 0, width: 14, height: 14, marginTop: 2, borderRadius: '50%', border: '1.3px solid var(--cth-ink-3)', boxSizing: 'border-box',
+  color: 'var(--cth-ink-3)', fontSize: 9, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
 };
 const suggestedTag: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', flexShrink: 0, height: 18, padding: '0 7px', borderRadius: 'var(--cth-r-pill)',

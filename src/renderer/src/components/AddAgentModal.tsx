@@ -293,12 +293,12 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   };
   /** "See Jordan's job" or "See what changes": the same rewrite Edit agent
    *  runs, on the job as it stands here. */
-  const runJob = ({ typed, extras, answer, requestId }: ReviseRun) => window.cth.workStyleRevise({
+  const runJob = ({ typed, extras, answers, requestId }: ReviseRun) => window.cth.workStyleRevise({
     requestId,
     ctx: styleCtx(),
     current: { instructions, handles: routing },
     changes: [typed, ...extras],
-    answer
+    answers
   });
   /** Apply fills the job in (DR13); Next then runs the overlap check. */
   const applyHireJob = async (ok: ReviseOk, change: string): Promise<'applied'> => {

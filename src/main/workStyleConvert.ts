@@ -5,8 +5,8 @@
  * says so, so hiring never waits on a sign-in problem.
  */
 import { runHiddenModel, type HiddenModelEngine } from './hiddenModel';
-import { appendOnce, splitBindings } from '../shared/hireTemplates';
-import { JOB_CHANGES_MAX } from '../shared/jobChange';
+import { appendOnce, BINDING_LINE_RE, splitBindings } from '../shared/hireTemplates';
+import { handoffLine, JOB_CHANGES_MAX } from '../shared/jobChange';
 import {
   cleanAnswer,
   focusCheckPrompt,
@@ -105,7 +105,16 @@ export interface ReviseRequest {
   current: { instructions: string; handles: string };
   changes: string[];
   answer?: { question: string; answer: string };
+  /** Every answer the owner gave this change, oldest first. */
+  answers?: Array<{ question: string; answer: string }>;
   lead?: boolean;
+  /** How the owner says the work splits, and with whom (overlap split plan). */
+  explanation?: string;
+  teammates?: Array<{ id: string; name: string; title?: string }>;
+  /** The member's live handoffs with their exact role line sentence, so a
+   *  drop takes out exactly that line (eng Arch 2). */
+  handoffList?: Array<{ toId: string; scope: string; line: string; toTitle?: string }>;
+  askHome?: boolean;
 }
 
 export type ReviseResult = ReviseAnswer | { kind: 'error'; reason: 'failed' | 'cancelled' };
@@ -125,6 +134,20 @@ export function readReviseRequest(v: unknown): ReviseRequest | null {
   const changes = (Array.isArray(o.changes) ? o.changes : []).slice(-JOB_CHANGES_MAX).map((x) => str(x, CHANGE_MAX).trim()).filter(Boolean);
   if (!name || changes.length === 0) return null;
   const answer = a ? { question: str(a.question, 400).trim(), answer: str(a.answer, CHANGE_MAX).trim() } : undefined;
+  const answers = (Array.isArray(o.answers) ? o.answers : []).slice(0, 4)
+    .map((x) => (x && typeof x === 'object' ? x as Record<string, unknown> : {}))
+    .map((x) => ({ question: str(x.question, 400).trim(), answer: str(x.answer, CHANGE_MAX).trim() }))
+    .filter((x) => x.question && x.answer);
+  const teammates = (Array.isArray(o.teammates) ? o.teammates : []).slice(0, 20)
+    .map((x) => (x && typeof x === 'object' ? x as Record<string, unknown> : {}))
+    .map((x) => ({ id: str(x.id, 80).trim(), name: str(x.name, 60).trim(), title: str(x.title, 120).trim() || undefined }))
+    .filter((x) => x.id && x.name);
+  // Only real handoff sentences: a drop removes the line word for word.
+  const handoffList = (Array.isArray(o.handoffList) ? o.handoffList : []).slice(0, 20)
+    .map((x) => (x && typeof x === 'object' ? x as Record<string, unknown> : {}))
+    .map((x) => ({ toId: str(x.toId, 80).trim(), scope: str(x.scope, 200).trim(), line: str(x.line, 400).trim(), toTitle: str(x.toTitle, 120).trim() || undefined }))
+    .filter((x) => x.toId && x.scope && x.line.startsWith('Not for ') && (x.line.match(BINDING_LINE_RE) ?? [])[0] === x.line);
+  const explanation = str(o.explanation, CHANGE_MAX).trim();
   return {
     requestId: str(o.requestId, 80) || undefined,
     ctx: { name, title: str(c.title, 120) || undefined, business: { name: str(b.name, 120) || undefined, city: str(b.city, 120) || undefined }, manager: str(c.manager, 60).trim() || undefined },
@@ -132,7 +155,12 @@ export function readReviseRequest(v: unknown): ReviseRequest | null {
     current: { instructions: str(cur.instructions, MAX_TEXT), handles: str(cur.handles, MAX_TEXT) },
     changes,
     answer: answer?.question && answer.answer ? answer : undefined,
-    lead: o.lead === true
+    ...(answers.length ? { answers } : {}),
+    lead: o.lead === true,
+    ...(explanation ? { explanation } : {}),
+    ...(teammates.length ? { teammates } : {}),
+    ...(handoffList.length ? { handoffList } : {}),
+    ...(o.askHome === true ? { askHome: true } : {})
   };
 }
 
@@ -159,8 +187,13 @@ export async function reviseWorkStyle(
     handles: bound.text,
     changes: req.changes,
     answer: req.answer,
+    answers: req.answers,
     lead: req.lead,
-    foundations
+    foundations,
+    explanation: req.explanation,
+    teammates: req.teammates,
+    handoffList: req.handoffList,
+    askHome: req.askHome
   };
   try {
     const result = await runHiddenModel(toRevisePrompt(input), {
@@ -186,16 +219,46 @@ export async function reviseWorkStyle(
       signal
     });
     if (result.error === 'cancelled' || signal?.aborted) return { kind: 'error', reason: 'cancelled' };
-    const answer = result.ok && result.text ? parseRevise(result.text, req.ctx, req.lead) : null;
-    if (answer?.kind === 'ok' && answer.handles) {
-      return { ...answer, handles: bound.lines.reduce((h, l) => appendOnce(h, l), answer.handles) };
-    }
+    const answer = result.ok && result.text
+      ? parseRevise(result.text, req.ctx, req.lead, { askHome: req.askHome, teammates: req.teammates, handoffList: req.handoffList })
+      : null;
+    if (answer?.kind === 'ok') return withHandoffLines(answer, req, bound, deps.log);
     if (answer) return answer;
     deps.log?.({ kind: 'work-style-revise-failed', reason: result.ok ? 'unreadable' : (result.error ?? 'failed') });
   } catch (e) {
     deps.log?.({ kind: 'work-style-revise-failed', reason: String(e).slice(0, 200) });
   }
   return { kind: 'error', reason: 'failed' };
+}
+
+/**
+ * The role line after a rewrite: the binding lines kept word for word, the
+ * live handoffs the owner took back taken out, and a "Not for X; that goes to
+ * Name." line for each new handoff. Written here, before the overlap check
+ * runs on it, so the check and the preview both see them (eng SC1). With
+ * handoffs but no new duties, the current line carries them.
+ */
+function withHandoffLines(
+  answer: Extract<ReviseResult, { kind: 'ok' }>,
+  req: ReviseRequest,
+  bound: { text: string; lines: string[] },
+  log?: (event: Record<string, unknown>) => void
+): Extract<ReviseResult, { kind: 'ok' }> {
+  const drops = answer.drops ?? [];
+  const adds = answer.handoffs ?? [];
+  if (!drops.length && !adds.length) {
+    return answer.handles ? { ...answer, handles: bound.lines.reduce((h, l) => appendOnce(h, l), answer.handles) } : answer;
+  }
+  const gone = new Set(drops.flatMap((d) => (req.handoffList ?? [])
+    .filter((h) => h.toId === d.toId && h.scope.toLowerCase() === d.scope.toLowerCase()).map((h) => h.line)));
+  const names = new Map((req.teammates ?? []).map((m) => [m.id, m.name]));
+  const lines = [
+    ...bound.lines.filter((l) => !gone.has(l)),
+    ...adds.flatMap((h) => { const name = names.get(h.toId); return name ? [handoffLine(h.scope, name)] : []; })
+  ];
+  const handles = lines.reduce((h, l) => appendOnce(h, l), answer.handles ?? bound.text);
+  log?.({ kind: 'work-style-handoff-written', added: adds.length, dropped: drops.length });
+  return { ...answer, handles };
 }
 
 export interface FocusCheckRequest {

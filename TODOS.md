@@ -1,5 +1,23 @@
 # TODOS
 
+## Overlap split (deferred from the CEO review, 2026-10-24)
+
+### Explain how they split it in the hire wizard
+
+**What:** Give the hire wizard's overlap step the same "Explain how they split it" that Edit agent has, writing the new hire's handoffs.
+
+**Why:** A new hire who works with a teammate (sends them part of the work) hits the same wall a changed job did: cut the duty or guess at wording.
+
+**Pros:** One way of describing teamwork everywhere a job is written.
+
+**Cons:** The wizard's overlap box has mailbox, topic and connection chips, and its topic chip writes the boundary the opposite way ("Only X." on the new hire, "Not for X" on the teammate); its Next gate needs the explanation to count. About M.
+
+**Context:** Edit agent's version: JobChangeReview's explain state, the revise call's `explanation` and `teammates`, `checkDistinct` mode 'change', and the handoff list in src/shared/jobChange.ts (docs/designs/work-style-change-request.md, Overlap split). Deferred by the owner (CEO D8) to prove it in Edit agent first.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** the Edit agent version shipping
+
 ## Release notes accuracy (from the eng review of the site's 0.2.5 and 0.2.6 plan, 2026-10-24)
 
 ### The 0.2.5 changelog says engine records are closed to every member's shell
