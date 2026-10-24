@@ -26,6 +26,38 @@ let resolveFiles: ((value: unknown) => void) | undefined;
 const runtimeErrors: string[] = [];
 window.addEventListener('error', (e) => runtimeErrors.push(e.message));
 window.addEventListener('unhandledrejection', (e) => runtimeErrors.push(String(e.reason)));
+
+// What moved the list, the last few steps, added to a failed check so a run
+// that fails only on a CI runner says how it got there.
+const trace: string[] = [];
+const traceStart = performance.now();
+const listEl = () => document.querySelector('.cth-dock > div:nth-child(2)') as HTMLElement | null;
+const note = (what: string) => {
+  const el = listEl();
+  const more = el ? [...el.querySelectorAll('button')].filter((b) => b.textContent === i18n.t('dock.more')).length : 0;
+  const line = `${what}${el ? ` top=${el.scrollTop} h=${el.scrollHeight} vh=${el.clientHeight} more=${more}` : ''}`;
+  const last = trace[trace.length - 1];
+  if (last?.endsWith(line)) { trace[trace.length - 1] = last.replace(/^(\d+ms)( x\d+)?/, (_, ms, n) => `${ms} x${n ? Number(n.slice(2)) + 1 : 2}`); return; }
+  trace.push(`${Math.round(performance.now() - traceStart)}ms ${line}`);
+  if (trace.length > 40) trace.shift();
+};
+const scrollTopDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!;
+Object.defineProperty(Element.prototype, 'scrollTop', {
+  ...scrollTopDesc,
+  set(this: Element, v: number) {
+    scrollTopDesc.set!.call(this, v);
+    if (this === listEl()) note(`set scrollTop ${Math.round(v)} by ${new Error().stack?.split('\n').slice(2, 4).map((s) => s.trim().split(' ')[1].replace(/^\S*\//, '')).join(' < ')}`);
+  }
+});
+document.addEventListener('scroll', (e) => { if (e.target === listEl()) note('scroll event'); }, true);
+note(`page ${document.visibilityState}, fonts ${document.fonts.status}`);
+document.fonts.addEventListener('loadingdone', () => note(`fonts loaded (${document.fonts.size})`));
+const NativeResizeObserver = window.ResizeObserver;
+window.ResizeObserver = class extends NativeResizeObserver {
+  constructor(callback: ResizeObserverCallback) {
+    super((entries, observer) => { note(`resize observer (${entries.length})`); callback(entries, observer); });
+  }
+};
 Object.assign(window, { cth: {
   platform: navigator.platform.startsWith('Win') ? 'win32' : navigator.platform.startsWith('Mac') ? 'darwin' : 'linux',
   hiveRegistry: async () => ({ agents: { god: { name: 'Michael' } } }),
@@ -82,8 +114,8 @@ createRoot(document.getElementById('root')!).render(<Fixture />);
 // A frame, or a short timer if no frame comes, so a stalled renderer fails a
 // check with its message instead of hanging the run.
 const frame = () => new Promise<void>((resolve) => {
-  const timer = setTimeout(resolve, 100);
-  requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
+  const timer = setTimeout(() => { note('no frame in 100ms'); resolve(); }, 100);
+  requestAnimationFrame(() => { clearTimeout(timer); note('frame'); resolve(); });
 });
 const settle = async () => { await frame(); await frame(); };
 async function until(predicate: () => unknown, message: string): Promise<void> {
@@ -111,7 +143,7 @@ const list = () => document.querySelector('.cth-dock > div:nth-child(2)') as HTM
 const where = () => {
   const el = document.querySelector('.cth-dock > div:nth-child(2)') as HTMLElement | null;
   if (!el) return 'no dock';
-  return `scrollTop ${el.scrollTop}, scrollHeight ${el.scrollHeight}, clientHeight ${el.clientHeight}, button ${document.querySelector('[data-dock-jump]')?.textContent ?? 'none'}`;
+  return `scrollTop ${el.scrollTop}, scrollHeight ${el.scrollHeight}, clientHeight ${el.clientHeight}, button ${document.querySelector('[data-dock-jump]')?.textContent ?? 'none'}\n  ${trace.join('\n  ')}`;
 };
 const jump = () => document.querySelector('[data-dock-jump]') as HTMLButtonElement | null;
 const bottom = () => list().scrollHeight - list().clientHeight - list().scrollTop;
@@ -120,6 +152,7 @@ function reset() {
   flushSync(() => useStore.getState().setDock(true));
 }
 function append(notes = false) {
+  note('replies arrive');
   const n = 20 + current.length;
   flushSync(() => update([...current, { ...reply(n, notes), replyTo: 'q13' }, ...(notes ? [] : [{ ...reply(n + 1), replyTo: 'q13' }])]));
 }
