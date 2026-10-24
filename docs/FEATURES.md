@@ -86,6 +86,12 @@ moving, and brings you only the decisions that need you.
   looked up, where things live, and the steps for jobs it repeats. A background tidy up merges and
   updates them instead of letting them pile up.
 - Your answers to its questions go straight into its memory, so it doesn't ask again.
+- Every note says what showed it: a source and date, a card, a file. The Memory tab shows it behind
+  an info icon. When two notes disagree, your word wins, then the note with something behind it,
+  then the newer one.
+- Only you make a note "from you": your Ask me answers, your email decisions and what you tell
+  Michael in the dock are kept by the app where no team member can write, so a member's own note
+  can never pass for yours or undo yours.
 - Each team member's memory is its own. Nobody, Michael included, reads or searches another's
   notes: to learn what a teammate knows, they ask that teammate, and Michael reads the task board
   and the work each one hands in. On a Mac, Claude members' shells are walled off from each
