@@ -82,6 +82,8 @@ import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckReq
 import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
 import { TelemetryStore } from './telemetryStore';
+import { OwnerNotes } from './ownerNotes';
+import { localDay } from '../shared/messageView';
 import { TelemetryProcessor } from './telemetryProcessor';
 import { PulseHealth } from '../shared/pulseHealth';
 import { PulseService } from './pulse';
@@ -585,7 +587,9 @@ const memoryTidy = new MemoryTidy(
     return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
   },
   // Learning counts notes from the app's own record (owner, 2026-10-18).
-  (agentId, added) => { const ts = Date.now(); for (const n of added) pulseTelemetry.record({ agentId, kind: 'note-added', ts, attrs: { id: n.id, source: n.source } }); }
+  (agentId, added) => { const ts = Date.now(); for (const n of added) pulseTelemetry.record({ agentId, kind: 'note-added', ts, attrs: { id: n.id, source: n.source } }); },
+  // The owner's notes, the only ones a pass reads as the owner's (memory evidence, D9).
+  () => ownerNotes
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
@@ -725,6 +729,10 @@ ipcMain.handle('silent:checkAgain', (_evt, id: unknown) => { if (typeof id === '
 const pulseOffice = (): string | null => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; };
 const pulseTelemetry = new TelemetryStore(() => persist.database(), pulseOffice);
 const pulseProcessor = new TelemetryProcessor(() => persist.database(), pulseTelemetry);
+// The owner's notes for members' memory, kept beside Pulse in harness.db where
+// no member can write (memory evidence, D9).
+const ownerNotes = new OwnerNotes(() => persist.database(), pulseOffice);
+hive.setOwnerNotes(ownerNotes);
 
 /** The team as Company foundations reads it, from one read of the registry
  *  and the roster (the hook asks on every prompt): each member's job (read
@@ -1003,7 +1011,7 @@ function closeMailboxCard(id: string, result: string): void {
 const mailApprovals = new MailApprovals({
   path: join(app.getPath('userData'), 'mail-proposals.json'),
   send: (msg) => { if (!hive.enabled()) return false; hive.send(msg, 'mail'); return true; },
-  remember: (agentId, line) => { hive.rememberOwnerNote(agentId, line); },
+  remember: (agentId, line, why) => { hive.rememberOwnerNote(agentId, line, why); },
   // Only Michael notifies the owner (docs/designs/michael-only-notifications.md).
   toast: (body) => ownerToast(michaelName(), body),
   agentName: (id) => { try { return hive.registry().agents[id]?.name?.trim() || id; } catch { return id; } },
@@ -5690,9 +5698,9 @@ ipcMain.handle('agent:restoreConversation', (_evt, id: unknown) => {
 });
 /** The owner's Ask me answer, added to the raising agent's memory notes. */
 ipcMain.handle('hive:rememberOwnerAnswer', (_evt, p: unknown) => {
-  const o = (p ?? {}) as { agentId?: unknown; task?: unknown; q?: unknown; a?: unknown };
+  const o = (p ?? {}) as { agentId?: unknown; task?: unknown; taskId?: unknown; q?: unknown; a?: unknown };
   if (typeof o.agentId !== 'string' || typeof o.q !== 'string' || typeof o.a !== 'string') return { ok: false };
-  return { ok: hive.rememberOwnerAnswer(o.agentId, typeof o.task === 'string' ? o.task : '', o.q, o.a) };
+  return { ok: hive.rememberOwnerAnswer(o.agentId, typeof o.task === 'string' ? o.task : '', o.q, o.a, typeof o.taskId === 'string' ? o.taskId : '') };
 });
 ipcMain.handle('hive:send', (_evt, partial: Partial<HiveMessage>, from: unknown) => {
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
@@ -5894,6 +5902,9 @@ ipcMain.handle('owner:ask', (_evt, p: unknown) => {
   // A question whose genuine mark can't be saved would vanish after a restart:
   // it is withdrawn and the owner told it didn't send.
   if (!addOwnerDockKey(dockKey(msg))) { hive.ownerWithdraw(msg.id); return { ok: false }; }
+  // What the owner tells Michael is also his note from the owner, so a rule
+  // given in passing lasts past the conversation (memory evidence, D11).
+  hive.rememberOwnerNote(hiveGodId(), msg.body, `you told Michael in the dock, ${localDay(new Date().toISOString())}`);
   return { ok: true, id: msg.id, workOrder: ownerWorkOrder(msg.id, msg.body) };
 });
 ipcMain.handle('owner:conversation', () => hive.ownerConversationView(Date.now(), isOwnerDockMessage));
@@ -6695,6 +6706,8 @@ ipcMain.handle('app:resetMemory', async () => {
       ).all(office) as Array<{ agent_id: unknown; s: unknown }>, sessions);
     }
   } catch (e) { console.error('[memory reset] reading session ids:', e); }
+  // The owner's notes not yet filed go with the memory they were for.
+  try { const office = pulseOffice(); if (office) ownerNotes.clearOffice(office); } catch (e) { console.error('[memory reset] owner notes:', e); }
   try { persist.close(); } catch (e) { console.error('[memory reset] persist.close:', e); }
 
   const memberIds = memberIdsIn(hiveRoot);

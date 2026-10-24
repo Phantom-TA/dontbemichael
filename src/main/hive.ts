@@ -35,6 +35,7 @@ import {
   entriesBlock, isProcedureSlug, MAX_PROCEDURE_CHARS, parseIndex, parseInbox, renderIndex, type MemoryEntry
 } from '../shared/memoryIndex';
 import { localDay } from '../shared/messageView';
+import { OwnerNotes } from './ownerNotes';
 import { FOLDER_READ_TOOLS, FOLDER_WRITE_TOOLS, type AgentFolderPolicy } from '../shared/folderAccess';
 import { STOP_FAILURE_MATCHER } from '../shared/officeBreak';
 import {
@@ -323,13 +324,14 @@ export const COMPANY_KNOWLEDGE_OFF =
 /**
  * How an agent keeps its memory (owner, 2026-09-25): it reads its index (given
  * at session start), adds owner instructions and corrections at once, and
- * after a task at most three notes; the app tidies them into the index.
+ * after a task at most three notes; the app tidies them into the index. Each
+ * note says what showed it, which wins it a conflict (memory evidence, D3).
  */
 function memoryRule(inboxPath: string, memDir: string): string {
-  return `Your memory: the app gives you your memory index at the start of each session; procedure files it names are in ${memDir}. Before researching something, check it and search the company knowledge store, and reuse what's there when it still fits. When the owner tells you to remember something, or corrects you, add it to ${inboxPath} straight away, with the date.`;
+  return `Your memory: the app gives you your memory index at the start of each session; procedure files it names are in ${memDir}. Before researching something, check it and search the company knowledge store, and reuse what's there when it still fits. When the owner tells you to remember something, or corrects you, add it to ${inboxPath} straight away, with the date. End each note with "Why:" and what showed it (a source and date, a card or message id, a file), or leave the Why off when nothing did.`;
 }
 function memoryEndOfTask(inboxPath: string): string {
-  return `When you finish a task, add at most three short notes to ${inboxPath}, and only for things you would otherwise work out again: a fact you researched (with its source and the date you checked it), the steps that worked for a task you'll do again, or a correction or preference from the owner or Michael (with the reason). Often there's nothing worth saving, and that's fine. Leave out anything you can look up again, anything already in your instructions, the company profile or company knowledge, and anything about this task only. Don't write session logs or status updates. The app tidies your notes into your index in the background.`;
+  return `When you finish a task, add at most three short notes to ${inboxPath}, and only for things you would otherwise work out again: a fact you researched (with its source and the date you checked it), the steps that worked for a task you'll do again, or a correction or preference from the owner or Michael (with the reason). End each note with "Why:" and what showed it (a source and date, a card or message id, a file), or leave the Why off when nothing did. Often there's nothing worth saving, and that's fine. Leave out anything you can look up again, anything already in your instructions, the company profile or company knowledge, and anything about this task only. Don't write session logs or status updates. The app tidies your notes into your index in the background.`;
 }
 
 /** Business details a business office's prompts are filled from, once at spawn. */
@@ -4200,12 +4202,14 @@ export class HiveManager {
    * tidy-up migrates). Fixed for the session, so it caches.
    */
   /**
-   * The owner's answer to a question an agent raised on Ask me, added to that
-   * agent's memory notes as coming from the owner (owner, 2026-09-25). The
-   * tidy-up keeps the part that lasts (a rule, a preference) and drops what
-   * only mattered once. False when the agent isn't one of this office's.
+   * The owner's answer to a question an agent raised on Ask me, kept for that
+   * agent's memory as coming from the owner (owner, 2026-09-25). The tidy-up
+   * keeps the part that lasts (a rule, a preference) and drops what only
+   * mattered once. Kept in harness.db, never the agent's inbox, which any
+   * member can write (memory evidence, D9). The Why names the card by id, never
+   * its title (D6). False when the agent isn't one of this office's.
    */
-  rememberOwnerAnswer(id: string, task: string, q: string, a: string): boolean {
+  rememberOwnerAnswer(id: string, task: string, q: string, a: string, cardId = ''): boolean {
     if (!/^[\w-]+$/.test(id) || !this.root()) return false;
     // Never written straight into Research's memory: it reaches Research as a
     // message through the trust layer, like everything else (ship review D2.2).
@@ -4213,37 +4217,34 @@ export class HiveManager {
       this.send({ to: RESEARCH_ID, act: 'inform', subject: `The owner answered: ${task.slice(0, 120)}`, body: `Q: ${q}\nA: ${a}` }, 'human');
       return true;
     }
-    const dir = this.agentDir(id);
-    if (!existsSync(dir)) return false;
+    if (!existsSync(this.agentDir(id))) return false;
     const line = (v: string) => v.replace(/\s+/g, ' ').trim();
     const today = localDay(new Date().toISOString());
-    const note = `- From the owner (${today}), answering a question on "${line(task)}": Q: ${line(q)} A: ${line(a)}\n`;
-    try {
-      mkdirSync(join(dir, 'memory'), { recursive: true });
-      appendFileSync(join(dir, 'memory', 'inbox.md'), note, 'utf8');
-      return true;
-    } catch { return false; }
+    const card = /^[\w-]{1,64}$/.test(cardId) ? ` on card ${cardId}` : '';
+    return this.ownerNotes.add(id, `From the owner (${today}), answering a question on "${line(task)}": Q: ${line(q)} A: ${line(a)}`, `you answered on Ask me${card}, ${today}`);
   }
 
   /**
-   * A line from the owner for an agent's memory notes, already worded (Send on
-   * approval: an edit, a note, or "do not send"; shared/mailProposals.ts).
-   * False when the agent isn't one of this office's.
+   * A line from the owner for an agent's memory, already worded (Send on
+   * approval: an edit, a note, or "do not send"; shared/mailProposals.ts), with
+   * the Why the app built for it (D6). Kept in harness.db like an Ask me
+   * answer. False when the agent isn't one of this office's.
    */
-  rememberOwnerNote(id: string, line: string): boolean {
+  rememberOwnerNote(id: string, line: string, why = ''): boolean {
     if (!/^[\w-]+$/.test(id) || !this.root()) return false;
     if (id === RESEARCH_ID) {
       this.send({ to: RESEARCH_ID, act: 'inform', subject: 'A note from the owner', body: line }, 'human');
       return true;
     }
-    const dir = this.agentDir(id);
-    if (!existsSync(dir)) return false;
-    try {
-      mkdirSync(join(dir, 'memory'), { recursive: true });
-      appendFileSync(join(dir, 'memory', 'inbox.md'), line.endsWith('\n') ? line : `${line}\n`, 'utf8');
-      return true;
-    } catch { return false; }
+    if (!existsSync(this.agentDir(id))) return false;
+    return this.ownerNotes.add(id, line, why || `from you, ${localDay(new Date().toISOString())}`);
   }
+
+  /** Where the owner's notes are kept: harness.db once the app sets it, held in
+   *  memory until then (tests, before the database opens). */
+  private ownerNotes = new OwnerNotes(() => null, () => this.root());
+  setOwnerNotes(store: OwnerNotes): void { this.ownerNotes = store; }
+  ownerNoteStore(): OwnerNotes { return this.ownerNotes; }
 
   // — clearing a conversation safely (src/shared/safeClear.ts) —
 

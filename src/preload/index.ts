@@ -987,7 +987,7 @@ const api = {
   /** Undo a clear: restart the agent into its earlier conversation. */
   restoreConversation: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('agent:restoreConversation', id),
   /** Add the owner's Ask me answer to the raising agent's memory notes. */
-  hiveRememberOwnerAnswer: (p: { agentId: string; task: string; q: string; a: string }): Promise<{ ok: boolean }> =>
+  hiveRememberOwnerAnswer: (p: { agentId: string; task: string; taskId: string; q: string; a: string }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('hive:rememberOwnerAnswer', p),
   hiveMemory: (id: string): Promise<string> => ipcRenderer.invoke('hive:memory', id),
   hiveMemoryDetail: (id: string): Promise<{ index: string; waiting: number }> => ipcRenderer.invoke('hive:memoryDetail', id),

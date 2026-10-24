@@ -1956,6 +1956,7 @@
       "tool": "from a tool"
     },
     "sourceLine": "{{source}}, {{date}}",
+    "evidence": "What showed it",
     "checkAgain": "check again {{date}}",
     "outOfDate": "may be out of date ({{date}})",
     "stepsMissing": "The steps for this aren't saved yet.",
