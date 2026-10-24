@@ -35,6 +35,14 @@ export interface HireCheckDeps extends HiddenModelEngine {
   mode?: DistinctMode;
 }
 
+/** Which job a change's check read: the one before the change or after it
+ *  (only overlaps the change adds are shown); a hire has neither. */
+export type CheckPhase = 'before' | 'after' | 'hire';
+
+export function readCheckPhase(v: unknown): CheckPhase {
+  return v === 'before' || v === 'after' ? v : 'hire';
+}
+
 /** The renderer's mode, 'hire' unless it says 'change'. */
 export function readDistinctMode(v: unknown): DistinctMode {
   return v === 'change' ? 'change' : 'hire';

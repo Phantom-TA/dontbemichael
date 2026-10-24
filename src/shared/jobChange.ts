@@ -165,6 +165,14 @@ export function handoffsTo<T extends { id: string; name: string; description?: s
   return out;
 }
 
+/** The teammates a change adds to the overlap: named after it, not before.
+ *  Teamwork the job already had is never charged to the owner's edit
+ *  (owner's Kelly change, 2026-10-24). */
+export function addedOverlaps(after: string[], before: string[]): string[] {
+  const was = new Set(before.map((n) => n.trim().toLowerCase()));
+  return after.filter((n) => !was.has(n.trim().toLowerCase()));
+}
+
 /** The handoffs left when a teammate is deleted for good: the ones to them
  *  go (spec review 2). Undefined when none are left. */
 export function handoffsWithout(list: Handoff[] | undefined, toId: string): Handoff[] | undefined {

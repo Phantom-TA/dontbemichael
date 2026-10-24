@@ -218,15 +218,22 @@ test('the tracking question lists the folder, tools on A to Z, then tools off, f
   assert.equal(J.homeRows(choices.slice(0, 5), false).hidden, 0, 'four tools: no fold');
 });
 
-test('the card: Explain is the main way out, the box sits in the card, and the preview shows handoffs and notes', () => {
-  // Value: protects=design D2 to D8 and eng re-run D1 in the shared card; fails_when=a state loses its role or order, the box becomes an alert, off rows take focus, or a note turns into an alert; why_new=T4; seam=source pin
+test('the card: an overlap never blocks a change; the preview names it with two optional fixes', () => {
+  // Value: protects=the owner's 2026-10-24 rethink (overlap as a note, Apply on), design D3 to D8 and eng re-run D1; fails_when=an overlap gets its own blocking state again, Apply is disabled by it, Back from the box loses the preview, off rows take focus, or a note turns into an alert; why_new=owner's Kelly change stopped four times; seam=source pin
   const src = read('src/renderer/src/components/JobChangeReview.tsx');
-  assert.match(src, /<PixelButton variant="secondary" size="sm" onClick=\{\(\) => \{\n\s+const more = \[\.\.\.extras, t\('jobChange\.leaveWithChange', \{ names, count \}\)\];[\s\S]*?\}\}>\{t\('jobChange\.leaveWith', \{ names \}\)\}<\/PixelButton>\n\s+<PixelButton variant="primary" size="sm" onClick=\{\(\) => \{\n\s+setExplainText\(\(v\) => v \|\| explanation \|\| suggestion \|\| ''\);/, 'Leave it with is secondary, Explain is primary and starts from the suggestion');
-  assert.match(src, /<button type="button" onClick=\{\(\) => \{ setExtras\(\[\]\); resetSplit\(\); setState\(\{ at: 'idle' \}\); \}\} style=\{\{ \.\.\.linkStyle, alignSelf: 'center' \}\}>\{t\('jobChange\.editMine'\)\}<\/button>/, 'Edit my change is a link');
+  assert.doesNotMatch(src, /at: 'overlap'/, 'no blocking overlap state');
+  assert.match(src, /setState\(\{ at: 'ok', ok: res, from, \.\.\.\(overlap \? \{ overlap \} : \{\}\) \}\);/, 'an overlap rides on the preview');
+  const preview = src.slice(src.indexOf('function Preview('), src.indexOf('function Note('));
+  assert.match(preview, /<PixelButton variant="primary" size="sm" onClick=\{onApply\} disabled=\{applying\}>\{applyLabel\}<\/PixelButton>/, 'Apply stays on with an overlap');
+  assert.match(preview, /\{overlap && \(\n\s+<Note>/);
+  assert.match(preview, /<button type="button" onClick=\{overlap\.onExplain\} disabled=\{applying\}/);
+  assert.match(preview, /<button type="button" onClick=\{overlap\.onLeave\} disabled=\{applying\}/);
+  assert.match(src, /const more = \[\.\.\.extras, t\('jobChange\.leaveWithChange', \{ names, count \}\)\];/, 'Leave it with Kelly adds a change and runs again');
+  assert.match(src, /setState\(\{ at: 'explain', back: \{ ok, from, overlap \} \}\);/);
   const explain = src.slice(src.indexOf("} else if (state.at === 'explain') {"), src.indexOf("} else if (state.at === 'error') {"));
-  assert.match(explain, /<div style=\{panelStyle\}>\n\s+\{head\(title\)\}\n\s+\{state\.why && <span style=\{noteStyle\}>\{state\.why\}<\/span>\}/, 'the reason stays in view');
+  assert.match(explain, /<div style=\{panelStyle\}>\n\s+\{head\(title\)\}\n\s+\{back\.overlap\.why && <span style=\{noteStyle\}>\{back\.overlap\.why\}<\/span>\}/, 'the reason stays in view');
   assert.doesNotMatch(explain, /role="alert"/);
-  assert.match(explain, /onClick=\{\(\) => setState\(back\)\}/);
+  assert.match(explain, /onClick=\{\(\) => setState\(\{ at: 'ok', \.\.\.back \}\)\}/, 'Back returns to the same preview');
   assert.match(explain, /disabled=\{!explainText\.trim\(\)\}/);
   assert.match(src, /<span style=\{fieldLabel\}>\{t\('jobChange\.goesToGroup'\)\}<\/span>/);
   assert.match(src, /<span aria-hidden="true" style=\{\{ \.\.\.handoffMark, background: 'var\(--cth-green-soft\)'/);
@@ -239,10 +246,27 @@ test('the card: Explain is the main way out, the box sits in the card, and the p
   assert.match(src, /if \(res\.kind === 'home'\) \{ setState\(p\.homeChoices \? \{ at: 'home', question: res\.question \} : \{ at: 'error' \}\); return; \}/);
 });
 
+test('only overlaps the change adds count, and every verdict is logged', () => {
+  // Value: protects=teamwork a job already had is never charged to an edit, and a check that stops or passes a job can be read back; fails_when=the before check is dropped, names are compared case sensitively, or main stops logging; why_new=owner's Kelly change (no verdict was on record); seam=none and source pins
+  assert.deepEqual(J.addedOverlaps(['Nick', 'Dwight'], ['nick']), ['Dwight']);
+  assert.deepEqual(J.addedOverlaps(['Nick'], []), ['Nick']);
+  assert.deepEqual(J.addedOverlaps([], ['Nick']), []);
+  assert.equal(C.readCheckPhase('before'), 'before');
+  assert.equal(C.readCheckPhase('after'), 'after');
+  assert.equal(C.readCheckPhase('x'), 'hire');
+  const modal = read('src/renderer/src/components/EditAgentModal.tsx');
+  assert.match(modal, /window\.cth\.hireCheckDistinct\(\{ name: cur\.name, title, routing: was, workStyle: cur\.goal \}, team, undefined, 'change', 'before'\)/);
+  assert.match(modal, /window\.cth\.hireCheckDistinct\(\{ name: cur\.name, title, routing: ok\.handles, workStyle: ok\.instructions \}, team, undefined, 'change', 'after'\)/);
+  assert.match(modal, /if \(beforeCheck\.current\?\.of !== of\) \{/, 'the job before is checked once per job');
+  assert.match(modal, /const added = addedOverlaps\(v\.overlapsWith, before\);\n\s+if \(!added\.length\) return null;/);
+  const main = read('src/main/index.ts');
+  assert.match(main, /kind: 'distinct-check', mode, phase: readCheckPhase\(p\.phase\), member: job\.name,\n\s+distinct: verdict\.distinct, overlapsWith: verdict\.overlapsWith, source: verdict\.source,/);
+  assert.doesNotMatch(read('src/renderer/src/components/AddAgentModal.tsx'), /'change'/, 'hiring keeps today\'s check');
+});
+
 test('Edit agent sends the split, checks in change mode, asks where numbers live, and shows who sends work here', () => {
   // Value: protects=the wiring between the card, main and the store; fails_when=the check runs in hire mode, the handoff list or askHome is not sent, Undo forgets the team, or the line moves to the Profile tab; why_new=T4, T5; seam=source pin
   const src = read('src/renderer/src/components/EditAgentModal.tsx');
-  assert.match(src, /window\.cth\.hireCheckDistinct\(\{ name: cur\.name, title: splitAgentRole\(cur\.description\)\.role, routing: ok\.handles, workStyle: ok\.instructions \}, team, undefined, 'change'\)/);
   assert.match(src, /askHome: !lead/);
   assert.match(src, /\.\.\.\(handoffList\.length \? \{ handoffList \} : \{\}\)/);
   assert.match(src, /return \{ label: c\.key, tool: c\.key, off: !on, noAccess: on && !connectorGranted\(cfg, agent\.id, c\.key, readsBooks\) \};/, 'off means off in Settings; on but not given is flagged');

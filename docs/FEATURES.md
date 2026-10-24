@@ -53,9 +53,10 @@ moving, and brings you only the decisions that need you.
   it into the agent's instructions.
 - Change any job later by saying what should change in Edit agent. You see the steps as it works,
   then exactly what changes, before anything is saved, and Undo puts it back.
-- When a change overlaps a teammate, explain how they split the work instead: the app writes the
-  handoff Michael routes by ("technical questions go to Nick"), shows it on the teammate's side,
-  and asks where tracked numbers live when the job doesn't say.
+- A job change is never blocked by an overlap. When it adds work a teammate already does, the
+  preview says so and you can explain how they split it: the app writes the handoff Michael routes
+  by ("technical questions go to Nick") and shows it on the teammate's side. A change that adds
+  tracking asks where the numbers live when the job doesn't say.
 - A new hire's one time first job is a card Michael hands out, not a line in their work style.
 - Every hire gets its own private folder and starts working.
 - Delete a team member for good from the Danger zone in Edit agent: they stop, their schedules

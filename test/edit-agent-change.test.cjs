@@ -94,7 +94,7 @@ test('the preview: working, ok, clash, overlap, error and changed meanwhile, wit
   const src = read('src/renderer/src/components/JobChangeReview.tsx');
   assert.match(src, /if \(e\.key === 'Enter' && \(e\.metaKey \|\| e\.ctrlKey\)\) \{ e\.preventDefault\(\); void start\(\); \}/);
   assert.match(src, /panel = <Working who=\{p\.who\} progress=\{state\.progress\} heading=\{head\(t\('jobChange\.working', \{ name: p\.who \}\)\)\} onStop=\{stop\} \/>;/, 'its steps and words (revise-progress.test.cjs)');
-  assert.equal((src.match(/<div role="alert" style=\{panelStyle\}>/g) ?? []).length, 3, 'overlap, error and changed meanwhile');
+  assert.equal((src.match(/<div role="alert" style=\{panelStyle\}>/g) ?? []).length, 2, 'error and changed meanwhile; an overlap is a note in the preview (owner, 2026-10-24)');
   assert.match(src, /heading\.current\?\.focus\(\{ preventScroll: true \}\);/, 'focus moves to each state\'s heading');
   assert.match(src, /\{state\.at === 'idle' && p\.status && <span role="status"/);
   assert.match(src, /aria-expanded=\{whole\}/);

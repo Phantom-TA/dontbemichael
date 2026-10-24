@@ -1278,12 +1278,14 @@ focus. Working: "Working out what changes for Pam…", then its three real steps
 "What Pam handles" with the new line or a `card` pill "Unchanged", a "See the whole new job"
 disclosure, and Cancel and Apply in a row that sticks to the preview's bottom. A clash: "One
 thing first", the question, two or three option rows (`cth-askme-opt`, one with a green
-"Suggested" pill) plus Something else with a text field, Cancel and Continue. An overlap:
-"Kelly already does part of this", the reason, then Edit my change as a link at the start and
-Leave it with Kelly (secondary) and Explain how they split it (primary) at the end, wrapping under
-the link when narrow. Explain opens a box in the card: "How do Pam and Kelly split it?", the reason
-as a note, the box (the check's split suggestion, or empty with a placeholder), Back (link) and See
-what changes; not an alert. The preview then lists "Goes to a teammate" under What Pam handles, one
+"Suggested" pill) plus Something else with a text field, Cancel and Continue. An overlap
+never blocks a job change (owner, 2026-10-24): the preview carries it as a white note above Cancel
+and Apply, "Kelly already does part of this" (600 ink) and the reason, with two links, Explain how
+they split it and Leave it with Kelly; Apply stays on. Only teammates the change adds count: the job
+before the change is checked too, and overlaps it already had are left out. Explain opens a box in
+the card: "How do Pam and Kelly split it?", the reason
+as a note, the box (the check's split suggestion, or empty with a placeholder), Back (link, to the same
+preview) and See what changes; not an alert. The preview then lists "Goes to a teammate" under What Pam handles, one
 line each with a 16 px green-soft + or neutral-soft − (aria-hidden), and, above Cancel and Apply,
 white notes (card fill, r-md, info mark, not alerts) for "No split was written" and "Pam can't use
 HubSpot yet." with Open Access. A tracking question lists Pam's folder (Suggested), then Connected

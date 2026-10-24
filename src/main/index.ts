@@ -77,7 +77,7 @@ import type { UsageProvider } from './usage';
 import { MemoryManager } from './memory';
 import { KnowledgeManager } from './knowledge';
 import { MemoryTidy } from './memoryTidy';
-import { checkDistinct, readDistinctMode, readJobProfile } from './hireCheck';
+import { checkDistinct, readCheckPhase, readDistinctMode, readJobProfile } from './hireCheck';
 import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readReviseRequest, reviseWorkStyle } from './workStyleConvert';
 import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
@@ -6057,7 +6057,7 @@ const checkRuns = new Map<string, AbortController>();
 /** The hire wizard's distinct job check (design D6): a hidden Haiku call that
  *  compares the new job with every teammate's, the instant rules when it can't. */
 ipcMain.handle('hire:checkDistinct', async (_evt, payload: unknown) => {
-  const p = (payload ?? {}) as { job?: unknown; team?: unknown; requestId?: unknown; mode?: unknown };
+  const p = (payload ?? {}) as { job?: unknown; team?: unknown; requestId?: unknown; mode?: unknown; phase?: unknown };
   const job = readJobProfile(p.job);
   if (!job) return { distinct: false, overlapsWith: [], why: '', source: 'rules' };
   const team = Array.isArray(p.team) ? p.team.map(readJobProfile).filter((m): m is NonNullable<typeof m> => !!m) : [];
@@ -6065,17 +6065,29 @@ ipcMain.handle('hire:checkDistinct', async (_evt, payload: unknown) => {
   const requestId = typeof p.requestId === 'string' ? p.requestId.slice(0, 80) : '';
   const stop = new AbortController();
   if (requestId) checkRuns.set(requestId, stop);
+  const mode = readDistinctMode(p.mode);
   try {
-    return await checkDistinct(job, team, {
+    const verdict = await checkDistinct(job, team, {
       engine: cfg.godProvider ?? 'claude',
       engineModel: cfg.godModel,
       cwd: cfg.harnessHome ?? app.getPath('home'),
       command: cfg.defaultCommand ?? 'claude',
       env: memory.env(),
       log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
-      mode: readDistinctMode(p.mode),
+      mode,
       signal: stop.signal
     });
+    // Every verdict, so a check that stops (or passes) a job can be read back
+    // later: a model check can answer differently for the same job
+    // (owner's Kelly change, 2026-10-24).
+    try {
+      hive.appendLog({
+        kind: 'distinct-check', mode, phase: readCheckPhase(p.phase), member: job.name,
+        distinct: verdict.distinct, overlapsWith: verdict.overlapsWith, source: verdict.source,
+        why: verdict.why.slice(0, 400), ...(verdict.suggestion ? { suggestion: verdict.suggestion.slice(0, 300) } : {})
+      });
+    } catch { /* best-effort */ }
+    return verdict;
   } finally {
     if (requestId) checkRuns.delete(requestId);
   }

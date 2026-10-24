@@ -16,6 +16,9 @@ type Question = Extract<ReviseResult, { kind: 'question' }>;
 type Progress = Parameters<Parameters<Window['cth']['onWorkStyleProgress']>[1]>[0];
 type Answer = { question: string; answer: string };
 
+/** Teammates a change adds to the overlap, why, and the check's split. */
+type Overlap = { names: string[]; why: string; suggestion?: string };
+
 /** A teammate the overlap check named, by id for the handoffs. */
 export interface Teammate { id: string; name: string; title?: string }
 
@@ -80,11 +83,10 @@ export interface JobChangeReviewProps {
 type State =
   | { at: 'idle' }
   | { at: 'working'; progress?: Progress }
-  | { at: 'ok'; ok: ReviseOk; from: string }
+  | { at: 'ok'; ok: ReviseOk; from: string; overlap?: Overlap }
   | { at: 'question'; q: Question }
   | { at: 'home'; question: string }
-  | { at: 'overlap'; names: string[]; why: string; suggestion?: string }
-  | { at: 'explain'; names: string[]; why: string; suggestion?: string }
+  | { at: 'explain'; back: { ok: ReviseOk; from: string; overlap: Overlap } }
   | { at: 'error' }
   | { at: 'moved' };
 
@@ -164,16 +166,20 @@ export function JobChangeReview(p: JobChangeReviewProps) {
     if (res.kind === 'error') { setState(res.reason === 'cancelled' ? { at: 'idle' } : { at: 'error' }); return; }
     if (res.kind === 'question') { setState({ at: 'question', q: res }); return; }
     if (res.kind === 'home') { setState(p.homeChoices ? { at: 'home', question: res.question } : { at: 'error' }); return; }
+    // An overlap never blocks a job change: the preview names the teammates
+    // the change adds, with a way to explain the split, and Apply stays on
+    // (owner, 2026-10-24: the check stopped the same change four times that
+    // passes fifteen times out of fifteen on a replay).
+    let overlap: Overlap | undefined;
     if (res.handles && p.checkOverlap) {
-      const overlap = await p.checkOverlap(res).catch(() => null);
+      const found = await p.checkOverlap(res).catch(() => null);
       if (runSeq.current !== seq) return; // stopped or replaced during the check
-      if (overlap?.names.length) {
-        for (const m of overlap.teammates ?? []) named.current.set(m.id, m);
-        setState({ at: 'overlap', names: overlap.names, why: overlap.why, suggestion: overlap.suggestion });
-        return;
+      if (found?.names.length) {
+        for (const m of found.teammates ?? []) named.current.set(m.id, m);
+        overlap = { names: found.names, why: found.why, suggestion: found.suggestion };
       }
     }
-    setState({ at: 'ok', ok: res, from });
+    setState({ at: 'ok', ok: res, from, ...(overlap ? { overlap } : {}) });
   };
   useEffect(() => { if (p.autoRun) void start([]); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -233,65 +239,59 @@ export function JobChangeReview(p: JobChangeReviewProps) {
     // member can't use yet (eng re-run D1): white notes above Apply.
     const noSplit = !!explanation && !state.ok.handoffs?.length && named.current.size > 0;
     const pick = homePick.current;
+    const { ok, from } = state;
+    const overlap = state.overlap;
+    const names = overlap ? listOf(overlap.names) : '';
+    const count = overlap?.names.length ?? 0;
     panel = <Preview ok={state.ok} who={p.who} lead={p.lead} sendsTask={p.sendsTask ?? true} title={p.previewTitle ?? t('jobChange.previewTitle')} heading={heading}
       applyLabel={p.applyLabel} applying={applying} failed={failed} onCancel={cancel} onApply={() => { void doApply(state.ok, state.from); }}
       nameOf={(id) => p.nameOf?.(id) ?? named.current.get(id)?.name}
       noSplit={noSplit ? t('jobChange.noSplit', { names: splitNames, count: named.current.size }) : undefined}
       noAccess={pick?.noAccess && pick.tool ? t('jobChange.noAccess', { name: p.who, tool: pick.tool }) : undefined}
-      onOpenAccess={p.onOpenAccess} />;
+      onOpenAccess={p.onOpenAccess}
+      overlap={overlap ? {
+        // The verb agrees with how many (owner, 2026-10-23: "Pam and Erin already does").
+        title: t('jobChange.overlapTitle', { names, count }),
+        why: overlap.why,
+        explainLabel: t('jobChange.explain'),
+        onExplain: () => {
+          setExplainText((v) => v || explanation || overlap.suggestion || '');
+          setState({ at: 'explain', back: { ok, from, overlap } });
+        },
+        leaveLabel: t('jobChange.leaveWith', { names }),
+        onLeave: () => {
+          const more = [...extras, t('jobChange.leaveWithChange', { names, count })];
+          setExtras(more);
+          void start(more, answersRef.current);
+        }
+      } : undefined} />;
   } else if (state.at === 'question') {
     panel = <Clash q={state.q} who={p.who} heading={heading} onCancel={cancel}
       onAnswer={(answer) => { void start(extras, [...answersRef.current, { question: state.q.question, answer }]); }} />;
   } else if (state.at === 'home') {
     panel = <Home question={state.question} choices={p.homeChoices?.() ?? []} heading={heading} onCancel={cancel}
       onAnswer={(choice) => { homePick.current = choice; void start(extras, [...answersRef.current, { question: state.question, answer: choice.label }]); }} />;
-  } else if (state.at === 'overlap') {
-    // The verb agrees with how many (owner, 2026-10-23: "Pam and Erin already does").
-    const names = listOf(state.names);
-    const count = state.names.length;
-    const { why, suggestion } = state;
-    // Explain is the main way out: most overlaps are two members who hand
-    // work to each other (design D2). Edit my change is a quiet link.
-    panel = (
-      <div role="alert" style={panelStyle}>
-        {head(t('jobChange.overlapTitle', { names, count }))}
-        {state.why && <span style={bodyStyle}>{state.why}</span>}
-        <div style={{ ...rowEnd, justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 8 }}>
-          <button type="button" onClick={() => { setExtras([]); resetSplit(); setState({ at: 'idle' }); }} style={{ ...linkStyle, alignSelf: 'center' }}>{t('jobChange.editMine')}</button>
-          <div style={{ ...rowEnd, flexWrap: 'wrap', marginInlineStart: 'auto' }}>
-            <PixelButton variant="secondary" size="sm" onClick={() => {
-              const more = [...extras, t('jobChange.leaveWithChange', { names, count })];
-              setExtras(more);
-              void start(more, answersRef.current);
-            }}>{t('jobChange.leaveWith', { names })}</PixelButton>
-            <PixelButton variant="primary" size="sm" onClick={() => {
-              setExplainText((v) => v || explanation || suggestion || '');
-              setState({ at: 'explain', names: state.names, why, suggestion });
-            }}>{t('jobChange.explain')}</PixelButton>
-          </div>
-        </div>
-      </div>
-    );
   } else if (state.at === 'explain') {
     // In the card, with the check's reason still in view (design D3); not an
     // alert, so a screen reader doesn't read a text box out as a warning.
-    const back = { at: 'overlap' as const, names: state.names, why: state.why, suggestion: state.suggestion };
+    const { back } = state;
+    const others = back.overlap.names;
     const see = (): void => {
       const text = explainText.trim();
       if (!text) return;
       setExplanation(text);
       void start(extras, answersRef.current, text);
     };
-    const title = t('jobChange.explainTitle', { names: listOf([p.who, ...state.names]) });
+    const title = t('jobChange.explainTitle', { names: listOf([p.who, ...others]) });
     panel = (
       <div style={panelStyle}>
         {head(title)}
-        {state.why && <span style={noteStyle}>{state.why}</span>}
+        {back.overlap.why && <span style={noteStyle}>{back.overlap.why}</span>}
         <textarea
           value={explainText}
           onChange={(e) => setExplainText(e.target.value)}
           onKeyDown={(e) => { if (isComposingKey(e)) return; if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); see(); } }}
-          placeholder={t('jobChange.explainPlaceholder', { who: p.who, other: listOf(state.names) })}
+          placeholder={t('jobChange.explainPlaceholder', { who: p.who, other: listOf(others) })}
           aria-label={title}
           rows={3}
           className="cth-input"
@@ -299,7 +299,7 @@ export function JobChangeReview(p: JobChangeReviewProps) {
           style={{ width: '100%', minHeight: 74, padding: '7px 10px', background: 'var(--cth-card)', border: 'none', outline: 'none', borderRadius: 'var(--cth-r-md)', boxSizing: 'border-box', fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink)', resize: 'vertical' }}
         />
         <div style={{ ...rowEnd, justifyContent: 'space-between' }}>
-          <button type="button" onClick={() => setState(back)} style={{ ...linkStyle, alignSelf: 'center' }}>{t('jobChange.back')}</button>
+          <button type="button" onClick={() => setState({ at: 'ok', ...back })} style={{ ...linkStyle, alignSelf: 'center' }}>{t('jobChange.back')}</button>
           <PixelButton variant="primary" size="sm" onClick={see} disabled={!explainText.trim()}>{t('jobChange.see')}</PixelButton>
         </div>
       </div>
@@ -407,10 +407,13 @@ function Working({ who, progress, heading, onStop }: { who: string; progress?: P
 }
 
 /** The new job: what changes, the new "What X handles", the whole job folded. */
-function Preview({ ok, who, lead, sendsTask, title, heading, applyLabel, applying, failed, onCancel, onApply, nameOf, noSplit, noAccess, onOpenAccess }: {
+function Preview({ ok, who, lead, sendsTask, title, heading, applyLabel, applying, failed, onCancel, onApply, nameOf, noSplit, noAccess, onOpenAccess, overlap }: {
   ok: ReviseOk; who: string; lead?: boolean; sendsTask: boolean; title: string; heading: React.RefObject<HTMLDivElement>;
   applyLabel: string; applying: boolean; failed: boolean; onCancel: () => void; onApply: () => void;
   nameOf?: (id: string) => string | undefined; noSplit?: string; noAccess?: string; onOpenAccess?: () => void;
+  /** Teammates the change adds to the overlap: a note with two optional
+   *  ways to settle it; Apply stays on (owner, 2026-10-24). */
+  overlap?: { title: string; why: string; explainLabel: string; onExplain: () => void; leaveLabel: string; onLeave: () => void };
 }) {
   const { t } = useTranslation();
   const manager = useResolvedGodName();
@@ -459,6 +462,18 @@ function Preview({ ok, who, lead, sendsTask, title, heading, applyLabel, applyin
         <Disclosure open={whole} />{t('jobChange.seeWhole')}
       </button>
       {whole && <div style={{ padding: '8px 10px', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card)' }}><JobParts plain={ok.plain} /></div>}
+      {overlap && (
+        <Note>
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontWeight: 600, color: 'var(--cth-ink)' }}>{overlap.title}</span>
+            {overlap.why && <span>{overlap.why}</span>}
+            <span style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <button type="button" onClick={overlap.onExplain} disabled={applying} style={{ ...linkStyle, color: 'var(--cth-ink)' }}>{overlap.explainLabel}</button>
+              <button type="button" onClick={overlap.onLeave} disabled={applying} style={linkStyle}>{overlap.leaveLabel}</button>
+            </span>
+          </span>
+        </Note>
+      )}
       {noSplit && <Note>{noSplit}</Note>}
       {noAccess && (
         <Note>
