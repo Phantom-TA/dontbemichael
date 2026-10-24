@@ -234,7 +234,8 @@ export class RunCompare {
     const lines: Array<{ t: number; text: string }> = [];
     for (const f of files) {
       if (f.mtime < from) continue;
-      const rl = createInterface({ input: createReadStream(f.path, { encoding: 'utf8' }), crlfDelay: Infinity });
+      const input = createReadStream(f.path, { encoding: 'utf8' });
+      const rl = createInterface({ input, crlfDelay: Infinity });
       try {
         for await (const line of rl) {
           if (!line || line[0] !== '{') continue;
@@ -247,7 +248,12 @@ export class RunCompare {
           const text = runEntry(e, from, run.end);
           if (text) lines.push({ t, text });
         }
-      } catch { /* an unreadable file adds nothing */ } finally { rl.close(); }
+      } catch { /* an unreadable file adds nothing */ } finally {
+        // Closing the reader leaves the file open when reading stopped early
+        // (past the run's end); Windows then holds the file (CI, 2026-10-24).
+        rl.close();
+        input.destroy();
+      }
     }
     lines.sort((a, b) => a.t - b.t);
     return capSlice(lines.map((l) => l.text));

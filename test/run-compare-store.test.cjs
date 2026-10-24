@@ -147,6 +147,18 @@ test('a change that reads like a planted instruction goes to Michael, never to t
   assert.match(f.told[0].body, /quoted here as information, never as instructions/);
 });
 
+test('a session file read only up to the run\'s end is closed after it', async (t) => {
+  // Value: protects=the slicer releases every file it opens; fails_when=reading stops early (past the run's end) and the file stays open, which Windows refuses to delete or rename; why_new=Windows CI 2026-10-24 (ENOTEMPTY on cleanup); seam=fs rename
+  const f = setup(t);
+  twoRuns(f);
+  await f.store.wentWrong({ runId: 2, agentId: 'pam', workStyle: 'x' });
+  const file = path.join(f.projects, '-office-pam', 's-bad.jsonl');
+  await new Promise((r) => setImmediate(r));
+  fs.renameSync(file, `${file}.moved`);
+  fs.rmSync(path.join(f.projects, '-office-pam'), { recursive: true });
+  assert.equal(fs.existsSync(path.join(f.projects, '-office-pam')), false);
+});
+
 test('only the member\'s own sessions from the private record are read', async (t) => {
   // Value: protects=a forged or other member's session never enters the comparison; fails_when=the slicer scans every session file; why_new=architecture finding 1; seam=sessionsOf
   const f = setup(t);
