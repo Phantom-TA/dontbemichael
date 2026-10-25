@@ -87,3 +87,14 @@ test('with Compare on, a quiet tile stays only when its bars show a change', () 
   // A tile whose bars draw its activity still stays after a drop to zero.
   assert.ok(pulseTiles(span(), span({ out: { sent: 4 } }), none).shown.includes('sent'));
 });
+
+test('Your time: a change in how long the office ran shows the tile with Compare, but running time alone is not activity', () => {
+  // Value: protects=Compare's "show when there is some change" and the quiet rule; fails_when=a running time change is invisible to Compare, a change under a minute (not drawn) shows the tile, or running time alone unfolds a quiet tile; why_new=running time joined the tile (owner, 2026-10-25); seam=none; no_claim=none beyond protects
+  const ran = (ms, awayMs, asks = 0) => { const s = span({ asks }); s.snapshot.running = { ms, awayMs, since: null }; return s; };
+  assert.equal(tileActivity('yourTime', ran(3_600_000, 0)), 0);
+  assert.notEqual(tileFigure('yourTime', ran(3_600_000, 0)), tileFigure('yourTime', ran(7_200_000, 0)));
+  assert.notEqual(tileFigure('yourTime', ran(3_600_000, 0)), tileFigure('yourTime', ran(3_600_000, 60_000)));
+  assert.equal(tileFigure('yourTime', ran(3_600_000, 0)), tileFigure('yourTime', ran(3_600_000 + 10_000, 0)), 'the same minute');
+  assert.ok(pulseTiles(ran(7_200_000, 0, 1), ran(3_600_000, 0, 1), none).shown.includes('yourTime'), 'same questions, the office ran longer');
+  assert.ok(pulseTiles(ran(7_200_000, 0), ran(3_600_000, 0), none).quiet.includes('yourTime'), 'nothing happened in either span');
+});

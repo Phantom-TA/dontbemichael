@@ -6538,7 +6538,7 @@ function teardownAndQuit(): void {
   try { stopWebhookServer(); } catch (e) { console.error('[quit] webhook.stop:', e); }
   try { memory.stop(); } catch (e) { console.error('[quit] memory.stop:', e); }
   try { memoryTidy.stop(); } catch (e) { console.error('[quit] memoryTidy.stop:', e); }
-  try { pulseTelemetry.flush(); } catch (e) { console.error('[quit] pulse flush:', e); }
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[quit] pulse flush:', e); }
   try { persist.close(); } catch (e) { console.error('[quit] persist.close:', e); }
   try { hive.stopAllProxyBridges(); } catch (e) { console.error('[quit] stopAllProxyBridges:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[quit] killAll:', e); }
@@ -6693,7 +6693,7 @@ ipcMain.handle('app:resetMemory', async () => {
   // A tidy pass waiting on its model writes nothing when it returns.
   try { memoryTidy.halt(); } catch (e) { console.error('[memory reset] memoryTidy.halt:', e); }
   // Buffered cost samples reach the store before their ids are read.
-  try { pulseTelemetry.flush(); } catch (e) { console.error('[memory reset] pulse flush:', e); }
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[memory reset] pulse flush:', e); }
   // killAll forgets each terminal as it signals it, so the wait watches the
   // processes themselves, snapshotted first (Codex adversarial, ship).
   const trees = ptyManager.list().map((s) => ({ id: s.id, pid: s.pid, before: process.platform === 'win32' ? null : groupMembers(s.pid) }));
@@ -8433,6 +8433,20 @@ function runWorkerWakeBeat(): void {
   }
 }
 
+/** The office is stopped (plan limit, no credit, sign in failed) until a
+ *  check starts: that time is not running time (owner D1, 2026-10-25). */
+function officeStopped(): boolean {
+  const v = officeBreak.view();
+  return !!v && !v.checking;
+}
+
+function pulsePresenceBeat(): void {
+  try {
+    pulseTelemetry.presence(powerMonitor.getSystemIdleTime(), false);
+    pulseTelemetry.running(officeStopped());
+  } catch { /* presence is best-effort */ }
+}
+
 /** (Re)arm the always-on beats (decoupled from the optional heartbeat): the live
  *  fleet snapshot Michael reads (~8s) + the breaker/cost-ledger beat (~30s).
  *  Guarded (clear-then-set) so a re-bootstrap (changeHome recovery) OR a
@@ -8472,8 +8486,12 @@ function armAlwaysOnBeats(): void {
     const stalled = pulseHealth.stallWarning(office);
     if (stalled) console.warn(stalled);
   }, 30_000);
+  // Each minute also counts how long the office ran (owner, 2026-10-25). A
+  // first beat now, so a launch never keeps the last session's presence.
   if (pulsePresenceTimer) clearInterval(pulsePresenceTimer);
-  pulsePresenceTimer = setInterval(() => { try { pulseTelemetry.presence(powerMonitor.getSystemIdleTime(), false); } catch { /* presence is best-effort */ } }, 60_000);
+  pulseTelemetry.runningStart();
+  pulsePresenceBeat();
+  pulsePresenceTimer = setInterval(pulsePresenceBeat, 60_000);
   runWorkerWakeBeat(); // catch-up on arm — power-resume re-arms and drains the backlog
   // A break's timer freezes in system sleep like the beats above.
   armOfficeBreak();
@@ -8630,7 +8648,7 @@ app.whenReady().then(() => {
   // every window, so there is nothing to tear down on quit.
   powerMonitor.on('resume', () => { try { pulseTelemetry.presence(0, false); } catch { /* best-effort */ } onSystemResume('resume'); });
   powerMonitor.on('unlock-screen', () => onSystemResume('unlock-screen'));
-  powerMonitor.on('suspend', () => { lastSuspendAt = Date.now(); console.log('[power] suspend — system sleeping'); try { pulseTelemetry.presence(0, true); } catch { /* best-effort */ } });
+  powerMonitor.on('suspend', () => { lastSuspendAt = Date.now(); console.log('[power] suspend — system sleeping'); try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.presence(0, true); } catch { /* best-effort */ } });
   powerMonitor.on('lock-screen', () => { lastSuspendAt = Date.now(); console.log('[power] lock-screen'); });
   // The app's own menu, always: Electron's default carries Reload and the
   // developer tools, which are not for an office owner (owner, 2026-10-03).

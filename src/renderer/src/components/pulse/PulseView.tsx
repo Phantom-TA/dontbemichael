@@ -289,6 +289,7 @@ export function PulseView() {
   const fmtShort = (day: string): string => new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, { day: 'numeric', month: 'short' });
   const fmtSpan = (from: string, to: string): string => (from === to ? fmtDay(from) : t('pulse.daySpan', { from: fmtShort(from), to: fmtShort(to) }));
   const listNames = (names: string[]): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(names); } catch { return names.join(', '); } };
+  const fmtShortDay = (day: string): string => new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, { day: 'numeric', month: 'short' });
   const fmtDay = (day: string | number): string => new Date(typeof day === 'number' ? day : `${day}T12:00:00`).toLocaleDateString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short' });
   const jobOf = (id?: string): string => missions.find((m) => m.id === id)?.label ?? '';
 
@@ -528,10 +529,26 @@ export function PulseView() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0, paddingInlineStart: 14, boxShadow: 'inset 1px 0 0 var(--cth-line)', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div style={label}>{t('pulse.whileAway')}<InfoTip text={t('pulse.awayTip')} /></div>
-                <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.awayShare === null ? '0%' : pct(s.awayShare)}</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <span style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.awayShare === null ? '0%' : pct(s.awayShare)}</span>
+                  <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.awayLine')}</span>
+                </div>
               </div>
-              {pv ? pair(pv.awayShare, s.awayShare, t('pulse.whileAway'), 'var(--cth-ink-2)', pct)
-                : <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.awayLine')}</div>}
+              {/* How long the office ran and how long of that you were away
+                  (owner, 2026-10-25, D2): two stats at the foot, as on the left. */}
+              <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
+                {([
+                  [s.running?.ms, pv ? pv.running?.ms : undefined, s.running?.since ? t('pulse.officeRanSince', { day: fmtShortDay(s.running.since) }) : t('pulse.officeRan')],
+                  [s.running?.awayMs, pv ? pv.running?.awayMs : undefined, t('pulse.youAway')]
+                ] as Array<[number | undefined, number | undefined, string]>).map(([ms, before, name]) => (
+                  <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <span style={{ ...mono, fontSize: 15, fontWeight: 600, lineHeight: '18px' }}>{ms !== undefined ? duration(ms, t) : '…'}</span>
+                    <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{name}</span>
+                    {pv && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{`${pairLabels[0]}: ${before !== undefined ? duration(before, t) : '…'}`}</span>}
+                  </div>
+                ))}
+              </div>
+              {pv && pair(pv.awayShare, s.awayShare, t('pulse.whileAway'), 'var(--cth-ink-2)', pct)}
             </div>
           </div>
       )

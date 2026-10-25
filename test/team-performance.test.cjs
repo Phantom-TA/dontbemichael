@@ -159,3 +159,14 @@ test('the cost fold counts a restart whole, the same rule as the lifetime ledger
   assert.ok(Math.abs(lifetimeUsdFromLedger(ledger).get('pam') - total) < 1e-9, 'same total as the ledger fold');
   assert.equal(F.costIncrement(1, 1), 0);
 });
+
+test("how long the office ran: the period's points summed, null with none, and the first recorded day when the period starts before it", () => {
+  // Value: protects=the Your time foot stats (owner, 2026-10-25, D2); fails_when=points outside the period count, a period with no record shows 0 instead of "…", or a first month reads low with no word; why_new=new measure; seam=none; no_claim=the view's layout
+  const at = (d, h) => new Date(2026, 9, d, h).getTime();
+  const points = [{ ts: at(4, 10), ms: 9e6, awayMs: 1e6 }, { ts: at(13, 10), ms: 3_600_000, awayMs: 600_000 }, { ts: at(14, 22), ms: 1_800_000, awayMs: 1_800_000 }];
+  const base = { period: 'this-week', now: NOW, days: [], cards: [], decisions: [], asks: [], members: [] };
+  assert.deepEqual(P.pulseSnapshot({ ...base, running: { points, since: '2026-10-04' } }).running, { ms: 5_400_000, awayMs: 2_400_000, since: null });
+  assert.deepEqual(P.pulseSnapshot({ ...base, running: { points: points.slice(1), since: '2026-10-13' } }).running.since, '2026-10-13', 'recording began inside the week');
+  assert.equal(P.pulseSnapshot({ ...base, running: { points: points.slice(0, 1), since: '2026-10-04' } }).running, null);
+  assert.equal(P.pulseSnapshot(base).running, null);
+});

@@ -378,6 +378,15 @@ export class TelemetryProcessor {
     return { routed, cardsOpened };
   }
 
+  /** Running time points since a time (owner, 2026-10-25), and the first
+   *  day the office has one, so a period that starts earlier can say so. */
+  running(office: string, since: number): { points: Array<{ ts: number; ms: number; awayMs: number }>; since: string | null } {
+    const points = this.rows(office, ['running'], since).map((r) => ({ ts: r.ts, ms: Number(r.value ?? 0), awayMs: Number(r.attrs?.away ?? 0) }));
+    const db = this.db();
+    const first = db ? (db.prepare("SELECT MIN(ts) AS t FROM telemetry_events WHERE office = ? AND kind = 'running'").get(office) as { t: number | null } | undefined)?.t ?? null : null;
+    return { points, since: first ? dayKey(first) : null };
+  }
+
   /** The first day this office has any point, for "Collecting since". With
    *  `live`, only points recorded as they happened: a backfill's points (bf)
    *  never start recommendations early. */

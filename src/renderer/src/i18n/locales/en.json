@@ -2643,8 +2643,11 @@
     "yourTimeTip": "Questions the team brought you, the typical wait for your answer, and how many per 100 requests the team took: fewer as the team learns. Under 20 requests the rate shows ….",
     "questionsToYou": "Questions to you",
     "whileAway": "While you were away",
-    "awayTip": "Work done while you had not used this computer for 30 minutes, or it was asleep.",
-    "awayLine": "of the work happened then",
+    "awayTip": "Work done while you had not used this computer for 30 minutes, or it was asleep. Office ran: the time the app was open, the computer awake and the office not stopped.",
+    "awayLine": "of the work",
+    "officeRan": "office ran",
+    "officeRanSince": "office ran since {{day}}",
+    "youAway": "you away",
     "period": "Period",
     "periods": {
       "today": "Today",

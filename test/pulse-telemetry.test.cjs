@@ -677,3 +677,54 @@ test('early lines: most evidence first, at most three', () => {
   const r = earliest([a('x', { runs: 5 }), a('y', { decisions: 9, reopens: 1 }), a('z', { runs: 7 }), a('w', { reopens: 2 })]);
   assert.deepEqual(r.map((x) => x.id), ['y', 'z', 'x']);
 });
+
+// ─── how long the office ran (owner, 2026-10-25) ─────────────────────────────
+
+const { RUN_SAVE_MS, RUN_GAP_CAP_MS } = loadTs('src/main/telemetryStore.ts');
+const MIN = 60_000;
+
+test('running time: awake minutes count, away minutes count as away too, a stopped office and a sleep count nothing, a late timer counts up to the cap', (t) => {
+  // Value: protects=owner D1 and the beat's rules; fails_when=a stopped office or a sleep adds running time, away time is not counted while away, a late timer without a suspend is dropped, or one gap counts past the cap; why_new=new measure; seam=index.ts passes the stopped flag and calls runningPause at suspend; no_claim=powerMonitor's suspend event itself
+  const { persist, store, proc, clock } = setup(t);
+  const t0 = clock.now();
+  store.runningStart(t0);
+  for (let i = 1; i <= 4; i++) store.running(false, t0 + i * MIN);
+  store.flush();
+  assert.deepEqual(proc.running('/office', 0).points, [], 'under 5 minutes nothing is saved yet');
+  store.running(false, t0 + RUN_SAVE_MS);
+  store.flush();
+  assert.deepEqual(proc.running('/office', 0).points.map((p) => [p.ms, p.awayMs]), [[5 * MIN, 0]], 'saved every 5 minutes');
+
+  store.presence(1900, false, t0 + 6 * MIN);           // idle 31 minutes: away
+  store.running(false, t0 + 6 * MIN);                   // 1 minute, away
+  store.running(true, t0 + 7 * MIN);                    // stopped: nothing (D1)
+  store.running(false, t0 + 27 * MIN);                  // a late timer, no suspend: up to the cap; 5 minutes buffered, saved
+  store.runningPause(false, t0 + 28 * MIN);             // a sleep starts: 1 minute, saved at once
+  store.running(false, t0 + 90 * MIN);                  // the first tick after waking starts the clock again
+  store.running(false, t0 + 91 * MIN);
+  store.runningSave();
+  store.flush();
+  assert.equal(RUN_GAP_CAP_MS, 15 * MIN);
+  const pts = proc.running('/office', 0).points.map((p) => [p.ms, p.awayMs]);
+  assert.deepEqual(pts, [[5 * MIN, 0], [16 * MIN, 16 * MIN], [MIN, MIN], [MIN, MIN]], 'the sleep from minute 28 to 90 is not running time');
+  assert.equal(proc.running('/office', 0).since, '2026-10-15');
+  void persist;
+});
+
+test('running time is split at local midnight and saved under the office it ran for; a resume never restarts a running clock', (t) => {
+  // Value: protects=day totals and per office totals; fails_when=a point spans two days, minutes buffered for one office are saved under the next, or an unlock (which re-arms the beats) drops the time since the last tick; why_new=new measure; seam=the office function the app passes; no_claim=how the app switches offices
+  const { persist, proc, clock } = setup(t);
+  let office = '/office';
+  const store = new TelemetryStore(() => persist.database(), () => office, clock.now);
+  const late = new Date(2026, 9, 15, 23, 58).getTime();
+  store.runningStart(late);
+  store.runningStart(late + MIN);                        // an unlock re-arms: the clock keeps its start
+  store.running(false, late + 3 * MIN);                  // 23:58 to 00:01
+  office = '/other';
+  store.running(false, late + 4 * MIN);                  // 1 minute for the other office
+  store.runningSave();
+  store.flush();
+  const days = (o) => proc.running(o, 0).points.map((p) => [new Date(p.ts).getDate(), p.ms]);
+  assert.deepEqual(days('/office'), [[15, 2 * MIN], [16, MIN]]);
+  assert.deepEqual(days('/other'), [[16, MIN]]);
+});
