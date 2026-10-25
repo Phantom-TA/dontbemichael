@@ -108,6 +108,20 @@ export function daysTakenFor(lines: Array<{ kind: 'every' | 'at'; days?: number[
   return [...taken].sort((x, y) => x - y);
 }
 
+/** Every "every" line no longer than a day. A lone plain "every" line may run
+ *  days apart (it is stored as `intervalMs`), but once it shares the schedule,
+ *  gets a window or loses a day, normalizeLine takes at most a day. Without
+ *  this, adding a line to "every 3d" left a schedule that could not be saved
+ *  and showed no reason why. */
+export function capEveryLines<L extends { kind: 'every' | 'at'; everyMs?: number }>(lines: L[]): L[] {
+  return lines.map((l) => (l.kind === 'every' && (l.everyMs ?? 0) > DAY ? { ...l, everyMs: DAY } : l));
+}
+
+/** The line capEveryLines shortened, or -1, so the owner can be told under it. */
+export function cappedLine(before: { kind: 'every' | 'at'; everyMs?: number }[], after: { kind: 'every' | 'at'; everyMs?: number }[]): number {
+  return before.findIndex((l, i) => l.everyMs !== after[i]?.everyMs);
+}
+
 /** Every line made canonical, or null when there are none, any is unusable
  *  (a schedule with one bad line would run on a clock nobody set), or two
  *  lines claim a day an "every" line runs on. */
@@ -257,4 +271,23 @@ export function formatTimes(times: ScheduleLine[], w: WhenWords = ENGLISH_WHEN):
     parts[g.index] = w.at(formatDays(g.days, w), w.and(mins));
   }
   return w.list(parts);
+}
+
+/**
+ * A when line ("Weekdays at 8:30, 12:00 and 17:00") in the parts it may wrap
+ * between: after each list separator and before the final "and", so a single
+ * time or "every 2h" never splits (docs/designs/edit-agent-scheduled-jobs.md,
+ * R1). `sep` is the locale's whenSep and `joiner` the words whenAnd puts
+ * before the last item (" and "). Joined, the parts are the text again.
+ */
+export function whenParts(text: string, sep: string, joiner: string): string[] {
+  const cuts = new Set<number>();
+  if (sep) for (let at = text.indexOf(sep); at >= 0; at = text.indexOf(sep, at + sep.length)) cuts.add(at + sep.length);
+  if (joiner.trim()) { const at = text.lastIndexOf(joiner); if (at > 0) cuts.add(at); }
+  const points = [...cuts].filter((c) => c > 0 && c < text.length).sort((a, b) => a - b);
+  const parts: string[] = [];
+  let from = 0;
+  for (const c of points) { parts.push(text.slice(from, c)); from = c; }
+  parts.push(text.slice(from));
+  return parts.filter(Boolean);
 }
