@@ -154,6 +154,18 @@ test('a .md link opens the file as named, the same way an image src does', () =>
   assert.equal(resolveMdLinkRel('docs/designs/index.md', '%2e%2e/%2e%2e/%2e%2e/x.md'), 'x.md', 'never above the root');
 });
 
+test('a link is judged as a .md link on its cleaned path, so nothing else opens through one', () => {
+  // Value: protects=one click on an agent's markdown can only open a markdown file; fails_when=the .md check reads the raw href, so a ?, an encoded # or an encoded / makes .env or a path outside the folder pass; why_new=review on #543; seam=none
+  const from = 'docs/designs/index.md';
+  for (const href of ['../../.env?x=report.md', 'report.md%23%2F..%2Fsecret.md', 'https%3A%2F%2Fevil.com%2Fx.md', 'javascript%3Aalert(1).md', 'a%5C..%5Csecret.md', '#top', 'notes.txt']) {
+    assert.equal(resolveMdLinkRel(from, href), null, href);
+  }
+  assert.equal(resolveMdLinkRel(from, 'notes.md?raw=1'), 'docs/designs/notes.md', 'a query after the name is dropped');
+  assert.equal(resolveMdLinkRel(from, 'Guide.MARKDOWN#intro'), 'docs/designs/Guide.MARKDOWN');
+  const preview = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src/renderer/src/markdown/MarkdownPreview.tsx'), 'utf8');
+  assert.match(preview, /const clickable = isExternal\(h\) \|\| mdTarget !== null;/, 'only what resolves is clickable');
+});
+
 // ─── the binary read itself ─────────────────────────────────────────────────
 
 /** A 1×1 PNG — a real file with a null byte in its header, i.e. exactly what the
