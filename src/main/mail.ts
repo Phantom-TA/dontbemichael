@@ -275,18 +275,34 @@ export interface MailDeps {
   journalPath?: string;
 }
 
+// `secure: false` means STARTTLS (MailServer), and both libraries only try it
+// when the server offers it: one that doesn't (or someone on the network who
+// removes the offer) would get the password in the clear. So it is required,
+// and a server without encryption fails the login instead.
+
+/** ImapFlow's options for a server. It refuses doSTARTTLS next to secure, so
+ *  it is set only for a STARTTLS server. */
+export function imapOptions(server: MailServer, user: string, pass: string) {
+  return {
+    host: server.host, port: server.port, secure: server.secure, ...(server.secure ? {} : { doSTARTTLS: true }),
+    auth: { user, pass }, logger: false as const, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 60_000
+  };
+}
+
+/** nodemailer's options for a server. */
+export function smtpOptions(server: MailServer, user: string, pass: string) {
+  return {
+    host: server.host, port: server.port, secure: server.secure, requireTLS: !server.secure,
+    auth: { user, pass }, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 45_000
+  };
+}
+
 function defaultImap(server: MailServer, user: string, pass: string): ImapLike {
-  return new ImapFlow({
-    host: server.host, port: server.port, secure: server.secure,
-    auth: { user, pass }, logger: false, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 60_000
-  }) as unknown as ImapLike;
+  return new ImapFlow(imapOptions(server, user, pass)) as unknown as ImapLike;
 }
 
 function defaultSmtp(server: MailServer, user: string, pass: string): SmtpLike {
-  return nodemailer.createTransport({
-    host: server.host, port: server.port, secure: server.secure,
-    auth: { user, pass }, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 45_000
-  }) as unknown as SmtpLike;
+  return nodemailer.createTransport(smtpOptions(server, user, pass)) as unknown as SmtpLike;
 }
 
 /** Plain-language classification of an IMAP or SMTP failure. */
