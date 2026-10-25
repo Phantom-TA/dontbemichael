@@ -78,6 +78,20 @@ test('a cheaper model needs 10 mail decisions, 90% kept and no reopens; never fo
   assert.equal(A.adviceFor({ ...base, members: [member({ model: 'claude-haiku-4-5' })] }).length, 0, 'nothing below small');
 });
 
+test('a cheaper model is only suggested to a member on the top tier', () => {
+  // Value: protects=the design table's top tier condition; fails_when=a middle tier member with good numbers is told to move down; why_new=one Apply downgraded a middle tier member; seam=none; no_claim=none beyond protects
+  const { provider } = member({});
+  const tiers = [
+    { provider, id: 'model-top', label: 'Model Top', tier: 'top' },
+    { provider, id: 'model-mid', label: 'Model Mid', tier: 'middle' },
+    { provider, id: 'model-small', label: 'Model Small', tier: 'small' }
+  ];
+  assert.equal(A.adviceFor({ ...base, ladder: tiers, members: [member({ model: 'model-mid' })] }).length, 0, 'a middle tier member stays put');
+  const [a] = A.adviceFor({ ...base, ladder: tiers, members: [member({ model: 'model-top' })] });
+  assert.equal(a.kind, 'cheaper-model');
+  assert.deepEqual(a.change, { kind: 'model', from: 'model-top', to: 'model-mid', toLabel: 'Model Mid' });
+});
+
 test('a stronger model when work keeps coming back, Michael included', () => {
   // Value: protects=stronger-model rule; fails_when=it ignores reopens or skips Michael; why_new=new; seam=none; no_claim=none beyond protects
   const a = A.adviceFor({ ...base, members: [member({ model: 'claude-sonnet-5', keptShare: 0.5, keptDecisions: 12 })] });
