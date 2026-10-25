@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { PixelButton } from '../PixelButton';
 import { useStore } from '@/store/store';
+import { useHarnessConfig } from '@/hooks/useHarnessConfig';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { isComposingKey } from '@shared/imeGuard';
 import {
@@ -11,10 +12,15 @@ import {
 } from './ui';
 import { formatTimes, normalizeTimes, type WhenWords } from '@shared/scheduleTimes';
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
-import { cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, runNowOutcome, type ScheduledMission } from '@shared/missions';
+import { cannotCheckEmail, cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, orderedJobs, ownerOf, OWNER, runNowOutcome, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
+import { remainingStarterMissions, starterSuggestionsFor, type StarterSuggestion } from '@shared/starterJobs';
+import type { OfficePack } from '@shared/officePack';
+import { gmailConnectorOn } from '@shared/claudeConnectors';
+import { agentMailboxes } from '@shared/mailboxes';
 import { useRtl } from '@/i18n/useDirection';
 import i18n from '@/i18n';
+import { groupName, panelStyle } from '../fieldText';
 
 /**
  * SCHEDULES, per agent (docs/designs/per-agent-schedules.md).
@@ -243,12 +249,16 @@ interface RowProps {
   /** Read only: plain text, no toggle, no editor and no link (the office
    *  schedule; owner, 2026-09-26). */
   readOnly?: boolean;
+  /** The last row in a group's panel: no rule under it, the panel ends it. */
+  last?: boolean;
   ownerName: string;
+  /** The agent's email is off, so a job that checks mail is refused each run. */
+  noEmail?: boolean;
   /** For the focus area check on save; absent on read only rows. */
   focusOwner?: FocusOwner;
 }
 
-function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowProps) {
+function ScheduleRow({ mission, nameOf, readOnly, last, ownerName, noEmail, focusOwner }: RowProps) {
   const { t, i18n } = useTranslation();
   const rtl = useRtl();
   const godName = useResolvedGodName();
@@ -384,6 +394,7 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
         </span>
         <span style={{ display: 'block', marginTop: 2, fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>{whenText(mission, t)}</span>
         {sub && <span style={{ display: 'block', fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{sub}</span>}
+        {noEmail && <span data-no-email style={{ display: 'block', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-amber-text)' }}>{t('schedulesSection.cannotCheckEmail', { name: ownerName })}</span>}
         {/* An older job without a focus area keeps running as before (FA4). */}
         {!readOnly && !heartbeat && (mission.kind ?? 'dispatch') === 'dispatch' && !mission.focus && (
           <span data-add-focus style={{ display: 'block', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-amber-text)' }}>{t('schedulesSection.addFocus')}</span>
@@ -405,7 +416,7 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
     );
 
   return (
-    <div style={{ boxShadow: 'inset 0 -1px 0 var(--cth-ink-100)' }}>
+    <div style={{ boxShadow: last ? undefined : 'inset 0 -1px 0 var(--cth-ink-100)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {header}
         {!readOnly && (
@@ -422,7 +433,7 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
 
       {open && !readOnly && (
         <div
-          style={{ borderRadius: 'var(--cth-r-md)', padding: '4px 8px 12px', background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)' }}
+          style={editorBox}
           onKeyDown={(e) => {
             if (e.key !== 'Escape' || isComposingKey(e.nativeEvent)) return;
             e.stopPropagation();
@@ -550,7 +561,7 @@ function AddSchedule({ to, ownerName, focusOwner }: { to: string; ownerName: str
     );
   }
   return (
-    <div style={{ borderRadius: 'var(--cth-r-md)', marginTop: 12, padding: '4px 8px 12px', background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)' }}>
+    <div style={{ ...editorBox, marginTop: 12 }}>
       <Field label={t('schedulesSection.label')}>
         <input
           autoFocus
@@ -576,6 +587,10 @@ function AddSchedule({ to, ownerName, focusOwner }: { to: string; ownerName: str
   );
 }
 
+/** A job's editor: a white box on the On a schedule panel, no ring of its own
+ *  (app-style-rollout.md AS2). */
+const editorBox: CSSProperties = { borderRadius: 'var(--cth-r-lg)', padding: '4px 10px 12px', background: 'var(--cth-card)' };
+
 /* ───────────────────────────── the list modes ───────────────────────────── */
 
 function useNameOf(): (id: string) => string {
@@ -594,23 +609,71 @@ function useNameOf(): (id: string) => string {
 }
 
 /** One agent's own schedules, editable. `agentId` is its floor id. */
-export function AgentSchedules({ agentId, agentName }: { agentId: string; agentName: string }) {
+export function AgentSchedules({ agentId, agentName, businessType, sourceCard }: {
+  agentId: string; agentName: string; businessType?: string; sourceCard?: string;
+}) {
   const { t } = useTranslation();
   const { missions, status, retry } = useMissions();
   const godId = useGodId();
   const nameOf = useNameOf();
   const agents = useStore((s) => s.agents);
+  const config = useHarnessConfig();
   const mine = useMemo(() => missionsFor(missions, agentId, godId), [missions, agentId, godId]);
   const isGod = agentId === godId;
   // Michael's schedules keep the 'god' alias the router understands.
   const to = isGod ? GOD_ALIAS : agentId;
+  const [suggestionData, setSuggestionData] = useState<{ key: string; items: StarterSuggestion[] } | null>(null);
+  const { busy: suggestionBusy, failed: suggestionFailed, run: saveSuggestion } = useSaveOp();
+  const suggestionKey = `${agentId}:${businessType ?? ''}:${sourceCard ?? ''}`;
+  const starterItems = suggestionData?.key === suggestionKey ? suggestionData.items : [];
+  const suggestionSaving = useRef(false);
+  const suggestions = isGod ? [] : remainingStarterMissions(
+    starterItems, to, missions, godId, (i) => `suggestion_${agentId}_${i}`
+  );
+
+  useEffect(() => {
+    let alive = true;
+    setSuggestionData(null);
+    if (status !== 'ready' || isGod) return;
+    void window.cth.packsList()
+      .then(({ packs, core }) => {
+        const available = [...packs.map((p) => p.pack), core].filter((p): p is OfficePack => !!p);
+        if (alive) setSuggestionData({
+          key: suggestionKey,
+          // Keep all definitions for recognizing existing starter jobs; the
+          // remaining list is capped after excluding jobs already added.
+          items: starterSuggestionsFor(available, businessType, agentId, sourceCard, Infinity)
+        });
+      })
+      .catch(() => { /* The manual add button still works if packs cannot load. */ });
+    return () => { alive = false; };
+  }, [agentId, businessType, sourceCard, suggestionKey, status, isGod]);
+
+  const addSuggestion = (suggestion: ScheduledMission): void => {
+    if (suggestionSaving.current || suggestionBusy) return;
+    // Recheck the current store: another view may have added a custom job or
+    // this starter since the row was rendered.
+    const mission = remainingStarterMissions(
+      starterItems, to, useStore.getState().missions, godId,
+      (i) => `m_${Date.now().toString(36)}_${agentId}_${i}`
+    ).find((m) => m.label === suggestion.label);
+    if (!mission) return;
+    suggestionSaving.current = true;
+    void saveSuggestion(() => window.cth.upsertMission(mission), () => {
+      const current = useStore.getState();
+      if (!current.missions.some((m) => m.id === mission.id)) {
+        current.setMissions([...current.missions, mission], 'ready');
+      }
+      refreshMissions();
+    }).finally(() => { suggestionSaving.current = false; });
+  };
 
   const waiting = loadState(status, missions.length === 0, t('schedulesSection.loadError', { name: agentName }), retry, t);
   if (waiting) return waiting;
 
   const on = mine.filter((m) => m.enabled);
   const next = on.map((m) => nextRunAt(m, Date.now())).filter((x): x is number => x !== null).sort((a, b) => a - b)[0];
-  const ordered = [...mine].sort((a, b) => (nextRunAt(a, Date.now()) ?? Infinity) - (nextRunAt(b, Date.now()) ?? Infinity));
+  const ordered = orderedJobs(mine, Date.now());
 
   // A focus area is checked against this agent's Work style and its other
   // jobs on save (FA3).
@@ -634,10 +697,33 @@ export function AgentSchedules({ agentId, agentName }: { agentId: string; agentN
             mission={m}
             nameOf={nameOf}
             ownerName={agentName}
+            noEmail={!!config && cannotCheckEmail(m, { enabled: agentMailboxes(config, agentId).length > 0 }, gmailConnectorOn(config, agentId))}
             focusOwner={focusOwner}
           />
         ))}
       </div>
+      {suggestions.length > 0 && (
+        <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
+          {suggestions.map((suggestion) => (
+            <li key={suggestion.id} style={{
+              display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+              padding: '8px 0', borderTop: '1px solid var(--cth-ink-100)'
+            }}>
+              <span style={{ flex: '1 1 200px', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
+                {t('schedulesSection.suggestedJob', { title: suggestion.label, schedule: whenText(suggestion, t) })}
+              </span>
+              <PixelButton
+                variant="secondary"
+                size="sm"
+                disabled={suggestionBusy}
+                ariaLabel={t('schedulesSection.addSuggestedJob', { title: suggestion.label })}
+                onClick={() => addSuggestion(suggestion)}
+              >{t('common.add')}</PixelButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      {suggestionFailed && <Line tone="error">{t('schedulesSection.saveFailed')}</Line>}
       <AddSchedule to={to} ownerName={agentName} focusOwner={focusOwner} />
     </div>
   );
@@ -650,6 +736,7 @@ export function OfficeSchedules() {
   const godId = useGodId();
   const nameOf = useNameOf();
   const agents = useStore((s) => s.agents);
+  const config = useHarnessConfig();
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   useEffect(() => {
     window.cth.hiveRegistry()
@@ -679,18 +766,20 @@ export function OfficeSchedules() {
           .filter((m) => ownerOf(m, godId) === owner)
           .sort((a, b) => (nextRunAt(a, Date.now()) ?? Infinity) - (nextRunAt(b, Date.now()) ?? Infinity));
         return (
-          <section key={owner} aria-label={name} style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink-900)' }}>
+          <section key={owner} aria-label={name} style={{ ...panelStyle, gap: 4, marginTop: 12 }}>
+            <h3 style={groupName}>
               {isClosed ? t('schedulesSection.closedGroup', { name }) : name}
-            </div>
+            </h3>
             {isClosed && <Hint>{t('schedulesSection.closedNote', { name })}</Hint>}
-            <div style={{ boxShadow: 'inset 0 1px 0 var(--cth-ink-100)' }}>
-              {rows.map((m) => (
+            <div>
+              {rows.map((m, i) => (
                 <ScheduleRow
                   key={m.id}
                   mission={m}
+                  last={i === rows.length - 1}
                   nameOf={nameOf}
                   ownerName={name}
+                  noEmail={!!config && cannotCheckEmail(m, { enabled: agentMailboxes(config, owner).length > 0 }, gmailConnectorOn(config, owner))}
                   readOnly
                 />
               ))}
