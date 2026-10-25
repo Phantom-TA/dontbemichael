@@ -51,6 +51,15 @@ test('an ask that opens with a list item or a quote shows its question', () => {
   assert.equal(askHeadline('1. **Renew the Acme contract?** It ends Friday.'), 'Renew the Acme contract?');
   // Not a marker: no space after it.
   assert.equal(askHeadline('1.5 hours were billed twice. Should I dispute it?'), '1.5 hours were billed twice.');
+  // A > that compares is part of the question, not a quote.
+  assert.equal(askHeadline('>= $500 is the budget. Approve?'), '>= $500 is the budget.');
+  assert.equal(askHeadline('>5 days late, chase them?'), '>5 days late, chase them?');
+  assert.equal(askHeadline('>Can I send it?'), 'Can I send it?');
+  // Arabic and Persian numbered asks, and task list checkboxes.
+  assert.equal(askHeadline('١. هل توافق على الدفع؟'), 'هل توافق على الدفع؟');
+  assert.equal(askHeadline('۲) هل توافق على الدفع؟'), 'هل توافق على الدفع؟');
+  assert.equal(askHeadline('- [ ] Approve the refund?'), 'Approve the refund?');
+  assert.equal(askHeadline('* [x] Approve the refund?'), 'Approve the refund?');
 });
 
 test('how long ago, in plain words', () => {
