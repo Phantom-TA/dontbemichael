@@ -169,3 +169,44 @@ test('a typed line and Enter is still a submit', () => {
   assert.equal(entry.inputDirty, false);
   assert.equal(block(), null);
 });
+
+test('an Enter after the paste ends, in the same chunk, submits and can open a picker', () => {
+  // Value: protects=a paste and send is a real submit, so a /model picker it opens holds the queue; fails_when=a line break counts as pasted for the whole chunk, so that Enter is kept as draft text and the picker never latches; why_new=review on #548; seam=the real keystroke handler on a fake entry
+  const { onData, entry, prompts } = keystrokeHandler();
+  onData('\x1b[200~/model\x1b[201~\r');
+  assert.deepEqual(prompts, ['/model']);
+  assert.equal(entry.lineBuf, '');
+  assert.equal(entry.automationBlocked, true, 'the picker it opened is latched');
+  // A line break inside the markers is still pasted text, whatever follows.
+  const b = keystrokeHandler();
+  b.onData('\x1b[200~one\rtwo\r\x1b[201~');
+  assert.deepEqual(b.prompts, []);
+  assert.equal(b.entry.lineBuf, 'one\ntwo\n');
+});
+
+// The gate as the pool runs it, with the screen row it reads stubbed.
+function automationGate() {
+  const src = fs.readFileSync(path.join(__dirname, '../src/renderer/src/components/terminalPool.ts'), 'utf8');
+  const part = (from) => { const at = src.indexOf(from); assert.ok(at >= 0, from); return src.slice(at, src.indexOf('\n}\n', at) + 2); };
+  const consts = ['const PROMPT_CHROME', 'const ECHO_GRACE_MS'].map((c) => src.slice(src.indexOf(c), src.indexOf('\n', src.indexOf(c)) + 1)).join('');
+  const js = ts.transpileModule(consts + ['function promptLineHasText(', 'function draftHeld(', 'function automationStateOf('].map(part).join('\n'), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 }
+  }).outputText;
+  return new Function(`${js}\nreturn automationStateOf;`)();
+}
+
+test('the screen never clears a draft that holds a line break', () => {
+  // Value: protects=the queue waits for a pasted block the owner hasn't sent; fails_when=a paste that ends with a line break leaves the cursor on an empty row and the screen check drops the draft, so a queued message is typed after the paste; why_new=review on #548; seam=the real automationStateOf with a stubbed buffer row
+  const automationStateOf = automationGate();
+  const now = 1_000_000;
+  const entry = (lineBuf) => ({
+    opened: true, exited: false, inputDirty: true, inputDirtyAt: now - 5000, lineBuf,
+    automationBlocked: false, automationBlockedAt: 0, automationSettleUntil: 0,
+    term: { buffer: { active: { baseY: 0, cursorY: 0, getLine: () => ({ translateToString: () => '' }) } } }
+  });
+  const pasted = automationStateOf(entry('first line\nsecond line\n'), now);
+  assert.equal(pasted.inputDirty, true);
+  assert.equal(terminalAutomationBlock(pasted, now), 'draft');
+  // A one line draft the screen shows empty is still a phantom, as before.
+  assert.equal(automationStateOf(entry('stale'), now).inputDirty, false);
+});
