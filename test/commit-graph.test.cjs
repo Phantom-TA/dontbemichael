@@ -56,7 +56,23 @@ test('every row reports the lane each of its parents landed in', () => {
   assert.equal(m.parents[1].lane, laneOf(out, 'p2'));
 });
 
-test('merged PRs point at the shared parent where it is drawn and keep the graph narrow', () => {
+/** Each link as CommitGraph.tsx draws it: straight down the child's lane, then
+ *  into the parent's own lane at its row. Lists any link whose straight run
+ *  passes another commit's dot in that lane. */
+function crossings(out) {
+  const at = new Map(out.rows.map((r, i) => [r.sha, i]));
+  const hits = [];
+  out.rows.forEach((r, i) => {
+    for (const p of r.parents) {
+      const j = at.get(p.sha);
+      for (let k = i + 1; j !== undefined && k < j; k++) if (out.rows[k].lane === r.lane) hits.push(`${r.sha} -> ${p.sha} crosses ${out.rows[k].sha}`);
+    }
+  });
+  return hits;
+}
+
+test('merged PRs keep the graph narrow, and every line ends at its parent\'s dot', () => {
+  // Value: protects=the rail stays a few lanes wide on an ordinary merge history and each line meets its parent; fails_when=a lane that waited for a shared parent stays open after its row, so every merged PR pushes the rail right, or a line ends in the lane kept for it beside the parent; why_new=review on #544; seam=the drawing's end point is a source pin, CommitGraph.tsx needs React
   // A "merge pull request" history: each feature branch forks from and merges
   // back into the main line, so its parent is already expected in lane 0.
   const out = layoutGraph([
@@ -64,18 +80,21 @@ test('merged PRs point at the shared parent where it is drawn and keep the graph
     c('m1', 'base', 'f1'), c('f1', 'base'),
     c('base', 'root'), c('root')
   ]);
-  for (const r of out.rows) {
-    for (const p of r.parents) assert.equal(p.lane, laneOf(out, p.sha), `${r.sha} -> ${p.sha}`);
-  }
+  assert.deepEqual(out.rows.map((r) => r.lane), [0, 1, 0, 1, 0, 0]);
   assert.equal(out.maxLane, 1);
+  assert.deepEqual(crossings(out), []);
+  const two = layoutGraph([c('a', 'base'), c('b', 'base'), c('base', 'root'), c('root')]);
+  assert.deepEqual(two.rows.map((r) => r.lane), [0, 1, 0, 0], 'two tips on one commit');
+  const graph = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src/renderer/src/components/git/CommitGraph.tsx'), 'utf8');
+  assert.match(graph, /const x2 = laneX\(rows\[j\]\.lane\);/);
 });
 
-test('two branch tips on one commit both point at its lane', () => {
-  const out = layoutGraph([c('a', 'base'), c('b', 'base'), c('base', 'root'), c('root')]);
-  const b = out.rows.find((r) => r.sha === 'b');
-  assert.equal(b.parents[0].lane, laneOf(out, 'base'));
-  assert.equal(laneOf(out, 'base'), 0);
-  assert.equal(out.maxLane, 1);
+test('three branches off one commit keep a lane each, so no line runs through another branch\'s dot', () => {
+  // Value: protects=several open branches off one base read as separate lines; fails_when=a tip's lane is freed before its parent's row, so the next tip takes it and the first line runs down through its dot; why_new=review on #544; seam=none
+  const out = layoutGraph([c('a', 'd'), c('b', 'd'), c('c', 'd'), c('d', 'e'), c('x', 'e'), c('e')]);
+  assert.deepEqual(out.rows.map((r) => r.lane), [0, 1, 2, 0, 1, 0], 'the lanes close at d, so x reuses one');
+  assert.deepEqual(crossings(out), []);
+  assert.equal(out.maxLane, 2);
 });
 
 test('an empty history is not a crash', () => {

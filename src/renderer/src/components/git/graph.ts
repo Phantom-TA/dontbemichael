@@ -38,6 +38,10 @@ export function layoutGraph(commits: CommitInput[]): GraphLayout {
       if (lane === -1) { lane = lanes.length; lanes.push(c.sha); }
       else lanes[lane] = c.sha;
     }
+    // Every other lane waiting for this commit ends at its row. Two branches off
+    // one commit each keep a lane down to it (so neither line crosses the other's
+    // dots); left open, those lanes pushed the rail right with every merge.
+    for (let k = lane + 1; k < lanes.length; k++) if (lanes[k] === c.sha) lanes[k] = undefined;
     // The commit occupies `lane`; its parents will continue in lanes.
     // The first parent stays in our lane; additional parents go to fresh lanes.
     const parents: CommitLayout['parents'] = [];
@@ -46,13 +50,7 @@ export function layoutGraph(commits: CommitInput[]): GraphLayout {
     } else {
       for (let i = 0; i < c.parents.length; i++) {
         const p = c.parents[i];
-        // A parent another lane already expects is drawn in that lane, so
-        // point at it there and leave our lane free instead of opening a new one.
-        const held = lanes.indexOf(p);
-        if (held !== -1) {
-          if (i === 0) lanes[lane] = undefined;
-          parents.push({ sha: p, lane: held });
-        } else if (i === 0) {
+        if (i === 0) {
           lanes[lane] = p;
           parents.push({ sha: p, lane });
         } else {
