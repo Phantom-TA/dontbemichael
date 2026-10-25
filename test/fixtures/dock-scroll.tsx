@@ -111,18 +111,29 @@ createRoot(document.getElementById('root')!).render(<Fixture />);
 
 // Let layout/ResizeObserver delivery finish before checking preservation or
 // absence: those predicates can already be true before the action is handled.
-// A frame, or a short timer if no frame comes, so a stalled renderer fails a
-// check with its message instead of hanging the run.
-const frame = () => new Promise<void>((resolve) => {
-  const timer = setTimeout(() => { note('no frame in 100ms'); resolve(); }, 100);
-  requestAnimationFrame(() => { clearTimeout(timer); note('frame'); resolve(); });
+// A frame, or a short timer if no frame comes; true only when one was drawn.
+const frame = () => new Promise<boolean>((resolve) => {
+  const timer = setTimeout(() => { note('no frame in 100ms'); resolve(false); }, 100);
+  requestAnimationFrame(() => { clearTimeout(timer); note('frame'); resolve(true); });
 });
-const settle = async () => { await frame(); await frame(); };
+// A busy machine can stop drawing for seconds (a loaded run here went 0.1 s to
+// 12 s without a frame, and a scroll event only arrives with one). So a wait
+// counts the frames that were drawn, not just the clock, and gives up on the
+// clock alone only after STALL_CAP_MS: a renderer that stopped drawing still
+// fails its check, with its message, instead of hanging the run.
+const STALL_CAP_MS = 30_000;
+const settle = async () => {
+  const cap = performance.now() + STALL_CAP_MS;
+  for (let drawn = 0; drawn < 2 && performance.now() < cap;) if (await frame()) drawn++;
+};
 async function until(predicate: () => unknown, message: string): Promise<void> {
-  const deadline = performance.now() + 2000;
+  // Two seconds and 120 drawn frames, whichever comes later.
+  const start = performance.now();
+  let drawn = 0;
   while (!predicate()) {
-    if (performance.now() >= deadline) throw new Error(`${message} (${where()})`);
-    await frame();
+    const waited = performance.now() - start;
+    if ((waited >= 2000 && drawn >= 120) || waited >= STALL_CAP_MS) throw new Error(`${message} (${where()})`);
+    if (await frame()) drawn++;
   }
 }
 async function scrollTo(top: number) {
