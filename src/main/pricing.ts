@@ -24,7 +24,11 @@ export interface ModelPrice {
 
 // Anthropic list prices, USD per million tokens. Approximate, fallback-only —
 // the live path uses Claude's own per-model cost, so drift here is harmless.
-const OPUS: ModelPrice = { inputPerM: 15, outputPerM: 75, cacheReadPerM: 1.5, cacheWritePerM: 18.75 };
+// Opus by version, from platform.claude.com pricing (2026-10-25): 5.5 has its
+// own row, 4.5 to 5 share one, and 4.1 and older keep the old price.
+const OPUS_5_5: ModelPrice = { inputPerM: 4, outputPerM: 20, cacheReadPerM: 0.2, cacheWritePerM: 5 };
+const OPUS_5: ModelPrice = { inputPerM: 5, outputPerM: 25, cacheReadPerM: 0.5, cacheWritePerM: 6.25 };
+const OPUS_4: ModelPrice = { inputPerM: 15, outputPerM: 75, cacheReadPerM: 1.5, cacheWritePerM: 18.75 };
 const SONNET: ModelPrice = { inputPerM: 3, outputPerM: 15, cacheReadPerM: 0.3, cacheWritePerM: 3.75 };
 const HAIKU: ModelPrice = { inputPerM: 0.8, outputPerM: 4, cacheReadPerM: 0.08, cacheWritePerM: 1.0 };
 
@@ -48,10 +52,24 @@ export function normalizeModel(model: string | undefined | null): string {
   return (model ?? '').trim().replace(/\[[^\]]*\]\s*$/, '');
 }
 
+/**
+ * An Opus id's row by its version: `opus-5-5`, `opus-4-8-high` and `opus-4.8`
+ * after the name, or `claude-3-opus` before it. Each part is one or two digits,
+ * so a date such as the one in `claude-opus-4-20250514` is never read as one.
+ * The bare `opus` alias, and any Opus newer than the table, get the newest row.
+ */
+function opusPrice(m: string): ModelPrice {
+  const v = /opus-(\d{1,2})(?:[-.](\d{1,2}))?(?!\d)/.exec(m) ?? /(\d{1,2})(?:[-.](\d{1,2}))?-opus/.exec(m);
+  if (!v) return OPUS_5_5;
+  const version = Number(v[1]) + Number(v[2] ?? 0) / 10;
+  if (version >= 5.5) return OPUS_5_5;
+  return version >= 4.5 ? OPUS_5 : OPUS_4;
+}
+
 /** Resolve a model id to its price row by family, falling back to Sonnet. */
 export function priceFor(model: string | undefined | null): ModelPrice {
   const m = normalizeModel(model).toLowerCase();
-  if (m.includes('opus')) return OPUS;
+  if (m.includes('opus')) return opusPrice(m);
   if (m.includes('haiku')) return HAIKU;
   if (m.includes('sonnet')) return SONNET;
   if (m.startsWith('gpt-') || m.includes('codex')) {
