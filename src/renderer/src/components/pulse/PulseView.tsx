@@ -33,6 +33,7 @@ import { Toggle } from '../triggers/ui';
 import { AgentAvatar } from '../AgentAvatar';
 import { InfoTip } from '../InfoTip';
 import { PixelButton } from '../PixelButton';
+import { RunSuggestions } from './RunSuggestions';
 import { Icon, type IconName } from '../Icon';
 import { useDialog } from '@/shell/useDialog';
 import { godNameNow } from '@/i18n';
@@ -232,6 +233,8 @@ export function PulseView() {
   // The owner's choice, kept even while a period cannot compare yet (design D4).
   const [compare, setCompare] = useState<boolean>(() => { try { return window.localStorage.getItem(LS_COMPARE) === '1'; } catch { return false; } });
   const [data, setData] = useState<PulseData | null>(null);
+  /** Run comparison cards showing in Recommendations (RunSuggestions). */
+  const [runCards, setRunCards] = useState(0);
   const [failed, setFailed] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
   // The held tile's list (owner, 2026-10-16).
@@ -527,10 +530,26 @@ export function PulseView() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0, paddingInlineStart: 14, boxShadow: 'inset 1px 0 0 var(--cth-line)', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div style={label}>{t('pulse.whileAway')}<InfoTip text={t('pulse.awayTip')} /></div>
-                <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.awayShare === null ? '0%' : pct(s.awayShare)}</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <span style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.awayShare === null ? '0%' : pct(s.awayShare)}</span>
+                  <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.awayLine')}</span>
+                </div>
               </div>
-              {pv ? pair(pv.awayShare, s.awayShare, t('pulse.whileAway'), 'var(--cth-ink-2)', pct)
-                : <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.awayLine')}</div>}
+              {/* How long the office ran and how long of that you were away
+                  (owner, 2026-10-25, D2): two stats at the foot, as on the left. */}
+              <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
+                {([
+                  [s.running?.ms, pv ? pv.running?.ms : undefined, s.running?.since ? t('pulse.officeRanSince', { day: fmtShort(s.running.since) }) : t('pulse.officeRan')],
+                  [s.running?.awayMs, pv ? pv.running?.awayMs : undefined, t('pulse.youAway')]
+                ] as Array<[number | undefined, number | undefined, string]>).map(([ms, before, name]) => (
+                  <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <span style={{ ...mono, fontSize: 15, fontWeight: 600, lineHeight: '18px' }}>{ms !== undefined ? duration(ms, t) : '…'}</span>
+                    <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{name}</span>
+                    {pv && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{`${pairLabels[0]}: ${before !== undefined ? duration(before, t) : '…'}`}</span>}
+                  </div>
+                ))}
+              </div>
+              {pv && pair(pv.awayShare, s.awayShare, t('pulse.whileAway'), 'var(--cth-ink-2)', pct)}
             </div>
           </div>
       )
@@ -583,6 +602,8 @@ export function PulseView() {
 
         {/* Before any advice: one short line, the why behind the (i) (1D). */}
         <Section title={t('pulse.recommendations')} tip={noAdvice && view.adviceFrom ? t('pulse.adviceStarts', { day: fmtDay(view.adviceFrom), since: fmtDay(view.liveSince ?? Date.now()) }) : t('pulse.recommendationsTip')}>
+          {/* Run comparisons the owner asked for with "Went wrong" (runCompare.ts). */}
+          <RunSuggestions onShown={setRunCards} />
           {/* Before advice: what the advice rules see so far (owner, 2026-10-19),
               as insight cards under a lit header (design A): the Early look pill,
               the bold line and the countdown to advice; one card per pattern,
@@ -615,7 +636,7 @@ export function PulseView() {
               </div>
             </div>
           ) : foundationJobs.length > 0 && <div style={{ ...card, padding: '12px 16px', marginBottom: 10 }}><FoundationsStrip jobs={foundationJobs} /></div>}
-          {!(noAdvice && early.length > 0) && noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
+          {!(noAdvice && early.length > 0) && (view.adviceFrom || runCards === 0) && noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
           {(!noAdvice || savedShown) && <div style={grid(sugCols)}>
             {applied.map((x) => (
               <div key={`a-${x.appliedId}`} style={{ background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>

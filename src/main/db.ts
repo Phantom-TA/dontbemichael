@@ -174,6 +174,24 @@ const MIGRATIONS: Array<(db: Database.Database) => void> = [
       );
       CREATE INDEX IF NOT EXISTS idx_cl_office_id ON cost_ledger(office, id);
     `);
+  },
+  // → user_version 6: the owner's own notes for members' memory (memory
+  // evidence, D9). Kept here, outside every agent folder, so a note in a
+  // member's inbox can never pass for the owner's; the tidy-up files each one
+  // and marks it filed (src/main/ownerNotes.ts).
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS owner_notes (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        office   TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        at       TEXT NOT NULL,
+        text     TEXT NOT NULL,
+        why      TEXT NOT NULL,
+        filed_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_on_pending ON owner_notes(office, agent_id, id) WHERE filed_at IS NULL;
+    `);
   }
 ];
 

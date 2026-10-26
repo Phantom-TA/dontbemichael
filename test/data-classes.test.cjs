@@ -72,6 +72,20 @@ test('a card is found beside its expiry, its security code or another number', (
   assert.ok(!money('order 4111 1111 1111 1112 12/27'), 'fails Luhn: not a card');
 });
 
+test('the patterns stay quick on the longest text the check reads', () => {
+  // Value: protects=the main process never stalls on a long message or web answer; fails_when=a pattern backtracks over a long run without spaces (the email pattern took 1.5 s on 60,000 digits); why_new=found reviewing PR 582; seam=none; no_claim=engine speed on other machines beyond the loose bound
+  const n = 60_000; // TRUST_MAX_CHARS, the most the trust layer reads
+  const runs = { digits: '1'.repeat(n), letters: 'ab'.repeat(n / 2), dots: '1.'.repeat(n / 2), hyphens: '1-'.repeat(n / 2), at: 'a@'.repeat(n / 2), domain: `x@${'a.'.repeat(n / 2 - 1)}` };
+  for (const [name, text] of Object.entries(runs)) {
+    const start = process.hrtime.bigint();
+    dc.patternHits(text);
+    const ms = Number(process.hrtime.bigint() - start) / 1e6;
+    // gstack-timing-ok: the unbounded pattern took 1.5 s here and the bounded one a few ms, so 300 ms is far from both.
+    assert.ok(ms < 300, `${name}: ${Math.round(ms)} ms`);
+  }
+  assert.ok(dc.patternHits(`${'x'.repeat(100)}john@example.com`).some((h) => h.classId === 'contact'), 'an address at the end of a long run still counts');
+});
+
 test('plain research questions trip no pattern', () => {
   // Value: protects=ordinary asks reach Research; fails_when=years, prices or counts read as private; why_new=new feature; seam=none
   for (const t of ['pizza suppliers in Austin', 'food safety rules for 2026', 'average price of flour per 50 lb bag, around $25', 'how many restaurants opened in Texas in 2025',

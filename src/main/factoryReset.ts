@@ -69,10 +69,11 @@ export const PRIVATE_ENTRIES = [
   'member-sessions.jsonl'
 ] as const;
 
-/** The privacy and standing approval checks' own empty folders (index.ts). */
+/** The privacy, standing approval and run comparison checks' own empty folders (index.ts). */
 export const STANDING_CHECK_DIR = 'standing-check';
 export const TRUST_CHECK_DIR = 'trust-check';
-export const CHECK_FOLDERS = [STANDING_CHECK_DIR, TRUST_CHECK_DIR] as const;
+export const RUN_COMPARE_DIR = 'run-compare';
+export const CHECK_FOLDERS = [STANDING_CHECK_DIR, TRUST_CHECK_DIR, RUN_COMPARE_DIR] as const;
 
 /** Created by the app in its own data folder for the office it runs. */
 export const APP_DATA_ENTRIES = [

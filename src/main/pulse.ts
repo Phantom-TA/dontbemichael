@@ -246,12 +246,13 @@ export class PulseService {
     const decisions = this.d.processor.decisions(office, from);
     const asks = this.asks();
     const gapDays = this.d.store.failureDays(office);
+    const running = this.d.processor.running(office, from);
     // On a plan, each member's dollars are their part of the plan's real cost
     // for the period, split by share of the work (owner, 2026-10-15).
     const price = billing === 'account' ? this.planPrice() : null;
     const measure = (r: DayRange): { snapshot: PulseSnapshot; keptSafe: KeptSafe; periodCost: number; payPerUse: number } => {
       const raw = pulseSnapshot({
-        period, now, range: r, days, cards, decisions, asks, members: ids, gapDays,
+        period, now, range: r, days, cards, decisions, asks, members: ids, gapDays, running,
         sentAsWritten: decisions.filter((x) => x.decision === 'approve' && x.at >= r.fromMs && x.at <= r.toMs).length,
         ...(godId ? { michael: { agentId: godId, ...this.d.processor.michaelCounts(office, godId, r.fromMs, r.toMs) } } : {})
       });

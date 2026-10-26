@@ -1,5 +1,72 @@
 # TODOS
 
+## Memory and voice trust gaps (from the 0.2.7 ship review, 2026-10-26; owner chose TODOS)
+
+### Owner standing per note, not per tidy pass
+
+**What:** Have each owner sourced op name the owner note it comes from, and accept source owner only for an op that cites a note under FROM THE OWNER in this pass.
+
+**Why:** `validateOps` gets `ownerWords` for the whole pass (src/main/memoryTidy.ts). When any owner note is pending, an op the model built from an inbox line can claim owner, and only the prompt keeps the two apart. Michael gets an owner note for every dock message, so his passes almost always run that way.
+
+Go with it: keep only the owner's own words (the answer, the edit, the note) in `owner_notes.text` and the quoted context (the member's question, a card title, an email subject, pasted text) in a field of its own that the tidy prompt labels as not the owner's; today one line in the instructions asks the model to tell them apart (D4). And file an owner note only when a pass used it, or keep the ones it set aside for a later pass, so a planted inbox note can't talk the tidy-up into dropping the owner's words (adversarial review, DeepSeek, 2026-10-26).
+
+**Effort:** M
+**Priority:** P2
+
+### Owner entries in memory.md can be planted
+
+**What:** Keep the ids (or a hash) of the owner entries the tidy-up writes in harness.db, and read any other entry marked owner as the member's own.
+
+**Why:** memory.md sits in the member's folder, which its shell can write; `parseIndex` trusts any `| owner |` line, and the new rules then protect it. Older than this branch.
+
+**Effort:** M
+**Priority:** P2
+
+### A correction typed in a member's own terminal can't replace an owner entry
+
+**What:** Record what the owner types to a member as an owner note, the way the dock does for Michael, or give the member an app path that writes one.
+
+**Why:** Members still write the owner's corrections to their inbox, which never counts as the owner's, so an older owner entry (from an Ask me answer) can't be replaced that way.
+
+**Effort:** M
+**Priority:** P2
+
+### Run comparison reads transcripts it finds by name
+
+**What:** Record each member session's transcript path (and size) when the app starts the session, and have run comparison read only that file, instead of finding `<session id>.jsonl` anywhere under Claude's projects folder.
+
+**Why:** On a Mac members' shells are walled off from that folder, but on Windows a member's shell could write a file under its own session id. The member's own transcript already holds whatever it chose to say, and every suggestion still waits for the owner's Review and Apply, so this is defense in depth. The injection screen on a suggestion is a pattern list, not a boundary; the owner's Apply is (adversarial review, DeepSeek, 2026-10-26).
+
+**Effort:** S
+**Priority:** P3
+
+### Voice confirms for schedules and settings carry no target
+
+**What:** Carry the staged schedule id or setting key on the pending confirm, and cancel when the confirm names another one, as `namesSomeoneElse` does for members.
+
+**Why:** "confirm, delete the Invoice check schedule" while a delete of Morning report waits deletes Morning report. Older than this branch. Also: a member whose name is an ordinary word ("Will") can cancel a valid confirm; it fails safe.
+
+**Effort:** S
+**Priority:** P2
+
+## Overlap split (deferred from the CEO review, 2026-10-24)
+
+### Explain how they split it in the hire wizard
+
+**What:** Give the hire wizard's overlap step the same "Explain how they split it" that Edit agent has, writing the new hire's handoffs.
+
+**Why:** A new hire who works with a teammate (sends them part of the work) hits the same wall a changed job did: cut the duty or guess at wording.
+
+**Pros:** One way of describing teamwork everywhere a job is written.
+
+**Cons:** The wizard's overlap box has mailbox, topic and connection chips, and its topic chip writes the boundary the opposite way ("Only X." on the new hire, "Not for X" on the teammate); its Next gate needs the explanation to count. About M.
+
+**Context:** Edit agent's version: JobChangeReview's explain state, the revise call's `explanation` and `teammates`, `checkDistinct` mode 'change', and the handoff list in src/shared/jobChange.ts (docs/designs/work-style-change-request.md, Overlap split). Deferred by the owner (CEO D8) to prove it in Edit agent first.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** the Edit agent version shipping
+
 ## Release notes accuracy (from the eng review of the site's 0.2.5 and 0.2.6 plan, 2026-10-24)
 
 ### The 0.2.5 changelog says engine records are closed to every member's shell
@@ -86,6 +153,18 @@
 **Depends on:** None
 
 ## Team performance (from the CEO review of docs/designs/team-performance.md, 2026-10-15)
+
+### Compare runs for members on other engines
+
+**What:** Read Codex (and other engines') session files for a run's window, so "Went wrong" can compare their runs too.
+
+**Why:** Run comparison (src/main/runCompare.ts) reads only Claude Code's conversations, so members on other engines get no suggestions; the jobs list shows an info icon for them.
+
+**Context:** From the eng review of "Compare runs we already have", 2026-10-24 (D8). The slicer finds a member's sessions through the private session record and reads `<claude projects>/<folder>/<session>.jsonl`; `pulseBackfill.ts` has the same limit. Each engine needs its own folder and line format, and its own `runEntry` reading.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P3
+**Depends on:** Run comparison (this feature)
 
 ### Give Fable a tier and a price
 

@@ -1263,6 +1263,16 @@ its Discard changes? question and opens the Access tab with On a schedule unfold
 One row per job, `line` hairlines between: the name (13 px, 600, wraps whole) with the when
 line at the right (IBM Plex Mono 12 px, ink 2; it wraps only between its times and drops under
 a long name), then the focus (12.5 px, ink 2, two lines at most) or "No focus area" in ink 3.
+Under it, the job's last finished run (owner, 2026-10-24, `src/shared/runCompare.ts`): "Last run"
+and the local weekday and time at 12 / 17 in ink 3, then a link style button "Went wrong" ("Try
+again" after a comparison failed). It opens a one line box (`cth-input` on `card`, 12.5 px,
+placeholder "What was wrong? (optional)", up to 300 characters, Enter sends) over a small primary
+Ask Michael and a small secondary Cancel. Then one `role=status` line at 12 / 17 in ink 2 says what
+came of it: Michael is comparing it with an earlier run that went well, his suggestion is in Pulse
+(§7.27), you put it off, Michael was told instead, it couldn't be compared, or why there was
+nothing to compare (no earlier run went well, the conversation is gone, nothing to change). Went
+wrong shows only while no comparison is under way or done; a member on another engine gets an
+(i) in its place ("Comparing runs works for members on Claude for now.").
 Paused: a `neutral-soft` "Paused" pill after the name, the row in ink 3; paused jobs last,
 the others soonest first. No jobs: "None yet". A failed read: "Couldn't read the schedules."
 with Try again (`role=alert`). Research has no group.
@@ -1278,8 +1288,20 @@ focus. Working: "Working out what changes for Pam…", then its three real steps
 "What Pam handles" with the new line or a `card` pill "Unchanged", a "See the whole new job"
 disclosure, and Cancel and Apply in a row that sticks to the preview's bottom. A clash: "One
 thing first", the question, two or three option rows (`cth-askme-opt`, one with a green
-"Suggested" pill) plus Something else with a text field, Cancel and Continue. An overlap:
-"Kelly already does part of this", the reason, Edit my change and Leave it with Kelly. Couldn't
+"Suggested" pill) plus Something else with a text field, Cancel and Continue. An overlap
+never blocks a job change (owner, 2026-10-24): the preview carries it as a white note above Cancel
+and Apply, "Kelly already does part of this" (600 ink) and the reason, with two links, Explain how
+they split it and Leave it with Kelly; Apply stays on. Only teammates the change adds count: the job
+before the change is checked too, and overlaps it already had are left out. Explain opens a box in
+the card: "How do Pam and Kelly split it?", the reason
+as a note, the box (the check's split suggestion, or empty with a placeholder), Back (link, to the same
+preview) and See what changes; not an alert. The preview then lists "Goes to a teammate" under What Pam handles, one
+line each with a 16 px green-soft + or neutral-soft − (aria-hidden), and, above Cancel and Apply,
+white notes (card fill, r-md, info mark, not alerts) for "No split was written" and "Pam can't use
+HubSpot yet." with Open Access. A tracking question lists Pam's folder (Suggested), then Connected
+tools: on in Settings A to Z, then off ones greyed with an "Off" tag, aria-disabled and skipped by
+the arrows; four tools then Show all. Under What Kelly handles in Edit agent, "Gets from Pam:" (600
+ink-2) and the scopes in the field hint style, with an InfoTip (overlap split, 2026-10-24). Couldn't
 work out the change, and Pam's job changed meanwhile (the typed change shown on `card`), are
 `role=alert` with Cancel and Try again or See what changes again. After Apply or Undo the box
 comes back empty with one `role=status` line ("Pam's job is updated.") and takes focus. In the
@@ -1376,6 +1398,14 @@ half written message survives the switch.
   days, then mono dollars in `green` text; before any change it is not there. With nothing to
   recommend, no card: one short `t-meta` `ink-3` line under the header, "Nothing to change
   this week", or before two full weeks of work "Advice from Thu, Oct 29" (owner, 2026-10-19).
+  A run suggestion, from the owner's Went wrong on a scheduled job (§7.26, Scheduled jobs;
+  `RunSuggestions`), sits first in the section, above the Early look header and the Foundations
+  strip, in the recommendation card's build: `amber` soft, the 1 px `amber` border at 40%, r-xl,
+  padding 12 × 14; a 22 px avatar and the title 13/600 ("Michael suggests a change to Pam's job
+  "Weekly report""), the change at 13 / 19 `ink`, the why at 12 / 17 in `amber` text, then
+  primary Review the change (Edit agent opens with What should change? filled in) and secondary
+  Not now. No savings chip. A card leaves once the member's job has changed since it was made.
+  While one shows, "Nothing to change this week" is left out; "Advice from" stays.
   Before two full weeks, when the advice rules already see something (owner, 2026-10-19,
   design A, mockup `pulse-early-patterns-20261019/early-patterns-variants.html`), insight
   cards take that line's place: one `card` whose header is lit with an `indigo-soft`
@@ -1457,6 +1487,14 @@ half written message survives the switch.
   value over an 11 px `ink-3` caption: the median wait ("typical wait") and the questions per
   100 requests the team took ("…" under 20 requests; with Compare, "Yesterday: 3.1" under it).
   Compare keeps one pair of bars, on the count (owner, 2026-10-20).
+  Its right column, labelled "While you were away" (owner, 2026-10-25,
+  docs/designs/team-performance.md D17): the share as the mono 24 px number with "of the work"
+  beside it in 11 px `ink-3`, then at the foot two small stats in the left column's build: how
+  long the office ran ("office ran", or "office ran since Oct 12" when recording began inside the
+  period), counting only time the app was open, the computer awake and the office not stopped,
+  and how much of that the owner was away ("you away"), as hours and minutes ("31h 20m"), "…"
+  with no record yet. With Compare, "Last week: 28h 5m" under each, and one pair of bars on the
+  share. Its (i) says what counts as running.
   Each tile spreads its content top to bottom so none holds an empty foot. On a Claude plan with a known price
   (Settings > Agents, else the plan found in the owner's Claude account), every dollar on
   Pulse is a member's part of the plan's real cost for the days so far in the period, split by
@@ -2434,6 +2472,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-23 | Web: install dialog drawings for the signed Mac build (§9.10): the downloaded from the Internet sheet in its own words with Open highlighted, a Checked by Apple panel, and two Mac install steps; Windows unchanged. |
 | 2026-10-24 | Web: the site catches up with 0.2.5 and 0.2.6. Tiles (§9.5): their real length, Limits in writing names changing a job by saying what should change, Work on a schedule names paused starter jobs. Footer (§9.6): the legal line names GAACC AI Labs, linked. Privacy note (§9.15) and /security Who is given what (§9.16): email a member reads is labelled as the sender's words, steering lines pointed out, Michael told, never "removed". /security Where your data lives (§9.16): conversation records kept out of other members' file tools, Michael's included. Pulse lead (§9.17): See the emails. Setup foundations inset (§9.18): the 0.2.6 card hint and its Add a file link, and the inset line names adding a file. |
 | 2026-10-24 | Web: the home page answers four owner questions (design review Direction A, §9.19): what it is, what it takes off your plate (job cards and the flow line, §9.21), can I trust it (trust cards, §9.20) and how you keep an eye on it (Needs you, the board, and a home Pulse trimmed to work done, cost and each member's time and cost, §9.17). The detail moves to a new How it works page (§9.22): the setup insets, the refund story and Sending switch, the privacy section, the file tabs, the full Pulse, the tiles and open source. Nav: What it does, Trust, Keeping watch, How it works (§9.1). |
+| 2026-10-25 | Scheduled jobs: each job's last run with Went wrong, a one line box, Ask Michael and Cancel, and a line on what came of it (§7.26). Pulse: the run suggestion card first in Recommendations, in the recommendation card's build, with Review the change and Not now, and "Nothing to change" left out while one shows; Your time's While you were away half says "of the work" beside the share and, at its foot, how long the office ran and how long of that you were away (§7.27). |
 
 ---
 

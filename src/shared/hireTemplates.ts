@@ -367,9 +367,17 @@ export const SIMILAR_LINES = 0.5;
 export function overlapsByRules(job: JobProfile, team: JobProfile[]): string[] {
   const strip = (text: string, ...names: string[]) =>
     names.filter((n) => n.trim()).reduce((t, n) => t.replace(nameRe(n.trim()), ' '), text);
+  // Work one of them sends to the other is not work they share: "Not for
+  // technical questions; that goes to Nick." on Kelly's line is a handoff,
+  // and comparing its words would make the handoff look like an overlap
+  // (overlap split plan, A1). Only the lines between these two go; the rest
+  // of each line is still compared.
+  const sent = (text: string, to: string) => (to.trim() ? text.replace(bindingRe(to.trim()), ' ') : text);
   const out: string[] = [];
   for (const m of team) {
-    if (lineSimilarity(strip(job.routing, job.name, m.name), strip(m.routing, job.name, m.name)) >= SIMILAR_LINES) out.push(m.name);
+    const mine = strip(sent(job.routing, m.name), job.name, m.name);
+    const theirs = strip(sent(m.routing, job.name), job.name, m.name);
+    if (lineSimilarity(mine, theirs) >= SIMILAR_LINES) out.push(m.name);
   }
   return out;
 }
@@ -492,7 +500,19 @@ export interface DistinctVerdict {
   source: 'ai' | 'rules';
 }
 
-export function distinctPrompt(job: JobProfile, team: JobProfile[]): string {
+/** Who the check is for: a new hire (the wizard), or a member whose job the
+ *  owner is changing (Edit agent), where handoffs between them count. */
+export type DistinctMode = 'hire' | 'change';
+
+/** A role line with its binding and handoff lines first, so the 500
+ *  character clip never cuts the line that says where work goes. */
+function linesFirst(routing: string): string {
+  const { text, lines } = splitBindings(routing);
+  return [...lines, text].filter(Boolean).join(' ');
+}
+
+export function distinctPrompt(job: JobProfile, team: JobProfile[], mode: DistinctMode = 'hire'): string {
+  if (mode === 'change') return changePrompt(job, team);
   const clip = (s: string | undefined, n: number) => (s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
   const lines = team.map((m) =>
     `- ${m.name}: title "${clip(m.title, 80)}"; what to send: "${clip(m.routing, 500)}"`
@@ -511,6 +531,36 @@ export function distinctPrompt(job: JobProfile, team: JobProfile[]): string {
     '',
     'Answer with ONE JSON object and nothing else:',
     '{"distinct": true or false, "overlapsWith": ["names of teammates whose work overlaps"], "why": "one plain sentence for the owner", "suggestion": "one short way to make the new job particular, or empty"}',
+    'Use plain words and no dashes.'
+  ].join('\n');
+}
+
+/** The check for a changed job (Edit agent): the hire check's rule, plus
+ *  handoffs. Work a member sends on to a teammate, by a "Not for X; that goes
+ *  to Name." line or by its work style sending it to that teammate's role, is
+ *  not an overlap with that teammate; the rest is judged as for a hire. The
+ *  suggestion asks how the work could split between them, for the owner's
+ *  "Explain how they split it" box. */
+function changePrompt(job: JobProfile, team: JobProfile[]): string {
+  const clip = (s: string | undefined, n: number) => (s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const lines = team.map((m) =>
+    `- ${m.name}: title "${clip(m.title, 80)}"; what to send: "${clip(linesFirst(m.routing), 500)}"`
+    + `${m.mailbox ? `; mailbox ${m.mailbox}` : ''}; work style: "${clip(m.workStyle, 600)}"`);
+  return [
+    'You check whether a team member\'s changed job overlaps anyone else on a small business\'s AI team.',
+    'The office manager routes each piece of work by reading every teammate\'s "what to send" line, so two teammates whose lines cover the same work make routing a coin toss and double the work.',
+    'A job is distinct when a request could only sensibly go to one of them: a different area of work, or the same area bound to something particular such as its own mailbox, a named channel, a customer group, a location or a topic.',
+    'A line "Not for X; that goes to Name." means the member sends X on to Name and does not do it: that part is not an overlap with Name. Work the work style says to pass to a teammate\'s role, such as asking the IT Engineer and tracking the answer, is not an overlap with that teammate either. Judge the rest of the job as usual.',
+    'Judge only by what to send and the work style. The job title and the person\'s name never make a job distinct: the same work under another title is an overlap.',
+    '',
+    'The team today:',
+    ...(lines.length ? lines : ['- (nobody yet)']),
+    '',
+    `The changed job, ${job.name}:`,
+    `title "${clip(job.title, 80)}"; what to send: "${clip(linesFirst(job.routing), 500)}"${job.mailbox ? `; mailbox ${job.mailbox}` : ''}; work style: "${clip(job.workStyle, 1200)}"`,
+    '',
+    'Answer with ONE JSON object and nothing else:',
+    `{"distinct": true or false, "overlapsWith": ["names of teammates whose work overlaps"], "why": "one plain sentence for the owner", "suggestion": "one short sentence on how the work could split between ${job.name} and them, saying who does what, or empty"}`,
     'Use plain words and no dashes.'
   ].join('\n');
 }

@@ -34,8 +34,9 @@ export interface MailApprovalDeps {
   /** A hive message from the app (sender "mail"). Returns false when it could
    *  not go out (no hive), so nothing is recorded as told. */
   send(msg: { to: string; act: 'request' | 'inform'; subject: string; body: string }): boolean | void;
-  /** Adds a line to an agent's memory notes. */
-  remember(agentId: string, line: string): void;
+  /** A note for the agent's memory, with the Why the app built for it: the
+   *  channel, an id and the date, never email text (memory evidence, D6). */
+  remember(agentId: string, line: string, why: string): void;
   /** A toast titled with Michael's name (only Michael notifies). */
   toast(body: string): void;
   agentName(id: string): string;
@@ -185,7 +186,7 @@ export class MailApprovals implements ProposalStore {
     try {
       this.deps.send({ to: rule.agentId, act: 'inform', subject: 'Standing approval revoked', body: `The owner revoked your standing approval "${rule.kind}". Propose these emails for approval again.` });
     } catch (e) { console.error('[mail] revoke message:', e); }
-    try { this.deps.remember(rule.agentId, standingMemoryLine(revoked, false, this.today())); } catch { /* the revoke stands */ }
+    try { this.deps.remember(rule.agentId, standingMemoryLine(revoked, false, this.today()), `you revoked standing approval ${rule.id} on the Access tab, ${this.today()}`); } catch { /* the revoke stands */ }
     return { ok: true };
   }
 
@@ -228,7 +229,7 @@ export class MailApprovals implements ProposalStore {
       ? this.withdraw({ agentId, mailbox }, `The owner set you to Can send from ${address}, so it is yours to send.`, (p) => p.state === 'waiting')
       : [];
     try { this.deps.send({ to: agentId, ...sendingChangeMessage(address, sending, handedBack) }); } catch (e) { console.error('[mail] sending change message:', e); }
-    try { this.deps.remember(agentId, sendingMemoryLine(address, sending, this.today())); } catch { /* the change stands */ }
+    try { this.deps.remember(agentId, sendingMemoryLine(address, sending, this.today()), `you changed Sending for mailbox ${mailbox}, ${this.today()}`); } catch { /* the change stands */ }
   }
 
   /**
@@ -270,7 +271,7 @@ export class MailApprovals implements ProposalStore {
       this.deps.send({ to: agentId, act: 'inform', subject: ending.length === 1 ? 'Standing approval revoked' : 'Standing approvals revoked', body: `${reason} So the owner's standing approvals from there are revoked: ${ending.map((r) => `"${r.kind}"`).join(', ')}.` });
     } catch (e) { console.error('[mail] revoke message:', e); }
     for (const r of ending) {
-      try { this.deps.remember(agentId, standingMemoryLine({ ...r, revokedAt: at }, false, this.today())); } catch { /* the revoke stands */ }
+      try { this.deps.remember(agentId, standingMemoryLine({ ...r, revokedAt: at }, false, this.today()), `standing approval ${r.id} ended with its mailbox, ${this.today()}`); } catch { /* the revoke stands */ }
     }
   }
 
@@ -385,8 +386,8 @@ export class MailApprovals implements ProposalStore {
     try { this.deps.send({ to: p.agentId, ...msg }); } catch (e) { console.error('[mail] approval message:', e); }
     try { this.deps.onDecision?.(p.agentId, decision === 'approve' ? (edits ? 'approve-edited' : 'approve') : decision === 'changes' ? 'changes' : 'decline'); } catch { /* best-effort */ }
     const line = memoryLine(p, decision, edits, note, this.today());
-    if (line) { try { this.deps.remember(p.agentId, line); } catch { /* the decision stands */ } }
-    if (standing) { try { this.deps.remember(p.agentId, standingMemoryLine(standing, true, this.today())); } catch { /* the approval stands */ } }
+    if (line) { try { this.deps.remember(p.agentId, line, `you decided proposal ${p.id} on Ask me, ${this.today()}`); } catch { /* the decision stands */ } }
+    if (standing) { try { this.deps.remember(p.agentId, standingMemoryLine(standing, true, this.today()), `you granted standing approval ${standing.id} on Ask me, ${this.today()}`); } catch { /* the approval stands */ } }
     return { ok: true };
   }
 

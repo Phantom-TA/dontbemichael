@@ -20,7 +20,7 @@ function service(clock) {
   const processor = {
     firstDay: () => '2026-10-01', days: () => [], cards: () => [], decisions: () => [],
     michaelCounts: () => ({ cardsOpened: 0 }), safetyRows: () => [], runs: () => [],
-    firstNoteAdded: () => null, notesAdded: () => []
+    firstNoteAdded: () => null, notesAdded: () => [], running: () => ({ points: [], since: null })
   };
   return new PulseService({
     db: () => db, store: { failureDays: () => [], record() {} }, processor,

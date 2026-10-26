@@ -139,7 +139,8 @@ test('the overlap line agrees with one, two or more teammates, in every language
     assert.equal(JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).jobChange.and, undefined, `${loc} no hand made "and"`);
   }
   const src = read('src/renderer/src/components/JobChangeReview.tsx');
-  assert.match(src, /new Intl\.ListFormat\(i18n\.language, \{ type: 'conjunction' \}\)\.format\(state\.names\)/);
+  assert.match(src, /const listOf = \(items: string\[\]\): string => \{ try \{ return new Intl\.ListFormat\(i18n\.language, \{ type: 'conjunction' \}\)\.format\(items\); \}/);
+  assert.match(src, /const names = overlap \? listOf\(overlap\.names\) : '';/);
   assert.match(src, /t\('jobChange\.overlapTitle', \{ names, count \}\)/);
   assert.match(src, /t\('jobChange\.leaveWithChange', \{ names, count \}\)/);
 });

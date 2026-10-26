@@ -37,7 +37,7 @@ function setup(now = () => 1_000_000, fit = async () => ({ fits: true })) {
   const approvals = new MailApprovals({
     path: path.join(dir, 'mail-proposals.json'),
     send: (m) => out.messages.push(m),
-    remember: (id, line) => out.memory.push([id, line]),
+    remember: (id, line, why) => out.memory.push([id, line, why]),
     toast: (b) => out.toasts.push(b),
     agentName: (id) => ({ pam: 'Pam', god: 'Michael' }[id] ?? id),
     godId: () => 'god',
@@ -326,4 +326,22 @@ test('an approved email that surely did not go out returns to approved', async (
   const svc = { send: async () => { throw new MailError('network', "Not sent. Couldn't reach the mail server."); } };
   await handleMailRequest(svc, { getConfig: () => cfg, proposals: approvals }, 'pam', 'send', { mailbox: 'ceo', proposal: id });
   assert.equal(approvals.get(id).state, 'approved');
+});
+
+test('each memory note from the owner\'s mail decisions carries a Why with the channel, an id and the date, never the email', async (t) => {
+  // Value: protects=memory evidence D6 for Send on approval: the tidy-up files an owner note with a Why that names where it came from; fails_when=MailApprovals stops passing a Why (the note then lands with a generic one), the Why carries the subject or recipient, or main drops the Why on the way to hive.rememberOwnerNote; why_new=the Why argument is new and existing tests read only the line; seam=none (main's wiring is a source pin); no_claim=how the tidy-up weighs it (memory-index tests)
+  const { approvals, call, out, cleanup } = setup();
+  t.after(cleanup);
+  const id = (await call('pam', 'propose', { mailbox: 'ceo', to: 'gopi@shop.com', subject: 'Order 112', body: 'Shipped today.', offer_standing: 'order status replies' })).body.proposal;
+  approvals.decide(id, 'approve', {}, '', 'order status replies');
+  const [rule] = approvals.standing('pam');
+  approvals.revokeStanding(rule.id);
+  const day = '\\d{4}-\\d{2}-\\d{2}';
+  const esc = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  assert.deepEqual(out.memory.map(([who]) => who), ['pam', 'pam', 'pam']);
+  assert.match(out.memory[0][2], new RegExp(`^you decided proposal ${esc(id)} on Ask me, ${day}$`));
+  assert.match(out.memory[1][2], new RegExp(`^you granted standing approval ${esc(rule.id)} on Ask me, ${day}$`));
+  assert.match(out.memory[2][2], new RegExp(`^you revoked standing approval ${esc(rule.id)} on the Access tab, ${day}$`));
+  for (const [, , why] of out.memory) assert.doesNotMatch(why, /Order 112|gopi|shop\.com|Shipped/i, 'never the email');
+  assert.match(read('src/main/index.ts'), /remember: \(agentId, line, why\) => \{ hive\.rememberOwnerNote\(agentId, line, why\); \}/);
 });

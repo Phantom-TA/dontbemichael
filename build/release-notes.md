@@ -1,5 +1,5 @@
-- **Change a job** by saying what should change.
-- **Add a file** right from a Company foundations card.
-- **One look** for every form in the app.
-- Hiring asks what the new person will do, once.
-- Safer background checks and messages to the team.
+- **Memory notes** say what showed them.
+- **Went wrong** compares a job's runs.
+- **Explain how two members split** the work.
+- Pulse shows how long the office ran.
+- Contributor fixes across the app.

@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.6). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.7). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -53,6 +53,10 @@ moving, and brings you only the decisions that need you.
   it into the agent's instructions.
 - Change any job later by saying what should change in Edit agent. You see the steps as it works,
   then exactly what changes, before anything is saved, and Undo puts it back.
+- A job change is never blocked by an overlap. When it adds work a teammate already does, the
+  preview says so and you can explain how they split it: the app writes the handoff Michael routes
+  by ("technical questions go to Nick") and shows it on the teammate's side. A change that adds
+  tracking asks where the numbers live when the job doesn't say.
 - A new hire's one time first job is a card Michael hands out, not a line in their work style.
 - Every hire gets its own private folder and starts working.
 - Delete a team member for good from the Danger zone in Edit agent: they stop, their schedules
@@ -62,6 +66,9 @@ moving, and brings you only the decisions that need you.
 ### 3. A mailbox for every job
 - Connect as many mailboxes as your business runs on: Gmail, Google Workspace, iCloud, Yahoo, Zoho
   or any IMAP mailbox. Passwords stay encrypted on your computer.
+- A mail server that isn't encrypted from the start must switch to encryption before the app sends
+  the password. One that can't is refused, and the mailbox says so in plain words, with the
+  encrypted port to use instead.
 - Give each team member the one mailbox that fits its job: the Admin watches the CEO's inbox,
   Support answers support@, Sales follows up from sales@. One team member per mailbox.
 - Choose Can send, Send on approval or Draft only for each one. Send on approval puts each email on Needs you to edit and approve; the team member then sends exactly what you approved. Can send never puts an email on Needs you, and moving a team member to it hands back the emails still waiting there, unless it sends only from a mailbox nobody on the team watches right now. A team member can't reach a mailbox you didn't give it.
@@ -80,12 +87,22 @@ moving, and brings you only the decisions that need you.
 - Run now sends a job at once, exactly as its clock would, so you see it work without waiting. A
   job at set times keeps them; a job that runs every few hours counts again from the run.
 - Closing time pauses the office; opening it runs a missed job once, never a backlog.
+- When a job's run goes wrong, say so: "Went wrong" under the job's last run (with a line on what
+  was wrong, if you like). Michael compares it with an earlier run of the same job that went well
+  and suggests a change to the member's work style in Pulse. Review the change opens Edit agent
+  with it typed in; nothing changes until you Apply, and Undo puts it back. For members on Claude.
 
 ### 5. Memory that gets better
 - Each team member keeps a short list of lasting notes: your preferences and corrections, facts it
   looked up, where things live, and the steps for jobs it repeats. A background tidy up merges and
   updates them instead of letting them pile up.
 - Your answers to its questions go straight into its memory, so it doesn't ask again.
+- Every note says what showed it: a source and date, a card, a file. The Memory tab shows it behind
+  an info icon. When two notes disagree, your word wins, then the note with something behind it,
+  then the newer one.
+- Only you make a note "from you": your Ask me answers, your email decisions and what you tell
+  Michael in the dock are kept by the app where no team member can write, so a member's own note
+  can never pass for yours or undo yours.
 - Each team member's memory is its own. Nobody, Michael included, reads or searches another's
   notes: to learn what a teammate knows, they ask that teammate, and Michael reads the task board
   and the work each one hands in. On a Mac, Claude members' shells are walled off from each
@@ -154,6 +171,10 @@ moving, and brings you only the decisions that need you.
   and turn on Compare to see each figure next to the same days of the day, week or month
   before. It fills in the weeks before it started from what the office already keeps, so it
   never starts at zero.
+- Pulse says how long the office ran in the period and how much of that you were away. Time the
+  computer slept or the office was stopped (plan limit, no credit, sign in failed) doesn't count.
+- Costs are worked out at each Claude model's own list price: each Opus, Sonnet and Haiku has its
+  own.
 
 ### 8. Built for small business owners
 - Setup by kind of business: restaurant and food, retail, professional services, home services,
@@ -170,6 +191,24 @@ moving, and brings you only the decisions that need you.
   the file was kept.
 
 ## Part 2: Every change, release by release
+
+### 0.2.7 (2026-10-26)
+- Every memory note says what showed it, shown behind an info icon on the Memory tab. Your Ask me
+  answers, email decisions and words to Michael in the dock are kept where no team member can
+  write, so only you make a note "from you"; your word wins a disagreement, then evidence, then
+  the newer note.
+- Went wrong under a scheduled job's last run: Michael compares it with a run that went well and
+  suggests a work style change in Pulse, applied only when you Apply.
+- An overlap never blocks a job change; explain how two members split the work and the app writes
+  the handoff Michael routes by, shown on the teammate's side too.
+- Pulse says how long the office ran and how much of that you were away; costs use each Claude
+  model's own list price.
+- A mail server not encrypted from the start must switch to encryption before the password; a
+  shared hire's turn limit can only lower your cap; a voice confirm naming someone else cancels.
+- Contributor fixes: Pulse's plan bar after a reset, no error storm while the office is stopped,
+  a copied hire's starter jobs come switched off, overnight card steps reach their person, an
+  approved reply survives archiving, cost records in the app's own database, and fixes on Windows,
+  voice, files and panels.
 
 ### 0.2.6 (2026-10-23)
 - Change a team member's job by saying what should change: Edit agent shows the job in plain

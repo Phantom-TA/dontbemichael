@@ -123,6 +123,8 @@ test('the notes view uses list semantics, a disclosure for steps, and the divide
   assert.match(src, /aria-expanded=\{open\}/);
   assert.match(src, /window\.cth\.hiveProcedure\(agentId, slug\)/);
   assert.match(src, /! \$\{t\('memoryNotes\.outOfDate'/, 'a passed date is not color only');
+  // Memory evidence D1: what showed a note sits behind an info icon, only when there is some.
+  assert.match(src, /\{entry\.evidence && <InfoTip label=\{t\('memoryNotes\.evidence'\)\} text=\{entry\.evidence\} \/>\}/);
   assert.match(read('src/renderer/src/design/global.css'), /\.cth-memory-row \+ \.cth-memory-row \{ border-top: 1px solid var\(--cth-ink-100\); \}/);
 });
 

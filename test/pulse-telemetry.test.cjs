@@ -55,7 +55,7 @@ test('the migration makes the tables once, and nothing but kind, time, value and
   // Value: protects=the store shape and no text in telemetry; fails_when=a migration is edited or prompt text lands in a row; why_new=D16; seam=none; no_claim=a database made by an older build (user_version 1 upgrades here)
   const { persist, store } = setup(t);
   const db = persist.database();
-  assert.equal(db.pragma('user_version', { simple: true }), 5);
+  assert.equal(db.pragma('user_version', { simple: true }), 6);
   const idx = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_tr_open', 'idx_te_office_id', 'idx_te_office_kind_ts')").all().map((r) => r.name).sort();
   assert.deepEqual(idx, ['idx_te_office_id', 'idx_te_office_kind_ts', 'idx_tr_open'], 'the hot reads have their indexes');
   store.record({ agentId: 'pam', kind: 'tool', ts: 1, attrs: { tool: 'Write' } });
@@ -676,4 +676,88 @@ test('early lines: most evidence first, at most three', () => {
   const a = (id, evidence) => ({ id, evidence });
   const r = earliest([a('x', { runs: 5 }), a('y', { decisions: 9, reopens: 1 }), a('z', { runs: 7 }), a('w', { reopens: 2 })]);
   assert.deepEqual(r.map((x) => x.id), ['y', 'z', 'x']);
+});
+
+// ─── how long the office ran (owner, 2026-10-25) ─────────────────────────────
+
+const { RUN_SAVE_MS, RUN_GAP_CAP_MS } = loadTs('src/main/telemetryStore.ts');
+const MIN = 60_000;
+
+test('running time: awake minutes count, away minutes count as away too, a stopped office and a sleep count nothing, a late timer counts up to the cap', (t) => {
+  // Value: protects=owner D1 and the beat's rules; fails_when=a stopped office or a sleep adds running time, away time is not counted while away, a late timer without a suspend is dropped, or one gap counts past the cap; why_new=new measure; seam=index.ts passes the stopped flag and calls runningPause at suspend; no_claim=powerMonitor's suspend event itself
+  const { persist, store, proc, clock } = setup(t);
+  const t0 = clock.now();
+  store.runningStart(t0);
+  for (let i = 1; i <= 4; i++) store.running(false, t0 + i * MIN);
+  store.flush();
+  assert.deepEqual(proc.running('/office', 0).points, [], 'under 5 minutes nothing is saved yet');
+  store.running(false, t0 + RUN_SAVE_MS);
+  store.flush();
+  assert.deepEqual(proc.running('/office', 0).points.map((p) => [p.ms, p.awayMs]), [[5 * MIN, 0]], 'saved every 5 minutes');
+
+  store.presence(1900, false, t0 + 6 * MIN);           // idle 31 minutes: away
+  store.running(false, t0 + 6 * MIN);                   // 1 minute, away
+  store.running(true, t0 + 7 * MIN);                    // stopped: nothing (D1)
+  store.running(false, t0 + 27 * MIN);                  // a late timer, no suspend: up to the cap; 5 minutes buffered, saved
+  store.runningPause(false, t0 + 28 * MIN);             // a sleep starts: 1 minute, saved at once
+  store.running(false, t0 + 90 * MIN);                  // the first tick after waking starts the clock again
+  store.running(false, t0 + 91 * MIN);
+  store.runningSave();
+  store.flush();
+  assert.equal(RUN_GAP_CAP_MS, 15 * MIN);
+  const pts = proc.running('/office', 0).points.map((p) => [p.ms, p.awayMs]);
+  assert.deepEqual(pts, [[5 * MIN, 0], [16 * MIN, 16 * MIN], [MIN, MIN], [MIN, MIN]], 'the sleep from minute 28 to 90 is not running time');
+  assert.equal(proc.running('/office', 0).since, '2026-10-15');
+  void persist;
+});
+
+test('running time is split at local midnight and saved under the office it ran for; a resume never restarts a running clock', (t) => {
+  // Value: protects=day totals and per office totals; fails_when=a point spans two days, minutes buffered for one office are saved under the next, or an unlock (which re-arms the beats) drops the time since the last tick; why_new=new measure; seam=the office function the app passes; no_claim=how the app switches offices
+  const { persist, proc, clock } = setup(t);
+  let office = '/office';
+  const store = new TelemetryStore(() => persist.database(), () => office, clock.now);
+  const late = new Date(2026, 9, 15, 23, 58).getTime();
+  store.runningStart(late);
+  store.runningStart(late + MIN);                        // an unlock re-arms: the clock keeps its start
+  store.running(false, late + 3 * MIN);                  // 23:58 to 00:01
+  office = '/other';
+  store.running(false, late + 4 * MIN);                  // 1 minute for the other office
+  store.runningSave();
+  store.flush();
+  const days = (o) => proc.running(o, 0).points.map((p) => [new Date(p.ts).getDate(), p.ms]);
+  assert.deepEqual(days('/office'), [[15, 2 * MIN], [16, MIN]]);
+  assert.deepEqual(days('/other'), [[16, MIN]]);
+});
+
+test('Pulse reads how long the office ran into the period and the span before', (t) => {
+  // Value: protects=the Your time foot stats get their numbers from the store (owner, 2026-10-25, D2); fails_when=PulseService stops passing the processor's running points into pulseSnapshot, reads them only from the period's start so the span before is empty, or loses the first recorded day; why_new=team-performance tests pulseSnapshot with hand-made points and the store tests stop at the processor, so the wiring between them had no test; seam=none; no_claim=the view's layout
+  const env = service(t); // now Fri 16 Oct 09:00, live since Thu 1 Oct
+  const point = (day, hours, awayMin) => env.store.record({ agentId: null, kind: 'running', ts: new Date(2026, 9, day, 18).getTime(), value: hours * 3600_000, attrs: { away: awayMin * MIN } });
+  point(6, 1, 10);   // last Tuesday: the span before
+  point(13, 2, 30);  // this Tuesday
+  point(14, 0.5, 0); // this Wednesday
+  env.store.flush();
+  const view = env.svc.snapshot('this-week', true);
+  assert.deepEqual(view.snapshot.running, { ms: 2.5 * 3600_000, awayMs: 30 * MIN, since: null });
+  assert.deepEqual(view.compare.snapshot.running, { ms: 3600_000, awayMs: 10 * MIN, since: '2026-10-06' }, 'the span before, and recording began inside it');
+  assert.equal(env.svc.snapshot('today').snapshot.running, null, 'a period with no record shows none');
+});
+
+test('the app drives the running clock: a beat each minute, paused and saved before a sleep, a quit or a memory reset, restarted on arm', () => {
+  // Value: protects=owner D1 at the app's edges, where the store's rules meet powerMonitor; fails_when=a quit, memory reset, office switch or start over flushes without saving the buffered minutes (up to 5 lost each time), a suspend stops pausing the clock (each sleep then counts up to the 15 minute cap), the beat stops passing the stopped flag, or a resume no longer restarts the clock with a first beat; why_new=the store tests call the clock by hand and nothing pinned the calls in index.ts; seam=none (source pins, as powerMonitor needs Electron); no_claim=powerMonitor's events themselves
+  const main = fs.readFileSync(path.resolve(__dirname, '../src/main/index.ts'), 'utf8');
+  const body = (start, end) => main.slice(main.indexOf(start), main.indexOf(end, main.indexOf(start)));
+  const saveThenFlush = 'pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush();';
+  assert.ok(body('function teardownAndQuit', '\n}\n').includes(saveThenFlush), 'quit saves the running minutes before the flush');
+  assert.ok(body("ipcMain.handle('app:resetMemory'", 'persist.close()').includes(saveThenFlush), 'a memory reset does too, before the database closes');
+  // An office switch or a start over relaunches too (adversarial review, ship 2026-10-26).
+  const change = body("writeConfig({ harnessHome: newHome });", 'restartApp(app)');
+  assert.ok(main.slice(main.lastIndexOf('allowQuit = true;', main.indexOf('writeConfig({ harnessHome: newHome });')), main.indexOf('writeConfig({ harnessHome: newHome });')).includes(saveThenFlush), 'switching offices saves the old one\'s minutes first');
+  assert.ok(change.length > 0);
+  assert.ok(body("console.error('[startOverHere] pulse flush:'", 'restartApp(app)').length > 0 && main.includes(`try { ${saveThenFlush} } catch (e) { console.error('[startOverHere] pulse flush:', e); }`), 'so does starting over');
+  assert.match(main, /powerMonitor\.on\('suspend', \(\) => \{[^\n]*pulseTelemetry\.runningPause\(officeStopped\(\)\); pulseTelemetry\.presence\(0, true\);/);
+  assert.match(body('function pulsePresenceBeat', '\n}\n'), /pulseTelemetry\.running\(officeStopped\(\)\);/);
+  assert.match(body('function officeStopped', '\n}\n'), /return !!v && !v\.checking;/, 'a check in progress is running time');
+  assert.match(body('function armAlwaysOnBeats', '\n}\n'), /pulseTelemetry\.runningStart\(\);\n\s*pulsePresenceBeat\(\);\n\s*pulsePresenceTimer = setInterval\(pulsePresenceBeat, 60_000\);/);
+  assert.match(body('function onSystemResume', '\n}\n'), /armAlwaysOnBeats\(\)/, 'a resume re-arms, so the clock starts again');
 });

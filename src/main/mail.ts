@@ -275,18 +275,34 @@ export interface MailDeps {
   journalPath?: string;
 }
 
+// `secure: false` means STARTTLS (MailServer), and both libraries only try it
+// when the server offers it: one that doesn't (or someone on the network who
+// removes the offer) would get the password in the clear. So it is required,
+// and a server without encryption fails the login instead.
+
+/** ImapFlow's options for a server. It refuses doSTARTTLS next to secure, so
+ *  it is set only for a STARTTLS server. */
+export function imapOptions(server: MailServer, user: string, pass: string) {
+  return {
+    host: server.host, port: server.port, secure: server.secure, ...(server.secure ? {} : { doSTARTTLS: true }),
+    auth: { user, pass }, logger: false as const, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 60_000
+  };
+}
+
+/** nodemailer's options for a server. */
+export function smtpOptions(server: MailServer, user: string, pass: string) {
+  return {
+    host: server.host, port: server.port, secure: server.secure, requireTLS: !server.secure,
+    auth: { user, pass }, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 45_000
+  };
+}
+
 function defaultImap(server: MailServer, user: string, pass: string): ImapLike {
-  return new ImapFlow({
-    host: server.host, port: server.port, secure: server.secure,
-    auth: { user, pass }, logger: false, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 60_000
-  }) as unknown as ImapLike;
+  return new ImapFlow(imapOptions(server, user, pass)) as unknown as ImapLike;
 }
 
 function defaultSmtp(server: MailServer, user: string, pass: string): SmtpLike {
-  return nodemailer.createTransport({
-    host: server.host, port: server.port, secure: server.secure,
-    auth: { user, pass }, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 45_000
-  }) as unknown as SmtpLike;
+  return nodemailer.createTransport(smtpOptions(server, user, pass)) as unknown as SmtpLike;
 }
 
 /** Plain-language classification of an IMAP or SMTP failure. */
@@ -304,6 +320,14 @@ export function classifyMailError(e: unknown): MailError {
   }
   if (['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EHOSTUNREACH', 'ESOCKET', 'ECONNECTION', 'EPIPE', 'NoConnection'].includes(err?.code ?? '')) {
     return new MailError('network', "Couldn't reach the mail server. Check the server name and your connection.");
+  }
+  // A server not encrypted from the start that won't switch to encryption:
+  // the login is refused rather than sent in the clear (imapOptions, smtpOptions).
+  // Only the libraries' "not offered" errors: a certificate problem during the
+  // upgrade is a different story and keeps the server's own words.
+  // (imapflow marks every failed upgrade tlsFailed, a bad certificate too.)
+  if (/does not support (required )?STARTTLS|Error upgrading connection with STARTTLS/i.test(text)) {
+    return new MailError('unsupported', "This mail server doesn't offer encryption on this port, so the app won't send the password. Use the server's encrypted port (often 993 for reading, 465 for sending).");
   }
   if (/timed out/i.test(text)) return new MailError('timeout', 'The mail server took too long to answer.');
   return new MailError('unknown', `The mail server returned an error: ${String(err?.message ?? e).slice(0, 200)}`);
