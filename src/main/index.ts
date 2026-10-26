@@ -69,7 +69,7 @@ import { linkWorktreeDeps, unlinkWorktreeDeps } from './worktreeDeps';
 import { HiveManager, type AgentMeta, type HiveMessage, type HiveTask } from './hive';
 import { HookServer, type PlanSignal } from './hooks';
 import { OfficeBreak, type OfficeBreakState } from './officeBreak';
-import { heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
+import { countsTowardErrorStorm, heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
 import { loadBundledPacks, packsResourceDir } from './packs';
 import { businessFolderRoot, ensureFolder, safeFolderName } from './agentFolders';
 import { CircuitBreaker, breakerMessages, type BreakerInput } from './breaker';
@@ -416,7 +416,10 @@ let pulseTickTimer: ReturnType<typeof setInterval> | null = null;
 let pulsePresenceTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
-telemetry.onApiError((agentId) => breaker.recordError(agentId));
+// Not while the office is stopped: a refused turn is the stop, not a storm.
+telemetry.onApiError((agentId) => {
+  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId);
+});
 // Shared roster on disk — created early so HookServer can re-read standing goals
 // on every UserPromptSubmit (Edit Agent saves land here via persistAgents).
 const roster = new RosterStore(() => readConfig().harnessHome);
@@ -2292,6 +2295,9 @@ function onPlanSignal(signal: PlanSignal): void {
   // owner's new key, with no automatic recheck (eng R2).
   const retry = !(signal.reason === 'signin' && readConfig().claudeAuth === 'apiKey');
   const step = officeBreak.limitReached(signal.agentId, signal.reason, retry);
+  // The engine's errors while it tried this turn, its retries included, were
+  // the account refusing it, so they don't count toward a storm either.
+  breaker.clearErrors(signal.agentId);
   const view = officeBreak.view();
   try { hive.appendLog({ kind: 'office-break', step, agentId: signal.agentId, reason: view?.reason ?? signal.reason, until: view?.until ?? null }); } catch { /* best-effort */ }
   if (step === 'started' && view) ownerToast(michaelName(), stopWords(view.reason, view.until).start);

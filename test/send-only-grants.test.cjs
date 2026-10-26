@@ -44,7 +44,10 @@ function fakeImap(state) {
   let folder = 'INBOX';
   return {
     usable: true,
-    async connect() { state.connects = (state.connects ?? 0) + 1; },
+    async connect() {
+      if (state.down) throw Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' });
+      state.connects = (state.connects ?? 0) + 1;
+    },
     async logout() {},
     close() {},
     async list() { return [{ path: 'INBOX' }, { path: 'Drafts', specialUse: '\\Drafts' }, { path: 'Sent', specialUse: '\\Sent' }]; },
@@ -296,6 +299,51 @@ test('an owner approved reply still threads through the fetch (regression)', asy
   const sent = await call('pam', 'send', { mailbox: 'ceo', proposal: p.body.proposal });
   assert.equal(sent.status, 200);
   assert.equal(state.sends[0].inReplyTo, '<m2@x.com>');
+});
+
+test('an approved reply still goes out after the email it answers is archived', async (t) => {
+  // Value: protects=the customer gets the reply the owner approved; fails_when=the approved send looks the email up again by its inbox id, which archiving (inbox zero, or the owner on their phone) leaves naming nothing; why_new=every approved reply to an archived email failed with not-found, every retry too; seam=none
+  const { call, state, approvals } = setup(t);
+  const p = await call('pam', 'propose', { mailbox: 'ceo', to: 'a@b.com', subject: 'Re: From the prospect', body: 'Thanks', reply_to: { mailbox: 'ceo', id: '2' } });
+  assert.equal(p.status, 200);
+  assert.deepEqual(approvals.get(p.body.proposal).thread, { inReplyTo: '<m2@x.com>', references: ['<m2@x.com>'] }, 'kept on the card when proposed');
+  state.folders.INBOX = []; // archived before the owner looks
+  const readAtPropose = state.fetched.length;
+  approvals.decide(p.body.proposal, 'approve', {}, '');
+  const sent = await call('pam', 'send', { mailbox: 'ceo', proposal: p.body.proposal });
+  assert.equal(sent.status, 200);
+  assert.equal(state.sends.length, 1);
+  assert.equal(state.sends[0].inReplyTo, '<m2@x.com>');
+  assert.deepEqual(state.sends[0].references, ['<m2@x.com>']);
+  assert.equal(approvals.get(p.body.proposal).state, 'sent');
+  assert.equal(state.fetched.length, readAtPropose, 'nothing is read again at the send');
+});
+
+test('a reply to an email that is gone is refused when proposed, not after the owner approves', async (t) => {
+  // Value: protects=the owner never approves an email that can't go out; fails_when=propose files a card for a reply id that names nothing; why_new=the bad id surfaced only at the send, after the owner's yes; seam=none
+  const { call, state, approvals } = setup(t);
+  state.folders.INBOX = [];
+  const p = await call('pam', 'propose', { mailbox: 'ceo', to: 'a@b.com', subject: 'Re: From the prospect', body: 'Thanks', reply_to: { mailbox: 'ceo', id: '2' } });
+  assert.equal(p.status, 404);
+  assert.match(p.body.error, /No message with id 2 in the inbox\. If it was archived or sent, search with folder "archive"/);
+  assert.equal(approvals.waiting().length, 0, 'no card for the owner');
+});
+
+test('a reply proposed while the server is out of reach, or filed before thread headers were kept, still threads at the send', async (t) => {
+  // Value: protects=a passing outage never holds a card up, and older cards still send; fails_when=propose fails on a network error, or a card without kept headers loses its thread; why_new=the thread is now read at propose; seam=none
+  const { call, state, approvals } = setup(t);
+  state.down = true;
+  const p = await call('pam', 'propose', { mailbox: 'ceo', to: 'a@b.com', subject: 'Re: From the prospect', body: 'Thanks', reply_to: { mailbox: 'ceo', id: '2' } });
+  assert.equal(p.status, 200);
+  assert.equal(approvals.get(p.body.proposal).thread, undefined);
+  state.down = false;
+  approvals.decide(p.body.proposal, 'approve', {}, '');
+  assert.equal((await call('pam', 'send', { mailbox: 'ceo', proposal: p.body.proposal })).status, 200);
+  assert.equal(state.sends[0].inReplyTo, '<m2@x.com>', 'read at the send, as before');
+  const old = approvals.file({ agentId: 'pam', mailbox: 'ceo', to: 'a@b.com', subject: 'Re: older card', body: 'Thanks', replyTo: { mailbox: 'ceo', id: '2' } });
+  approvals.decide(old.id, 'approve', {}, '');
+  assert.equal((await call('pam', 'send', { mailbox: 'ceo', proposal: old.id })).status, 200);
+  assert.equal(state.sends[1].inReplyTo, '<m2@x.com>');
 });
 
 test('a proposal can never forward or attach mail from another mailbox, at propose or at send (D1)', async (t) => {

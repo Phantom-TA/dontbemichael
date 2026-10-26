@@ -4401,10 +4401,13 @@ export class HiveManager {
       const id = (t as GuardCard | null)?.id;
       return typeof id === 'string' && fixed.fixes[id] ? { ...(t as GuardCard), ...fixed.fixes[id] } : t;
     }) as GuardCard[], this.guard.reminders, Date.now());
-    // The card's person, while they are on the team; otherwise Michael.
+    // The card's person, while they are on the team; otherwise Michael. Off the
+    // team is closed by the owner (deleting closes first). `archived` only means
+    // no terminal right now, which is every member at launch until the team is
+    // restored: their reminder waits in their inbox, as any direct mail does.
     const personOf = (t: GuardCard): string | null => {
       const a = t.assignee ? reg.agents[t.assignee] : undefined;
-      return a && !a.archived && !a.isAssistant ? t.assignee! : null;
+      return a && !a.closedByOwner && !a.isAssistant ? t.assignee! : null;
     };
     // Record each reminder as sent before it goes out, so a crash between the
     // two never sends it twice; a lost one is still caught by the backstop.
