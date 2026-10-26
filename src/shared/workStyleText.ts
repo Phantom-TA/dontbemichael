@@ -317,8 +317,13 @@ export function thirdPerson(text: string, label: string): string {
     .replace(/\b[Yy]our\b/g, () => `${label}'s`)
     // "you don't" is "doesn't"; "you won't" and "you can't" stay as they are.
     .replace(/\b[Yy]ou (do|have|are|were)n(['’])t\b/g, (_m, verb: string, q: string) => `${label} ${irregular[verb]}n${q}t`)
+    // "you'd" before a past participle is "had": "You'd finished it" is not "would finished".
+    .replace(/\b[Yy]ou['’]d(?=\s+[a-z]+ed\b)/g, () => `${label} had`)
     .replace(/\b[Yy]ou['’](ll|d|ve)\b/g, (_m, c: string) => `${label} ${contracted[c]}`)
-    .replace(new RegExp(`\\b[Yy]ou ((?:${adverbs.join('|')}) )?([a-z]+)\\b(?!['’])`, 'g'), (_m, adverb: string | undefined, verb: string) => `${label} ${adverb ?? ''}${third(verb)}`)
+    // Only a "you" that opens a clause is the subject, so the adverb passes the s
+    // on; an object "you" ("asks you first before") leaves the next words alone.
+    .replace(new RegExp(`(?<=^|\\n\\s*|[.!?;:,(]\\s*|\\b(?:and|but|or|so|then|if|when|while|once|unless|until|because|that|where)\\s+)you ((?:${adverbs.join('|')}) )([a-z]+)\\b(?!['’])`, 'gi'), (_m, adverb: string, verb: string) => `${label} ${adverb}${third(verb.toLowerCase())}`)
+    .replace(/\b[Yy]ou ([a-z]+)\b(?!['’])/g, (_m, verb: string) => `${label} ${third(verb)}`)
     .replace(/\b[Yy]ou\b/g, () => label);
 }
 

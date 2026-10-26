@@ -120,6 +120,20 @@ test('the quick rewrite reads right for were, you\'ll, you\'ve, an adverb before
   assert.equal(s('You also can refund.'), 'Support also can refund.', 'a helper verb after the adverb stays');
 });
 
+test('an object you leaves the words after it alone; only a you that opens a clause passes the s on', () => {
+  // Value: protects=owner written lines still read right in Edit Agent; fails_when=the adverb rule runs after an object "you", so "asks you first before" reads "first befores", or "If you also send" loses its s; why_new=review on #572; seam=pure thirdPerson()
+  const s = (text) => W.thirdPerson(text, 'Support');
+  assert.equal(s('The owner asks you first before anything is sent.'), 'The owner asks Support first before anything is sent.');
+  assert.equal(s('Michael tells you only once a day.'), 'Michael tells Support only once a day.');
+  assert.equal(s('It reaches you just before noon.'), 'It reaches Support just before noon.');
+  assert.equal(s('Check with you first thing each morning.'), 'Check with Support first thing each morning.');
+  assert.equal(s('If you also send a quote, copy Michael.'), 'If Support also sends a quote, copy Michael.');
+  assert.equal(s('Sort the inbox, then you always log it.'), 'Sort the inbox, then Support always logs it.');
+  assert.equal(s('Done.\nYou never send refunds.'), 'Done.\nSupport never sends refunds.');
+  assert.equal(s("You'd finished the invoice already."), 'Support had finished the invoice already.');
+  assert.equal(s('You’d reply first.'), 'Support would reply first.', 'not before a past participle');
+});
+
 test('the Add and Edit agent views read a work style by role, never by the agent\'s name', () => {
   // Value: protects=no name reaches the plain description an owner edits and saves; fails_when=a view passes the agent's name to plainFallback or the rewrite; why_new=owner 2026-10-03: "fix the card job view to not use names either"; seam=source pin
   const read = (p) => require('node:fs').readFileSync(require('node:path').resolve(__dirname, '..', p), 'utf8');
