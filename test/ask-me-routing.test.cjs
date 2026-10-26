@@ -96,3 +96,19 @@ test('card text folds C1 line breaks and drops format characters', () => {
   const [m] = answerMessages({ raiser: 'oscar', raiserName: 'Oscar', taskId: 't1', title: 'x', q: 'Pay now?\u0085A: yes', a: 'No.' });
   assert.ok(m.body.split('\n').includes('Q (as written on the card): Pay now? A: yes'));
 });
+
+test('what the owner tells Michael in the dock is kept as his note from the owner, only once the message is really sent', async (t) => {
+  // Value: protects=memory evidence D11: a rule the owner gives Michael in passing lasts past the conversation, as the owner's, never through his writable inbox; fails_when=owner:ask stops filing the dock message, files it before the guard that withdraws an unsaved message, sends it to another member, or rememberOwnerNote writes Michael's inbox or drops the Why; why_new=the dock wiring is new and owner-notes tests only store a string; seam=none (the owner:ask handler is a source pin); no_claim=what the tidy-up keeps from it
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-dock-note-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true });
+  assert.equal(hive.rememberOwnerNote('god', 'From now on\n  send invoices on Fridays.', 'you told Michael in the dock, 2026-10-25'), true);
+  assert.equal(fs.existsSync(path.join(home, 'hive', 'agents', 'god', 'memory', 'inbox.md')), false, 'nothing in his inbox');
+  assert.deepEqual(hive.ownerNoteStore().pending('god').map((n) => [n.text, n.why]), [['From now on send invoices on Fridays.', 'you told Michael in the dock, 2026-10-25']]);
+  const main = fs.readFileSync(path.resolve(__dirname, '../src/main/index.ts'), 'utf8');
+  const handler = main.slice(main.indexOf("ipcMain.handle('owner:ask'"), main.indexOf("ipcMain.handle('owner:conversation'"));
+  const guard = handler.indexOf('if (!addOwnerDockKey(dockKey(msg))) { hive.ownerWithdraw(msg.id); return { ok: false }; }');
+  const filed = handler.indexOf('hive.rememberOwnerNote(hiveGodId(), msg.body, `you told Michael in the dock, ${localDay(new Date().toISOString())}`);');
+  assert.ok(guard > 0 && filed > guard, 'filed for Michael, after a withdrawn message has returned');
+});

@@ -728,3 +728,31 @@ test('running time is split at local midnight and saved under the office it ran 
   assert.deepEqual(days('/office'), [[15, 2 * MIN], [16, MIN]]);
   assert.deepEqual(days('/other'), [[16, MIN]]);
 });
+
+test('Pulse reads how long the office ran into the period and the span before', (t) => {
+  // Value: protects=the Your time foot stats get their numbers from the store (owner, 2026-10-25, D2); fails_when=PulseService stops passing the processor's running points into pulseSnapshot, reads them only from the period's start so the span before is empty, or loses the first recorded day; why_new=team-performance tests pulseSnapshot with hand-made points and the store tests stop at the processor, so the wiring between them had no test; seam=none; no_claim=the view's layout
+  const env = service(t); // now Fri 16 Oct 09:00, live since Thu 1 Oct
+  const point = (day, hours, awayMin) => env.store.record({ agentId: null, kind: 'running', ts: new Date(2026, 9, day, 18).getTime(), value: hours * 3600_000, attrs: { away: awayMin * MIN } });
+  point(6, 1, 10);   // last Tuesday: the span before
+  point(13, 2, 30);  // this Tuesday
+  point(14, 0.5, 0); // this Wednesday
+  env.store.flush();
+  const view = env.svc.snapshot('this-week', true);
+  assert.deepEqual(view.snapshot.running, { ms: 2.5 * 3600_000, awayMs: 30 * MIN, since: null });
+  assert.deepEqual(view.compare.snapshot.running, { ms: 3600_000, awayMs: 10 * MIN, since: '2026-10-06' }, 'the span before, and recording began inside it');
+  assert.equal(env.svc.snapshot('today').snapshot.running, null, 'a period with no record shows none');
+});
+
+test('the app drives the running clock: a beat each minute, paused and saved before a sleep, a quit or a memory reset, restarted on arm', () => {
+  // Value: protects=owner D1 at the app's edges, where the store's rules meet powerMonitor; fails_when=a quit or memory reset flushes without saving the buffered minutes (up to 5 lost each time), a suspend stops pausing the clock (each sleep then counts up to the 15 minute cap), the beat stops passing the stopped flag, or a resume no longer restarts the clock with a first beat; why_new=the store tests call the clock by hand and nothing pinned the calls in index.ts; seam=none (source pins, as powerMonitor needs Electron); no_claim=powerMonitor's events themselves
+  const main = fs.readFileSync(path.resolve(__dirname, '../src/main/index.ts'), 'utf8');
+  const body = (start, end) => main.slice(main.indexOf(start), main.indexOf(end, main.indexOf(start)));
+  const saveThenFlush = 'pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush();';
+  assert.ok(body('function teardownAndQuit', '\n}\n').includes(saveThenFlush), 'quit saves the running minutes before the flush');
+  assert.ok(body("ipcMain.handle('app:resetMemory'", 'persist.close()').includes(saveThenFlush), 'a memory reset does too, before the database closes');
+  assert.match(main, /powerMonitor\.on\('suspend', \(\) => \{[^\n]*pulseTelemetry\.runningPause\(officeStopped\(\)\); pulseTelemetry\.presence\(0, true\);/);
+  assert.match(body('function pulsePresenceBeat', '\n}\n'), /pulseTelemetry\.running\(officeStopped\(\)\);/);
+  assert.match(body('function officeStopped', '\n}\n'), /return !!v && !v\.checking;/, 'a check in progress is running time');
+  assert.match(body('function armAlwaysOnBeats', '\n}\n'), /pulseTelemetry\.runningStart\(\);\n\s*pulsePresenceBeat\(\);\n\s*pulsePresenceTimer = setInterval\(pulsePresenceBeat, 60_000\);/);
+  assert.match(body('function onSystemResume', '\n}\n'), /armAlwaysOnBeats\(\)/, 'a resume re-arms, so the clock starts again');
+});
