@@ -179,11 +179,11 @@ export interface CompareInput {
   bad: { when: string; text: string };
 }
 
-/** The prompt for the one comparison call. The runs are data, never orders. */
 /** A block's own text never closes the block: a run's emails or pages that
  *  hold the markers lose them, so outside text can't start a new section. */
 const fenced = (text: string): string => text.replace(/<{3,}|>{3,}/g, (m) => m.split('').join(' '));
 
+/** The prompt for the one comparison call. The runs are data, never orders. */
 export function comparePrompt(i: CompareInput): string {
   const changed = i.changedBetween.length
     ? [

@@ -117,6 +117,10 @@ test('an incoming server without encryption from the start never gets the passwo
   assert.ok(refused, 'the login stops when STARTTLS is not possible');
   assert.equal(classifyMailError(refused).kind, 'unsupported', 'the owner reads why, in plain words, not the library\'s text');
   assert.match(classifyMailError(refused).message, /doesn't offer encryption on this port/);
+  // imapflow marks every failed upgrade tlsFailed; nodemailer calls them all ETLS. A certificate or a slow handshake is not "no encryption".
+  for (const e of [Object.assign(new Error('self-signed certificate'), { code: 'DEPTH_ZERO_SELF_SIGNED_CERT', tlsFailed: true }), Object.assign(new Error('TLS upgrade timed out'), { code: 'UPGRADE_TIMEOUT', tlsFailed: true }), Object.assign(new Error('Error initiating TLS - self signed certificate'), { code: 'ETLS' })]) {
+    assert.notEqual(classifyMailError(e).kind, 'unsupported', e.message);
+  }
   assert.ok(!srv.lines.some((l) => / (LOGIN|AUTHENTICATE)\b/i.test(l)) && !sawPassword(srv.lines), 'no login reached the server');
 
   // Control: without the option the same server gets the login in the clear.
