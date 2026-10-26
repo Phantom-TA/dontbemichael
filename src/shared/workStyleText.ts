@@ -291,14 +291,19 @@ export function plainFallback(instructions: string, label?: string): string {
 export function thirdPerson(text: string, label: string): string {
   // "you sort" becomes "This role sorts": the verb after "you" gets its s, the few
   // helper verbs that don't take one are left as they are.
-  const keep = new Set(['can', 'could', 'will', 'would', 'should', 'must', 'may', 'might', 'shall', 'did', 'also', 'always', 'never', 'only', 'then', 'still', 'just', 'often', 'usually', 'first']);
+  // An adverb between "you" and the verb ("you also send") passes the s on.
+  const adverbs = ['also', 'always', 'never', 'only', 'then', 'still', 'just', 'often', 'usually', 'first'];
+  const keep = new Set(['can', 'could', 'will', 'would', 'should', 'must', 'may', 'might', 'shall', 'did', ...adverbs]);
   // Words that only ever follow "you" as an object ("asks you to", "between you
   // and a customer", "tells you what"), never a verb to give an s.
   const object = new Set(['to', 'and', 'or', 'but', 'in', 'on', 'at', 'for', 'with', 'about', 'from', 'as', 'if', 'so', 'than', 'too', 'both', 'all', 'a', 'an', 'the', 'what', 'when', 'where', 'how', 'why', 'whether']);
-  const negated: Record<string, string> = { do: 'does', have: 'has', are: 'is' };
+  const irregular: Record<string, string> = { do: 'does', have: 'has', are: 'is', were: 'was' };
+  // "you'll" is "will", "you'd" is "would", "you've" is "has".
+  const contracted: Record<string, string> = { ll: 'will', d: 'would', ve: 'has' };
   const third = (verb: string): string => {
     if (keep.has(verb) || object.has(verb)) return verb;
-    if (verb === 'do') return 'does';
+    const own = ownValue(irregular, verb);
+    if (own) return own;
     if (verb === 'go') return 'goes';
     if (/(s|sh|ch|x|z)$/.test(verb)) return `${verb}es`;
     if (/[^aeiou]y$/.test(verb)) return `${verb.slice(0, -1)}ies`;
@@ -308,10 +313,18 @@ export function thirdPerson(text: string, label: string): string {
     .replace(/\b[Yy]ou are\b/g, () => `${label} is`)
     .replace(/\b[Yy]ou're\b/g, () => `${label} is`)
     .replace(/\b[Yy]ou have\b/g, () => `${label} has`)
-    .replace(/\b[Yy]ourself\b/g, () => label)
+    .replace(/\b[Yy]ourself\b/g, (m) => (m[0] === 'Y' ? 'Themselves' : 'themselves'))
     .replace(/\b[Yy]our\b/g, () => `${label}'s`)
     // "you don't" is "doesn't"; "you won't" and "you can't" stay as they are.
-    .replace(/\b[Yy]ou (do|have|are)n(['’])t\b/g, (_m, verb: string, q: string) => `${label} ${negated[verb]}n${q}t`)
+    .replace(/\b[Yy]ou (do|have|are|were)n(['’])t\b/g, (_m, verb: string, q: string) => `${label} ${irregular[verb]}n${q}t`)
+    // "you'd" before a past participle is "had": "You'd finished it" is not
+    // "would finished". Verbs that only end in "ed" ("need", "proceed", "feed",
+    // "shred") keep "would".
+    .replace(/\b[Yy]ou['’]d(?=\s+(?![a-z]*eed\b|(?:shred|embed|wed|shed|bed|red)\b)[a-z]+ed\b)/g, () => `${label} had`)
+    .replace(/\b[Yy]ou['’](ll|d|ve)\b/g, (_m, c: string) => `${label} ${contracted[c]}`)
+    // Only a "you" that opens a clause is the subject, so the adverb passes the s
+    // on; an object "you" ("asks you first before") leaves the next words alone.
+    .replace(new RegExp(`(?<=^|\\n\\s*|[.!?;:,(]\\s*|\\b(?:and|but|or|so|then|if|when|while|once|unless|until|because|that|where)\\s+)you ((?:${adverbs.join('|')}) )([a-z]+)\\b(?!['’])`, 'gi'), (_m, adverb: string, verb: string) => `${label} ${adverb}${third(verb.toLowerCase())}`)
     .replace(/\b[Yy]ou ([a-z]+)\b(?!['’])/g, (_m, verb: string) => `${label} ${third(verb)}`)
     .replace(/\b[Yy]ou\b/g, () => label);
 }
