@@ -553,7 +553,9 @@ export class HookServer {
       return {};
     }
     if (event === 'UserPromptSubmit' && agentId && !subagent) this.plan({ kind: 'prompt', agentId });
-    if ((event === 'UserPromptSubmit' || event === 'SessionStart') && agentId && !subagent) this.turnCap.newRun(agentId);
+    // A compaction fires SessionStart (source "compact") in the middle of a run;
+    // it keeps the count, or the long runs this cap is for would never hit it.
+    if ((event === 'UserPromptSubmit' || (event === 'SessionStart' && p.source !== 'compact')) && agentId && !subagent) this.turnCap.newRun(agentId);
     if (event === 'Stop' && agentId && !subagent && !p.stop_hook_active) this.plan({ kind: 'turn', agentId });
 
     // 7C.3 — a graceful operator HALT overrides everything (incl. the inbox

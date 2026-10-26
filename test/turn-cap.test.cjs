@@ -138,6 +138,17 @@ test('a new prompt or a fresh session gives the agent a new run', async (t) => {
   assert.ok(!stopped(await f.tool()), 'a fresh session resets it too');
 });
 
+test('a compaction in the middle of a run keeps the count', async (t) => {
+  const f = await floor(t, { maxTurns: 2 });
+  await f.send('UserPromptSubmit');
+  assert.ok(!stopped(await f.tool()));
+  await f.send('SessionStart', { source: 'compact' });
+  assert.ok(!stopped(await f.tool()));
+  assert.ok(stopped(await f.tool()), 'the compaction did not give the agent a fresh count');
+  await f.send('SessionStart', { source: 'compact' });
+  assert.ok(stopped(await f.tool()), 'and does not end a stopped run either');
+});
+
 test('a subagent\'s tool calls are its own run, and its prompt does not reset the agent', async (t) => {
   const f = await floor(t, { maxTurns: 1 });
   for (let i = 0; i < 5; i++) assert.ok(!stopped(await f.tool({ subagent_id: 'sub1' })));

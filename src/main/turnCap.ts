@@ -7,7 +7,8 @@
  * interactive agent run three tool calls and finish. So the app counts instead.
  *
  * A run starts at the agent's prompt (UserPromptSubmit, or a fresh session) and
- * every tool call it makes after that is one turn. The call that would go past
+ * every tool call it makes after that is one turn. A compaction (SessionStart
+ * with source "compact") is the same run, so it keeps the count. The call that would go past
  * the cap is refused AND the run is stopped: `continue: false` alone still lets
  * that call run first, and a refusal alone leaves the agent free to try again.
  * The next prompt starts a new run with a fresh count.
