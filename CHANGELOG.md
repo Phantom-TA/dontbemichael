@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [Unreleased]
+
+### Added
+- **Every memory note says what showed it.** A team member ends each note with a Why (a source and date, a card, a file), and the Memory tab shows it behind an info icon. When two notes disagree, your word wins, then the note with something behind it, then the newer one.
+- **Only you make a note "from you".** Your Ask me answers, your email decisions and what you tell Michael in the dock are kept by the app where no team member can write, so a member's own note can never pass for yours or undo yours. Text your note quotes, such as the question you answered or an email you pasted in, is not taken as your rule.
+- **Say when a scheduled job's run went wrong.** "Went wrong" under a job's last run (with a line on what was wrong, if you like) has Michael compare it with an earlier run of the same job that went well, and suggest a change to the member's work style in Pulse. Review the change opens Edit agent with it typed in; nothing changes until you Apply, and Undo puts it back. For members on Claude.
+- **Explain how two members split the work.** A job change is never blocked by an overlap: the preview says who already does part of it, and you can explain how they split it. The app writes the handoff Michael routes by ("technical questions go to Nick") and shows it on the teammate's side. A change that adds tracking asks where the numbers live when the job doesn't say.
+- **Pulse shows how long the office ran,** and how much of that you were away, in Your time. Time the computer slept or the office was stopped (plan limit, no credit, sign in failed) doesn't count.
+
+### Changed
+- Costs are worked out at each Claude model's own list price: Opus 5.5, Opus 4.5 to 5 and older Opus each have their own, and so do Sonnet 5.5, Sonnet 5 and Haiku 4.5, with Haiku 5.5 priced by the size of each request.
+- A team member hired from a shared link can run fewer turns than your cap, never more.
+- A mailbox on a server that isn't encrypted from the start must switch to encryption before the app sends its password. A server that can't is refused, and the mailbox says so in plain words.
+
+### Fixed
+- A voice confirm that names someone other than the member it was staged for ("confirm kill of Nolan" while Jim's is waiting) cancels it instead of running it on Jim.
+- The privacy check no longer stalls on a long run of text with no spaces, such as a pasted key.
+
 ## [0.2.6] (2026-10-23)
 
 ### Added

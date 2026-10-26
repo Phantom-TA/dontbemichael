@@ -1,5 +1,43 @@
 # TODOS
 
+## Memory and voice trust gaps (from the 0.2.7 ship review, 2026-10-26; owner chose TODOS)
+
+### Owner standing per note, not per tidy pass
+
+**What:** Have each owner sourced op name the owner note it comes from, and accept source owner only for an op that cites a note under FROM THE OWNER in this pass.
+
+**Why:** `validateOps` gets `ownerWords` for the whole pass (src/main/memoryTidy.ts). When any owner note is pending, an op the model built from an inbox line can claim owner, and only the prompt keeps the two apart. Michael gets an owner note for every dock message, so his passes almost always run that way.
+
+**Effort:** M
+**Priority:** P2
+
+### Owner entries in memory.md can be planted
+
+**What:** Keep the ids (or a hash) of the owner entries the tidy-up writes in harness.db, and read any other entry marked owner as the member's own.
+
+**Why:** memory.md sits in the member's folder, which its shell can write; `parseIndex` trusts any `| owner |` line, and the new rules then protect it. Older than this branch.
+
+**Effort:** M
+**Priority:** P2
+
+### A correction typed in a member's own terminal can't replace an owner entry
+
+**What:** Record what the owner types to a member as an owner note, the way the dock does for Michael, or give the member an app path that writes one.
+
+**Why:** Members still write the owner's corrections to their inbox, which never counts as the owner's, so an older owner entry (from an Ask me answer) can't be replaced that way.
+
+**Effort:** M
+**Priority:** P2
+
+### Voice confirms for schedules and settings carry no target
+
+**What:** Carry the staged schedule id or setting key on the pending confirm, and cancel when the confirm names another one, as `namesSomeoneElse` does for members.
+
+**Why:** "confirm, delete the Invoice check schedule" while a delete of Morning report waits deletes Morning report. Older than this branch. Also: a member whose name is an ordinary word ("Will") can cancel a valid confirm; it fails safe.
+
+**Effort:** S
+**Priority:** P2
+
 ## Overlap split (deferred from the CEO review, 2026-10-24)
 
 ### Explain how they split it in the hire wizard
