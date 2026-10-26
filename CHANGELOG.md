@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
-## [Unreleased]
+## [0.2.7] (2026-10-26)
 
 ### Added
 - **Every memory note says what showed it.** A team member ends each note with a Why (a source and date, a card, a file), and the Memory tab shows it behind an info icon. When two notes disagree, your word wins, then the note with something behind it, then the newer one.
@@ -19,10 +19,33 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - Costs are worked out at each Claude model's own list price: Opus 5.5, Opus 4.5 to 5 and older Opus each have their own, and so do Sonnet 5.5, Sonnet 5 and Haiku 4.5, with Haiku 5.5 priced by the size of each request.
 - A team member hired from a shared link can run fewer turns than your cap, never more.
 - A mailbox on a server that isn't encrypted from the start must switch to encryption before the app sends its password. A server that can't is refused, and the mailbox says so in plain words.
+- Pulse suggests a cheaper model only for a team member on the top tier, never one step down from the middle (contributed in #575).
+- Pulse can suggest running a schedule set to times or weekdays more often too, and opens the schedule editor with the suggestion written out (contributed in #576).
+- The cost of each member's work is kept in the app's own database, where no team member can write, instead of a file in the office that grew forever. The old file is copied in once (contributed in #524).
+- Pulse's first catch up after an update no longer holds up the app while the team is starting (contributed in #514).
+- A connected app that only reads with a POST, such as a Linear query or a Notion, HubSpot or Jira search, is no longer treated as a write, so asking it again gets a fresh answer (contributed in #608).
+- The Mac install steps say the app is signed and notarized: macOS asks once if you want to open it, and you click Open.
 
 ### Fixed
 - A voice confirm that names someone other than the member it was staged for ("confirm kill of Nolan" while Jim's is waiting) cancels it instead of running it on Jim.
 - The privacy check no longer stalls on a long run of text with no spaces, such as a pasted key.
+- Pulse's plan bar no longer shows a usage window that has reset as used up; it falls back to the weekly window while that one is live (contributed in #565).
+- An office that stopped (no credit, a plan limit, a sign in that expired) no longer holds back or stops a team member for an error storm that was never theirs (contributed in #610).
+- Hiring a copy of a teammate's job no longer runs that teammate's starter jobs twice: the copied ones come switched off (contributed in #609).
+- A card's next step that came due overnight reaches the person who holds it after a restart, instead of Michael (contributed in #593).
+- A reply you approved still goes out after the email it answers was archived (contributed in #592).
+- A voice request can't give Research a schedule, and a schedule turned back on by voice waits for its next time instead of running at once (contributed in #547 and #545).
+- A teammate named with a capital letter ("Pam") is still routed through Michael like any other handoff (contributed in #533).
+- The quick rewrite of a work style reads right for "were", "you'll" and adverbs (contributed in #572).
+- An office with no team yet no longer flashes Everyone's in when Michael comes up (contributed in #569).
+- Closing a file tab in the background keeps you in the file you are reading (contributed in #549).
+- Esc in an empty note box closes the note, not the whole panel (contributed in #570).
+- While one Pulse suggestion is being applied, every other Apply waits (contributed in #515).
+- Pulse's checked and held lists keep apostrophes and never cut an emoji in half (contributed in #571 and #573).
+- A hire file saved with a byte order mark, as Windows Notepad writes it, imports (contributed in #563).
+- An office in a folder whose name holds a $ or a backslash keeps working: the team's hooks get the right path (contributed in #567).
+- On Windows, Node the app just installed is found without a restart, and a download whose checksum doesn't match stops before the installer runs (contributed in #568 and #566).
+- Terminal text no longer keeps pieces of keyboard escape codes such as ">1u" (contributed in #534).
 
 ## [0.2.6] (2026-10-23)
 

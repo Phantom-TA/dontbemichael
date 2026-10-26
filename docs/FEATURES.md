@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.6). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.7). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -191,6 +191,24 @@ moving, and brings you only the decisions that need you.
   the file was kept.
 
 ## Part 2: Every change, release by release
+
+### 0.2.7 (2026-10-26)
+- Every memory note says what showed it, shown behind an info icon on the Memory tab. Your Ask me
+  answers, email decisions and words to Michael in the dock are kept where no team member can
+  write, so only you make a note "from you"; your word wins a disagreement, then evidence, then
+  the newer note.
+- Went wrong under a scheduled job's last run: Michael compares it with a run that went well and
+  suggests a work style change in Pulse, applied only when you Apply.
+- An overlap never blocks a job change; explain how two members split the work and the app writes
+  the handoff Michael routes by, shown on the teammate's side too.
+- Pulse says how long the office ran and how much of that you were away; costs use each Claude
+  model's own list price.
+- A mail server not encrypted from the start must switch to encryption before the password; a
+  shared hire's turn limit can only lower your cap; a voice confirm naming someone else cancels.
+- Contributor fixes: Pulse's plan bar after a reset, no error storm while the office is stopped,
+  a copied hire's starter jobs come switched off, overnight card steps reach their person, an
+  approved reply survives archiving, cost records in the app's own database, and fixes on Windows,
+  voice, files and panels.
 
 ### 0.2.6 (2026-10-23)
 - Change a team member's job by saying what should change: Edit agent shows the job in plain
