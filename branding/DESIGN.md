@@ -354,13 +354,35 @@ Rules:
 | `t-view` | 20 / 26 | 600 | View title on the stage ("Office", "Tasks") |
 | `t-panel` | 15 / 20 | 600 | Right column heading, person name in the panel header |
 | `t-ui` | 13 / 18 | 400 to 600 | Base UI: tabs, buttons, inputs, body |
-| `t-read` | 14 / 22 | 400 | Long text boxes in a wide panel only (what a person handles, their work style), and the wide 1:1's questions and replies (§7.19) |
+| `t-read` | 14 / 22 | 400 | Long text boxes in a wide panel only (what a person handles, their work style), and the wide 1:1's questions and replies (§7.19); read only text under a field label is `ink-2` |
 | `t-body` | 12 / 16.5 | 400 | Card body text, Michael's questions, descriptions |
 | `t-meta` | 11 / 15 | 400 to 600 | Captions, chips, meta lines, hints |
 | `t-micro` | 10 / 13 | 600 | Uppercase micro labels, status pills, badges |
 
 Floor: nothing below 10 px, and 10 px only for uppercase micro labels, pills and
 badges.
+
+A field label outranks what it labels (owner, 2026-10-23,
+`docs/designs/edit-agent-hierarchy.md`): in forms and read only fields the ramp is a
+field label `t-ui` 600 `ink` over the text `t-read` (wide) or `t-ui` (side) 400 `ink-2`;
+groups sit on soft panels, not under headings. One source: `components/fieldText.tsx`.
+
+The whole app uses that style (owner, 2026-10-23, `docs/designs/app-style-rollout.md`):
+
+| Piece | Style | From fieldText |
+|---|---|---|
+| Group name | `t-panel` 15/20 600 `ink`, -0.02em, an `h3` at the top of its panel | `groupName`, `Panel title` |
+| Field label | `t-ui` 13/18 600 `ink`, sentence case | `fieldLabel`, `Field` |
+| Text under a label | `t-read` or `t-ui` 400 `ink-2` | `readBody` |
+| Hint | 12/17 400 `ink-3`, under the field or group name | `hint`, `Field note`, `Panel note` |
+| Required | the word "required" in 400 `ink-3` beside the label, not an asterisk | `requiredMark` |
+| Group | the soft panel: `bg`, r-xl, 14 by 16, no border or shadow | `panelStyle`, `Panel` |
+
+Panels sit only on white surfaces (dialogs, the person and Michael panels and their tab
+bodies, Settings, setup), never on the stage. Small grey capitals, 10 to 14 px grey 600
+labels and white ringed group cards are retired; `test/field-style-guard.test.cjs` fails
+on them outside fieldText. Cards, chat, the floor and the terminal keep their own type;
+a pill or badge elsewhere that needs `t-micro` carries a `style-guard: micro` comment.
 
 ### 4.3 Web scale [Web]
 
@@ -815,8 +837,10 @@ mouse wheel moves it, and each edge with tabs hidden past it fades out over 28 p
 
 ### 7.12 Tab contents
 
-**Access** (CapabilitiesTab). Grouped rows in cards (`card`, `line`, `r-xl`). Only what is
-enforced today:
+**Access** (CapabilitiesTab). Each group is a soft panel (§4.2; owner, 2026-10-23,
+`docs/designs/app-style-rollout.md`): its name in the group name style with one `hint` line
+under it and its fold; the Command Center's Advanced cards and Office schedule groups are
+the same panels, on a white tab body. Only what is enforced today:
 
 | Group | Controls |
 |---|---|
@@ -1199,22 +1223,72 @@ of a blank window. Nothing else: no stack, no codes (they go to the log).
 ### 7.26 Settings and the hire wizard
 
 Keep every section, control and save rule from v1 (see the functional map in
-`docs/designs/studio-home.md`), restyled with §7.7 buttons, §7.12 row groups and §7.23
-dialogs. The hire wizard's steps are numbered circles (done `green` with a check, current
+`docs/designs/studio-home.md`), restyled with §7.7 buttons and §7.23 dialogs. Every Settings
+section is a soft panel with its group name at the top, and the panels' gap replaces the
+hairlines between sections; labels, hints and the required word come from fieldText (§4.2,
+`docs/designs/app-style-rollout.md`). The company profile groups (address, contact, how you
+operate, money) and the Add a mailbox login sit on panels too. The hire wizard's steps are numbered circles (done `green` with a check, current
 `ink`), its character tiles and job rows use the `indigo` soft selection, and its strings
 are sentence case. Closing time is the closing bar (§7.23), not a dialog.
 
-**Edit agent** (`docs/designs/edit-agent.md`, owner 2026-10-02) changes only what can change on
+**Edit agent** (`docs/designs/edit-agent.md`, owner 2026-10-02; sections since
+`docs/designs/edit-agent-hierarchy.md`, owner 2026-10-23) changes only what can change on
 someone already hired, in one column, laid exactly over the person's panel it edits (its
 box and radius, kept in step on resize; with no panel, 640 wide, full height, on the right,
-left in RTL): Name, Role,
-What they handle, Work style (it takes the height left over), then a folded "Engine" line
-that names the provider and model and opens to change them. Under the engine, for anyone
+left in RTL). Its groups sit on soft panels (owner, 2026-10-23, `docs/designs/edit-agent-hierarchy.md`
+H1): the `bg` ground color, r-xl, 14 by 16 padding, no border or shadow, 14 px apart. Wide:
+left, a panel with Name and Role, the Scheduled jobs panel, the Engine line, the Danger zone;
+right, the job panel (What they handle, How they work in its parts: each part's name 12 px 600
+over its words, folded to the first part) with What should change? under it. One column: Name
+and Role, the job, What should change?, Scheduled jobs, Engine. Older order, for reference: Name, Role,
+What they handle (read only text), How they work (read only, folded to four lines with Show
+all, Undo last change and "Last change, 22 Oct: ..."), What should change? under the job it
+changes (owner, 2026-10-23; wide, the same in the right column), the Scheduled jobs group
+(below; wide, in the left column under What they handle), then a folded "Engine" line
+that names the provider and model and opens to change them. Michael and his assistant have
+no What they handle. The footer is Close until Name, Role or the engine is edited, then
+Cancel and Save changes; the job saves only through the preview's Apply. Under the engine, for anyone
 who can be deleted (never Michael, his assistant or Pete), the Danger zone: one coral
 tinted row, r-xl corners and the 1.5 px coral ring of §6.3, its name with an info icon and
 the destructive Delete button. No section headings; field
-labels only, with explanations behind info icons. The character is chosen once, in the hire wizard, and a
+labels only, the groups on panels (owner, 2026-10-23), with explanations behind info icons. The character is chosen once, in the hire wizard, and a
 person's color is their department's, set by the job; Edit agent offers neither.
+
+**Scheduled jobs** (`ScheduledJobsList`, `docs/designs/edit-agent-scheduled-jobs.md`, owner
+2026-10-23), in Edit agent and on the Profile tab: a labelled group, never part of the duties
+text. Heading "Scheduled jobs" in the field label style (Profile: its section heading style),
+the count in ink 3, an info icon, and at the right a link style button "Change on Access" ("Add
+on Access" with no jobs; Michael's "Change on Office schedule"). It closes Edit agent through
+its Discard changes? question and opens the Access tab with On a schedule unfolded and in view.
+One row per job, `line` hairlines between: the name (13 px, 600, wraps whole) with the when
+line at the right (IBM Plex Mono 12 px, ink 2; it wraps only between its times and drops under
+a long name), then the focus (12.5 px, ink 2, two lines at most) or "No focus area" in ink 3.
+Paused: a `neutral-soft` "Paused" pill after the name, the row in ink 3; paused jobs last,
+the others soonest first. No jobs: "None yet". A failed read: "Couldn't read the schedules."
+with Try again (`role=alert`). Research has no group.
+
+**What should change?** (`JobChangeReview`, `docs/designs/work-style-change-request.md`, owner
+2026-10-23) is how a job changes: the owner never edits a job's text. A labelled box with an
+info icon, then a right aligned row with the shortcut (⌘ Enter, Ctrl Enter elsewhere, `ink-3`)
+and the secondary "See what changes". Running, the preview takes the box's place: `indigo-soft`
+fill, r-xl, no border or shadow, 12 by 14 padding. Each state has a 13 px 600 heading that takes
+focus. Working: "Working out what changes for Pam…", then its three real steps (Getting ready, Reading what you wrote, Writing Pam's job: a green check when done, the spinner on the current one, a grey dot ahead; the steps are the status, owner 2026-10-23), a white "So far" box with the summary lines and plain words as they are written (not announced), and Stop
+(`role=status`). Ready: "Here's what changes", up to six summary lines (plain text after a 6 px
+`indigo` dot) then Show all, a one-time task as one more line ("goes to Michael as a card"),
+"What Pam handles" with the new line or a `card` pill "Unchanged", a "See the whole new job"
+disclosure, and Cancel and Apply in a row that sticks to the preview's bottom. A clash: "One
+thing first", the question, two or three option rows (`cth-askme-opt`, one with a green
+"Suggested" pill) plus Something else with a text field, Cancel and Continue. An overlap:
+"Kelly already does part of this", the reason, Edit my change and Leave it with Kelly. Couldn't
+work out the change, and Pam's job changed meanwhile (the typed change shown on `card`), are
+`role=alert` with Cancel and Try again or See what changes again. After Apply or Undo the box
+comes back empty with one `role=status` line ("Pam's job is updated.") and takes focus. In the
+hire wizard the box reads "What will Jordan do?" with "See Jordan's job" until a job is applied,
+then "Anything to change?"; on Ask me the pack update card runs the same preview at once, its
+button "Use it".
+
+**Hire wizard, Role step** (DR12): name and role title, then the job as above, then the overlap
+check; Next turns on after Apply. Finalize keeps the folder and model only.
 
 **Mailboxes** (Settings, Connections; `docs/designs/mailboxes-fold.md`, owner 2026-10-01) folds so
 many mailboxes never mean a long scroll. One header line: the `Disclosure` caret, the title, the
@@ -1464,6 +1538,13 @@ D8, D10 to D13), listed after the decision cards and before reports, always open
 - **Company knowledge is always on** card (one time, a report like the Research notice): for an
   owner who had turned company knowledge off and has documents in it. Got it, and Open the list
   (Settings, Memory & Knowledge).
+- **A file** (owner, 2026-10-22, `docs/designs/foundation-card-upload.md`): an "Add a file" quiet
+  link (11 px, `indigo-text`) under the box, or a file dropped on the card, picks one file, shown
+  as a `neutral-soft` chip with its name and a remove × with a 24 px target. Save is on with words,
+  a file or both; while the file is checked Save reads "Checking the file", and the box, Draft and
+  Not now are held until it is done. A refusal is one `coral-text` line naming the file and why
+  ("doesn't look like the answer", "Couldn't read", "Save this picture as PNG or JPEG", "Pictures
+  can be checked only on Claude", "Couldn't find", "Couldn't check this file"); nothing is added.
 
 ## 8. The studio illustration [Both]
 
@@ -1703,7 +1784,9 @@ fonts, images inlined) for demos, screenshots and videos. Its sibling page
 ### 9.1 Nav
 
 72 px, `bg` at 85% with a 1 px `line` rule on scroll. Lockup left; four links center
-right (`w-small` 500, `ink-2`, active `ink`); a primary button (ink) that reads "Download for Mac" or "Download for Windows" from the visitor's OS, "Download" otherwise.
+right (`w-small` 500, `ink-2`, active `ink`): What it does, Trust, Keeping watch and How it works
+(owner, 2026-10-24), written absolute (`/#does`, `/#trust`, `/#watch`, `/how-it-works`) so the same
+nav works on every page; a primary button (ink) that reads "Download for Mac" or "Download for Windows" from the visitor's OS, "Download" otherwise.
 Phone: lockup plus a menu button; the sheet lists the links and the button.
 
 ### 9.2 Buttons
@@ -1726,17 +1809,27 @@ paragraphs, an optional mono eyebrow. Vignettes sit on `card` with `r-2xl` and
 
 Same as the app (§6, §7.13): `card`, `line`, `r-xl`, `shadow-md`.
 
-The home page's "Everything else" list is six tiles: three across at 980 px and up, two
+How it works' "Everything else" list (§9.22) is six tiles: three across at 980 px and up, two
 across from 481 to 979 px, one column at 480 px and under (owner, 2026-10-09). A tile is an
-`ink` 20 px icon on a 36 px `neutral-soft` square, a `w-h3` title and one or two lines in
-`ink-2`. The Ask Michael tile adds decorative status pills (§7.13 colors: Sent idle, Michael
+`ink` 20 px icon on a 36 px `neutral-soft` square, a `w-h3` title and a short paragraph in
+`ink-2`, two to six lines depending on the width (measured on the live site, 2026-10-24). The Ask Michael tile adds decorative status pills (§7.13 colors: Sent idle, Michael
 has it working, Waiting on someone `amber-soft` with `amber-text`, Answered done), hidden
 from screen readers; its text carries the meaning. Its last line also says that when Michael
 offers choices you pick one and press Reply, and his pick is tagged (§7.8; owner, 2026-10-19).
+Limits in writing also says a job is changed by saying what should change, with the app's own
+example form ("ask me before any refund over $200"), and that you see the difference before you
+Apply (Edit agent, since 0.2.6). Work on a schedule also says a team member with no jobs yet is
+offered starter jobs from its pack, added paused until you turn them on (since 0.2.5; owner,
+2026-10-24).
 
 ### 9.6 Footer
 
-`chrome` ground, lockup, link columns (`w-small`), Discord, GitHub, FAQ, legal line.
+`chrome` ground, lockup, link columns (`w-small`), Discord, GitHub, FAQ, legal line. The legal
+line names the program the app is part of, as the office floor does since 0.2.6 (`PROGRAM_MARK`
+and `PROGRAM_URL` in src/shared/appName.ts): "MIT
+licensed, pre 1.0, part of GAACC AI Labs. Mac and Windows 11 now, Linux to follow.", with "GAACC AI
+Labs" linked to `PROGRAM_URL` (austinasianchamber.org), the same on every page (owner,
+2026-10-24). The Product column lists Download, Releases, How it works, Security and FAQ.
 
 ### 9.7 Social card
 
@@ -1764,14 +1857,20 @@ fact per line so the shell commands caveat is not buried).
 
 ### 9.10 Install dialog drawings
 
-Drawn, not screenshotted: the macOS "Not Opened" sheet and the Windows SmartScreen sheet
-("Windows protected your PC", one `ink-3` line, "More info" ringed in `indigo`, then "Run
-anyway" highlighted like Done) as `card` with `shadow-lg` and `r-lg`, beside a `card-2`
-"This is normal" panel. Under 640 px the drawing stacks under the panel.
+Drawn, not screenshotted: the macOS sheet for an app downloaded from the Internet and the
+Windows SmartScreen sheet, as `card` with `shadow-lg` and `r-lg`, each beside a `card-2` panel.
+The Mac app is signed and notarized from v0.2.6 (owner, 2026-10-23), so the Mac drawing uses
+the sheet's own words, “Don't Be Michael” is an app downloaded from the Internet. Are you sure
+you want to open it?, with curly quotes and a capital I, then Cancel and Open with Open
+highlighted, beside a "Checked by Apple" panel; the Mac install has
+two steps (drag it into Applications; open it, then click Open). The Windows drawing is
+"Windows protected your PC", one `ink-3` line, "More info" ringed in `indigo`, then "Run anyway"
+highlighted, beside a "This is normal" panel, until the installer is signed. Under 640 px the
+drawing stacks under the panel.
 
 ### 9.11 Sending switch (web)
 
-At the end of the home page's story, under the heading "You choose what goes out.": the
+At the end of the refund story on How it works (§9.22), under the heading "You choose what goes out.": the
 app's Sending control (§7.12) drawn as a real switch. Three native buttons in a group
 labelled "How Kelly sends", in the app's order [Can send, Send on approval, Draft only],
 Send on approval pressed by default, styled as the platform switch (§9.8). Each choice shows
@@ -1788,7 +1887,7 @@ lines, and the card's buttons wrap at 44 px tall.
 
 ### 9.12 Setup inset (web)
 
-Under the home page's two setup cards, a quiet inset for setup's last step (§7.25 Ready
+In How it works' Setup section (§9.22), a quiet inset for setup's last step (§7.25 Ready
 step): `card-2` fill, inset `line`, `r-xl`, no shadow, padding 16 × 20. Michael's avatar,
 "Then Michael gets ready" (600, 14/20), two inline items with 16 px icons ("Claude Code,
 installed for you if it's missing" and "Sign in with your Claude plan, or an Anthropic API
@@ -1797,9 +1896,8 @@ key"), and an `ink-3` line under them. No buttons: nothing in it can be clicked.
 
 ### 9.13 Task board (web)
 
-A home page section right after the refund story's Sending block (§9.11) and before the
-"Everything else" tiles: eyebrow "The board", heading "See every job, and who it's waiting
-on.", and a read only picture of the Tasks view (§7.20) in the story's cast. A `card-2`
+On the home page, in the fourth question (§9.19) under the Needs you row: an `h3` "The board"
+with the line "Every job, and who it's waiting on.", then a read only picture of the Tasks view (§7.20) in the story's cast. A `card-2`
 frame, `r-2xl`, `shadow-lg`, padding 18: the header ("Tasks" 18/24 600, count chips To do,
 Doing, Waiting, Blocked in `coral` soft, Done in `green` soft, a lock icon and "New work goes
 through Michael" in `t-meta` `ink-3`), then five columns in the app's order on a tinted
@@ -1808,7 +1906,7 @@ through Michael" in `t-meta` `ink-3`), then five columns in the app's order on a
 card carries an `amber` soft "Waiting on {who}" chip, one on a customer and one on a
 teammate; the Blocked card is the story's refund (Northwind Cafe, Invoice #4471) with the
 18 px coral "?" and a `coral` soft "Waiting for you" chip; Done cards show a green check and
-the first line of Michael's result (`ink-2`, 11/15), then "N more". Under the frame, three
+the first line of Michael's result (`ink-2`, 11/15), then "N more". The home page shows the frame alone; How it works (§9.22) shows it again with three
 plain notes keyed like the columns: Waiting says who it waits on, and that when someone
 outside the office doesn't reply after two follow ups, Michael asks you whether to keep waiting
 (owner, 2026-10-19); Blocked always
@@ -1820,8 +1918,7 @@ under 480 px everything stacks in that order. The board never scrolls sideways.
 
 ### 9.14 File tabs (web)
 
-A home page section right after the task board (§9.13) and before the "Everything else"
-tiles: eyebrow "Files", heading "Read the file he means, beside his question.", a lead that
+A How it works section (§9.22) after the board and before Pulse: eyebrow "Files", heading "Read the file he means, beside his question.", a lead that
 names only what opens in a tab (CSV files, notes, text and pictures; never "spreadsheets" or
 "in the office", owner CEO D8) and sets the picture later that morning, after the board's
 9:15, and a read only picture of a file tab (§7.2) opened from a file chip on an Ask me card (§7.8). Same
@@ -1849,8 +1946,9 @@ name. Under 400 px the table steps down to 11 / 16. The section never scrolls si
 
 ### 9.15 Privacy section (web)
 
-A home page section right after the refund story's Sending block (§9.11) and before the task
-board (§9.13), owner 2026-10-14 (site design review, direction C2). In place of the eyebrow, a
+A How it works section (§9.22) right after the refund story's Sending block (§9.11), owner
+2026-10-14 (site design review, direction C2); the home page carries the trust cards (§9.20) in its
+place (owner, 2026-10-24). In place of the eyebrow, a
 "Privacy first" badge: a pill in `indigo` soft with `indigo-text`, 15/20 700, an 18 px shield
 icon. Heading "A trust layer built to stop agents going rogue and leaking your business data."
 with "trust layer" in `indigo-text`; the lead says Pete, the Research team member, does the
@@ -1872,7 +1970,10 @@ team may send to Pete" with "4 allowed, 8 private" and the twelve kinds in the a
 order, each with a segmented Allowed | Private, Passwords and keys "Always private". Under the
 columns, three plain notes: Keeps your business data in; Built to stop agents going rogue (what
 happens to answers that come back through the trust layer, never "a web page can't give your team
-orders"); the setup inset's Pete row says the app gives Pete questions only, never the owner's files,
+orders"; then, since 0.2.5, what happens to email a team member reads: it is labelled as the
+sender's words, information and never instructions, lines written to steer an AI are pointed out
+so the member skips them, and Michael is told. Mail is not the trust layer, so its sentence never
+says "removed"; owner, 2026-10-24); the setup inset's Pete row says the app gives Pete questions only, never the owner's files,
 and its summary is shown in full (the others clamp to two lines on phones) so that clause stays visible whatever
 font the phone falls back to; Off until you turn
 them on. No card gets a coloured edge stripe. Pete's avatar is the globe
@@ -1890,14 +1991,17 @@ sideways.
 
 `/security`, a page to read, not to sell (owner, 2026-10-14): the site nav and footer, no
 hero, no cards, Download the only call to action. One column at about 70 characters: h1
-"Privacy and security", a one line summary, a link back to the home page's privacy section,
+"Privacy and security", a one line summary, a link back to the home page's trust cards (§9.20),
 then six sections under h2s: Who is given what (Pete does the team's web research, everyone else,
 Michael included, is told to ask Pete, and the app turns off the web page tool and the web search tool
 for every team member but Pete; one table: your team and Michael "Told to ask Pete", Pete "Yes, the
 team's researcher" and "Questions only, never your files", against web pages and search, your
 files and mailboxes, and connectors; and
 one line: each team member keeps its own notes and inbox, and teammates, Michael included, are
-told to ask it instead of opening them), The trust
+told to ask it instead of opening them; and, since 0.2.5, one line on mail: email a team member
+reads from a mailbox the owner adds is labelled as written by its sender, information and never
+instructions, lines written to steer an AI are pointed out so the member skips them and carries
+on, and Michael is told once for each such email; owner, 2026-10-24), The trust
 layer (out: as written, cleaned or not sent; in: instructions removed, the answer labelled, an
 answer that tries to steer flagged to Michael; nothing goes through when the check can't run, the teammate who asked is told and so is Michael, and Pulse lists each message held because the check couldn't run (when, who it was between,
 what it was about, why, and who was told); every message the app passes to Pete, from a teammate,
@@ -1911,7 +2015,10 @@ stays private (the twelve kinds with their defaults), Links in the app (every li
 names the site it opens, and shows the real one when the words name a different site, §7.8;
 owner, 2026-10-15), What goes to Claude (what an agent reads for a job goes to Claude through the owner's plan or
 key; Pete runs only on Claude; at 0.2.3 Claude is the only engine the app offers), and Where your
-data lives (kept on the computer, passwords encrypted under a key the system keeps). Every sentence holds on Mac and Windows and for every
+data lives (kept on the computer, passwords encrypted under a key the system keeps; and, since 0.2.5,
+the app keeps each team member's conversation records out of every other member's file tools,
+Michael's included: file tools, which the app holds on Mac and Windows, never shell, which Windows
+does not hold; owner, 2026-10-24). Every sentence holds on Mac and Windows and for every
 engine, and the page states no limit notes: a privacy sentence says what the app gives, tells or
 passes through the app and its trust layer, never that something can't happen where the app can't
 enforce it (Windows has no sandbox, so a member's shell is not held there; owner, 2026-10-20). Send
@@ -1920,10 +2027,12 @@ hero, meta, JSON-LD, FAQ and privacy section (§9.15) and llms.txt. Headings sit
 closer to their text than to the section above; the page never scrolls sideways at 320 px.
 ### 9.17 Pulse (web)
 
-A home page section right after the file tabs (§9.14) and before the "Everything else" tiles
-(owner, 2026-10-19, site design review): eyebrow "Pulse", heading "See what the office got
+The full Pulse is a How it works section (§9.22) after the file tabs and before the "Everything
+else" tiles (owner, 2026-10-19, site design review; moved 2026-10-24): eyebrow "Pulse", heading "See what the office got
 done, and what it cost.", lead "A Pulse tab beside Tasks shows the week: what each team member
-did, what it cost, and ways to save that wait for your Apply. Here it is on Friday afternoon."
+did, what it cost, and ways to save that wait for your Apply. See the emails lists every email the
+team archived, marked read or moved to junk, and who moved it. Here it is on Friday afternoon."
+(the See the emails sentence since 0.2.5, §7.27; owner, 2026-10-24; the three notes stay three)
 A read only picture of Pulse (§7.27) in the story's cast for This week, Compare off: the
 header ("Pulse" 18/24 600, the period select reading This week, the Compare switch off,
 "Collecting since" in `t-meta` `ink-3`); one recommendation card in the app's own words (Run Kelly's "check the support inbox" less
@@ -1971,18 +2080,30 @@ the recommendation stacked, Team at work without roles and with hours over cost.
 the Busiest and Quiet callouts are hidden and the frame's padding is 12. The section never
 scrolls sideways, also at 320 px with a scrollbar.
 
+The home page's Pulse (owner, 2026-10-24) is the same frame trimmed to what an owner checks: the
+header, What got done with three tiles (emails organized, emails sent for you, tasks finished), then
+Spent, then Team at work with each member's hours and cost, as above. It has no Foundations strip, no
+recommendation, no other tiles and no notes, and its label carries only what is drawn. It sits under
+the board in the fourth question (§9.19), with an `h3` "Pulse" and the line "What got done this week,
+what it cost, and each team member's time and cost."
+
 ### 9.18 Setup foundations inset (web)
 
-Under the setup inset (§9.12), a second quiet inset with the same fill, inset line, radius and
+Under the setup inset (§9.12) on How it works, a second quiet inset with the same fill, inset line, radius and
 padding, for what comes after setup (Company foundations, §7.27a): Michael's avatar, "Then the
 team learns your business" (600, 14/20), two inline items with 16 px icons ("One question to you,
 only when work needs the answer" and "Learns the rest from your answers and the team's work") and an
-`ink-3` line under them. Beside the text, a read only picture of one foundation card (§7.27a) in
+`ink-3` line under them: "Company foundations keeps what each job needs to know about your business.
+Answer on the card, add a file such as your brand voice guide, or have the team member draft it. A
+file is checked against the question first, and one that doesn't fit is turned away with the
+reason." (the file sentences since 0.2.6; owner, 2026-10-24). Beside the text, a read only picture of one foundation card (§7.27a) in
 the story's cast, at the story's app scale: the question "Financial year" as its title; Oscar's
 Finance raiser chip and "needs this, 2h ago" in `ink-3`; Michael's one bold evidence line, example
 copy in the app's form ("Oscar set this quarter's sales tax reminder without knowing when your
-financial year starts."); the visible "Your answer" label, an empty box and the hint under it ("A
-few plain sentences, under 300 characters. For more, name the file that holds it."); Save answer
+financial year starts."); the visible "Your answer" label, an empty box and, under it on one row as
+the app draws it (FoundationCard, 0.2.6), the hint ("A few plain sentences, under 300 characters,
+or add a file.") and "Add a file" as a quiet `indigo-text` link at the row's end, drawn, not a
+button; Save answer
 (primary), Have Oscar draft it (secondary) and Not now as a quiet text link at the line's end; and
 the footer above a `line` rule, "Finance uses this" and "Asked weekly until answered". Oscar is in
 every pack, so the card holds whatever business the visitor picks. The card is one picture with
@@ -1991,6 +2112,71 @@ one description (role=img): its buttons are drawn, and nothing in the inset can 
 from another section. At 980 px and up the text and the card sit side by side, the card 380 px
 wide; under that the card goes under the text, up to 420 px wide. Never scrolls sideways, also at
 320 px with a scrollbar.
+
+### 9.19 Home page (web)
+
+The home page answers the four questions an owner asks, in this order (owner, 2026-10-24, design
+review Direction A): the hero (§9.3, unchanged, with its Privacy first badge and the live studio),
+then four sections, then "Questions owners ask", then the closing call to action. Each section has a
+mono eyebrow ("1 · What is it?", "2 · What does it take off my plate?", "3 · Can I trust it?", "4 ·
+How do I keep an eye on it?"), a `w-h2` heading and one picture or set of cards. The words a visitor
+sees when the page loads stay at 900 or fewer, not counting the board and Pulse pictures or the FAQ
+answers folded under their questions; the detail lives on How it works (§9.22) and /security (§9.16).
+
+1. What is it: "A small office of AI helpers, run by Michael." Three check points (pick your kind of
+   business; Michael suggests the team and you pick who joins; ready in about three minutes, Setup
+   installs what it needs and signs you in) beside the pack picker and team list as they work today.
+   Two columns at 980 px and up, stacked below.
+2. What does it take off my plate: "The everyday jobs that eat your week." The job cards and flow line
+   (§9.21), then "Follow one refund through the office" linking to How it works.
+3. Can I trust it: "Privacy first. Nothing big happens without you." The trust cards (§9.20), then
+   "Read the security details" linking to /security.
+4. How do I keep an eye on it: "Three places. One glance." A Needs you row (a `card` row, `r-xl`,
+   `shadow-md`, the coral Needs you pill with its count and one line, "Needs you holds only what
+   Michael can't settle. Answer once and the work moves."), then the board (§9.13) and the home Pulse
+   (§9.17).
+
+"Questions owners ask" holds five FAQ items (what you need; whether it spends money or emails
+customers on its own; where your data goes; which mailboxes work; whether there is a paid version),
+and the JSON-LD copy matches them word for word. Coral appears only on the Needs you pill and the flow
+line's "You answer once" (§2). Sections are 96 px apart, and the page never scrolls sideways, also at
+320 px with a scrollbar.
+
+### 9.20 Trust cards (web)
+
+The home page's third question: one `card` panel (`r-2xl`, `shadow-md`, padding 40, 28 under 980 px)
+holding three columns at 980 px and up and one column below. Each column is a 40 px icon square, a
+`w-h3` title and one or two sentences in `ink-2`: Kept on your computer (lock on `indigo` soft: the
+team's work, memory and mailbox passwords are kept on your computer, the app sends no usage data,
+and the code is open); You approve what matters (check on `neutral-soft`, never coral: no one pays a bill, promises
+a refund or posts in public without you, and emails start as drafts); Built to stop agents going rogue
+(shield on `green` soft: Pete does the web research and the rest of the team is told to ask Pete,
+answers that come back through the trust layer lose any instructions aimed at AI, and email is read
+as the sender's words, never orders).
+Every sentence follows §9.16's rule: it says what the app keeps, gives or tells, never "can't".
+
+### 9.21 Job cards and the flow line (web)
+
+The home page's second question. Three job cards (`card`, `r-xl`, `shadow-md`, padding 20) in a row
+at 980 px and up and one column below: the department avatar (36 px, as on the setup team rows, in its §3.4 colours), a `w-h3` title and one
+line in `ink-2`. The inbox (Kelly: customer emails get answered, replies wait as drafts until you say
+they can go); The books (Oscar: invoices tracked, what's unpaid chased, a warning before filing
+deadlines); The follow ups (Dwight: leads and suppliers chased on a schedule, so nothing slips). Under
+them, the flow line: pills (`card`, inset `line-2`, `w-small`) joined by arrows, "An email lands",
+"Kelly picks it up", "Michael checks it", "You answer once" (`coral` soft with `coral-text`, 600) and
+"Done". It wraps on phones.
+
+### 9.22 How it works page (web)
+
+`/how-it-works`, a page with the detail behind the home page (owner, 2026-10-24): the site nav and
+footer, h1 "How the office works", the lead "The detail behind the home page, for when you want it.",
+then these sections, each as its own spec section describes it: Setup (the setup inset, §9.12, and
+the foundations inset, §9.18); One refund (the story's five steps and the Sending switch, §9.11);
+Privacy and the trust layer (§9.15); The board with its notes (§9.13); Files (§9.14); Pulse in full
+(§9.17); Everything else (§9.5); Open source (the facts and the contributors line); and the Reset
+memory question. Links shared before the move (`/#setup`, `/#story`, `/#sending`, `/#privacy`,
+`/#board`, `/#files`, `/#pulse`, `/#handled`, `/#open-source`) land on the same section here. The page never scrolls
+sideways, also at 320 px with a scrollbar.
 
 ---
 
@@ -2245,6 +2431,9 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-20 | Web: Setup foundations inset (§9.18), a second Setup inset after Then Michael gets ready: Then the team learns your business, with a read only foundation card (§7.27a) for Oscar's Financial year question, its buttons drawn, nothing clickable. |
 | 2026-10-20 | Web: privacy wording that holds on Windows: Pete does the team's web research and the rest of the team is told to ask Pete; the app turns off the web tools for everyone else, gives Pete questions only, and the trust layer checks what passes through it both ways; /security's first section is Who is given what; data kept on the computer (§9.15, §9.16). |
 | 2026-10-19 | Web: Pulse (web), a read only picture of Pulse after the file tabs with three notes (§9.17); the Ask Michael tile names picking Michael's choices with a click (§9.5); the board's Waiting note names Michael asking whether to keep waiting (§9.13); /security names the memory wall and Pulse's lists, and who is told when a message is held (§9.16); the file tabs picture shows the Pulse tab (§9.14). |
+| 2026-10-23 | Web: install dialog drawings for the signed Mac build (§9.10): the downloaded from the Internet sheet in its own words with Open highlighted, a Checked by Apple panel, and two Mac install steps; Windows unchanged. |
+| 2026-10-24 | Web: the site catches up with 0.2.5 and 0.2.6. Tiles (§9.5): their real length, Limits in writing names changing a job by saying what should change, Work on a schedule names paused starter jobs. Footer (§9.6): the legal line names GAACC AI Labs, linked. Privacy note (§9.15) and /security Who is given what (§9.16): email a member reads is labelled as the sender's words, steering lines pointed out, Michael told, never "removed". /security Where your data lives (§9.16): conversation records kept out of other members' file tools, Michael's included. Pulse lead (§9.17): See the emails. Setup foundations inset (§9.18): the 0.2.6 card hint and its Add a file link, and the inset line names adding a file. |
+| 2026-10-24 | Web: the home page answers four owner questions (design review Direction A, §9.19): what it is, what it takes off your plate (job cards and the flow line, §9.21), can I trust it (trust cards, §9.20) and how you keep an eye on it (Needs you, the board, and a home Pulse trimmed to work done, cost and each member's time and cost, §9.17). The detail moves to a new How it works page (§9.22): the setup insets, the refund story and Sending switch, the privacy section, the file tabs, the full Pulse, the tiles and open source. Nav: What it does, Trust, Keeping watch, How it works (§9.1). |
 
 ---
 

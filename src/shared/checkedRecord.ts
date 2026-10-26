@@ -53,10 +53,15 @@ export const CHECKED_TEXT_MAX = 4000;
 export const CHECKED_FILE = 'checked.jsonl';
 export const CHECKED_ARCHIVE_DIR = 'checked-archive';
 
-/** A text as kept: as written, line breaks and all, cut at the cap. */
+/** A cut at `i` would land between the two halves of an emoji. */
+const splitsPair = (s: string, i: number): boolean => /[\uD800-\uDBFF]/.test(s.charAt(i - 1)) && /[\uDC00-\uDFFF]/.test(s.charAt(i));
+
+/** A text as kept: as written, line breaks and all, cut at the cap (on a whole
+ *  character). */
 export function keepText(text: unknown): { text: string; cut: boolean } {
   const s = typeof text === 'string' ? text : text === undefined || text === null ? '' : String(text);
-  return s.length > CHECKED_TEXT_MAX ? { text: s.slice(0, CHECKED_TEXT_MAX), cut: true } : { text: s, cut: false };
+  const end = splitsPair(s, CHECKED_TEXT_MAX) ? CHECKED_TEXT_MAX - 1 : CHECKED_TEXT_MAX;
+  return s.length > CHECKED_TEXT_MAX ? { text: s.slice(0, end), cut: true } : { text: s, cut: false };
 }
 
 const isText = (x: unknown): x is CheckedText => !!x && typeof x === 'object' && typeof (x as CheckedText).subject === 'string' && typeof (x as CheckedText).body === 'string';
@@ -200,9 +205,12 @@ export function changesInContext(parts: ChangePart[], around = 80): Array<Change
     const last = k === parts.length - 1;
     const t = p.text;
     if (t.length <= around * 2 + 20 && !first && !last) { out.push(p); return; }
-    if (!first) out.push({ op: 'same', text: t.slice(0, around) });
+    // Each cut steps off the middle of an emoji, so no half of one shows.
+    const head = splitsPair(t, around) ? around - 1 : around;
+    const from = Math.max(first ? 0 : around, t.length - around);
+    if (!first) out.push({ op: 'same', text: t.slice(0, head) });
     if (t.length > (first || last ? around : around * 2)) out.push(null);
-    if (!last) out.push({ op: 'same', text: t.slice(Math.max(first ? 0 : around, t.length - around)) });
+    if (!last) out.push({ op: 'same', text: t.slice(splitsPair(t, from) ? from + 1 : from) });
   });
   // A leading or trailing gap stays; two gaps in a row become one.
   return out.filter((p, k) => p !== null || out[k - 1] !== null);

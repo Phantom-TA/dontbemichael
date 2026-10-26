@@ -40,12 +40,13 @@ export function openTab(s: FileTabState, tab: FileTab): FileTabState {
 }
 
 /** Close a tab. Closing the selected one selects the file tab to its left, or,
- *  for the first file tab, the view the owner opened files from. */
+ *  for the first file tab, the view the owner opened files from. Closing another
+ *  tab leaves the owner on the file they are reading. */
 export function closeTab(s: FileTabState, id: string): FileTabState & { select: 'file' | null } {
   const i = s.fileTabs.findIndex((f) => f.id === id);
   if (i < 0) return { ...s, select: null };
   const tabs = s.fileTabs.filter((f) => f.id !== id);
-  if (s.activeFileTab !== id) return { fileTabs: tabs, activeFileTab: s.activeFileTab, select: null };
+  if (s.activeFileTab !== id) return { fileTabs: tabs, activeFileTab: s.activeFileTab, select: s.activeFileTab ? 'file' : null };
   const left = i > 0 ? tabs[i - 1] : null;
   return left
     ? { fileTabs: tabs, activeFileTab: left.id, select: 'file' }

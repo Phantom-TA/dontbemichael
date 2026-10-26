@@ -31,7 +31,9 @@ import {
   type IntegrationRecord,
   buildAuthHeaders,
   resolveUpstreamUrl,
-  authTypeNeedsSecret
+  authTypeNeedsSecret,
+  isPostRead,
+  postReadsFor
 } from '../shared/integrations';
 import {
   BrokerWriteOnce,
@@ -351,7 +353,9 @@ export class IntegrationBroker {
       outHeaders[k] = v;
     }
 
-    if (this.journal && isWriteMethod(method)) {
+    // A POST the connector only reads with (a search, a GraphQL query) goes the
+    // read way below: streamed, not recorded, and free to be asked again.
+    if (this.journal && isWriteMethod(method) && !postOnlyReads(rec, method, upstream, body)) {
       await this.forwardWrite(res, upstream, outHeaders, method, body ?? Buffer.alloc(0), agentId, integrationId, pathAndQuery);
       return;
     }
@@ -565,6 +569,14 @@ export class IntegrationBroker {
     res.writeHead(outcome.status, { 'content-type': outcome.contentType });
     res.end(outcome.body);
   }
+}
+
+/** Whether a POST only reads, by the catalog rules for the connector's host
+ *  (postReadsFor). A custom REST API has none, so its POSTs stay writes. */
+function postOnlyReads(rec: IntegrationRecord, method: string, upstream: URL, body: Buffer | undefined): boolean {
+  if (method !== 'POST' || !body) return false;
+  const rules = postReadsFor(rec.baseUrl);
+  return rules.length > 0 && isPostRead(rules, upstream, body.toString('utf8'));
 }
 
 /** Wait until the caller can take more bytes, or until they go away. */

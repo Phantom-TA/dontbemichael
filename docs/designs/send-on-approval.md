@@ -100,6 +100,11 @@ approve in ASK ME."
 An approved proposal not sent within an hour goes to Michael once, so it is
 never stranded (his duty, kept in front of him).
 
+A reply keeps the thread headers of the email it answers from the moment it is
+proposed, so it still goes out in that thread after inbox zero (or the owner)
+archives the email; a reply id that names nothing is refused at propose, before
+the owner sees a card that could never be sent.
+
 ### What agents read
 
 The md-mail tools say the agent's Sending choice in `list_mailboxes` and what to

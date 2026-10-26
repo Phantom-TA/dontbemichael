@@ -22,7 +22,7 @@ import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -30,6 +30,7 @@ import {
   shouldStartInstall, type EngineSetupStatus, type KeyCheckFetch
 } from './engineSetup';
 import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
+import { sweepIsolatedLeftovers } from './isolatedSweep';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
 import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_WORK_STYLE } from '../shared/research';
@@ -68,7 +69,7 @@ import { linkWorktreeDeps, unlinkWorktreeDeps } from './worktreeDeps';
 import { HiveManager, type AgentMeta, type HiveMessage, type HiveTask } from './hive';
 import { HookServer, type PlanSignal } from './hooks';
 import { OfficeBreak, type OfficeBreakState } from './officeBreak';
-import { heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
+import { countsTowardErrorStorm, heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
 import { loadBundledPacks, packsResourceDir } from './packs';
 import { businessFolderRoot, ensureFolder, safeFolderName } from './agentFolders';
 import { CircuitBreaker, breakerMessages, type BreakerInput } from './breaker';
@@ -77,7 +78,7 @@ import { MemoryManager } from './memory';
 import { KnowledgeManager } from './knowledge';
 import { MemoryTidy } from './memoryTidy';
 import { checkDistinct, readJobProfile } from './hireCheck';
-import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readSuggestRequest, suggestWorkStyle } from './workStyleConvert';
+import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readReviseRequest, reviseWorkStyle } from './workStyleConvert';
 import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
 import { TelemetryStore } from './telemetryStore';
@@ -117,6 +118,7 @@ import { initCompletionWatcher } from './realtimeCompletionWatcher';
 import type { TaskCard, InboxMessage } from './realtimeCompletionWatcher';
 import { TelemetryCollector } from './telemetry';
 import { CostLedgerTotals } from './costLifetime';
+import { CostLedgerStore } from './costLedger';
 import { analytics, isRendererMessageSurface } from './analytics';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
@@ -124,6 +126,7 @@ import * as integrations from './integrations';
 import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, type AddMailboxInput } from './mail';
 import { MailApprovals } from './mailApprovals';
 import { standingFitCheck } from './standingCheck';
+import { fileFitCheck } from './fileFitCheck';
 import { terminalOverflowEvent } from '../shared/terminalOverflow';
 import { PROVIDER_PRESETS, grantPaused, hasMailTools, mailAccess, mailboxAddress, secretRefForMailbox, sendOnlyGrant, sendingFor, sendingMode, sendingWords, type SendingMode } from '../shared/mailboxes';
 import { levelFor } from '../shared/agentDefinition';
@@ -413,7 +416,10 @@ let pulseTickTimer: ReturnType<typeof setInterval> | null = null;
 let pulsePresenceTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
-telemetry.onApiError((agentId) => breaker.recordError(agentId));
+// Not while the office is stopped: a refused turn is the stop, not a storm.
+telemetry.onApiError((agentId) => {
+  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId);
+});
 // Shared roster on disk — created early so HookServer can re-read standing goals
 // on every UserPromptSubmit (Edit Agent saves land here via persistAgents).
 const roster = new RosterStore(() => readConfig().harnessHome);
@@ -767,7 +773,16 @@ const foundations = new Foundations({
     return [cfg.businessFolder, cfg.officeFolder, cwd].some((root) => typeof root === 'string' && !!root && isSameOrInside(expandTilde(root), path));
   },
   tell: (to, subject, body) => { if (hive.enabled()) hive.send({ to, act: 'inform', subject, body }, 'foundations'); },
-  changed: () => { try { liveWebContents()?.send('foundations:changed'); } catch { /* window gone */ } }
+  changed: () => { try { liveWebContents()?.send('foundations:changed'); } catch { /* window gone */ } },
+  // A file added on a foundation card (docs/designs/foundation-card-upload.md).
+  readFile: (path) => knowledge.readDocument(path),
+  fitFile: (f) => fileFit(f),
+  addToKnowledge: (path, read, opts) => {
+    const r = knowledge.ingestRead(path, read, opts);
+    memory.companyKnowledgeChanged(); // index it for search by meaning
+    return r.docId;
+  },
+  docTitle: (id) => knowledge.get(id)?.meta.title
 });
 /** What an agent carries of the foundations: its job's part, or all of it for
  *  Michael. Research is left out by the hook itself. */
@@ -790,7 +805,8 @@ function pulseTick(office: string): number {
 }
 /** Pulse's backfill (proposal 3): once per office, the weeks before Pulse began,
  *  read in the background from the office log, members' sessions and the cost
- *  ledger. The view refreshes when it lands. */
+ *  ledger. The view refreshes when it lands, with one tick's batch folded;
+ *  the 30 s tick folds the rest a batch at a time (TICK_BATCH). */
 let pulseBackfilling: string | null = null;
 function pulseBackfillOnce(office: string): void {
   const db = persist.database();
@@ -1011,6 +1027,24 @@ const standingFit = standingFitCheck({
     mkdirSync(dir, { recursive: true });
     // Trusted up front, as agent folders are at spawn, so the check never
     // stops on Claude Code's "trust this folder" question.
+    try { ensureClaudePermissionsAccepted(dir); } catch { /* the check fails closed */ }
+    return dir;
+  },
+  command: () => readConfig().defaultCommand ?? 'claude',
+  modelEngine: () => {
+    const cfg = readConfig();
+    return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
+  },
+  env: () => memory.env(),
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+});
+
+/** The fit check for a file added on a foundation card: the standing check's
+ *  folder, command and engine (D3, D10). */
+const fileFit = fileFitCheck({
+  cwd: () => {
+    const dir = join(app.getPath('userData'), STANDING_CHECK_DIR);
+    mkdirSync(dir, { recursive: true });
     try { ensureClaudePermissionsAccepted(dir); } catch { /* the check fails closed */ }
     return dir;
   },
@@ -2261,6 +2295,9 @@ function onPlanSignal(signal: PlanSignal): void {
   // owner's new key, with no automatic recheck (eng R2).
   const retry = !(signal.reason === 'signin' && readConfig().claudeAuth === 'apiKey');
   const step = officeBreak.limitReached(signal.agentId, signal.reason, retry);
+  // The engine's errors while it tried this turn, its retries included, were
+  // the account refusing it, so they don't count toward a storm either.
+  breaker.clearErrors(signal.agentId);
   const view = officeBreak.view();
   try { hive.appendLog({ kind: 'office-break', step, agentId: signal.agentId, reason: view?.reason ?? signal.reason, until: view?.until ?? null }); } catch { /* best-effort */ }
   if (step === 'started' && view) ownerToast(michaelName(), stopWords(view.reason, view.until).start);
@@ -2431,10 +2468,14 @@ function runBreakerBeat(progressWindowMs: number): void {
   }
 }
 
-/** Lifetime spend, folded from cost-ledger.jsonl. `telemetry`'s usd counter is
+/** Lifetime spend, folded from the cost ledger. `telemetry`'s usd counter is
  *  cumulative-since-process-start and restarts at ~0 on every app restart, so
  *  it cannot answer "what has this agent cost us". See costLifetime.ts. */
 const costTotals = new CostLedgerTotals();
+/** The cost ledger in harness.db (D17): it takes the hive's rows once the old
+ *  cost-ledger.jsonl is copied in. See costLedger.ts. */
+const costLedger = new CostLedgerStore(() => persist.database());
+hive.costLedgerSink = (row) => { const office = pulseOffice(); return !!office && costLedger.append(office, row); };
 
 /** Build + write the live fleet snapshot Michael reads (`<hive>/fleet.json`).
  *  Always-on (independent of the heartbeat) since `claude agents` can't see the
@@ -2447,8 +2488,16 @@ function writeFleetSnapshot(): void {
     const usageById = new Map(snap.usage.map((u) => [u.agentId, u]));
     const now = Date.now();
     // Async + incremental; returns immediately and never throws into the timer.
+    // harness.db's ledger once the old file is copied in (D17); until then the
+    // file, while the copy runs.
     const hiveRoot = hive.root();
-    if (hiveRoot) void costTotals.refresh(join(hiveRoot, 'cost-ledger.jsonl'));
+    const office = pulseOffice();
+    if (hiveRoot && office && costLedger.imported(office)) void costTotals.refreshFromStore(costLedger, office);
+    else if (hiveRoot) {
+      const file = join(hiveRoot, 'cost-ledger.jsonl');
+      void costTotals.refresh(file);
+      if (office) void costLedger.importFile(office, file);
+    }
     const agents = Object.entries(reg.agents)
       .filter(([, a]) => !a.archived)
       .map(([id, a]) => {
@@ -6028,41 +6077,40 @@ ipcMain.handle('hire:checkStop', (_evt, requestId: unknown) => {
   return { ok: true };
 });
 
-/** "Suggest me" on the hire wizard: a first work style for the owner to edit.
- *  The draft streams to the window as `workStyle:suggestText` while it is
- *  written, and `workStyle:suggestStop` ends it (owner, 2026-10-03). */
-const suggestRuns = new Map<string, AbortController>();
-ipcMain.handle('workStyle:suggest', async (evt, payload: unknown) => {
-  const req = readSuggestRequest(payload);
-  if (!req) return { text: '' };
-  const raw = (payload ?? {}) as { requestId?: unknown };
-  const requestId = typeof raw.requestId === 'string' ? raw.requestId.slice(0, 80) : '';
-  const stop = new AbortController();
-  if (requestId) suggestRuns.set(requestId, stop);
-  const cfg = readConfig();
-  try {
-    return await suggestWorkStyle(req, {
-      engine: cfg.godProvider ?? 'claude',
-      engineModel: cfg.godModel,
-      cwd: cfg.harnessHome ?? app.getPath('home'),
-      command: cfg.defaultCommand ?? 'claude',
-      env: memory.env(),
-      log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
-    }, {
-      signal: stop.signal,
-      onText: requestId ? (text) => { if (!evt.sender.isDestroyed()) evt.sender.send('workStyle:suggestText', { requestId, text }); } : undefined
-    });
-  } finally {
-    if (requestId) suggestRuns.delete(requestId);
-  }
-});
-ipcMain.handle('workStyle:suggestStop', (_evt, requestId: unknown) => {
-  if (typeof requestId === 'string') suggestRuns.get(requestId)?.abort();
-  return { ok: true };
-});
 /** A work style between the owner's plain description and the agent's
- *  instructions (owner, 2026-09-27). Falls back to a plain-text rewrite. */
-ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
+ *  instructions (owner, 2026-09-27). Falls back to a plain-text rewrite.
+ *  `to: 'revise'` applies the owner's "What should change?" to a job, or
+ *  writes a new one, and `workStyle:convertStop` ends it
+ *  (work-style-change-request.md, D4 and D9). */
+const reviseRuns = new Map<string, AbortController>();
+ipcMain.handle('workStyle:convert', async (evt, payload: unknown) => {
+  if ((payload as { to?: unknown } | null)?.to === 'revise') {
+    const rev = readReviseRequest(payload);
+    if (!rev) return { kind: 'error', reason: 'failed' };
+    const stop = new AbortController();
+    if (rev.requestId) reviseRuns.set(rev.requestId, stop);
+    const cfg = readConfig();
+    try {
+      return await reviseWorkStyle(rev, {
+        engine: cfg.godProvider ?? 'claude',
+        engineModel: cfg.godModel,
+        cwd: cfg.harnessHome ?? app.getPath('home'),
+        command: cfg.defaultCommand ?? 'claude',
+        env: memory.env(),
+        log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+        // The box's steps and the words as they are written (owner, 2026-10-23).
+        onProgress: (p) => {
+          if (!rev.requestId || evt.sender.isDestroyed()) return;
+          evt.sender.send(`workStyle:progress:${rev.requestId}`, p);
+        },
+        // Checked against, never copied into the job (eng D3).
+        foundations: () => Object.entries(foundations.read().answers).flatMap(([id, a]) =>
+          isFoundationId(id) && a?.text ? [`${FOUNDATION_QUESTIONS[id].text}: ${a.text}`] : [])
+      }, stop.signal);
+    } finally {
+      if (rev.requestId) reviseRuns.delete(rev.requestId);
+    }
+  }
   const req = readConvertRequest(payload);
   if (!req) return { text: '', source: 'rules' };
   const cfg = readConfig();
@@ -6074,6 +6122,11 @@ ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
     env: memory.env(),
     log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
   });
+});
+
+ipcMain.handle('workStyle:convertStop', (_evt, requestId: unknown) => {
+  if (typeof requestId === 'string') reviseRuns.get(requestId)?.abort();
+  return { ok: true };
 });
 
 /** A job's focus area checked against the agent's Work style and its other
@@ -6884,6 +6937,16 @@ ipcMain.handle('pulse:organized', (_evt, fromMs: unknown, toMs: unknown, agentId
 // record and writes the owner's answer, a draft request or Not now.
 ipcMain.handle('foundations:get', () => foundations.view());
 ipcMain.handle('foundations:answer', (_evt, id: unknown, text: unknown) => foundations.ownerAnswer(id, text));
+// A file from a foundation card: one picked here, or dropped on the card.
+ipcMain.handle('foundations:pickFile', async (evt) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  if (!win) return { ok: false as const, error: 'no window' };
+  const res = await dialog.showOpenDialog(win, { properties: ['openFile'], title: 'Add a file' });
+  if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
+  return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
+});
+ipcMain.handle('foundations:addFile', (_evt, id: unknown, path: unknown) => foundations.addFile(id, path));
+ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown) => foundations.answerFile(id, docId, words));
 ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
 ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
@@ -8429,6 +8492,10 @@ app.whenReady().then(() => {
   // live session. Force it closed at startup (a real session re-opens it via
   // setMicGate(true)); macOS TCC stays a second gate regardless.
   if (readConfig().realtimeVoiceEnabled) writeConfig({ realtimeVoiceEnabled: false });
+
+  // A file check cut short by a quit or crash leaves its settings folder, with
+  // the checked text, in the temp folder (hiddenClaude.ts isolateConfig).
+  sweepIsolatedLeftovers();
 
   // Anonymous product analytics (PostHog) — the full contract lives in
   // TELEMETRY.md. Off entirely while COLLECT_USAGE_STATS (buildFeatures.ts) is
