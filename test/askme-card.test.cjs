@@ -55,6 +55,18 @@ test('an ask that opens with a list item or a quote shows its question', () => {
   assert.equal(askHeadline('>= $500 is the budget. Approve?'), '>= $500 is the budget.');
   assert.equal(askHeadline('>5 days late, chase them?'), '>5 days late, chase them?');
   assert.equal(askHeadline('>Can I send it?'), 'Can I send it?');
+  // A space or a currency sign before the amount doesn't make it a quote.
+  assert.equal(askHeadline('>$500 is the budget. Approve?'), '>$500 is the budget.');
+  assert.equal(askHeadline('> $500 is the budget. Approve?'), '> $500 is the budget.');
+  assert.equal(askHeadline('> €2,000 over budget. Approve?'), '> €2,000 over budget.');
+  assert.equal(askHeadline('> 5 days late, chase them?'), '> 5 days late, chase them?');
+  // Quoted text still loses its marker, whatever opens it.
+  assert.equal(askHeadline('> Can I send it?'), 'Can I send it?');
+  assert.equal(askHeadline('> - Can I send the quote today?'), 'Can I send the quote today?');
+  assert.equal(askHeadline('> 1. Should I renew? It ends Friday.'), 'Should I renew?');
+  assert.equal(askHeadline('> **Renew the Acme contract?** It ends Friday.'), 'Renew the Acme contract?');
+  assert.equal(askHeadline('> هل توافق على الدفع؟'), 'هل توافق على الدفع؟');
+  assert.equal(askHeadline('> "Can I send it?" the client asked.'), '"Can I send it?" the client asked.');
   // Arabic and Persian numbered asks, and task list checkboxes.
   assert.equal(askHeadline('١. هل توافق على الدفع؟'), 'هل توافق على الدفع؟');
   assert.equal(askHeadline('۲) هل توافق على الدفع؟'), 'هل توافق على الدفع؟');

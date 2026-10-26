@@ -9,8 +9,10 @@ const SENTENCE_LEAD = /^[\s\S]*?(?:(?<!\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|inc|lt
 
 export function askHeadline(q: string): string {
   // A quote, list or checkbox marker opening the ask is layout, not its first
-  // words. A > before =, <, > or a digit is a comparison ("> 5 days" stays).
-  const text = q.trim().replace(/^(?:>(?![=<>\d])\s*|[-*+]\s+(?:\[[ xX]\]\s+)?|[0-9٠-٩۰-۹]{1,3}[.)]\s+)+/, '');
+  // words. A > is a quote only when quoted text clearly follows it (a letter, a
+  // list or number marker, bold or a quote mark); anything else is a comparison
+  // and stays, so "> $500", "> 5 days" and ">= 2" keep their meaning.
+  const text = q.trim().replace(/^(?:>(?=\s*(?:\p{L}|[-*+]\s|\d{1,3}[.)]\s|\*\*|["'“‘(]))\s*|[-*+]\s+(?:\[[ xX]\]\s+)?|[0-9٠-٩۰-۹]{1,3}[.)]\s+)+/u, '');
   const bold = /^\*\*([\s\S]+?)\*\*/.exec(text);
   const lead = bold ? bold[1] : (SENTENCE_LEAD.exec(text)?.[0] ?? text);
   return lead
