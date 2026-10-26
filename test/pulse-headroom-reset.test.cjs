@@ -41,3 +41,20 @@ test('a usage window that has reset since the last status line is not shown', ()
   svc.noteRateLimits({ five_hour: { used_percentage: 10, resets_at: (clock.now + H) / 1000 } }, clock.now);
   assert.equal(svc.snapshot('today').headroom.usedPct, 10, 'the next status line is shown again');
 });
+
+test('when the five hour window resets, the bar falls back to the weekly window that is still live', () => {
+  // Value: protects=the plan bar keeps showing the plan while any window is live; fails_when=only the most constrained window of a status line is kept, so its reset leaves an empty bar though the weekly one is 70% used; why_new=review on #565; seam=none
+  const clock = { now: new Date(2026, 9, 20, 14, 0).getTime() };
+  const svc = service(clock);
+  const week = clock.now + 2 * 24 * H;
+  svc.noteRateLimits({
+    five_hour: { used_percentage: 95, resets_at: (clock.now + H) / 1000 },
+    seven_day: { used_percentage: 70, resets_at: week / 1000 }
+  }, clock.now);
+  assert.equal(svc.snapshot('today').headroom.usedPct, 95, 'the most constrained one first');
+  clock.now += 2 * H;
+  const h = svc.snapshot('today').headroom;
+  assert.deepEqual([h.usedPct, h.resetsAt], [70, week], 'then the weekly one, not an empty bar');
+  clock.now = week + H;
+  assert.equal(svc.snapshot('today').headroom, null, 'nothing once every window has reset');
+});
