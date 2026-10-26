@@ -141,7 +141,7 @@ import { emailCalendarAllowed } from '../shared/mcpCatalog';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
 import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
-import { CHECK_FOLDERS, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
+import { CHECK_FOLDERS, RUN_COMPARE_DIR, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
 import { autoMemoryFolders, eraseMemoryTargets, foldersFromRoster, gitTopOf, idsFromCostRows, idsFromRecord, memberIdsIn, memoryResetTargets } from './memoryReset';
 import { groupMembers, hardKillTree, isAlive, KILL_GRACE_MS, snapshotRemains } from './procKill';
 import { buildWorkerLaunch } from './workerLaunch';
@@ -5704,7 +5704,7 @@ ipcMain.handle('agent:restoreConversation', (_evt, id: unknown) => {
   try { liveWebContents()?.send('power:resume', { reason: 'restore-conversation', awayMs: 0, dead: [ptyId], total: 1 }); } catch { /* window gone */ }
   return { ok: true };
 });
-/** The owner's Ask me answer, added to the raising agent's memory notes. */
+/** The owner's Ask me answer, kept as an owner note for the raising agent's memory (ownerNotes.ts). */
 ipcMain.handle('hive:rememberOwnerAnswer', (_evt, p: unknown) => {
   const o = (p ?? {}) as { agentId?: unknown; task?: unknown; taskId?: unknown; q?: unknown; a?: unknown };
   if (typeof o.agentId !== 'string' || typeof o.q !== 'string' || typeof o.a !== 'string') return { ok: false };
@@ -7009,11 +7009,15 @@ const runCompare = new RunCompare({
   projectsRoot: claudeProjectsRoot,
   runModel: (prompt) => {
     const cfg = readConfig();
+    // An empty folder only the app writes, never the office folder: no
+    // CLAUDE.md a member left there can steer the suggestion (as standingFit).
+    const cwd = join(app.getPath('userData'), RUN_COMPARE_DIR);
+    try { mkdirSync(cwd, { recursive: true }); ensureClaudePermissionsAccepted(cwd); } catch { /* the call fails and the owner can try again */ }
     return runHiddenModel(prompt, {
       engine: cfg.godProvider ?? 'claude',
       engineModel: cfg.godModel,
       model: RUN_COMPARE_MODEL,
-      cwd: cfg.harnessHome ?? app.getPath('home'),
+      cwd,
       command: cfg.defaultCommand ?? 'claude',
       noTools: true,
       // The runs hold customers' text: only the owner's user settings, no

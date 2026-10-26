@@ -34,7 +34,6 @@ export interface MailApprovalDeps {
   /** A hive message from the app (sender "mail"). Returns false when it could
    *  not go out (no hive), so nothing is recorded as told. */
   send(msg: { to: string; act: 'request' | 'inform'; subject: string; body: string }): boolean | void;
-  /** Adds a line to an agent's memory notes. */
   /** A note for the agent's memory, with the Why the app built for it: the
    *  channel, an id and the date, never email text (memory evidence, D6). */
   remember(agentId: string, line: string, why: string): void;

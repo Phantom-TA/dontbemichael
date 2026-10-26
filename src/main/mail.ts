@@ -308,7 +308,7 @@ function defaultSmtp(server: MailServer, user: string, pass: string): SmtpLike {
 /** Plain-language classification of an IMAP or SMTP failure. */
 export function classifyMailError(e: unknown): MailError {
   if (e instanceof MailError) return e;
-  const err = e as { code?: string; authenticationFailed?: boolean; responseText?: string; response?: string; message?: string };
+  const err = e as { code?: string; authenticationFailed?: boolean; tlsFailed?: boolean; responseText?: string; response?: string; message?: string };
   const text = `${err?.responseText ?? ''} ${err?.response ?? ''} ${err?.message ?? ''}`;
   if (/application-specific password required|web login required|basic auth(entication)? (is )?(disabled|blocked)|app passwords? (are |is )?(not allowed|disabled)|please log ?in via your web browser/i.test(text)) {
     return new MailError('provider-blocked', 'This provider no longer accepts the app password for this mailbox.');
@@ -320,6 +320,11 @@ export function classifyMailError(e: unknown): MailError {
   }
   if (['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EHOSTUNREACH', 'ESOCKET', 'ECONNECTION', 'EPIPE', 'NoConnection'].includes(err?.code ?? '')) {
     return new MailError('network', "Couldn't reach the mail server. Check the server name and your connection.");
+  }
+  // A server not encrypted from the start that won't switch to encryption:
+  // the login is refused rather than sent in the clear (imapOptions, smtpOptions).
+  if (err?.tlsFailed || /STARTTLS/i.test(text)) {
+    return new MailError('unsupported', "This mail server doesn't offer encryption on this port, so the app won't send the password. Use the server's encrypted port (often 993 for reading, 465 for sending).");
   }
   if (/timed out/i.test(text)) return new MailError('timeout', 'The mail server took too long to answer.');
   return new MailError('unknown', `The mail server returned an error: ${String(err?.message ?? e).slice(0, 200)}`);

@@ -112,3 +112,13 @@ test('Profile and Edit agent show each job with its focus, read only', () => {
     assert.ok(d.scheduledJobs.title && d.scheduledJobs.focus.includes('{{focus}}') && d.scheduledJobs.noFocus, loc);
   }
 });
+
+test('the jobs list calls every hook before it leaves Research out', () => {
+  // Value: protects=the Profile tab switching between Research and a member; fails_when=useLastRuns runs after the Research return, so React throws "Rendered more hooks than during the previous render"; why_new=maintainability and design review; seam=source pin (no renderer harness for this list); no_claim=the rest of the list's render
+  const src = read('src/renderer/src/components/ScheduledJobs.tsx');
+  const body = src.slice(src.indexOf('export function ScheduledJobsList'), src.indexOf('function JobRow('));
+  const back = body.indexOf('if (agentId === RESEARCH_ID) return null;');
+  assert.ok(back > 0);
+  for (const hook of body.slice(back).match(/\buse[A-Z]\w*\(/g) ?? []) assert.fail(`${hook} runs after the Research return`);
+  assert.ok(body.indexOf('useLastRuns(agentId)') < back);
+});

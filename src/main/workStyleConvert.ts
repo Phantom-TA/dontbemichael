@@ -29,7 +29,7 @@ import {
 /** Reading instructions back is a summary: Haiku. Writing them is the part the
  *  team member lives by: Sonnet. */
 const PLAIN_MODEL = 'claude-haiku-4-5';
-const INSTRUCTIONS_MODEL = 'claude-sonnet-5';
+export const INSTRUCTIONS_MODEL = 'claude-sonnet-5';
 const TIMEOUT_MS = 90_000;
 const MAX_TEXT = 8000;
 
@@ -134,7 +134,8 @@ export function readReviseRequest(v: unknown): ReviseRequest | null {
   const changes = (Array.isArray(o.changes) ? o.changes : []).slice(-JOB_CHANGES_MAX).map((x) => str(x, CHANGE_MAX).trim()).filter(Boolean);
   if (!name || changes.length === 0) return null;
   const answer = a ? { question: str(a.question, 400).trim(), answer: str(a.answer, CHANGE_MAX).trim() } : undefined;
-  const answers = (Array.isArray(o.answers) ? o.answers : []).slice(0, 4)
+  // The newest four: the latest answer is the one the rewrite must see.
+  const answers = (Array.isArray(o.answers) ? o.answers : []).slice(-4)
     .map((x) => (x && typeof x === 'object' ? x as Record<string, unknown> : {}))
     .map((x) => ({ question: str(x.question, 400).trim(), answer: str(x.answer, CHANGE_MAX).trim() }))
     .filter((x) => x.question && x.answer);

@@ -270,7 +270,7 @@ test('Edit agent sends the split, checks in change mode, asks where numbers live
   assert.match(src, /askHome: !lead/);
   assert.match(src, /\.\.\.\(handoffList\.length \? \{ handoffList \} : \{\}\)/);
   assert.match(src, /return \{ label: c\.key, tool: c\.key, off: !on, noAccess: on && !connectorGranted\(cfg, agent\.id, c\.key, readsBooks\) \};/, 'off means off in Settings; on but not given is flagged');
-  assert.match(src, /const senders = lead \? \[\] : handoffsTo\(agent\.id, floor\);/);
+  assert.match(src, /const sendersKey = useStore\(\(s\) => \(lead \? '' : JSON\.stringify\(handoffsTo\(agent\.id, s\.agents\)/, 'only the senders, never the whole floor (ship review)');
   assert.match(src, /t\('editAgent\.getsFrom', \{ name: from\.name \}\)/);
   assert.doesNotMatch(read('src/renderer/src/components/ProfileTab.tsx'), /handoff|getsFrom/, 'no routing on the Profile tab (owner, 2026-09-25; eng D2)');
 });
@@ -288,4 +288,11 @@ test('the new strings exist in every language, with no dashes', () => {
     assert.ok(Object.keys(l.jobChange).some((k) => k.startsWith('homeShowAll_')), `${lang} homeShowAll`);
     assert.ok(l.editAgent.getsFrom && l.editAgent.getsFromInfo, `${lang} getsFrom`);
   }
+});
+
+test('a revise request keeps the owner\'s newest answers', () => {
+  // Value: protects=the rewrite sees the owner's latest answer; fails_when=the first four of five answers are kept, so the newest is lost and the same question comes back; why_new=red team on the ship review; seam=none; no_claim=none beyond protects
+  const answers = [1, 2, 3, 4, 5].map((n) => ({ question: `Q${n}?`, answer: `A${n}` }));
+  const r = W.readReviseRequest({ to: 'revise', ctx, current: { instructions: 'x', handles: 'y' }, changes: ['z'], answers });
+  assert.deepEqual(r.answers.map((a) => a.answer), ['A2', 'A3', 'A4', 'A5']);
 });

@@ -80,6 +80,7 @@ test('the patterns stay quick on the longest text the check reads', () => {
     const start = process.hrtime.bigint();
     dc.patternHits(text);
     const ms = Number(process.hrtime.bigint() - start) / 1e6;
+    // gstack-timing-ok: the unbounded pattern took 1.5 s here and the bounded one a few ms, so 300 ms is far from both.
     assert.ok(ms < 300, `${name}: ${Math.round(ms)} ms`);
   }
   assert.ok(dc.patternHits(`${'x'.repeat(100)}john@example.com`).some((h) => h.classId === 'contact'), 'an address at the end of a long run still counts');

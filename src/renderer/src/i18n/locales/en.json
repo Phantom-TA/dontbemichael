@@ -3144,7 +3144,11 @@
     "goesToGroup": "Goes to a teammate",
     "goesTo": "Goes to {{name}}: {{scope}}",
     "noLongerGoesTo": "No longer goes to {{name}}: {{scope}}",
+    "noSplit_zero": "No split was written; {{names}} may still get this work.",
     "noSplit_one": "No split was written; {{names}} may still get this work.",
+    "noSplit_two": "No split was written; {{names}} may still get this work.",
+    "noSplit_few": "No split was written; {{names}} may still get this work.",
+    "noSplit_many": "No split was written; {{names}} may still get this work.",
     "noSplit_other": "No split was written; {{names}} may still get this work.",
     "noAccess": "{{name}} can't use {{tool}} yet.",
     "openAccess": "Open Access",
@@ -3152,7 +3156,11 @@
     "homeTools": "Connected tools",
     "homeOff": "Off",
     "homeOffLabel": "{{tool}}, switched off",
+    "homeShowAll_zero": "Show all {{count}} tools",
     "homeShowAll_one": "Show all {{count}} tool",
+    "homeShowAll_two": "Show all {{count}} tools",
+    "homeShowAll_few": "Show all {{count}} tools",
+    "homeShowAll_many": "Show all {{count}} tools",
     "homeShowAll_other": "Show all {{count}} tools"
   },
   "runCompare": {

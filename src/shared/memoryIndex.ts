@@ -198,11 +198,11 @@ export interface ValidatedOps {
 /** The model's ops, checked: unknown ops, ids and kinds are dropped, each
  *  counted by reason so a tidy run shows how much of the reply was usable.
  *  `ownerWords` false (no note from the owner in this pass, memory evidence
- *  D5, D9): nothing can be the owner's, so an add marked owner is filed as the
- *  member's own, and an owner entry is never deleted or reworded; a repeat or
- *  a new expiry on it still lands. Evidence holds too (D5): an update that
- *  rewords an entry with evidence, from the same kind of source, lands only
- *  with evidence of its own. */
+ *  D5, D9): nothing can be the owner's, so an add or a procedure marked owner
+ *  is filed as the member's own, and an owner entry or procedure is never
+ *  deleted or rewritten; a repeat or a new expiry on it still lands. Evidence
+ *  holds too (D5): an update that rewords an entry with evidence, from the
+ *  same kind of source, lands only with evidence of its own. */
 export function validateOps(raw: unknown, entries: MemoryEntry[], ownerWords = true): ValidatedOps {
   const list = raw && typeof raw === 'object' && Array.isArray((raw as { ops?: unknown }).ops) ? (raw as { ops: unknown[] }).ops : [];
   const ids = new Set(entries.map((e) => e.id));
@@ -264,7 +264,13 @@ export function validateOps(raw: unknown, entries: MemoryEntry[], ownerWords = t
       const name = oneLine(r.name);
       const steps = typeof r.steps === 'string' ? r.steps.trim().slice(0, MAX_PROCEDURE_CHARS) : '';
       if (!name || !steps) { drop('missing-text'); continue; }
-      out.push({ op: 'procedure', name, steps, source: source(r.source) });
+      // The owner's steps stay the owner's: without their words in the pass, a
+      // procedure is the member's own and never rewrites one the owner gave.
+      const path = `memory/procedures/${procedureSlug(name)}.md`;
+      if (!ownerWords && entries.some((e) => e.source === 'owner' && e.kind === 'procedure' && e.text.includes(path))) { drop('owner-entry'); continue; }
+      let src = source(r.source);
+      if (src === 'owner' && !ownerWords) { drop('not-owner'); src = 'task'; }
+      out.push({ op: 'procedure', name, steps, source: src });
     } else {
       drop('unknown-op');
     }

@@ -19,7 +19,7 @@ const REFRESH_MS = 30_000;
  * owner sees the rewrite and Apply or Undo; Not now hides the card. A card
  * leaves once the member's job has changed since it was made.
  */
-export function RunSuggestions() {
+export function RunSuggestions({ onShown }: { onShown?: (n: number) => void } = {}) {
   const { t } = useTranslation();
   const godName = useResolvedGodName();
   const agents = useStore((s) => s.agents);
@@ -42,6 +42,8 @@ export function RunSuggestions() {
     // Applied (or changed another way) since the suggestion: nothing left to review.
     return !(a.jobChanges ?? []).some((c) => (Date.parse(c.at) || 0) > s.at);
   });
+  // Pulse leaves out "Nothing to change" while a card is up.
+  useEffect(() => { onShown?.(shown.length); }, [onShown, shown.length]);
   if (!shown.length) return null;
 
   const notNow = async (s: RunSuggestion): Promise<void> => {
@@ -55,7 +57,7 @@ export function RunSuggestions() {
         const name = agents.find((x) => x.id === s.agentId)?.name ?? s.agentId;
         const job = missions.find((m) => m.id === s.missionId)?.label ?? '';
         return (
-          <div key={s.runId} role="listitem" style={{ background: 'var(--cth-indigo-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-indigo) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div key={s.runId} role="listitem" style={{ background: 'var(--cth-amber-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-amber) 40%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <AgentAvatar id={s.agentId} name={name} size={22} />
               <div style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}>
@@ -63,7 +65,7 @@ export function RunSuggestions() {
               </div>
             </div>
             <div dir="auto" style={{ fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink)' }}>{s.change}</div>
-            {s.why && <div dir="auto" style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-2)' }}>{s.why}</div>}
+            {s.why && <div dir="auto" style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-amber-text)' }}>{s.why}</div>}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <PixelButton size="sm" onClick={() => requestEditAgent(s.agentId, { change: s.change })}>{t('runCompare.review')}</PixelButton>
               <PixelButton variant="secondary" size="sm" onClick={() => { void notNow(s); }}>{t('pulse.notNow')}</PixelButton>

@@ -20,6 +20,7 @@ require.cache[electron] = {
 const { registerRealtimeActionIpc } = loadTs('src/main/realtimeActions.ts');
 
 const killed = [];
+const saved = [];
 const agents = {
   god: { name: 'Michael', isGod: true },
   jim: { name: 'Jim' },
@@ -34,7 +35,7 @@ registerRealtimeActionIpc({
   hiveRegistry: () => ({ godId: 'god', agents }),
   hiveLog() {}, controlPause() {}, controlSteer() {}, controlHalt() {}, controlSnapshot: () => null,
   killAgent: (id) => { killed.push(id); return { ok: true }; },
-  listMissions: () => [], saveMissions() {}
+  listMissions: () => [...saved], saveMissions: (list) => { saved.splice(0, saved.length, ...list); }
 });
 const act = (p) => handlers.get('realtime:action')(null, p);
 const confirm = (phrase) => handlers.get('realtime:action:confirm')(null, { phrase });
@@ -69,4 +70,20 @@ test('a confirm naming the staged member, or nobody, still runs it', async () =>
   await act({ verb: 'kill', target: 'jim' });
   assert.equal((await confirm('confirm, kill the agent jim')).ok, true);
   assert.deepEqual(killed, ['jim']);
+});
+
+test('a schedule staged for one member is cancelled by a confirm that names another, and nothing is created', async () => {
+  // Value: protects=a voice schedule is created only for the member it was staged for (create_schedule carries targetId too); fails_when=the schedule pending loses its targetId, so "confirm, schedule it for Nolan" creates Jim's schedule, or the cancel leaves it staged; why_new=realtime-confirm-target covers only kill; seam=none (the real ipc handlers); no_claim=none beyond protects
+  saved.length = 0;
+  const staged = await act({ verb: 'create_schedule', label: 'Invoice check', focus: 'Open invoices past due.', to: 'jim' });
+  assert.equal(staged.needsConfirm, true);
+  const res = await confirm('confirm, schedule it for Nolan');
+  assert.equal(res.ok, false);
+  assert.match(res.spoken, /^That named someone other than Jim, so I cancelled the create schedule\./, 'the member, never the schedule\'s label (ship review)');
+  assert.equal((await confirm('schedule')).spoken, 'There\'s nothing waiting to confirm.', 'nothing is left staged');
+  assert.deepEqual(saved, [], 'no schedule was created');
+  // The same schedule confirmed with no other name is created, for the member it was staged for.
+  await act({ verb: 'create_schedule', label: 'Invoice check', focus: 'Open invoices past due.', to: 'jim' });
+  assert.equal((await confirm('confirm schedule')).ok, true);
+  assert.deepEqual(saved.map((m) => [m.label, m.to]), [['Invoice check', 'jim']]);
 });

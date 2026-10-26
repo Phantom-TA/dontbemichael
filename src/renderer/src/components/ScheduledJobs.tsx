@@ -46,10 +46,11 @@ export function ScheduledJobsList({ agentId, name, heading = 'label', onChange, 
   const { status, retry } = useMissions();
   const openSchedules = useStore((s) => s.openSchedules);
   const all = useScheduledJobs(agentId);
+  // Every hook before the Research return: the same list can switch members.
+  const last = useLastRuns(agentId);
   // Research holds no office data, schedules included (research-agent-privacy.md).
   if (agentId === RESEARCH_ID) return null;
   const jobs = orderedJobs(all, Date.now());
-  const last = useLastRuns(agentId);
   const title = t('scheduledJobs.title');
   const change = onChange ?? (() => openSchedules(agentId));
   return (
@@ -137,6 +138,7 @@ type LastRun = { run: JobRun; suggestion: RunSuggestion | null };
 function useLastRuns(agentId: string): { byMission: Map<string, LastRun>; reload: () => void } {
   const [rows, setRows] = useState<LastRun[]>([]);
   const reload = useCallback(() => {
+    if (agentId === RESEARCH_ID) { setRows([]); return; }
     window.cth.runCompareLastRuns(agentId).then(setRows).catch(() => setRows([]));
   }, [agentId]);
   useEffect(() => { reload(); }, [reload]);
@@ -203,7 +205,8 @@ function LastRunLine({ agentId, last, reload }: { agentId: string; last: LastRun
             aria-label={t('runCompare.noteLabel')}
             dir="auto"
             autoFocus
-            style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12.5, padding: '6px 8px', borderRadius: 'var(--cth-r-md)', border: '1px solid var(--cth-line-2)', background: 'var(--cth-card)', color: 'var(--cth-ink)' }}
+            className="cth-input"
+            style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12.5, padding: '6px 8px', border: 'none', outline: 'none', background: 'var(--cth-card)', color: 'var(--cth-ink)' }}
           />
           <div style={{ display: 'flex', gap: 8 }}>
             <PixelButton size="sm" onClick={() => { void send(); }}>{t('runCompare.compare', { godName })}</PixelButton>

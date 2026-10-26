@@ -1,5 +1,5 @@
 import { RESEARCH_ID } from '../../../shared/research';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { FIRST_TASK_EDITED_MAX } from '@shared/firstTask';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
@@ -340,8 +340,11 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       forget: (id) => {
         st.archiveAgent(id); st.removeArchivedAgent(id); st.removeRestorableAgent(id);
         // Handoffs to them go too; a released line already went with them.
+        // Undo's copy too, so an Undo never brings back a handoff to nobody.
         for (const a of useStore.getState().agents) {
           if (a.handoffs?.some((h) => h.toId === id)) st.updateAgent(a.id, { handoffs: handoffsWithout(a.handoffs, id) });
+          const prev = a.jobPrevious;
+          if (prev?.handoffs?.some((h) => h.toId === id)) st.updateAgent(a.id, { jobPrevious: { ...prev, handoffs: handoffsWithout(prev.handoffs, id) } });
         }
       }
     });
@@ -405,8 +408,11 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   const busy = saving || deleting;
   const lastChange = live.jobChanges?.[live.jobChanges.length - 1];
   // Teammates whose own split sends work here, live only (eng D3).
-  const floor = useStore((s) => s.agents);
-  const senders = lead ? [] : handoffsTo(agent.id, floor);
+  // Only who sends this member work, as text: the team list changes with every
+  // terminal update, which would otherwise redraw the whole modal each time.
+  const sendersKey = useStore((s) => (lead ? '' : JSON.stringify(handoffsTo(agent.id, s.agents).map(({ from, scopes }) => [from.id, from.name, scopes]))));
+  const senders = useMemo(() => (sendersKey ? (JSON.parse(sendersKey) as Array<[string, string, string[]]>) : [])
+    .map(([id, name, scopes]) => ({ from: { id, name }, scopes })), [sendersKey]);
   const listOf = (items: string[]): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(items); } catch { return items.join(', '); } };
 
   const nameRow = (

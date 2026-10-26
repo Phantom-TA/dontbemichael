@@ -233,6 +233,8 @@ export function PulseView() {
   // The owner's choice, kept even while a period cannot compare yet (design D4).
   const [compare, setCompare] = useState<boolean>(() => { try { return window.localStorage.getItem(LS_COMPARE) === '1'; } catch { return false; } });
   const [data, setData] = useState<PulseData | null>(null);
+  /** Run comparison cards showing in Recommendations (RunSuggestions). */
+  const [runCards, setRunCards] = useState(0);
   const [failed, setFailed] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
   // The held tile's list (owner, 2026-10-16).
@@ -289,7 +291,6 @@ export function PulseView() {
   const fmtShort = (day: string): string => new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, { day: 'numeric', month: 'short' });
   const fmtSpan = (from: string, to: string): string => (from === to ? fmtDay(from) : t('pulse.daySpan', { from: fmtShort(from), to: fmtShort(to) }));
   const listNames = (names: string[]): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(names); } catch { return names.join(', '); } };
-  const fmtShortDay = (day: string): string => new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, { day: 'numeric', month: 'short' });
   const fmtDay = (day: string | number): string => new Date(typeof day === 'number' ? day : `${day}T12:00:00`).toLocaleDateString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short' });
   const jobOf = (id?: string): string => missions.find((m) => m.id === id)?.label ?? '';
 
@@ -538,7 +539,7 @@ export function PulseView() {
                   (owner, 2026-10-25, D2): two stats at the foot, as on the left. */}
               <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
                 {([
-                  [s.running?.ms, pv ? pv.running?.ms : undefined, s.running?.since ? t('pulse.officeRanSince', { day: fmtShortDay(s.running.since) }) : t('pulse.officeRan')],
+                  [s.running?.ms, pv ? pv.running?.ms : undefined, s.running?.since ? t('pulse.officeRanSince', { day: fmtShort(s.running.since) }) : t('pulse.officeRan')],
                   [s.running?.awayMs, pv ? pv.running?.awayMs : undefined, t('pulse.youAway')]
                 ] as Array<[number | undefined, number | undefined, string]>).map(([ms, before, name]) => (
                   <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -602,7 +603,7 @@ export function PulseView() {
         {/* Before any advice: one short line, the why behind the (i) (1D). */}
         <Section title={t('pulse.recommendations')} tip={noAdvice && view.adviceFrom ? t('pulse.adviceStarts', { day: fmtDay(view.adviceFrom), since: fmtDay(view.liveSince ?? Date.now()) }) : t('pulse.recommendationsTip')}>
           {/* Run comparisons the owner asked for with "Went wrong" (runCompare.ts). */}
-          <RunSuggestions />
+          <RunSuggestions onShown={setRunCards} />
           {/* Before advice: what the advice rules see so far (owner, 2026-10-19),
               as insight cards under a lit header (design A): the Early look pill,
               the bold line and the countdown to advice; one card per pattern,
@@ -635,7 +636,7 @@ export function PulseView() {
               </div>
             </div>
           ) : foundationJobs.length > 0 && <div style={{ ...card, padding: '12px 16px', marginBottom: 10 }}><FoundationsStrip jobs={foundationJobs} /></div>}
-          {!(noAdvice && early.length > 0) && noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
+          {!(noAdvice && early.length > 0) && runCards === 0 && noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
           {(!noAdvice || savedShown) && <div style={grid(sugCols)}>
             {applied.map((x) => (
               <div key={`a-${x.appliedId}`} style={{ background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>

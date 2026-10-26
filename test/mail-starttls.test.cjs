@@ -19,7 +19,7 @@ const { ImapFlow } = require('imapflow');
 const nodemailer = require('nodemailer');
 const loadTs = require('./load-ts.cjs');
 
-const { imapOptions, smtpOptions } = loadTs('src/main/mail.ts');
+const { imapOptions, smtpOptions, classifyMailError } = loadTs('src/main/mail.ts');
 
 const PASS = 'app-password-123';
 
@@ -88,7 +88,9 @@ test('an outgoing server without encryption from the start never gets the passwo
   const server = { host: '127.0.0.1', port: srv.port, secure: false };
   const send = (opts) => nodemailer.createTransport(opts).sendMail({ from: 'me@x.test', to: 'you@x.test', text: 'hi' });
 
-  await assert.rejects(send(smtpOptions(server, 'me@x.test', PASS)), 'the send stops when STARTTLS is not possible');
+  const refused = await send(smtpOptions(server, 'me@x.test', PASS)).then(() => null, (e) => e);
+  assert.ok(refused, 'the send stops when STARTTLS is not possible');
+  assert.equal(classifyMailError(refused).kind, 'unsupported', 'the owner reads why, in plain words, not the library\'s text');
   assert.ok(srv.lines.some((l) => /^STARTTLS/i.test(l)), 'STARTTLS was asked for although the server never offered it');
   assert.ok(!srv.lines.some((l) => /^AUTH/i.test(l)) && !sawPassword(srv.lines), 'no login reached the server');
 
@@ -111,7 +113,10 @@ test('an incoming server without encryption from the start never gets the passwo
     try { await c.connect(); await c.logout(); } finally { c.close(); }
   };
 
-  await assert.rejects(login(imapOptions(server, 'me@x.test', PASS)), 'the login stops when STARTTLS is not possible');
+  const refused = await login(imapOptions(server, 'me@x.test', PASS)).then(() => null, (e) => e);
+  assert.ok(refused, 'the login stops when STARTTLS is not possible');
+  assert.equal(classifyMailError(refused).kind, 'unsupported', 'the owner reads why, in plain words, not the library\'s text');
+  assert.match(classifyMailError(refused).message, /doesn't offer encryption on this port/);
   assert.ok(!srv.lines.some((l) => / (LOGIN|AUTHENTICATE)\b/i.test(l)) && !sawPassword(srv.lines), 'no login reached the server');
 
   // Control: without the option the same server gets the login in the clear.

@@ -205,8 +205,9 @@ export class TelemetryStore {
   }
 
   /** Each minute: the time since the last tick ran, unless the computer slept
-   *  in between (no clock until runningStart) or the office is stopped (plan
-   *  limit, no credit, sign in failed: owner D1). Away is the presence state. */
+   *  in between (the first tick after a pause only starts the clock again and
+   *  counts nothing) or the office is stopped (plan limit, no credit, sign in
+   *  failed: owner D1). Away is the presence state. */
   running(stopped: boolean, ts = this.now()): void {
     const last = this.lastTick;
     this.lastTick = ts;

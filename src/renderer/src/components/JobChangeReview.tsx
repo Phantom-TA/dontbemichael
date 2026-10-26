@@ -551,7 +551,7 @@ function Home({ question, choices, heading, onCancel, onAnswer }: {
                 tabIndex={off ? -1 : on || (pick === undefined && i === first) ? 0 : -1}
                 onClick={() => { if (!off) setPick(i); }} onKeyDown={(e) => onKey(e, i)}
                 className={on ? 'cth-askme-opt is-on' : 'cth-askme-opt'}
-                style={off ? { color: 'var(--cth-ink-3)', background: 'var(--cth-card-2)', cursor: 'default' } : undefined}>
+                style={off ? { color: 'var(--cth-ink-3)', background: 'var(--cth-card-2)', cursor: 'default', boxShadow: 'none' } : undefined}>
                 <span className="cth-askme-dot" aria-hidden="true" style={off ? { borderStyle: 'dashed' } : undefined} />
                 <span style={{ flex: 1, minWidth: 0 }}>{r.choice.label}</span>
                 {i === 0 && !r.choice.tool && <span style={suggestedTag}>{t('jobChange.suggested')}</span>}

@@ -942,11 +942,14 @@ export function registerRealtimeActionIpc(deps: RealtimeActionDeps): void {
     const phrase = str(p.phrase) || str(p.confirm) || str(p.text);
     // A confirm naming someone else is about them, not the staged one: drop it,
     // so neither this phrase nor a later one runs it on the wrong person.
-    if (cur.targetId && namesSomeoneElse(phrase, cur.targetId, deps.hiveRegistry())) {
+    const reg = cur.targetId ? deps.hiveRegistry() : null;
+    if (cur.targetId && reg && namesSomeoneElse(phrase, cur.targetId, reg)) {
       pending = null;
+      // The member's name, not the label: a staged schedule's label is the job.
+      const who = reg.agents?.[cur.targetId]?.name?.trim() || cur.targetLabel;
       return {
         ok: false,
-        spoken: `That named someone other than ${cur.targetLabel}, so I cancelled the ${cur.verb.replace('_', ' ')}. Ask again for the one you mean.`
+        spoken: `That named someone other than ${who}, so I cancelled the ${cur.verb.replace(/_/g, ' ')}. Ask again for the one you mean.`
       } satisfies ActionResult;
     }
     if (!confirmAccepted(phrase, cur.confirmWord)) {

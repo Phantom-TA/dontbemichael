@@ -180,13 +180,17 @@ export interface CompareInput {
 }
 
 /** The prompt for the one comparison call. The runs are data, never orders. */
+/** A block's own text never closes the block: a run's emails or pages that
+ *  hold the markers lose them, so outside text can't start a new section. */
+const fenced = (text: string): string => text.replace(/<{3,}|>{3,}/g, (m) => m.split('').join(' '));
+
 export function comparePrompt(i: CompareInput): string {
   const changed = i.changedBetween.length
     ? [
         '',
         'THE WORK STYLE CHANGED BETWEEN THE TWO RUNS. The owner applied these changes after the good run and before the bad one:',
         ...i.changedBetween.map((c) => `- ${oneLine(c.text, 300)} (${c.at.slice(0, 10)})`),
-        ...(i.previousWorkStyle ? ['', 'The Work style before those changes:', '<<<', i.previousWorkStyle.slice(0, 8000), '>>>'] : []),
+        ...(i.previousWorkStyle ? ['', 'The Work style before those changes:', '<<<', fenced(i.previousWorkStyle.slice(0, 8000)), '>>>'] : []),
         'A change in the Work style may itself be the cause.'
       ]
     : [];
@@ -206,18 +210,18 @@ export function comparePrompt(i: CompareInput): string {
     '',
     'The member\'s Work style today:',
     '<<<',
-    i.workStyle.slice(0, 8000),
+    fenced(i.workStyle.slice(0, 8000)),
     '>>>',
     ...changed,
     '',
     `RUN THAT WENT WELL (${i.good.when}), everything the member did in that window, including any other work that arrived:`,
     '<<<',
-    i.good.text,
+    fenced(i.good.text),
     '>>>',
     '',
     `RUN THAT WENT WRONG (${i.bad.when}):`,
     '<<<',
-    i.bad.text,
+    fenced(i.bad.text),
     '>>>'
   ].join('\n');
 }

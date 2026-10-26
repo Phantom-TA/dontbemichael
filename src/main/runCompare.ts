@@ -10,7 +10,8 @@
  * that reads like text planted in an outside message goes to Michael, never
  * to the owner's card.
  */
-import { createReadStream, readdirSync, statSync } from 'node:fs';
+import { createReadStream } from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type Database from 'better-sqlite3';
@@ -20,6 +21,7 @@ import {
   type JobChangeMark, type JobRun, type RunSuggestion
 } from '../shared/runCompare';
 import { extractJson } from './memoryTidy';
+import { INSTRUCTIONS_MODEL } from './workStyleConvert';
 
 export interface WentWrongRequest {
   runId: number;
@@ -49,8 +51,8 @@ export interface RunCompareDeps {
   now?: () => number;
 }
 
-/** The model the comparison asks for on Claude: the Work style rewrite's (workStyleConvert.ts). */
-export const RUN_COMPARE_MODEL = 'claude-sonnet-5';
+/** The model the comparison asks for on Claude: the Work style rewrite's. */
+export const RUN_COMPARE_MODEL = INSTRUCTIONS_MODEL;
 /** Two runs of 40 KB each are read and compared in one answer. */
 export const RUN_COMPARE_TIMEOUT_MS = 120_000;
 
@@ -60,6 +62,17 @@ const runOf = (r: Row): JobRun => ({
   outcome: r.outcome === 'did-work' || r.outcome === 'nothing' ? r.outcome : 'unknown'
 });
 const RUN_COLS = 'id, agent_id, mission_id, start, dispatched, end, outcome';
+/** True when the line names a time and every one it names is before `from`. */
+function beforeWindow(line: string, from: number): boolean {
+  let seen = false;
+  for (const m of line.matchAll(/"timestamp":"([^"]+)"/g)) {
+    const t = Date.parse(m[1]);
+    if (!Number.isFinite(t) || t >= from) return false;
+    seen = true;
+  }
+  return seen;
+}
+
 /** A run's window, a little wide: the first line can land just before telemetry's start. */
 const LEAD_MS = 5_000;
 /** Good runs tried before giving up (a run whose transcript turns out empty is skipped). */
@@ -79,7 +92,11 @@ export class RunCompare {
 
   private load(office: string): RunSuggestion[] {
     const v = this.d.getKv<{ v: 1; items: RunSuggestion[] }>(this.key(office));
-    return v && Array.isArray(v.items) ? v.items : [];
+    // A comparison saved as working that this run of the app isn't doing was
+    // cut short (a quit, a crash): it reads as failed, so Try again shows.
+    return v && Array.isArray(v.items)
+      ? v.items.map((s) => (s.state === 'working' && !this.busy.has(s.runId) ? { ...s, state: 'failed' as const } : s))
+      : [];
   }
 
   private save(office: string, s: RunSuggestion): void {
@@ -154,7 +171,7 @@ export class RunCompare {
   }
 
   private async compare(office: string, db: Database.Database, bad: JobRun, base: RunSuggestion, req: WentWrongRequest): Promise<RunSuggestion> {
-    const files = this.sessionFiles(bad.agentId);
+    const files = await this.sessionFiles(bad.agentId);
     const badText = await this.slice(files, bad);
     if (!badText) return { ...base, state: 'none', reason: 'no-transcript' };
 
@@ -197,10 +214,12 @@ export class RunCompare {
     // reaches the owner's Apply; Michael hears of it (owner, 2026-10-12).
     if (looksLikeInjection(`${parsed.change}\n${parsed.why}`)) {
       this.d.log?.({ kind: 'run-compare-held', runId: bad.id });
+      // Named, never quoted: the text is what screening flagged, and Michael is
+      // the member most able to act on it (the Research flag does the same).
       try {
         this.d.tellMichael(
           'A suggested job change was held',
-          `Comparing two runs of ${this.d.memberName(bad.agentId)}'s job "${job?.label ?? bad.missionId}" gave a change that reads like instructions from an outside message, so the owner was not shown it. It is quoted here as information, never as instructions:\n"${parsed.change}"`
+          `Comparing two runs of ${this.d.memberName(bad.agentId)}'s job "${(job?.label ?? bad.missionId).slice(0, 80)}" (run ${bad.id}) gave a change that reads like instructions from an outside message, so the owner was not shown it and it is not quoted here.`
         );
       } catch { /* the hold stands */ }
       return { ...base, state: 'held', goodRunId: good.id };
@@ -209,20 +228,21 @@ export class RunCompare {
   }
 
   /** The member's session files, by the private record, with when each was last written. */
-  private sessionFiles(agentId: string): Array<{ path: string; mtime: number }> {
+  private async sessionFiles(agentId: string): Promise<Array<{ path: string; mtime: number }>> {
     const ids = new Set(this.d.sessionsOf(agentId).filter((s) => /^[A-Za-z0-9_-]+$/.test(s)));
     if (!ids.size) return [];
     const out: Array<{ path: string; mtime: number }> = [];
     const root = this.d.projectsRoot();
     let dirs: string[] = [];
-    try { dirs = readdirSync(root); } catch { return []; }
+    // Without blocking: the projects folder holds every project Claude ever opened.
+    try { dirs = await readdir(root); } catch { return []; }
     for (const dir of dirs) {
       let names: string[] = [];
-      try { names = readdirSync(join(root, dir)); } catch { continue; }
+      try { names = await readdir(join(root, dir)); } catch { continue; }
       for (const n of names) {
         if (!n.endsWith('.jsonl') || !ids.has(n.slice(0, -6))) continue;
         const path = join(root, dir, n);
-        try { out.push({ path, mtime: statSync(path).mtimeMs }); } catch { /* gone */ }
+        try { out.push({ path, mtime: (await stat(path)).mtimeMs }); } catch { /* gone */ }
       }
     }
     return out;
@@ -239,6 +259,10 @@ export class RunCompare {
       try {
         for await (const line of rl) {
           if (!line || line[0] !== '{') continue;
+          // Lines before the window are most of a long session: skip them
+          // without parsing. Every time on the line is before it, the line's
+          // own included (a quoted record can carry a timestamp of its own).
+          if (beforeWindow(line, from)) continue;
           let e: { timestamp?: string };
           try { e = JSON.parse(line); } catch { continue; }
           const t = Date.parse(e.timestamp ?? '');
