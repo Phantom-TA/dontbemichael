@@ -34,7 +34,7 @@ export const SHORT_SHOWN_MS = 4_000;
 
 export interface OpeningInput {
   /** Everyone on the floor, in roster order. */
-  team: ReadonlyArray<{ id: string; name: string; action?: string }>;
+  team: ReadonlyArray<{ id: string; name: string; action?: string; isGod?: boolean }>;
   /** How many are still clocking in under the cap (clockingIn()). */
   arriving: number;
   /** Michael is starting with no team on the floor yet. */
@@ -52,8 +52,9 @@ export function nextOpening(o: OfficeOpening, input: OpeningInput, now: number):
   if (o.kind === 'short') return now - o.at >= SHORT_SHOWN_MS ? { kind: 'over' } : o;
   if (now - o.since < OPENING_SETTLE_MS || input.restoring || input.arriving > 0) return o;
   // An office with no team ends quietly once Michael is in: the empty floor
-  // has its own card, and there is nobody to have been waiting for.
-  if (input.team.length === 0) return input.michaelStarting ? o : { kind: 'over' };
+  // has its own card, and there is nobody to have been waiting for. Michael
+  // alone on the floor is still no team.
+  if (input.team.every((a) => a.isGod)) return input.michaelStarting ? o : { kind: 'over' };
   const missing = stillOut(input.team, input.marker);
   const total = input.team.length;
   return missing.length ? { kind: 'short', at: now, total, missing } : { kind: 'done', at: now, total };
