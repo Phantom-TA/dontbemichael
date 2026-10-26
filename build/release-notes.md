@@ -1,5 +1,5 @@
-- **Company foundations** for every job.
-- **Company knowledge** you can open and edit.
-- **No switches** for knowledge search.
-- **Pulse** shows what it sees early.
-- **Windows** reads scans and photos.
+- **Change a job** by saying what should change.
+- **Add a file** right from a Company foundations card.
+- **One look** for every form in the app.
+- Hiring asks what the new person will do, once.
+- Safer background checks and messages to the team.

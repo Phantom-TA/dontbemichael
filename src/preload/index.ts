@@ -2,8 +2,10 @@ import type { Period } from '../shared/teamPerformance';
 import type { HeldRow } from '../shared/heldRecord';
 import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
+import type { OrganizedList } from '../shared/organizedRecord';
 import type { PulseView } from '../shared/pulseView';
 import type { FoundationsView } from '../shared/foundations';
+import type { PulseHealthView } from '../shared/pulseHealth';
 import type { ResearchConfig } from '../shared/research';
 import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
@@ -681,23 +683,6 @@ const api = {
     ipcRenderer.invoke('hire:checkDistinct', { job, team, requestId }),
   /** Stop a check the owner moved past (another job picked, or back a step). */
   hireCheckStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('hire:checkStop', requestId),
-  /** "Suggest me": a first work style for the owner to edit; empty when it can't
-   *  run. With a `requestId`, the draft streams to onWorkStyleSuggestText. */
-  workStyleSuggest: (req: {
-    requestId?: string;
-    ctx: { name: string; title?: string; business?: { name?: string; city?: string }; manager?: string };
-    handles: string;
-    businessType?: string;
-    team: Array<{ name: string; title?: string; handles?: string }>;
-  }): Promise<{ text: string; cancelled?: boolean }> => ipcRenderer.invoke('workStyle:suggest', req),
-  /** The draft as it is written, for the run with this request id. */
-  onWorkStyleSuggestText: (cb: (e: { requestId: string; text: string }) => void): (() => void) => {
-    const listener = (_e: unknown, payload: { requestId: string; text: string }) => cb(payload);
-    ipcRenderer.on('workStyle:suggestText', listener);
-    return () => ipcRenderer.removeListener('workStyle:suggestText', listener);
-  },
-  /** Stop a suggestion that is still being written. */
-  workStyleSuggestStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('workStyle:suggestStop', requestId),
   /** Rewrite a work style: the agent's instructions as the owner's plain
    *  description, or the owner's description as instructions. */
   workStyleConvert: (req: {
@@ -706,6 +691,36 @@ const api = {
     ctx: { name: string; title?: string; business?: { name?: string; city?: string }; manager?: string };
     previous?: string;
   }): Promise<{ text: string; source: 'ai' | 'rules' }> => ipcRenderer.invoke('workStyle:convert', req),
+  /** "What should change?": the owner's change requests applied to a job (or
+   *  a new job written from one description): the new instructions, plain
+   *  words and "What X handles" (null when the duties didn't change), or one
+   *  question for the owner. Rides the convert channel; stop it with
+   *  workStyleConvertStop and the same request id. */
+  workStyleRevise: (req: {
+    requestId?: string;
+    ctx: { name: string; title?: string; business?: { name?: string; city?: string }; manager?: string };
+    current: { instructions: string; handles: string };
+    changes: string[];
+    answer?: { question: string; answer: string };
+    lead?: boolean;
+  }): Promise<
+    | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string }
+    | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> }
+    | { kind: 'error'; reason: 'failed' | 'cancelled' }
+  > => ipcRenderer.invoke('workStyle:convert', { ...req, to: 'revise' }),
+  /** Where a rewrite is (starting, reading, writing) and what it has written
+   *  so far, by its request id. Returns the unsubscribe. */
+  onWorkStyleProgress: (
+    requestId: string,
+    cb: (p: { stage: 'starting' | 'reading' | 'writing'; preview?: { summary: string[]; plain: string; question: string } }) => void
+  ): (() => void) => {
+    const channel = `workStyle:progress:${requestId}`;
+    const listener = (_e: IpcRendererEvent, p: Parameters<typeof cb>[0]) => cb(p);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
+  },
+  /** Stop a rewrite still running (the dialog closed, or Stop). */
+  workStyleConvertStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('workStyle:convertStop', requestId),
   /** Check a job's focus area against the Work style and the agent's other
    *  jobs (schedule-focus-areas.md, FA3). `checked: false` when it couldn't run. */
   workStyleCheckFocus: (req: {
@@ -1332,6 +1347,10 @@ const api = {
   /** Wipe all hive data + the memory palace, reset config, and relaunch the app
    *  into onboarding. The process exits, so this promise never resolves. */
   resetAll: (): Promise<void> => ipcRenderer.invoke('app:resetAll'),
+  /** Every team member forgets and starts as on its first day; the app relaunches. */
+  resetMemory: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('app:resetMemory'),
+  /** The folders whose Claude Code notes a memory reset erases, for its confirm. */
+  memoryResetFolders: (): Promise<string[]> => ipcRenderer.invoke('app:memoryResetFolders'),
 
   // ─── Token telemetry (real usage + est. cost from CC transcripts) ──────────
   /** Sum input/output/cache tokens + estimated USD cost for an agent from its
@@ -1419,6 +1438,15 @@ const api = {
   foundationsGet: (): Promise<FoundationsView> => ipcRenderer.invoke('foundations:get'),
   /** The owner's answer from a foundation card; it always wins. */
   foundationsAnswer: (id: string, text: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('foundations:answer', id, text),
+  /** One file for a foundation card, from the OS picker. */
+  foundationsPickFile: (): Promise<{ ok: true; path: string; name: string } | { ok: false; error: string }> => ipcRenderer.invoke('foundations:pickFile'),
+  /** Read, check and add a card's file to company knowledge (nothing is added
+   *  unless the check says it fits). */
+  foundationsAddFile: (id: string, path: string): Promise<{ ok: true; docId: string; name: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'picture-engine' | 'misfit' | 'unchecked'; reason?: string }> =>
+    ipcRenderer.invoke('foundations:addFile', id, path),
+  /** The owner's answer from a file added with foundationsAddFile. */
+  foundationsAnswerFile: (id: string, docId: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('foundations:answerFile', id, docId, words),
   /** Have the member draft it: the draft comes back into the card. */
   foundationsDraft: (id: string, memberId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:draft', id, memberId),
   /** Not now: out of Needs you for a week. */
@@ -1436,6 +1464,8 @@ const api = {
   /** The new notes behind Learning's number, for two local days (YYYY-MM-DD). */
   pulseLearned: (from: string, to: string): Promise<LearnedNote[]> => ipcRenderer.invoke('pulse:learned', from, to),
   pulseChecked: (fromMs: number, toMs: number, way: 'in' | 'out'): Promise<CheckedList> => ipcRenderer.invoke('pulse:checked', fromMs, toMs, way),
+  /** The emails organized in a span, all members or one (owner, 2026-10-21). */
+  pulseOrganized: (fromMs: number, toMs: number, agentId?: string): Promise<OrganizedList> => ipcRenderer.invoke('pulse:organized', fromMs, toMs, agentId),
   /** The Claude plan found in the owner's Claude account, and its list price a month. */
   claudePlan: (): Promise<{ label: string | null; listMonthly: number | null }> => ipcRenderer.invoke('claude:plan'),
   /** The owner's Apply on a way to save. A model change comes back for the store to make. */
@@ -1447,6 +1477,8 @@ const api = {
   pulseUndo: (appliedId: number): Promise<{ ok: true; kind: 'schedule' } | { ok: true; kind: 'model'; agentId: string; to: string | null } | { ok: false; error: 'stale' | 'unavailable' }> =>
     ipcRenderer.invoke('pulse:undo', appliedId),
   pulseDismiss: (id: string): Promise<boolean> => ipcRenderer.invoke('pulse:dismiss', id),
+  /** Whether Pulse's points are flowing: the last batch, failed writes, refused hook frames. */
+  telemetryHealth: (): Promise<PulseHealthView> => ipcRenderer.invoke('telemetry:health'),
   /** Fires when new telemetry was folded, so an open Pulse view refreshes. */
   onPulseUpdated: (cb: () => void): (() => void) => {
     const listener = (): void => cb();
@@ -1705,8 +1737,8 @@ const api = {
     ipcRenderer.invoke('integrations:list'),
   integrationsTemplates: (): Promise<IntegrationTemplate[]> =>
     ipcRenderer.invoke('integrations:templates'),
-  integrationsUpsert: (record: IntegrationRecord): Promise<{ ok: true; record: IntegrationRecord } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('integrations:upsert', record),
+  integrationsUpsert: (record: IntegrationRecord, opts?: { isNew?: boolean }): Promise<{ ok: true; record: IntegrationRecord } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('integrations:upsert', record, opts),
   integrationsCanStoreSecrets: (): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke('integrations:canStoreSecrets'),
   integrationsSetSecret: (req: { id: string; secret: string }): Promise<{ ok: boolean; error?: string }> =>

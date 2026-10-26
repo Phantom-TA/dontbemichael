@@ -48,9 +48,13 @@ export const HELD_SUBJECT_MAX = 80;
 export const HELD_OPENING_MAX = 300;
 
 /** Quote marks and line breaks become spaces, so quoted text can't close its
- *  quote in a note written in the app's voice; then cut to `max`. */
+ *  quote in a note written in the app's voice; then cut to `max`. A curly
+ *  apostrophe inside a word ("can’t") is no quote mark: it stays, as a plain
+ *  one. The cut is by code points, so an emoji is never cut in half. */
 export function tidy(text: unknown, max: number): string {
-  return String(text ?? '').replace(/[\p{Pi}\p{Pf}"„‟″＂\s]+/gu, ' ').trim().slice(0, max);
+  const s = String(text ?? '').replace(/(?<=[\p{L}\p{N}])[’‘](?=[\p{L}\p{N}])/gu, "'")
+    .replace(/[\p{Pi}\p{Pf}"„‟″＂\s]+/gu, ' ').trim();
+  return Array.from(s).slice(0, max).join('');
 }
 
 /** The notes in a Research notes text, without the index page's own lines

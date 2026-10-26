@@ -22,7 +22,7 @@ import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -30,6 +30,7 @@ import {
   shouldStartInstall, type EngineSetupStatus, type KeyCheckFetch
 } from './engineSetup';
 import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
+import { sweepIsolatedLeftovers } from './isolatedSweep';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
 import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_WORK_STYLE } from '../shared/research';
@@ -48,6 +49,7 @@ import {
   agentMcpDir, legacyMdMailMcpPath, mdMailMcpPath, privateRoot
 } from '../shared/agentPrivatePaths';
 import { CHECKED_FILE } from '../shared/checkedRecord';
+import { ORGANIZED_FILE } from '../shared/organizedRecord';
 import { HELD_FILE } from '../shared/heldRecord';
 import { ensureCheckedBackfill } from './checkedBackfill';
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
@@ -67,7 +69,7 @@ import { linkWorktreeDeps, unlinkWorktreeDeps } from './worktreeDeps';
 import { HiveManager, type AgentMeta, type HiveMessage, type HiveTask } from './hive';
 import { HookServer, type PlanSignal } from './hooks';
 import { OfficeBreak, type OfficeBreakState } from './officeBreak';
-import { heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
+import { countsTowardErrorStorm, heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
 import { loadBundledPacks, packsResourceDir } from './packs';
 import { businessFolderRoot, ensureFolder, safeFolderName } from './agentFolders';
 import { CircuitBreaker, breakerMessages, type BreakerInput } from './breaker';
@@ -76,11 +78,12 @@ import { MemoryManager } from './memory';
 import { KnowledgeManager } from './knowledge';
 import { MemoryTidy } from './memoryTidy';
 import { checkDistinct, readJobProfile } from './hireCheck';
-import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readSuggestRequest, suggestWorkStyle } from './workStyleConvert';
+import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readReviseRequest, reviseWorkStyle } from './workStyleConvert';
 import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
 import { TelemetryStore } from './telemetryStore';
 import { TelemetryProcessor } from './telemetryProcessor';
+import { PulseHealth } from '../shared/pulseHealth';
 import { PulseService } from './pulse';
 import { knownPrice } from './pricing';
 import bakedModelCatalog from '../shared/modelCatalog.json';
@@ -115,6 +118,7 @@ import { initCompletionWatcher } from './realtimeCompletionWatcher';
 import type { TaskCard, InboxMessage } from './realtimeCompletionWatcher';
 import { TelemetryCollector } from './telemetry';
 import { CostLedgerTotals } from './costLifetime';
+import { CostLedgerStore } from './costLedger';
 import { analytics, isRendererMessageSurface } from './analytics';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
@@ -122,6 +126,7 @@ import * as integrations from './integrations';
 import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, type AddMailboxInput } from './mail';
 import { MailApprovals } from './mailApprovals';
 import { standingFitCheck } from './standingCheck';
+import { fileFitCheck } from './fileFitCheck';
 import { terminalOverflowEvent } from '../shared/terminalOverflow';
 import { PROVIDER_PRESETS, grantPaused, hasMailTools, mailAccess, mailboxAddress, secretRefForMailbox, sendOnlyGrant, sendingFor, sendingMode, sendingWords, type SendingMode } from '../shared/mailboxes';
 import { levelFor } from '../shared/agentDefinition';
@@ -133,6 +138,8 @@ import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, IN
 import { RosterStore } from './roster';
 import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
 import { CHECK_FOLDERS, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
+import { autoMemoryFolders, eraseMemoryTargets, foldersFromRoster, gitTopOf, idsFromCostRows, idsFromRecord, memberIdsIn, memoryResetTargets } from './memoryReset';
+import { groupMembers, hardKillTree, isAlive, KILL_GRACE_MS, snapshotRemains } from './procKill';
 import { buildWorkerLaunch } from './workerLaunch';
 import { ControlRegistry } from './control';
 import { WorkerWakeWatchdog, type WorkerWakeFacts } from './workerWake';
@@ -409,7 +416,10 @@ let pulseTickTimer: ReturnType<typeof setInterval> | null = null;
 let pulsePresenceTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
-telemetry.onApiError((agentId) => breaker.recordError(agentId));
+// Not while the office is stopped: a refused turn is the stop, not a storm.
+telemetry.onApiError((agentId) => {
+  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId);
+});
 // Shared roster on disk — created early so HookServer can re-read standing goals
 // on every UserPromptSubmit (Edit Agent saves land here via persistAgents).
 const roster = new RosterStore(() => readConfig().harnessHome);
@@ -477,18 +487,18 @@ const hookServer = new HookServer(
   control,
   breaker,
   standingGoalFor,
-  (agentId, event, message, toolName) => {
+  (agentId, event, message, toolName, subagent) => {
     // Pulse: turns and tool uses (authenticated frames only, #61).
     if (agentId) {
       if (event === 'UserPromptSubmit') pulseTelemetry.record({ agentId, kind: 'prompt', ts: Date.now() });
       else if (event === 'PostToolUse') pulseTelemetry.record({ agentId, kind: 'tool', ts: Date.now(), attrs: { tool: toolName ?? '' } });
       else if (event === 'Stop') pulseTelemetry.record({ agentId, kind: 'stop', ts: Date.now() });
     }
-    workerWake.noteHook(agentId, event, message);
+    workerWake.noteHook(agentId, event, message, Date.now(), subagent);
     // Any event, a Claude status tick included, is a check in (issue #326);
     // the event name tells it when a long tool call starts and ends.
     silentWatch?.noteHook(agentId, event);
-    safeClearer.noteHook(agentId, event, message);
+    safeClearer.noteHook(agentId, event, message, subagent);
     if (agentId && event === 'UserPromptSubmit') promptSubmits.note(agentId);
     if (agentId && (event === 'Notification' || event === 'PermissionRequest')) promptSubmits.noteAttention(agentId);
   },
@@ -763,7 +773,16 @@ const foundations = new Foundations({
     return [cfg.businessFolder, cfg.officeFolder, cwd].some((root) => typeof root === 'string' && !!root && isSameOrInside(expandTilde(root), path));
   },
   tell: (to, subject, body) => { if (hive.enabled()) hive.send({ to, act: 'inform', subject, body }, 'foundations'); },
-  changed: () => { try { liveWebContents()?.send('foundations:changed'); } catch { /* window gone */ } }
+  changed: () => { try { liveWebContents()?.send('foundations:changed'); } catch { /* window gone */ } },
+  // A file added on a foundation card (docs/designs/foundation-card-upload.md).
+  readFile: (path) => knowledge.readDocument(path),
+  fitFile: (f) => fileFit(f),
+  addToKnowledge: (path, read, opts) => {
+    const r = knowledge.ingestRead(path, read, opts);
+    memory.companyKnowledgeChanged(); // index it for search by meaning
+    return r.docId;
+  },
+  docTitle: (id) => knowledge.get(id)?.meta.title
 });
 /** What an agent carries of the foundations: its job's part, or all of it for
  *  Michael. Research is left out by the hook itself. */
@@ -772,9 +791,22 @@ function foundationsForAgent(agentId: string): string | null {
   if (agentId === team.godId || agentId === 'god') return michaelFoundations(foundations.read(), team.office, team.nameOf);
   return sectionFor(foundations.read(), team.jobs[agentId] ?? [], team.nameOf);
 }
+// Whether points are flowing, for telemetry:health and the stall warning (T9).
+const pulseHealth = new PulseHealth();
+pulseTelemetry.onRecord = (office) => pulseHealth.point(office);
+/** One processor pass, noted for the health readout; a pass that read
+ *  something logs one line. */
+function pulseTick(office: string): number {
+  const started = Date.now();
+  const n = pulseProcessor.tick(office);
+  const line = pulseHealth.batch(n, Date.now() - started);
+  if (line) console.log(line);
+  return n;
+}
 /** Pulse's backfill (proposal 3): once per office, the weeks before Pulse began,
  *  read in the background from the office log, members' sessions and the cost
- *  ledger. The view refreshes when it lands. */
+ *  ledger. The view refreshes when it lands, with one tick's batch folded;
+ *  the 30 s tick folds the rest a batch at a time (TICK_BATCH). */
 let pulseBackfilling: string | null = null;
 function pulseBackfillOnce(office: string): void {
   const db = persist.database();
@@ -785,7 +817,7 @@ function pulseBackfillOnce(office: string): void {
   void runBackfill({ db, office, hiveRoot: root, projectsRoot: claudeProjectsRoot(), members: new Set(Object.keys(hive.registry().agents ?? {})), now: Date.now() })
     .then((n) => {
       console.log(`[pulse] backfill wrote ${n} points for ${office}`);
-      if (n > 0 && pulseProcessor.tick(office) > 0) liveWebContents()?.send('pulse:updated');
+      if (n > 0 && pulseTick(office) > 0) liveWebContents()?.send('pulse:updated');
     })
     .catch((e) => console.error('[pulse] backfill:', e))
     .finally(() => { if (pulseBackfilling === office) pulseBackfilling = null; });
@@ -854,6 +886,12 @@ const pulse = new PulseService({
     // No file yet is an empty record; any other failure is the list's error (DD5).
     // Read without blocking the main process (ship review 2026-10-17).
     return fsPromises.readFile(join(privateRoot(home), CHECKED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
+  },
+  readOrganized: () => {
+    const home = readConfig().harnessHome;
+    if (!home) return '';
+    // No file yet is an empty record; any other failure is the list's error.
+    return fsPromises.readFile(join(privateRoot(home), ORGANIZED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
   }
 });
 // The office log kinds Pulse counts, and the board each tick reads.
@@ -1001,6 +1039,24 @@ const standingFit = standingFitCheck({
   log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
 });
 
+/** The fit check for a file added on a foundation card: the standing check's
+ *  folder, command and engine (D3, D10). */
+const fileFit = fileFitCheck({
+  cwd: () => {
+    const dir = join(app.getPath('userData'), STANDING_CHECK_DIR);
+    mkdirSync(dir, { recursive: true });
+    try { ensureClaudePermissionsAccepted(dir); } catch { /* the check fails closed */ }
+    return dir;
+  },
+  command: () => readConfig().defaultCommand ?? 'claude',
+  modelEngine: () => {
+    const cfg = readConfig();
+    return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
+  },
+  env: () => memory.env(),
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+});
+
 /** The trust layer around Research (main/trustLayer.ts): the standing
  *  check's runner, in an app-only folder of its own, no tools. What it reads
  *  is Research's raw text, so each run's transcript is removed as it ends
@@ -1086,7 +1142,7 @@ const integrationBroker = new IntegrationBroker({
   getSecret: integrations.getSecret,
   // Same folder as the mail send journal, never the hive agents can read.
   journalPath: join(app.getPath('userData'), 'broker-write-journal.json'),
-  mail: SHOW_MAILBOXES ? (agentId, op, body) => handleMailRequest(mailService, { getConfig: () => readConfig(), audit: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }, proposals: mailApprovals, fitCheck: standingFit, present: memberPresent, log: (line) => console.log(line), tellMichael: (subject, text) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body: text }, 'mail'); } }, agentId, op, body) : undefined
+  mail: SHOW_MAILBOXES ? (agentId, op, body) => handleMailRequest(mailService, { getConfig: () => readConfig(), audit: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }, organized: (moved) => hive.recordOrganized(moved), proposals: mailApprovals, fitCheck: standingFit, present: memberPresent, log: (line) => console.log(line), tellMichael: (subject, text) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body: text }, 'mail'); } }, agentId, op, body) : undefined
 });
 
 /** Absolute path to the bundled md-mail MCP server (same resolution as the
@@ -2239,6 +2295,9 @@ function onPlanSignal(signal: PlanSignal): void {
   // owner's new key, with no automatic recheck (eng R2).
   const retry = !(signal.reason === 'signin' && readConfig().claudeAuth === 'apiKey');
   const step = officeBreak.limitReached(signal.agentId, signal.reason, retry);
+  // The engine's errors while it tried this turn, its retries included, were
+  // the account refusing it, so they don't count toward a storm either.
+  breaker.clearErrors(signal.agentId);
   const view = officeBreak.view();
   try { hive.appendLog({ kind: 'office-break', step, agentId: signal.agentId, reason: view?.reason ?? signal.reason, until: view?.until ?? null }); } catch { /* best-effort */ }
   if (step === 'started' && view) ownerToast(michaelName(), stopWords(view.reason, view.until).start);
@@ -2409,10 +2468,14 @@ function runBreakerBeat(progressWindowMs: number): void {
   }
 }
 
-/** Lifetime spend, folded from cost-ledger.jsonl. `telemetry`'s usd counter is
+/** Lifetime spend, folded from the cost ledger. `telemetry`'s usd counter is
  *  cumulative-since-process-start and restarts at ~0 on every app restart, so
  *  it cannot answer "what has this agent cost us". See costLifetime.ts. */
 const costTotals = new CostLedgerTotals();
+/** The cost ledger in harness.db (D17): it takes the hive's rows once the old
+ *  cost-ledger.jsonl is copied in. See costLedger.ts. */
+const costLedger = new CostLedgerStore(() => persist.database());
+hive.costLedgerSink = (row) => { const office = pulseOffice(); return !!office && costLedger.append(office, row); };
 
 /** Build + write the live fleet snapshot Michael reads (`<hive>/fleet.json`).
  *  Always-on (independent of the heartbeat) since `claude agents` can't see the
@@ -2425,8 +2488,16 @@ function writeFleetSnapshot(): void {
     const usageById = new Map(snap.usage.map((u) => [u.agentId, u]));
     const now = Date.now();
     // Async + incremental; returns immediately and never throws into the timer.
+    // harness.db's ledger once the old file is copied in (D17); until then the
+    // file, while the copy runs.
     const hiveRoot = hive.root();
-    if (hiveRoot) void costTotals.refresh(join(hiveRoot, 'cost-ledger.jsonl'));
+    const office = pulseOffice();
+    if (hiveRoot && office && costLedger.imported(office)) void costTotals.refreshFromStore(costLedger, office);
+    else if (hiveRoot) {
+      const file = join(hiveRoot, 'cost-ledger.jsonl');
+      void costTotals.refresh(file);
+      if (office) void costLedger.importFile(office, file);
+    }
     const agents = Object.entries(reg.agents)
       .filter(([, a]) => !a.archived)
       .map(([id, a]) => {
@@ -3573,36 +3644,29 @@ function createWindow(): BrowserWindow {
     return true;
   });
 
-  // The window persists its geometry (kv `window.bounds`). Skip while
-  // maximized/minimized so a restore doesn't save the fullscreen rect.
+  // The window keeps its smaller size (kv `window.bounds`) for when it is not
+  // filling the screen. Skip while maximized, minimized or full screen so a
+  // restore never saves the screen's own rect.
   {
+    const unsized = (): boolean => win.isDestroyed() || win.isMinimized() || win.isMaximized() || win.isFullScreen();
     const saveBounds = debounce(() => {
-      if (win.isDestroyed() || win.isMinimized() || win.isMaximized()) return;
+      if (unsized()) return;
       try { persist.setKv('window.bounds', win.getBounds()); } catch { /* DB best-effort */ }
     }, 400);
     win.on('resized', saveBounds);
     win.on('moved', saveBounds);
-    // Whether it was left filling the screen (kv `window.maximized`), so the
-    // next launch opens the same way.
-    const saveMaximized = () => {
-      if (win.isDestroyed() || win.isMinimized()) return;
-      try { persist.setKv('window.maximized', win.isMaximized()); } catch { /* DB best-effort */ }
-    };
-    win.on('maximize', saveMaximized);
-    win.on('unmaximize', saveMaximized);
     win.on('close', () => {
-      saveMaximized();
-      if (win.isDestroyed() || win.isMinimized() || win.isMaximized()) return;
+      if (unsized()) return;
       try { persist.setKv('window.bounds', win.getBounds()); } catch { /* DB best-effort */ }
     });
   }
 
-  // The office opens filling the screen (owner, 2026-10-03: it always came
-  // back at about 70%), unless the owner last left it at a smaller size.
-  let openMaximized = true;
-  try { openMaximized = persist.getKv('window.maximized') !== false; } catch { /* DB best-effort: fill the screen */ }
+  // Every launch opens filling the screen (owner, 2026-10-03 and 2026-10-20:
+  // it kept coming back smaller). It no longer follows how the last run was
+  // left: a dragged title bar, a display change or quitting from full screen
+  // all read as "not maximized", and that one moment stuck for every launch.
   win.once('ready-to-show', () => {
-    if (openMaximized) win.maximize();
+    win.maximize();
     win.show();
   });
 
@@ -4687,7 +4751,10 @@ ipcMain.handle('terminal:openAtFolder', async (_evt, cwd: unknown) => {
 // returned over IPC. `list` redacts secretRef to a `hasSecret` boolean.
 ipcMain.handle('integrations:list', () => integrations.listRecordsRedacted());
 ipcMain.handle('integrations:templates', () => INTEGRATION_TEMPLATES);
-ipcMain.handle('integrations:upsert', (_evt, record: unknown) => integrations.upsertRecord(record));
+// The form says whether this is a new integration: a new one never replaces
+// one already registered under its id (upsertRecord).
+ipcMain.handle('integrations:upsert', (_evt, record: unknown, opts: unknown) =>
+  integrations.upsertRecord(record, { isNew: (opts as { isNew?: unknown } | null | undefined)?.isNew === true }));
 ipcMain.handle('integrations:canStoreSecrets', () =>
   integrations.canStoreSecrets() ? { ok: true as const } : { ok: false as const, error: cannotStoreReason() });
 ipcMain.handle('integrations:setSecret', (_evt, payload: unknown) => {
@@ -6012,41 +6079,40 @@ ipcMain.handle('hire:checkStop', (_evt, requestId: unknown) => {
   return { ok: true };
 });
 
-/** "Suggest me" on the hire wizard: a first work style for the owner to edit.
- *  The draft streams to the window as `workStyle:suggestText` while it is
- *  written, and `workStyle:suggestStop` ends it (owner, 2026-10-03). */
-const suggestRuns = new Map<string, AbortController>();
-ipcMain.handle('workStyle:suggest', async (evt, payload: unknown) => {
-  const req = readSuggestRequest(payload);
-  if (!req) return { text: '' };
-  const raw = (payload ?? {}) as { requestId?: unknown };
-  const requestId = typeof raw.requestId === 'string' ? raw.requestId.slice(0, 80) : '';
-  const stop = new AbortController();
-  if (requestId) suggestRuns.set(requestId, stop);
-  const cfg = readConfig();
-  try {
-    return await suggestWorkStyle(req, {
-      engine: cfg.godProvider ?? 'claude',
-      engineModel: cfg.godModel,
-      cwd: cfg.harnessHome ?? app.getPath('home'),
-      command: cfg.defaultCommand ?? 'claude',
-      env: memory.env(),
-      log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
-    }, {
-      signal: stop.signal,
-      onText: requestId ? (text) => { if (!evt.sender.isDestroyed()) evt.sender.send('workStyle:suggestText', { requestId, text }); } : undefined
-    });
-  } finally {
-    if (requestId) suggestRuns.delete(requestId);
-  }
-});
-ipcMain.handle('workStyle:suggestStop', (_evt, requestId: unknown) => {
-  if (typeof requestId === 'string') suggestRuns.get(requestId)?.abort();
-  return { ok: true };
-});
 /** A work style between the owner's plain description and the agent's
- *  instructions (owner, 2026-09-27). Falls back to a plain-text rewrite. */
-ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
+ *  instructions (owner, 2026-09-27). Falls back to a plain-text rewrite.
+ *  `to: 'revise'` applies the owner's "What should change?" to a job, or
+ *  writes a new one, and `workStyle:convertStop` ends it
+ *  (work-style-change-request.md, D4 and D9). */
+const reviseRuns = new Map<string, AbortController>();
+ipcMain.handle('workStyle:convert', async (evt, payload: unknown) => {
+  if ((payload as { to?: unknown } | null)?.to === 'revise') {
+    const rev = readReviseRequest(payload);
+    if (!rev) return { kind: 'error', reason: 'failed' };
+    const stop = new AbortController();
+    if (rev.requestId) reviseRuns.set(rev.requestId, stop);
+    const cfg = readConfig();
+    try {
+      return await reviseWorkStyle(rev, {
+        engine: cfg.godProvider ?? 'claude',
+        engineModel: cfg.godModel,
+        cwd: cfg.harnessHome ?? app.getPath('home'),
+        command: cfg.defaultCommand ?? 'claude',
+        env: memory.env(),
+        log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+        // The box's steps and the words as they are written (owner, 2026-10-23).
+        onProgress: (p) => {
+          if (!rev.requestId || evt.sender.isDestroyed()) return;
+          evt.sender.send(`workStyle:progress:${rev.requestId}`, p);
+        },
+        // Checked against, never copied into the job (eng D3).
+        foundations: () => Object.entries(foundations.read().answers).flatMap(([id, a]) =>
+          isFoundationId(id) && a?.text ? [`${FOUNDATION_QUESTIONS[id].text}: ${a.text}`] : [])
+      }, stop.signal);
+    } finally {
+      if (rev.requestId) reviseRuns.delete(rev.requestId);
+    }
+  }
   const req = readConvertRequest(payload);
   if (!req) return { text: '', source: 'rules' };
   const cfg = readConfig();
@@ -6058,6 +6124,11 @@ ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
     env: memory.env(),
     log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
   });
+});
+
+ipcMain.handle('workStyle:convertStop', (_evt, requestId: unknown) => {
+  if (typeof requestId === 'string') reviseRuns.get(requestId)?.abort();
+  return { ok: true };
 });
 
 /** A job's focus area checked against the agent's Work style and its other
@@ -6517,28 +6588,36 @@ ipcMain.handle('app:closingTimeSaid', (_evt, ids: unknown) => {
   return said;
 });
 
+/** What both resets stop first, so nothing writes back into what they erase
+ *  (Reset & start over and Reset memory, reset-agent-memory.md). Reset memory
+ *  keeps the store open: it reads Pulse's records, then closes it itself. */
+function stopForReset(tag: string, opts: { keepPersist?: boolean } = {}): void {
+  const step = (name: string, fn: () => void): void => { try { fn(); } catch (e) { console.error(`[${tag}] ${name}:`, e); } };
+  step('clearMissionTimers', () => clearMissionTimers());
+  step('clearContextTimers', () => clearContextTimers());
+  step('stopWebhookDoneObserver', () => stopWebhookDoneObserver());
+  step('stopWorkerWatcher', () => stopEphemeralWorkerWatcher());
+  step('broker.stop', () => integrationBroker.stop());
+  step('mail.closeAll', () => mailService.closeAll());
+  step('stopRouter', () => hive.stopRouter());
+  step('hookServer.stop', () => hookServer.stop());
+  step('telemetry.stop', () => telemetry.stop());
+  step('slack.stop', () => stopSlackServer());
+  step('memory.stop', () => memory.stop());
+  step('memoryTidy.stop', () => memoryTidy.stop());
+  if (!opts.keepPersist) step('persist.close', () => persist.close());
+  // The same stops as quitting (teardownAndQuit): proxy sidecars and the
+  // webhook server would otherwise outlive the relaunch.
+  step('stopAllProxyBridges', () => hive.stopAllProxyBridges());
+  step('webhook.stop', () => stopWebhookServer());
+  step('killAll', () => ptyManager.killAll());
+}
+
 // ─── IPC: full reset (wipe data + config, relaunch into onboarding) ──────────
 ipcMain.handle('app:resetAll', () => {
   allowQuit = true;
   // Tear everything down first so nothing writes back into the dirs we wipe.
-  try { clearMissionTimers(); } catch (e) { console.error('[reset] clearMissionTimers:', e); }
-  try { clearContextTimers(); } catch (e) { console.error('[reset] clearContextTimers:', e); }
-  try { stopWebhookDoneObserver(); } catch (e) { console.error('[reset] stopWebhookDoneObserver:', e); }
-  try { stopEphemeralWorkerWatcher(); } catch (e) { console.error('[reset] stopWorkerWatcher:', e); }
-  try { integrationBroker.stop(); } catch (e) { console.error('[reset] broker.stop:', e); }
-  try { mailService.closeAll(); } catch (e) { console.error('[reset] mail.closeAll:', e); }
-  try { hive.stopRouter(); } catch (e) { console.error('[reset] stopRouter:', e); }
-  try { hookServer.stop(); } catch (e) { console.error('[reset] hookServer.stop:', e); }
-  try { telemetry.stop(); } catch (e) { console.error('[reset] telemetry.stop:', e); }
-  try { stopSlackServer(); } catch (e) { console.error('[reset] slack.stop:', e); }
-  try { memory.stop(); } catch (e) { console.error('[reset] memory.stop:', e); }
-  try { memoryTidy.stop(); } catch (e) { console.error('[reset] memoryTidy.stop:', e); }
-  try { persist.close(); } catch (e) { console.error('[reset] persist.close:', e); }
-  // The same stops as quitting (teardownAndQuit): proxy sidecars and the
-  // webhook server would otherwise outlive the relaunch.
-  try { hive.stopAllProxyBridges(); } catch (e) { console.error('[reset] stopAllProxyBridges:', e); }
-  try { stopWebhookServer(); } catch (e) { console.error('[reset] webhook.stop:', e); }
-  try { ptyManager.killAll(); } catch (e) { console.error('[reset] killAll:', e); }
+  stopForReset('reset');
   try { hive.removeExposedCodexData(); } catch (e) { console.error('[reset] removeExposedCodexData:', e); }
   // The roster is the renderer's half of the same state, so it retires with the
   // hive — archived into roster-backups/ rather than deleted, and cleared as the
@@ -6573,6 +6652,84 @@ ipcMain.handle('app:resetAll', () => {
   // re-bootstrap from scratch and the renderer lands on onboarding.
   resetConfig();
   restartApp(app);
+});
+
+/** Each member's working folders, from the roster only (memory reset R5). */
+function memoryResetFolders(): Map<string, string[]> {
+  return foldersFromRoster(roster.read());
+}
+
+// The folders whose Claude Code notes a memory reset erases (R2), named in
+// its confirm.
+ipcMain.handle('app:memoryResetFolders', () => autoMemoryFolders(memoryResetFolders(), gitTopOf));
+
+// ─── IPC: memory reset (every member starts as on its first day) ─────────────
+// docs/designs/reset-agent-memory.md: notes, handled messages, recorded
+// conversations and Claude Code's auto memory go; the team, cards, waiting
+// messages, schedules, settings and Company knowledge stay. Then a relaunch.
+ipcMain.handle('app:resetMemory', async () => {
+  const home = readConfig().harnessHome;
+  const hiveRoot = hive.root();
+  if (!home || !hiveRoot) return { ok: false };
+  allowQuit = true;
+  // A tidy pass waiting on its model writes nothing when it returns.
+  try { memoryTidy.halt(); } catch (e) { console.error('[memory reset] memoryTidy.halt:', e); }
+  // Buffered cost samples reach the store before their ids are read.
+  try { pulseTelemetry.flush(); } catch (e) { console.error('[memory reset] pulse flush:', e); }
+  // killAll forgets each terminal as it signals it, so the wait watches the
+  // processes themselves, snapshotted first (Codex adversarial, ship).
+  const trees = ptyManager.list().map((s) => ({ id: s.id, pid: s.pid, before: process.platform === 'win32' ? null : groupMembers(s.pid) }));
+  stopForReset('memory reset', { keepPersist: true });
+  // Members still stopping could write a note back: wait past the kill grace,
+  // when the sweep reaps a tree that ignored the hangup. A tree that can't be
+  // told apart from a recycled pid (no snapshot, `ps` failing) waits the whole
+  // grace and is never forced; one still holding its own processes is.
+  const until = Date.now() + KILL_GRACE_MS + 2000;
+  const running = (t: (typeof trees)[number]): boolean => snapshotRemains(t.pid, t.before) ?? (Date.now() < until || isAlive(t.pid));
+  let left = trees;
+  while ((left = left.filter(running)).length && Date.now() < until) await new Promise((r) => setTimeout(r, 200));
+  for (const t of left) if (snapshotRemains(t.pid, t.before) === true) hardKillTree(t.pid);
+  const stillRunning = left.map((t) => t.id);
+
+  // Session ids only from records members can't write (R5): Pulse's cost
+  // samples for this office and the private session record.
+  const sessions = idsFromRecord(hive.privateSessionsText());
+  try {
+    const db = persist.database();
+    const office = pulseOffice();
+    if (db && office) {
+      idsFromCostRows(db.prepare(
+        "SELECT agent_id, json_extract(attrs, '$.s') AS s FROM telemetry_events WHERE office = ? AND kind = 'cost' GROUP BY agent_id, s"
+      ).all(office) as Array<{ agent_id: unknown; s: unknown }>, sessions);
+    }
+  } catch (e) { console.error('[memory reset] reading session ids:', e); }
+  try { persist.close(); } catch (e) { console.error('[memory reset] persist.close:', e); }
+
+  const memberIds = memberIdsIn(hiveRoot);
+  const targets = memoryResetTargets({
+    hiveRoot,
+    memberIds,
+    folders: memoryResetFolders(),
+    sessions,
+    projectDirsOf: projectDirs,
+    gitTop: gitTopOf,
+    research: { id: RESEARCH_ID, desk: researchDesk() }
+  });
+  // Marked before the erase, so a reset cut short (the app killed, power lost)
+  // still shows in the log.
+  hive.appendLog({ kind: 'memory-reset-start', members: memberIds, targets: targets.length });
+  const result = eraseMemoryTargets(targets, [hiveRoot, claudeProjectsRoot()]);
+  if (result.failed.length) console.error('[memory reset] could not remove:', result.failed);
+  if (result.refused.length) console.error('[memory reset] refused (outside its folders):', result.refused);
+  hive.forgetSessions({
+    members: memberIds,
+    removed: result.removed,
+    failed: result.failed.length,
+    refused: result.refused.length,
+    stillRunning
+  });
+  restartApp(app);
+  return { ok: true };
 });
 
 // ─── IPC: token telemetry (real usage + est. cost from CC transcripts) ───────
@@ -6773,18 +6930,39 @@ ipcMain.handle('pulse:learned', (_evt, from: unknown, to: unknown) => {
 // checked here. A record that can't be read rejects, so the list says so.
 ipcMain.handle('pulse:checked', (_evt, fromMs: unknown, toMs: unknown, way: unknown) =>
   (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) && (way === 'in' || way === 'out') ? pulse.checked(fromMs, toMs, way) : { rows: [], since: null }));
+// The emails organized list (owner, 2026-10-21): two times and, for one
+// member's list, their id, checked here. A record that can't be read rejects.
+ipcMain.handle('pulse:organized', (_evt, fromMs: unknown, toMs: unknown, agentId: unknown) =>
+  (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs)
+    ? pulse.organized(fromMs, toMs, typeof agentId === 'string' && agentId ? agentId : undefined) : { rows: [], since: null }));
 // Company foundations (office-foundations.md): the foundation card reads the
 // record and writes the owner's answer, a draft request or Not now.
 ipcMain.handle('foundations:get', () => foundations.view());
 ipcMain.handle('foundations:answer', (_evt, id: unknown, text: unknown) => foundations.ownerAnswer(id, text));
+// A file from a foundation card: one picked here, or dropped on the card.
+ipcMain.handle('foundations:pickFile', async (evt) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  if (!win) return { ok: false as const, error: 'no window' };
+  const res = await dialog.showOpenDialog(win, { properties: ['openFile'], title: 'Add a file' });
+  if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
+  return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
+});
+ipcMain.handle('foundations:addFile', (_evt, id: unknown, path: unknown) => foundations.addFile(id, path));
+ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown) => foundations.answerFile(id, docId, words));
 ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
 ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
   // Opening Pulse starts the backfill too, not only the 30 s beat, so a first
   // look right after an update gets the past weeks (the view refreshes when
   // they land).
-  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) { pulseBackfillOnce(office); pulseProcessor.tick(office); } } catch (e) { console.error('[pulse] snapshot tick', e); }
+  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) { pulseBackfillOnce(office); pulseTick(office); } } catch (e) { console.error('[pulse] snapshot tick', e); }
   return pulse.snapshot(isPeriod(period) ? period : 'this-week', compare === true);
+});
+// Whether Pulse's points are flowing (T9): the last batch, failed writes by
+// day and hook frames refused per member.
+ipcMain.handle('telemetry:health', () => {
+  const office = pulseOffice();
+  return pulseHealth.view(office, office ? pulseTelemetry.failedWrites(office) : {}, hookServer.rejectedFrames());
 });
 ipcMain.handle('pulse:apply', (_evt, id: unknown, expected: unknown) => (typeof id === 'string' ? pulse.apply(id, expected) : { ok: false, error: 'stale' }));
 ipcMain.handle('pulse:modelApplied', (_evt, id: unknown, agentId: unknown, from: unknown, to: unknown) =>
@@ -8210,11 +8388,15 @@ function armAlwaysOnBeats(): void {
   pulseFlushTimer = setInterval(() => { try { pulseTelemetry.flush(); } catch (e) { console.error('[pulse] flush', e); } }, 1_000);
   if (pulseTickTimer) clearInterval(pulseTickTimer);
   pulseTickTimer = setInterval(() => {
+    let office: string | null = null;
     try {
-      const office = pulseOffice();
+      office = pulseOffice();
       if (office) pulseBackfillOnce(office);
-      if (office && pulseProcessor.tick(office) > 0) liveWebContents()?.send('pulse:updated');
+      if (office && pulseTick(office) > 0) liveWebContents()?.send('pulse:updated');
     } catch (e) { console.error('[pulse] tick', e); }
+    // Points unread for 5 minutes: warned once, until a batch reads them.
+    const stalled = pulseHealth.stallWarning(office);
+    if (stalled) console.warn(stalled);
   }, 30_000);
   if (pulsePresenceTimer) clearInterval(pulsePresenceTimer);
   pulsePresenceTimer = setInterval(() => { try { pulseTelemetry.presence(powerMonitor.getSystemIdleTime(), false); } catch { /* presence is best-effort */ } }, 60_000);
@@ -8312,6 +8494,10 @@ app.whenReady().then(() => {
   // live session. Force it closed at startup (a real session re-opens it via
   // setMicGate(true)); macOS TCC stays a second gate regardless.
   if (readConfig().realtimeVoiceEnabled) writeConfig({ realtimeVoiceEnabled: false });
+
+  // A file check cut short by a quit or crash leaves its settings folder, with
+  // the checked text, in the temp folder (hiddenClaude.ts isolateConfig).
+  sweepIsolatedLeftovers();
 
   // Anonymous product analytics (PostHog) — the full contract lives in
   // TELEMETRY.md. Off entirely while COLLECT_USAGE_STATS (buildFeatures.ts) is

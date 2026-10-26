@@ -59,6 +59,17 @@ export interface IntegrationRecord {
   updatedAt: number;
 }
 
+/** The POSTs a catalog connector only reads with (search, query, a GraphQL
+ *  query). The broker sends these the read way, never through its write journal. */
+export interface PostReads {
+  /** The connector's API host, or a host suffix that starts with a dot. */
+  host: string;
+  /** URL paths (regex sources, whole path) whose POST only reads. */
+  paths?: string[];
+  /** A GraphQL API: a POST that runs only queries reads. */
+  graphql?: boolean;
+}
+
 /** A preset that seeds an IntegrationRecord. Dwight extends the catalog by appending
  *  to INTEGRATION_TEMPLATES — no broker or registry changes needed. */
 export interface IntegrationTemplate {
@@ -78,6 +89,8 @@ export interface IntegrationTemplate {
   docsUrl?: string;
   /** Default slug seed. */
   idSuggestion: string;
+  /** POSTs that only read, for an API that searches or queries with POST. */
+  postReads?: PostReads;
 }
 
 /** Integration id: lowercase slug, 2–40 chars, no leading/trailing hyphen. */
@@ -86,6 +99,10 @@ export const INTEGRATION_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 export const HEADER_NAME_RE = /^[A-Za-z0-9-]{1,64}$/;
 export const ALL_AUTH_TYPES: readonly IntegrationAuthType[] = ['none', 'bearer', 'header', 'github'];
 export const ALL_KINDS: readonly IntegrationKind[] = ['github', 'custom-rest'];
+/** What main answers when a NEW integration names an id already registered:
+ *  saving under it would replace that integration and its secret (`int:<id>`).
+ *  The form shows its own words for it. */
+export const INTEGRATION_ID_TAKEN = 'An integration with this id already exists, so nothing was saved over it.';
 
 /** The secretRef handle for an integration id (1:1). */
 export function secretRefFor(id: string): string {
@@ -271,7 +288,8 @@ export const INTEGRATION_TEMPLATES: IntegrationTemplate[] = [
     secretLabel: 'Linear API key',
     secretHelp: 'Linear → Settings → Security & access → Personal API keys. Sent verbatim in Authorization (no "Bearer"). Every call POSTs to /graphql.',
     docsUrl: 'https://developers.linear.app/docs/graphql/working-with-the-graphql-api',
-    idSuggestion: 'linear'
+    idSuggestion: 'linear',
+    postReads: { host: 'api.linear.app', graphql: true }
   },
   {
     kind: 'custom-rest',
@@ -282,7 +300,8 @@ export const INTEGRATION_TEMPLATES: IntegrationTemplate[] = [
     secretLabel: 'Authorization header (Basic …)',
     secretHelp: 'Basic auth: paste "Basic " + base64("<email>:<api-token>"). Token at id.atlassian.com → Security → API tokens. Replace your-domain with your Atlassian site.',
     docsUrl: 'https://developer.atlassian.com/cloud/jira/platform/rest/v3/intro/',
-    idSuggestion: 'jira'
+    idSuggestion: 'jira',
+    postReads: { host: '.atlassian.net', paths: ['/rest/api/3/search', '/rest/api/3/search/jql'] }
   },
   {
     kind: 'custom-rest',
@@ -292,7 +311,8 @@ export const INTEGRATION_TEMPLATES: IntegrationTemplate[] = [
     secretLabel: 'Notion internal integration token',
     secretHelp: 'notion.so/my-integrations → Internal Integration Secret; share target pages/DBs with it. Every request also needs header "Notion-Version: 2022-06-28" (worker sends it per request).',
     docsUrl: 'https://developers.notion.com/reference/intro',
-    idSuggestion: 'notion'
+    idSuggestion: 'notion',
+    postReads: { host: 'api.notion.com', paths: ['/v1/databases/[^/]+/query', '/v1/search'] }
   },
   {
     kind: 'custom-rest',
@@ -333,6 +353,70 @@ export const INTEGRATION_TEMPLATES: IntegrationTemplate[] = [
     secretLabel: 'HubSpot private app token',
     secretHelp: 'HubSpot → Settings → Integrations → Private Apps → create app → Access token (scopes crm.objects.*).',
     docsUrl: 'https://developers.hubspot.com/docs/api/crm/understanding-the-crm',
-    idSuggestion: 'hubspot'
+    idSuggestion: 'hubspot',
+    postReads: { host: 'api.hubapi.com', paths: ['/crm/v3/objects/[^/]+/search'] }
   }
 ];
+
+/** The catalog's POST reads for a connector, found by its base URL's host. A
+ *  custom REST API matches none, so all its POSTs stay writes. */
+export function postReadsFor(baseUrl: string): PostReads[] {
+  let host: string;
+  try { host = new URL(baseUrl).hostname.toLowerCase(); } catch { return []; }
+  return INTEGRATION_TEMPLATES.flatMap((t) => {
+    const r = t.postReads;
+    return r && (r.host.startsWith('.') ? host.endsWith(r.host) : host === r.host) ? [r] : [];
+  });
+}
+
+/** Whether a POST only reads, by its connector's rules: a listed path, or a
+ *  GraphQL body that runs only queries. Anything unclear is a write, since a
+ *  write sent twice is the worse mistake. */
+export function isPostRead(rules: PostReads[], url: URL, body: string): boolean {
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  return rules.some((r) =>
+    (r.paths ?? []).some((p) => new RegExp(`^${p}$`).test(path)) ||
+    (r.graphql === true && graphqlReadsOnly(body)));
+}
+
+/** Whether a GraphQL request body (one operation, or a batch) runs only queries. */
+export function graphqlReadsOnly(body: string): boolean {
+  let parsed: unknown;
+  try { parsed = JSON.parse(body); } catch { return false; }
+  const ops = Array.isArray(parsed) ? parsed : [parsed];
+  return ops.length > 0 && ops.every((op) => {
+    const o = op as { query?: unknown; operationName?: unknown } | null;
+    return !!o && typeof o.query === 'string' && operationKind(o.query, typeof o.operationName === 'string' ? o.operationName : undefined) === 'query';
+  });
+}
+
+/** The kind of the operation a GraphQL document runs ('query', 'mutation',
+ *  'subscription'), or null when it can't be told which one runs. */
+function operationKind(doc: string, name?: string): string | null {
+  // Strings and comments can hold any word, so they go first.
+  const src = doc.replace(/"""[\s\S]*?"""|"(?:\\.|[^"\\])*"|#[^\n]*/g, ' ');
+  const ops: Array<{ kind: string; name?: string }> = [];
+  let pending: { kind: string; name?: string } | null = null;
+  let braces = 0, parens = 0;
+  for (const [tok] of src.matchAll(/[{}()]|[A-Za-z_][A-Za-z0-9_]*/g)) {
+    if (tok === '(') { parens++; continue; }
+    if (tok === ')') { parens--; continue; }
+    if (tok === '}') { braces--; continue; }
+    if (tok === '{') {
+      // A selection at the top level starts an operation: the one named
+      // before it, or a query written as just { ... }.
+      if (braces === 0 && parens === 0) {
+        if (!pending) ops.push({ kind: 'query' });
+        else if (pending.kind !== 'fragment') ops.push(pending);
+        pending = null;
+      }
+      braces++;
+      continue;
+    }
+    if (braces !== 0 || parens !== 0) continue;
+    if (!pending && ['query', 'mutation', 'subscription', 'fragment'].includes(tok)) pending = { kind: tok };
+    else if (pending && pending.name === undefined) pending.name = tok;
+  }
+  const run = name === undefined ? (ops.length === 1 ? ops[0] : undefined) : ops.find((o) => o.name === name);
+  return run?.kind ?? null;
+}

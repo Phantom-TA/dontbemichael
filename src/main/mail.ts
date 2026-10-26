@@ -53,6 +53,8 @@ import { OWN_SENDS_ONLY, proposalSendProblem, standingProblem, standingTooLong, 
 
 // Limits (eng review E6 left these to the implementer).
 const CALL_TIMEOUT_MS = 30_000;
+/** What a read that timed out tells the agent: it clears on the next try. */
+export const READ_TIMEOUT_NOTE = 'The app opens a new connection on the next try, so try again at your next check; restarting the app is not needed.';
 const SEND_TIMEOUT_MS = 60_000;
 const MX_LOOKUP_TIMEOUT_MS = 5_000;
 const SEARCH_DEFAULT = 20;
@@ -244,6 +246,15 @@ export interface SmtpLike {
   sendMail(msg: Record<string, unknown>): Promise<{ messageId?: string; accepted?: unknown[] }>;
   verify?(): Promise<unknown>;
   close?(): void;
+}
+
+/** One organize call's moved mail, for the owner's private list of it. */
+export interface OrganizedMove {
+  agentId: string;
+  mailbox: string;
+  action: 'archive' | 'mark_read' | 'mark_junk';
+  folder: string | null;
+  messages: Array<{ id: string; from: string; subject: string }>;
 }
 
 export interface MailDeps {
@@ -506,14 +517,16 @@ export class MailService {
 
   /** Run `fn` with the folder locked; one reconnect after a dropped socket
    *  (sleep and wake), then a classified error. */
-  private async inFolder<T>(id: string, folder: (c: ImapLike) => Promise<string>, fn: (c: ImapLike, path: string) => Promise<T>, what: string): Promise<T> {
+  private async inFolder<T>(id: string, folder: (c: ImapLike) => Promise<string>, fn: (c: ImapLike, path: string) => Promise<T>, what: string, append = false): Promise<T> {
     for (let attempt = 0; attempt < 2; attempt++) {
       let client: ImapLike | undefined;
+      let started = false;
       try {
         client = await this.imap(id);
         const path = await folder(client);
         const lock = await withTimeout(client.getMailboxLock(path), CALL_TIMEOUT_MS, what);
         try {
+          started = true;
           const out = await withTimeout(fn(client, path), CALL_TIMEOUT_MS, what);
           this.note(id);
           return out;
@@ -522,9 +535,17 @@ export class MailService {
         const err = classifyMailError(e);
         // Acquisition failures clean up their own pending socket in imap.
         // An older operation must not drop a replacement another caller owns.
-        if (err.kind === 'network' && attempt === 0) { if (client) this.drop(id, client); continue; }
+        // An append the server may already have kept is not sent again: only
+        // one that failed before it started (connecting, the folder, the lock).
+        if (err.kind === 'network' && attempt === 0 && !(append && started)) { if (client) this.drop(id, client); continue; }
         if ((err.kind === 'network' || err.kind === 'timeout') && client) this.drop(id, client);
         this.note(id, err);
+        // A read that timed out clears by itself: its connection was dropped and
+        // the next try opens a new one. Say so, or an agent concludes the app
+        // must be restarted and stops checking mail (owner, 2026-10-22).
+        // Not after an append (a draft, a copy to Sent): the server may have
+        // kept it, and trying again would save it twice (ship review, 2026-10-23).
+        if (err.kind === 'timeout' && !append) throw new MailError('timeout', `${err.message} ${READ_TIMEOUT_NOTE}`);
         throw err;
       }
     }
@@ -639,7 +660,9 @@ export class MailService {
    * with a label, to that label (a Gmail label, or a folder of that name on
    * other servers, made when missing). `mark_junk` marks them read and moves
    * them to the junk folder. `mark_read` leaves them where they are. Every
-   * outcome can be undone in the mailbox.
+   * outcome can be undone in the mailbox. `about` is each moved message's
+   * sender and subject, read just before the move, for the owner's list of
+   * organized mail; `folder` is where archived mail went (null: All Mail).
    */
   async organize(id: string, action: 'archive' | 'mark_read' | 'mark_junk', uids: number[], label?: string) {
     if (!uids.length) throw new MailError('bad-request', `${action} needs the message ids from search.`);
@@ -652,9 +675,19 @@ export class MailService {
       const found = uids.filter((u) => present.has(u));
       const missing = uids.filter((u) => !present.has(u));
       if (!found.length) throw new MailError('not-found', 'None of those messages are in the inbox any more.');
+      // Who sent each one and what it said, before it leaves the inbox. A
+      // mailbox that cannot say still has its mail moved; the list then shows
+      // the move without the words.
+      const words = new Map<number, { from: string; subject: string }>();
+      try {
+        for await (const m of c.fetch(found, { uid: true, envelope: true }, { uid: true })) {
+          words.set(Number(m.uid), { from: addrText(m.envelope?.from), subject: m.envelope?.subject ?? '' });
+        }
+      } catch { /* the move stands without the words */ }
+      const about = found.map((u) => ({ id: String(u), from: words.get(u)?.from ?? '', subject: words.get(u)?.subject ?? '' }));
       if (action === 'mark_read') {
         await c.messageFlagsAdd(found, ['\\Seen'], { uid: true });
-        return { done: found.map(String), missing: missing.map(String) };
+        return { done: found.map(String), missing: missing.map(String), about, folder: null };
       }
       // Where they go is settled before anything changes, so a mailbox with no
       // junk folder leaves the messages exactly as they were.
@@ -687,8 +720,20 @@ export class MailService {
       }
       await c.messageFlagsAdd(found, ['\\Seen'], { uid: true });
       await c.messageMove(found, destination, { uid: true });
-      return { done: found.map(String), missing: missing.map(String), ...(label ? { label } : {}) };
+      const folder = action === 'archive' ? (gmail ? label ?? null : destination) : null;
+      return { done: found.map(String), missing: missing.map(String), ...(label ? { label } : {}), about, folder };
     }, action === 'mark_read' ? 'Marking mail read' : action === 'mark_junk' ? 'Moving mail to junk' : 'Archiving mail');
+  }
+
+  /** The thread headers a reply to `ref` carries, read when the reply is filed
+   *  for the owner: the email it answers is often archived or moved before
+   *  the owner says yes, and its inbox id then names nothing. Null when the
+   *  email has no Message-ID to thread on. */
+  async threadOf(id: string, ref: MailRef): Promise<ThreadHeaders | null> {
+    const parsed = await this.replyHeaders(id, ref);
+    if (!parsed.messageId) return null;
+    const prior = Array.isArray(parsed.references) ? parsed.references : parsed.references ? [parsed.references] : [];
+    return { inReplyTo: parsed.messageId, references: [...prior, parsed.messageId].slice(-50) };
   }
 
   /** The threading headers of the message a reply answers, without its body. */
@@ -862,7 +907,7 @@ export class MailService {
     const rec = this.record(id);
     const msg = await this.compose(id, rec.address, input, MailService.newMessageId(rec.address));
     const raw = await MailService.build(msg);
-    await this.inFolder(id, MailService.drafts, async (c, path) => { await c.append(path, raw, ['\\Draft', '\\Seen']); }, 'Saving the draft');
+    await this.inFolder(id, MailService.drafts, async (c, path) => { await c.append(path, raw, ['\\Draft', '\\Seen']); }, 'Saving the draft', true);
     return { saved: true, messageId: String(msg.messageId) };
   }
 
@@ -961,7 +1006,7 @@ export class MailService {
     // Gmail files sent mail itself; other services need the copy appended.
     if (rec.provider !== 'gmail' && rec.provider !== 'google-workspace') {
       const raw = await MailService.build(msg).catch(() => null);
-      if (raw) await this.inFolder(id, MailService.sentBox, async (c, path) => { await c.append(path, raw, ['\\Seen']); }, 'Saving to Sent').catch(() => undefined);
+      if (raw) await this.inFolder(id, MailService.sentBox, async (c, path) => { await c.append(path, raw, ['\\Seen']); }, 'Saving to Sent', true).catch(() => undefined);
     }
     return { sent: true, messageId };
   }
@@ -1077,7 +1122,7 @@ function ref(v: unknown): MailRef | undefined {
   return typeof o.mailbox === 'string' && (typeof o.id === 'string' || typeof o.id === 'number') ? { mailbox: o.mailbox, id: String(o.id) } : undefined;
 }
 
-type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean; tellMichael?: (subject: string, body: string) => void };
+type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; organized?: (moved: OrganizedMove) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean; tellMichael?: (subject: string, body: string) => void };
 
 /** Messages Michael has already heard were flagged, so a re-read does not tell him twice. */
 const flaggedTold = new Set<string>();
@@ -1278,6 +1323,10 @@ async function runMailRequest(
         return { status: 403, body: { error: `${refused} The email was withdrawn; write it again without that.` } };
       }
       const approved: ComposeInput = { to: p!.to, cc: p!.cc, subject: p!.approved?.subject ?? p!.subject, body: p!.approved?.body ?? p!.body, replyTo: p!.replyTo, forward: p!.forward, attachFrom: p!.attachFrom, thread: p!.thread };
+      // A reply threads on the headers kept when it was proposed, so the email
+      // it answers may since have been archived; a card from before that keeps
+      // reading them through its reply id.
+      if (approved.thread) approved.replyTo = undefined;
       // Recorded as sending first: if that can't be saved nothing goes out, and
       // a restart after the send never sends it again.
       try { deps.proposals.markSending(p!.id); } catch {
@@ -1364,7 +1413,13 @@ async function runMailRequest(
           const why = unreadable ? 'It answers an email the check could not read in full, so the owner decides.'
             : tooLong ? 'It is longer than the check can read, so the owner decides.'
               : verdict && !verdict.fits ? verdict.reason : 'The check could not confirm it fits.';
-          const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: input.forward, attachFrom: input.attachFrom, ...(input.thread ? { thread: input.thread } : {}) });
+          // Its thread is kept as for any proposal; if the email it answers
+          // can't be read now, the send reads it then, as before.
+          let thread = input.thread;
+          if (!thread && input.replyTo) {
+            try { thread = (await svc.threadOf(mailbox!, input.replyTo)) ?? undefined; } catch { /* read at the send */ }
+          }
+          const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: input.forward, attachFrom: input.attachFrom, ...(thread ? { thread } : {}) });
           try { deps.audit?.({ kind: 'mail-standing-refused', agentId, mailbox, standing: rule!.id, proposal: p.id }); } catch { /* the filing stands */ }
           return { status: 200, body: { sent: false, proposal: p.id, state: 'waiting for the owner on Ask me', why: `Not sent under your standing approval: ${why}`, next: 'It is on Ask me now. You will get a message when the owner decides; then send it with this proposal id.' } };
         }
@@ -1410,10 +1465,13 @@ async function runMailRequest(
       const label = op === 'archive' ? str(body.label, 60)?.trim().replace(/[\r\n]/g, ' ') : undefined;
       const problem = label ? labelProblem(label) : null;
       if (problem) return { status: 400, body: { error: problem } };
-      const done = await svc.organize(mailbox!, op, uids, label);
+      const { about, folder, ...done } = await svc.organize(mailbox!, op, uids, label);
       // Every move is written to the office log, so the owner can see what an
       // agent cleared from the inbox and where it went.
       try { deps.audit?.({ kind: 'mail-organize', agentId, mailbox, action: op, ids: done.done, ...(label ? { label } : {}) }); } catch { /* the move stands */ }
+      // And each email's sender and subject to the owner's private list (the
+      // agent's answer stays as it was: it already read them).
+      try { deps.organized?.({ agentId, mailbox: mailbox!, action: op, folder, messages: about }); } catch { /* the move stands */ }
       return { status: 200, body: done };
     }
     if (!input.to || !input.subject) return { status: 400, body: { error: `${op} needs "to" and "subject".` } };
@@ -1422,7 +1480,17 @@ async function runMailRequest(
       if (!deps.proposals) return { status: 503, body: { error: 'Approvals are not available right now. Tell Michael.' } };
       if (!input.body.trim()) return { status: 400, body: { error: 'propose needs a "body".' } };
       const offer = str(body.offer_standing, STANDING_KIND_MAX)?.replace(/\s+/g, ' ').trim();
-      const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: input.forward, attachFrom: input.attachFrom, ...(input.thread ? { thread: input.thread } : {}), ...(offer ? { offerStanding: offer } : {}) });
+      // A reply's thread is read now and kept on the card: an id that names
+      // nothing fails here, while the agent can still search again, instead of
+      // after the owner has approved an email that can't go out. A server that
+      // can't be reached right now doesn't hold the card up; the send reads it.
+      let thread = input.thread;
+      if (!thread && input.replyTo) {
+        try { thread = (await svc.threadOf(mailbox!, input.replyTo)) ?? undefined; } catch (e) {
+          if (e instanceof MailError && (e.kind === 'not-found' || e.kind === 'bad-request')) throw e;
+        }
+      }
+      const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: input.forward, attachFrom: input.attachFrom, ...(thread ? { thread } : {}), ...(offer ? { offerStanding: offer } : {}) });
       return { status: 200, body: { proposal: p.id, state: 'waiting for the owner on Ask me', ...(p.replaces ? { replaced: p.replaces, note: `This replaces your earlier proposal ${p.replaces} for the same email; that id no longer works.` } : {}), next: 'Nothing is sent yet. You will get a message when the owner decides: approved (then call send with this proposal id), changes asked, or not sent. Do not send it another way.' } };
     }
     const out = await svc.send(agentId, mailbox!, input, () => {

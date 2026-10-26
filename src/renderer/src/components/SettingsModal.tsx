@@ -3,6 +3,7 @@ import { cleanDataClassOverrides } from '../../../shared/dataClasses';
 import { MailboxesSettings } from './MailboxesSettings';
 import { ClaudeConnectorsSettings } from './ClaudeConnectorsSettings';
 import { useState, useEffect, useRef, type CSSProperties } from 'react';
+import { fieldLabel, groupName, hint, panelStyle } from './fieldText';
 import { useDialog } from '@/shell/useDialog';
 import { useBackdropClose } from '@/hooks/useBackdropClose';
 import { useTranslation } from 'react-i18next';
@@ -90,13 +91,7 @@ const slackInputStyle: CSSProperties = {
   outline: 'none'
 };
 
-const slackLabelStyle: CSSProperties = {
-  fontFamily: 'var(--cth-font-display)',
-  fontSize: 10, fontWeight: 600,
-  lineHeight: '12px',
-  color: 'var(--cth-ink-700)',
-  textTransform: 'uppercase'
-};
+const slackLabelStyle: CSSProperties = fieldLabel;
 
 /** The exact connect walkthrough shown behind the i icon. Steps 6 & 7 spell out
  *  the both-lists requirement: subscribe to message.channels / message.groups in
@@ -171,19 +166,10 @@ import { showByokSettings } from '@shared/agentProvider';
 // v0.3.4 redesign: six tabs, one topic each. 'AI Engines' folded into
 // Agents (once Agents & Models, now also autonomy and budgets); MCP + Slack + webhook + REST live together in Connections;
 // voice gets its own tab; Danger Zone became a red row at the bottom of General.
-/* The small-caps section heading, defined once. It was written out inline
-   seventeen times, in three slightly different forms, which is how a tab ends
-   up looking subtly unlike its neighbours. */
-const sectionHead = {
-  fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px',
-  color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 10
-} as const;
-/** Same heading, tight under a section that supplies its own spacing. */
-const sectionHeadTight = { ...sectionHead, marginBottom: 2 } as const;
-/** Same heading with no bottom margin at all. */
-const sectionHeadFlush = { ...sectionHead, marginBottom: 0 } as const;
-/** The hairline between Settings sections. */
-const sectionRule = { height: 1, background: 'var(--cth-line)' } as const;
+/* Every Settings section is a group on the shared soft panel with its name at
+   the top (app-style-rollout.md AS2, AS3); the panels' gap replaces the old
+   hairlines and small caps heads. */
+const group: CSSProperties = { ...panelStyle, gap: 10 };
 
 // Agents & Models and Autonomy & Budgets are one Agents tab (owner, 2026-10-01):
 // the model agents run on, how much they do alone and the limits that stop them.
@@ -217,8 +203,13 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const backdrop = useBackdropClose(() => closeFnRef.current());
   const godName = useStore((s) => s.agents.find((a) => a.isGod)?.name) ?? t('common.orchestrator');
   const [confirming, setConfirming] = useState(false);
+  // Reset memory's own confirm (docs/designs/reset-agent-memory.md), with the
+  // folders whose Claude Code notes go too.
+  const [confirmingMemory, setConfirmingMemory] = useState(false);
+  const [memoryFolders, setMemoryFolders] = useState<string[]>([]);
+  const [memoryErr, setMemoryErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const [activeSection, setActiveSection] = useState<Section>(initialSection ?? 'General');
+  const [activeSection, setActiveSection] = useState<Section>(initialSection && VISIBLE_SECTIONS.includes(initialSection) ? initialSection : 'General');
 
   // Change-home flow: null until the user picks a new folder, then the sub-modal
   // confirms move-vs-fresh. Pre-selects 'move' (recommended - keeps the data).
@@ -836,6 +827,26 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     await window.cth.resetAll();
   };
 
+  const askResetMemory = async () => {
+    setMemoryErr('');
+    setMemoryFolders([]);
+    setConfirmingMemory(true);
+    setMemoryFolders(await window.cth.memoryResetFolders().catch(() => [] as string[]));
+  };
+
+  const resetMemory = async () => {
+    setBusy(true);
+    setMemoryErr('');
+    // Every member forgets, then the app relaunches; the team and settings
+    // stay, so local state stays too. On success this never resolves.
+    try {
+      const r = await window.cth.resetMemory();
+      if (r?.ok) return;
+    } catch { /* shown below */ }
+    setBusy(false);
+    setMemoryErr(t('settings.resetMemoryConfirm.failed'));
+  };
+
   // --- Change home folder ---
   /** Pick a new folder, then open the move-vs-fresh sub-modal. */
   const pickNewHome = async () => {
@@ -884,9 +895,11 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
   const modalTitle = changeHome
     ? t('settings.changeHomeTitle')
-    : confirming
-      ? t('settings.resetTitle')
-      : t('settings.title');
+    : confirmingMemory
+      ? t('settings.resetMemoryTitle')
+      : confirming
+        ? t('settings.resetTitle')
+        : t('settings.title');
 
   return (
     <div
@@ -965,7 +978,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                       }}>
                         {selected ? '◉ ' : '○ '}{title}
                       </span>
-                      <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>{desc}</span>
+                      <span style={hint}>{desc}</span>
                     </button>
                   );
                 })}
@@ -981,6 +994,50 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                 </PixelButton>
                 <PixelButton variant="primary" size="md" onClick={applyChangeHome} disabled={changeBusy}>
                   {changeBusy ? t('settings.apply') : (changeMode === 'move' ? t('settings.moveAndRestart') : t('settings.switchAndRestart'))}
+                </PixelButton>
+              </div>
+            </div>
+
+          /* === Reset memory confirmation screen === */
+          ) : confirmingMemory ? (
+            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <div style={{
+                  borderRadius: 'var(--cth-r-md)',
+                  width: 32, height: 32,
+                  background: 'var(--cth-coral-light)',
+                  boxShadow: 'inset 0 0 0 1.5px var(--cth-indigo)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Icon name="bell" />
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 15, lineHeight: '22px', color: 'var(--cth-ink-700)' }}>
+                  <span>{t('settings.resetMemoryConfirm.body', { godName })}</span>
+                  <span>{t('settings.resetMemoryConfirm.keeps')}</span>
+                  {memoryFolders.length > 0 && (
+                    <>
+                      <span>{t('settings.resetMemoryConfirm.folders')}</span>
+                      <ul style={{ margin: 0, paddingInlineStart: 18, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {memoryFolders.map((f) => (
+                          <li key={f}><code dir="ltr" style={{ fontFamily: 'var(--cth-font-mono, monospace)', fontSize: 12, wordBreak: 'break-all', color: 'var(--cth-ink-900)' }}>{f}</code></li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {memoryErr && (
+                <div role="alert" style={{ fontSize: 13, lineHeight: '18px', color: 'var(--cth-coral-text)' }}>{memoryErr}</div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <PixelButton variant="secondary" size="md" onClick={() => setConfirmingMemory(false)} disabled={busy}>
+                  {t('common.cancel')}
+                </PixelButton>
+                <PixelButton variant="destructive" size="md" onClick={resetMemory} disabled={busy}>
+                  {busy ? t('settings.resetting') : t('settings.resetMemoryConfirm.go')}
                 </PixelButton>
               </div>
             </div>
@@ -1072,13 +1129,12 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           with, and the toolbar chip says nothing when it is yes. */}
                       <SettingsHeroCard />
 
-                      <div style={{ height: 1, background: 'var(--cth-line)' }} />
 
                       {/* Home folder */}
-                      <div>
-                        <div style={sectionHead}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.general.homeFolder')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', gap: 12, fontSize: 13, lineHeight: '20px', alignItems: 'center' }}>
                           <span style={{
                             flex: 1, color: 'var(--cth-ink-900)', wordBreak: 'break-all',
@@ -1086,7 +1142,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           }}>{config.harnessHome ?? '·'}</span>
                           <PixelButton variant="secondary" size="sm" onClick={pickNewHome}>{t('settings.change')}</PixelButton>
                         </div>
-                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                        <span style={hint}>
                           {t('settings.general.homeFolderDesc')}
                         </span>
                         {otherOffices.length > 0 && (
@@ -1110,18 +1166,17 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         )}
                       </div>
 
-                      <div style={{ height: 1, background: 'var(--cth-line)' }} />
 
                       {/* Environment — settings that used to be trapped in onboarding */}
-                      <div>
-                        <div style={sectionHead}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.general.environment')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('settings.general.keepAwake')}</span>
-                              <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              <span style={fieldLabel}>{t('settings.general.keepAwake')}</span>
+                              <span style={hint}>
                                 {t('settings.general.keepAwakeDesc')}
                               </span>
                             </div>
@@ -1133,8 +1188,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           {SHOW_SIMPLE_MODE_SWITCH && (
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('settings.general.simpleMode')}</span>
-                              <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              <span style={fieldLabel}>{t('settings.general.simpleMode')}</span>
+                              <span style={hint}>
                                 {t('settings.general.simpleModeDesc')}
                               </span>
                             </div>
@@ -1147,14 +1202,14 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           {SHOW_ARABIC_TERMINAL_SWITCH && (
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              <span style={fieldLabel}>
                                 {t('settings.general.arabicTerminal')}
                               </span>
-                              <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              <span style={hint}>
                                 {t('settings.general.arabicTerminalDesc')}
                               </span>
                               {arabicFollowsLanguage && (
-                                <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                                <span style={hint}>
                                   {t('settings.general.arabicTerminalFollowsLanguage')}
                                 </span>
                               )}
@@ -1182,17 +1237,16 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                       {/* Language: hidden in this build (SHOW_LANGUAGE_PICKER); the
                           saved language, or English, stays. */}
                       {SHOW_LANGUAGE_PICKER && (<>
-                      <div style={{ height: 1, background: 'var(--cth-line)' }} />
 
                       {/* Language — app UI language (i18n) */}
-                      <div>
-                        <div style={sectionHead}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.general.language')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('settings.general.language')}</span>
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            <span style={fieldLabel}>{t('settings.general.language')}</span>
+                            <span style={hint}>
                               {t('settings.general.languageDesc')}
                             </span>
                           </div>
@@ -1210,19 +1264,18 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                       </div>
                       </>)}
 
-                      <div style={{ height: 1, background: 'var(--cth-line)' }} />
 
                       {/* Desktop notifications toggle */}
-                      <div>
-                        <div style={sectionHead}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.general.notifications')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                            <span style={fieldLabel}>
                               {t('settings.general.desktopNotifications')}
                             </span>
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            <span style={hint}>
                               {t('settings.general.desktopNotificationsDesc', { godName })}
                             </span>
                           </div>
@@ -1236,19 +1289,18 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         </div>
                       </div>
 
-                      <div style={{ height: 1, background: 'var(--cth-line)' }} />
 
                       {/* Scheduled auto-compact (compact-maintenance mission) */}
-                      <div>
-                        <div style={sectionHead}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.general.maintenance')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                            <span style={fieldLabel}>
                               {t('settings.general.autoCompact')}
                             </span>
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            <span style={hint}>
                               {t('settings.general.autoCompactDesc')}
                             </span>
                           </div>
@@ -1264,10 +1316,10 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           <div style={{ height: 10 }} />
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              <span style={fieldLabel}>
                                 {t('settings.general.telemetry')}
                               </span>
-                              <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              <span style={hint}>
                                 {t('settings.general.telemetryDesc')}
                               </span>
                             </div>
@@ -1300,9 +1352,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                       the installed list scans every team folder. */}
                   {activeSection === 'Skills' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minHeight: 0 }}>
-                      <div>
-                        <div style={sectionHeadTight}>{t('settings.skills.title')}</div>
-                        <span style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
+                      <div style={group}>
+                        <h3 style={groupName}>{t('settings.skills.title')}</h3>
+                        <span style={hint}>
                           {t('settings.skills.desc', { godName })}
                         </span>
                       </div>
@@ -1315,12 +1367,12 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   {/* AGENTS: the model, autonomy, and the limits that stop them. */}
                   {activeSection === 'Agents' && (
                     <>
-                      <div>
-                        <div style={sectionHead}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.agentsModels.defaultModel')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                          <span style={hint}>
                             {t('settings.agentsModels.defaultModelDesc', { godName })}
                           </span>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1345,11 +1397,10 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           across the team by share of the work. Not on an API key. */}
                       {cfgX.claudeAuth !== 'apiKey' && (
                         <>
-                          <div style={{ height: 1, background: 'var(--cth-line)' }} />
-                          <div>
-                            <div style={{ ...sectionHead, display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <div style={group}>
+                            <h3 style={{ ...groupName, display: 'flex', gap: 6, alignItems: 'center' }}>
                               {t('settings.agentsModels.planPrice')}<InfoTip text={t('settings.agentsModels.planPriceTip')} />
-                            </div>
+                            </h3>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 13, color: 'var(--cth-ink-900)' }}>{detectedPlan?.label ?? t('settings.agentsModels.planUnknown')}</span>
                               <span style={{ fontSize: 13, color: 'var(--cth-ink-500)' }}>$</span>
@@ -1366,15 +1417,14 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         </>
                       )}
 
-                      <div style={{ height: 1, background: 'var(--cth-line)' }} />
 
                       {/* Autonomy and budgets (was its own tab until 2026-10-01). */}
-                      <div>
-                        <div style={sectionHead}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.autonomy.autonomy')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                          <span style={{ ...fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             {autoModeOn ? t('settings.autonomy.autoOn') : t('settings.autonomy.autoOff')}
                             <InfoTip text={t('settings.autonomy.autoDesc')} />
                           </span>
@@ -1388,15 +1438,13 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           temporary workers. Gone with the feature in this build
                           (ALLOW_TEMP_WORKERS); he asks on the ASK ME board instead. */}
                       {ALLOW_TEMP_WORKERS && (<>
-                      <div style={{ height: 1, background: 'var(--cth-ink-300)', margin: '12px 0' }} />
-
-                      <div>
+                      <div style={group}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                            <span style={fieldLabel}>
                               Who can add agents
                             </span>
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            <span style={hint}>
                               {orchSpawnOn
                                 ? `${godName} can hire on his own. Every agent he starts spends tokens you did not approve.`
                                 : `Only you. ${godName} can still ask, and his request waits in the queue instead of failing.`}
@@ -1409,16 +1457,15 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                       </div>
                       </>)}
 
-                      <div style={{ height: 1, background: 'var(--cth-line)' }} />
 
                       {/* Circuit breaker — the FULL unit (v0.3.4: all fields have UI) */}
-                      <div>
+                      <div style={group}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                            <span style={{ ...sectionHead, display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 0 }}>
+                            <h3 style={{ ...groupName, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                               {t('settings.autonomy.breaker')}
                               <InfoTip text={t('settings.autonomy.breakerDesc')} />
-                            </span>
+                            </h3>
                             <PixelButton variant={brkEnabled ? 'primary' : 'secondary'} size="sm"
                               onClick={() => { setBrkEnabled(!brkEnabled); }}>
                               {brkEnabled ? t('common.on') : t('common.off')}
@@ -1466,7 +1513,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             </label>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                            <span style={{ ...fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                               {t('settings.autonomy.hardStop')}
                               <InfoTip text={t('settings.autonomy.hardStopDesc')} />
                             </span>
@@ -1478,22 +1525,20 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         </div>
                       </div>
 
-                      <div style={{ height: 1, background: 'var(--cth-line)' }} />
 
                       {/* API keys and local endpoints feed only OpenCode, Crush, pi and
                           Qwen; this build offers none of them (BUILD_ENGINES). */}
                       {showByokSettings() && (
                         <>
                           <AiEnginesSettings config={config} />
-                          <div style={{ height: 1, background: 'var(--cth-line)' }} />
                         </>
                       )}
 
                       {/* Advanced */}
-                      <div>
-                        <div style={sectionHead}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.agentsModels.advanced')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <span style={{ fontSize: 13, color: 'var(--cth-ink-900)' }}>{t('settings.agentsModels.maxTurns')}</span>
                           <input
@@ -1519,16 +1564,16 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                     <>
                       {/* Company knowledge: the documents the team searches, and searching
                           them by meaning (owner, 2026-10-19). */}
-                      <div>
-                        <div style={sectionHead}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.memory.kg')}
-                        </div>
+                        </h3>
                         {/* Always on (owner, 2026-10-19): no switch; members are pointed
                             at it once it holds a document. */}
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                        <span style={{ ...fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                           {t('settings.memory.kgTitle')}<InfoTip text={t('settings.memory.kgDesc')} />
                         </span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <PixelButton variant="secondary" size="sm" onClick={addKgFiles} disabled={kgBusy}>
                               {kgBusy ? t('settings.memory.adding') : t('settings.memory.addFiles')}
                             </PixelButton>
@@ -1543,9 +1588,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         <KnowledgeDocList refreshKey={kgDocCount} />
                         {/* Search by meaning (owner, 2026-10-19): part of company knowledge,
                             which is all it ever searches; members' memory stays theirs. */}
-                          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--cth-line)' }}>
+                          <div style={{ marginTop: 6 }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              <span style={{ ...fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                                 {t('settings.memory.meaning.title')}<InfoTip text={t('settings.memory.meaning.tip')} />
                               </span>
                               {/* No switch (owner, 2026-10-19): it runs whenever MemPalace is
@@ -1584,7 +1629,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             {/* Search language: a benefit framed choice, not a model codename. */}
                             {memStatus?.available && (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('memoryPanel.searchLanguage')}<InfoTip text={t('settings.memory.meaning.languageTip')} /></span>
+                                <span style={{ ...fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6 }}>{t('memoryPanel.searchLanguage')}<InfoTip text={t('settings.memory.meaning.languageTip')} /></span>
                                 <div role="radiogroup" aria-label={t('memoryPanel.searchLanguage')} style={{ display: 'flex', gap: 8 }}>
                                   {([
                                     ['minilm', t('memoryPanel.modelFast'), t('memoryPanel.modelFastDetail')],
@@ -1635,7 +1680,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   {SHOW_MCP_DEFAULTS && activeSection === 'Connections' && (
                     <>
                       <McpDefaultsSettings config={config} />
-                      <div style={{ height: 1, background: 'var(--cth-line)' }} />
                     </>
                   )}
 
@@ -1657,32 +1701,29 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           agent's Access tab. QuickBooks and Gmail are rows in it. */}
                       <ClaudeConnectorsSettings />
 
-                      <div style={sectionRule} />
 
                       {/* The mailboxes added here (docs/designs/multi-mailbox.md).
                           Hidden with SHOW_MAILBOXES. */}
                       {SHOW_MAILBOXES && (<>
                         <MailboxesSettings />
 
-                        <div style={sectionRule} />
                       </>)}
 
                       {/* Connected-services registry (generic, registry-driven);
                           the hardcoded Slack/Webhook/Free Flow blocks below stay as-is. */}
                       <IntegrationsRegistry />
 
-                      <div style={sectionRule} />
 
                       {/* Slack: hidden in this build (SHOW_SLACK). */}
                       {SHOW_SLACK && (<>
                         {/* Slack integration */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          <div style={sectionHeadTight}>
+                        <div style={group}>
+                          <h3 style={groupName}>
                             {t('settings.connections.slack')}
-                          </div>
+                          </h3>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              <span style={{ ...fieldLabel, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 {t('settings.connections.slackIntegration')}
                                 {/* i - toggles the step-by-step connect guide. */}
                                 <button
@@ -1700,7 +1741,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                   }}
                                 >i</button>
                               </span>
-                              <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              <span style={hint}>
                                 {t('settings.connections.slackDesc', { godName })}
                               </span>
                             </div>
@@ -1839,27 +1880,24 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                 </div>
                               )}
 
-                              <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              <span style={hint}>
                                 {t('settings.connections.slackHint')}
                               </span>
                             </div>
                           )}
                         </div>
 
-                        <div style={sectionRule} />
                       </>)}
 
                       {/* Webhook triggers — a LIST of endpoints, one per caller.
                           Everything renders off the store mirror, so a change made
                           in the Triggers tab lands here without a refetch (and the
                           other way round). */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <div style={sectionHeadTight}>
-                          {t('settings.connections.webhooks')}
-                        </div>
+                      <div style={group}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                            {/* The group's name, with its help toggle (one name, not two). */}
+                            <h3 style={{ ...groupName, display: 'flex', alignItems: 'center', gap: 6 }}>
                               {t('settings.connections.webhooks')}
                               <button
                                 type="button"
@@ -1875,8 +1913,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                   fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '16px'
                                 }}
                               >i</button>
-                            </span>
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            </h3>
+                            <span style={hint}>
                               {t('settings.connections.webhooksDesc')}
                             </span>
                           </div>
@@ -1910,7 +1948,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         </span>
 
                         {webhookTriggers.length === 0 ? (
-                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                          <span style={hint}>
                             {t('settings.connections.noWebhooks')}
                           </span>
                         ) : (
@@ -2029,7 +2067,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                         <option key={m.value} value={m.value}>{m.label}</option>
                                       ))}
                                     </select>
-                                    <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                                    <span style={hint}>
                                       {modeBlurb}
                                     </span>
                                   </div>
@@ -2046,7 +2084,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           </div>
                         )}
 
-                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                        <span style={hint}>
                           {t('settings.connections.webhooksHint', { godName })}
                         </span>
 
@@ -2059,17 +2097,16 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           Persisted + mirrored; no transport reads the key yet.
                           Hidden in this build (SHOW_ORG_TRIGGER). */}
                       {SHOW_ORG_TRIGGER && (<>
-                      <div style={sectionRule} />
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <div style={sectionHeadTight}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.connections.organisation')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                            <span style={fieldLabel}>
                               {t('settings.connections.orgKey')}
                             </span>
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            <span style={hint}>
                               {t('settings.connections.orgKeyDesc')}
                             </span>
                           </div>
@@ -2105,7 +2142,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           </div>
                         </label>
 
-                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                        <span style={hint}>
                           {CLONE_NODE_BLURB}
                         </span>
 
@@ -2121,7 +2158,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             ))}
                           </select>
                         </label>
-                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                        <span style={hint}>
                           {TRIGGER_MODES.find((m) => m.value === orgTrigger.mode)?.blurb ?? ''}
                         </span>
 
@@ -2134,7 +2171,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           )}
                         </div>
 
-                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                        <span style={hint}>
                           {t('settings.connections.orgConfigOnly')}
                         </span>
                       </div>
@@ -2147,16 +2184,16 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   {activeSection === 'Voice' && SHOW_VOICE && (
                     <>
                       {/* Free Flow (voice dictation) */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <div style={sectionHeadTight}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.voice.freeFlow')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                            <span style={fieldLabel}>
                               {t('settings.voice.freeFlowTitle')}
                             </span>
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            <span style={hint}>
                               {t('settings.voice.freeFlowDesc')}
                             </span>
                           </div>
@@ -2211,25 +2248,24 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               )}
                             </div>
 
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            <span style={hint}>
                               {t('settings.voice.freeFlowHint')}
                             </span>
                           </div>
                         )}
                       </div>
 
-                      <div style={sectionRule} />
 
                       {/* Realtime Michael — voice device selection (rt-8) */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <div style={sectionHeadTight}>
+                      <div style={group}>
+                        <h3 style={groupName}>
                           {t('settings.voice.realtime')}
-                        </div>
+                        </h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                          <span style={fieldLabel}>
                             {t('settings.voice.voiceChat', { godName })}
                           </span>
-                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                          <span style={hint}>
                             {t('settings.voice.voiceChatDesc', { godName })}
                           </span>
                         </div>
@@ -2241,14 +2277,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             slot as the Agents tab (apikey:openai) — one key, two doorways,
                             and saving in either flips the same gate. The value never leaves
                             main; only the presence boolean comes back. */}
-                        <div style={{
-                          borderRadius: 'var(--cth-r-md)',
-                          display: 'flex', flexDirection: 'column', gap: 8,
-                          padding: 10,
-                          background: 'var(--cth-paper-100)',
-                          boxShadow: 'inset 0 0 0 1px var(--cth-line-2)'
-                        }}>
-                          <span style={sectionHeadFlush}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <span style={fieldLabel}>
                             {t('settings.voice.openaiKey')}
                           </span>
                           <span style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-700)' }}>
@@ -2315,7 +2345,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             <option value="600000">{t('settings.voice.10m')}</option>
                             <option value="0">{t('settings.voice.never')}</option>
                           </select>
-                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                          <span style={hint}>
                             {t('settings.voice.idleDisconnectDesc')}
                           </span>
                         </label>
@@ -2343,7 +2373,15 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         <p style={{ margin: 0, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink)' }}>
                           {t('settings.general.dangerDesc')}
                         </p>
-                        <div style={{ marginTop: 6 }}>
+                        <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          <button type="button" onClick={() => void askResetMemory()} style={{
+                            padding: '8px 16px', border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
+                            background: 'var(--cth-card)', color: 'var(--cth-coral-text)',
+                            boxShadow: 'inset 0 0 0 1.5px var(--cth-coral-strong)',
+                            fontFamily: 'var(--cth-font-ui)', fontSize: 13, fontWeight: 700
+                          }}>
+                            {t('settings.general.resetMemory')}
+                          </button>
                           <button type="button" onClick={() => setConfirming(true)} style={{
                             padding: '8px 16px', border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
                             background: 'var(--cth-coral-strong)', color: 'var(--cth-on-coral)',

@@ -95,13 +95,24 @@ export function missionsFor(missions: ScheduledMission[], agentId: string, godId
   return missions.filter((m) => ownerOf(m, godId) === agentId);
 }
 
+/** Jobs by when they run next: the soonest first, then running jobs with no
+ *  next time yet, then paused ones (docs/designs/edit-agent-scheduled-jobs.md,
+ *  SJ5). Ties keep stored order. */
+export function orderedJobs(missions: ScheduledMission[], now: number): ScheduledMission[] {
+  const key = (m: ScheduledMission): [number, number] => [m.enabled ? 0 : 1, nextRunAt(m, now) ?? Infinity];
+  return missions
+    .map((m, i) => ({ m, i, k: key(m) }))
+    .sort((a, b) => a.k[0] - b.k[0] || (a.k[1] === b.k[1] ? 0 : a.k[1] - b.k[1]) || a.i - b.i)
+    .map((x) => x.m);
+}
+
 /** A job that sends its agent to the mailbox: the name or focus speaks of the
  *  inbox, or of checking, reading or sorting email. */
 const MAIL_CHECK = /\b(?:inbox|mailbox(?:es)?)\b|\b(?:check|read|triage|sort|clear)(?:\s+(?!and\b|then\b|to\b)\w+){0,2}\s+e-?mails?\b/i;
 
 /** True when `m` is a running job that looks in the mailbox and its agent has
- *  no way to: its email is off and it holds no Gmail connector that is on
- *  (`gmail`). The hook refuses the mail call, so each run is a wasted turn
+ *  no way to: no mailbox it can use (`email`: email off, or its mailbox removed
+ *  in Settings) and no Gmail connector that is on (`gmail`). The hook refuses the mail call, so each run is a wasted turn
  *  (docs/designs/multi-mailbox.md); the schedules say so beside the job. */
 export function cannotCheckEmail(m: ScheduledMission, email: { enabled: boolean } | undefined, gmail = false): boolean {
   if (!m.enabled || (m.kind ?? 'dispatch') !== 'dispatch' || email?.enabled || gmail) return false;
