@@ -66,6 +66,9 @@ moving, and brings you only the decisions that need you.
 ### 3. A mailbox for every job
 - Connect as many mailboxes as your business runs on: Gmail, Google Workspace, iCloud, Yahoo, Zoho
   or any IMAP mailbox. Passwords stay encrypted on your computer.
+- A mail server that isn't encrypted from the start must switch to encryption before the app sends
+  the password. One that can't is refused, and the mailbox says so in plain words, with the
+  encrypted port to use instead.
 - Give each team member the one mailbox that fits its job: the Admin watches the CEO's inbox,
   Support answers support@, Sales follows up from sales@. One team member per mailbox.
 - Choose Can send, Send on approval or Draft only for each one. Send on approval puts each email on Needs you to edit and approve; the team member then sends exactly what you approved. Can send never puts an email on Needs you, and moving a team member to it hands back the emails still waiting there, unless it sends only from a mailbox nobody on the team watches right now. A team member can't reach a mailbox you didn't give it.
@@ -168,6 +171,10 @@ moving, and brings you only the decisions that need you.
   and turn on Compare to see each figure next to the same days of the day, week or month
   before. It fills in the weeks before it started from what the office already keeps, so it
   never starts at zero.
+- Pulse says how long the office ran in the period and how much of that you were away. Time the
+  computer slept or the office was stopped (plan limit, no credit, sign in failed) doesn't count.
+- Costs are worked out at each Claude model's own list price: each Opus, Sonnet and Haiku has its
+  own.
 
 ### 8. Built for small business owners
 - Setup by kind of business: restaurant and food, retail, professional services, home services,

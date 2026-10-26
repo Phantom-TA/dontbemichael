@@ -68,6 +68,9 @@ src/
     breaker.ts / control.ts  cost/runaway circuit breaker (steer/constrain/stop) + HITL gate / steer / stop
     memoryTidy.ts            the background tidy up of each agent's memory index: a cheap Haiku call turns the notes in
                              memory/inbox.md into itemised changes, applied by shared/memoryIndex.ts (HIVE.md section 7)
+    ownerNotes.ts            the owner's own notes for members' memory (Ask me answers, email decisions, words to Michael
+                             in the dock), kept in harness.db where no member can write, each with its Why; the tidy up
+                             files them as the owner's
     db.ts                    SQLite durable store (window bounds + history) + durable cost ledger + Pulse's
                              telemetry tables (telemetry_events and its rollups)
     telemetryStore.ts        Pulse's isolated store (docs/designs/team-performance.md): only the main process writes
@@ -77,6 +80,9 @@ src/
                              save, only from the owner's click; pulseBackfill.ts fills the weeks before Pulse began
                              from the office log, members' sessions and the cost ledger; checkedBackfill.ts puts
                              together, once, the privacy check lists for checks made before the lists kept words
+    runCompare.ts            the owner's "Went wrong" on a scheduled job's last run: picks an earlier run that went well,
+                             compares both conversations in one hidden call and keeps the suggestion for Pulse in
+                             harness.db (the pure parts are in shared/runCompare.ts)
     teamMemory.ts            the dates and sources of each member's memory notes, for Pulse's Learning tiles
     claudeAccount.ts         which Claude plan the owner's account is on (plan fields of Claude Code's account record only)
     github.ts                GitHub issue + CI run ingestion via the gh CLI
@@ -134,7 +140,8 @@ src/
                              system's own engine, no bundled Tesseract)
     claudeCliVersion.ts      installed Claude Code version, for the Opus 5.5 / Opus 5 model floor and the
                              Claude Code update notice (index.ts records each agent's started version)
-    hireCheck.ts             the hire wizard's distinct job check (hidden Claude call, rules as fallback)
+    hireCheck.ts             the distinct job check (hidden Claude call, rules as fallback): the hire wizard's, and in
+                             change mode Edit agent's, where handoffs between two members are not an overlap
     workStyleConvert.ts      turns a plain work style into an agent's instructions and back, and writes the
                              hire wizard's "Suggest me" draft
     transcriptText.ts        reads a hidden Claude call's answer from its own session transcript
@@ -258,6 +265,8 @@ src/
                              shape (branding/DESIGN.md 7.6b; the watch is main/silentWatch.ts)
     claudePlan.ts            the owner's Claude plan and its monthly price, for Pulse's costs on a plan
     costFold.ts              the cost running total rule the lifetime ledger and Pulse share
+    runCompare.ts            comparing a run that went wrong with one that went well: the pick, the transcript slices,
+                             the prompt and the suggestion's states (main/runCompare.ts runs it)
   preload/                   contextBridge → typed window.cth API
   renderer/src/
     App.tsx                  top-level layout + wiring
@@ -269,7 +278,8 @@ src/
     AskMeTab,                the Ask me cards on the Needs you board, agents' schedule requests included, and
                              Report cards (cleared with Got it); AskAnswerFields draws an ask's options and
                              several questions
-    pulse/PulseView,         Pulse, the office's performance and cost view (branding/DESIGN.md 7.27)
+    pulse/PulseView,         Pulse, the office's performance and cost view (branding/DESIGN.md 7.27); pulse/RunSuggestions
+                             draws the run suggestion cards at the top of its Recommendations
     FoundationCard,          a Company foundations question on Needs you (branding/DESIGN.md 7.27a)
     KnowledgeDocList,        Settings > Memory & Knowledge: the company knowledge documents, each with Open
     GetMichaelReady,         setup's Ready step: the Claude Code and Claude account rows, and Use an API key;
@@ -294,7 +304,8 @@ src/
     triggers/WhenLines,      the several "when" lines one schedule can have
     ScheduleRequestCards,    Ask me cards for schedule requests Michael passed to the owner (Approve / Decline)
     WorkStyleUpdateCards,    Ask me cards offering a newer default job description (Use the new one / Keep mine)
-    ScheduledJobs,           an agent's scheduled jobs and their focus areas, shown with its Work style
+    ScheduledJobs,           an agent's scheduled jobs and their focus areas, shown with its Work style, each with its
+                             last run and Went wrong (branding/DESIGN.md 7.26)
     AddAgentModal,           the hire wizard (Who, Job, Role, Finalize); EditAgentModal edits the plain work style
                              and holds the Danger zone's Delete (shell/deleteTeamMember.ts); store/leaveGuard.ts
                              asks before any way out of Edit loses unsaved changes
