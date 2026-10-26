@@ -128,28 +128,65 @@ test('Gemini CLI spawn delivers full protocol via -i and re-injects on compact/r
   assert.ok(flagIndex !== -1, 'Gemini args must contain -i');
   assert.ok(injection.args[flagIndex + 1].includes('HOUSE RULES'), '-i prompt must contain the full protocol');
 
-  // Re-injected on SessionStart compact
+  // 1. Compaction: Gemini sends PreCompress (which ignores replies), then BeforeAgent
   const server = new HookServer(hive, () => null, () => ({}), undefined, undefined);
-  const compactRes = server.handle({
+  const compressRes = server.handle({
     agent_id: 'support-1',
-    hook_event_name: 'SessionStart',
-    source: 'compact',
+    hook_event_name: 'PreCompress',
     session_id: 'sess-gemini'
   });
-  const compactContext = compactRes?.hookSpecificOutput?.additionalContext;
-  assert.ok(compactContext && compactContext.includes('HOUSE RULES'),
-    'Gemini must re-inject protocol on SessionStart compact');
+  assert.deepEqual(compressRes, {}, 'PreCompress output is ignored by Gemini CLI');
 
-  // Re-injected on SessionStart resume
-  const resumeRes = server.handle({
+  // Next prompt (BeforeAgent) receives the re-injected protocol
+  const promptRes = server.handle({
+    agent_id: 'support-1',
+    hook_event_name: 'BeforeAgent',
+    session_id: 'sess-gemini'
+  });
+  const promptContext = promptRes?.hookSpecificOutput?.additionalContext;
+  assert.ok(promptContext && promptContext.includes('HOUSE RULES'),
+    'Gemini must re-inject protocol on BeforeAgent following PreCompress');
+
+  // Subsequent prompt does NOT repeat the protocol (only once)
+  const secondPromptRes = server.handle({
+    agent_id: 'support-1',
+    hook_event_name: 'BeforeAgent',
+    session_id: 'sess-gemini'
+  });
+  const secondContext = secondPromptRes?.hookSpecificOutput?.additionalContext ?? '';
+  assert.ok(!secondContext.includes('HOUSE RULES'),
+    'Gemini must not repeat protocol on subsequent prompts');
+
+  // 2. Resume: Gemini sends SessionStart with source: 'resume', then BeforeAgent
+  const resumeStartRes = server.handle({
     agent_id: 'support-1',
     hook_event_name: 'SessionStart',
     source: 'resume',
-    session_id: 'sess-gemini'
+    session_id: 'sess-gemini-2'
   });
-  const resumeContext = resumeRes?.hookSpecificOutput?.additionalContext;
+  const resumeStartContext = resumeStartRes?.hookSpecificOutput?.additionalContext ?? '';
+  assert.ok(!resumeStartContext.includes('HOUSE RULES'),
+    'Gemini SessionStart output is ignored by Gemini CLI so protocol is not sent on SessionStart');
+
+  // Next prompt (BeforeAgent) following resume receives the re-injected protocol
+  const resumePromptRes = server.handle({
+    agent_id: 'support-1',
+    hook_event_name: 'BeforeAgent',
+    session_id: 'sess-gemini-2'
+  });
+  const resumeContext = resumePromptRes?.hookSpecificOutput?.additionalContext;
   assert.ok(resumeContext && resumeContext.includes('HOUSE RULES'),
-    'Gemini must re-inject protocol on SessionStart resume');
+    'Gemini must re-inject protocol on BeforeAgent following SessionStart resume');
+
+  // Subsequent prompt does NOT repeat
+  const afterResumePromptRes = server.handle({
+    agent_id: 'support-1',
+    hook_event_name: 'BeforeAgent',
+    session_id: 'sess-gemini-2'
+  });
+  const afterResumeContext = afterResumePromptRes?.hookSpecificOutput?.additionalContext ?? '';
+  assert.ok(!afterResumeContext.includes('HOUSE RULES'),
+    'Gemini must not repeat protocol on subsequent prompts after resume');
 });
 
 test('Engine with no system channel re-injects protocol on SessionStart compact and resume', async (t) => {

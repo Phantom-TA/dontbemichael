@@ -5317,7 +5317,8 @@ export class HiveManager {
           BeforeAgent: [hook('before-agent')],
           BeforeTool: [hook('before-tool', '.*')],
           AfterTool: [hook('after-tool', '.*')],
-          AfterAgent: [hook('after-agent')]
+          AfterAgent: [hook('after-agent')],
+          PreCompress: [hook('pre-compress')]
         },
         ...(writableDirs.length ? { context: { includeDirectories: writableDirs } } : {})
       };
@@ -6997,7 +6998,8 @@ process.stdin.on('end', () => {
     BeforeAgent: 'UserPromptSubmit',
     BeforeTool: 'PreToolUse',
     AfterTool: 'PostToolUse',
-    AfterAgent: 'Stop'
+    AfterAgent: 'Stop',
+    PreCompress: 'PreCompress'
   };
   const payload = {
     ...gemini,

@@ -198,6 +198,10 @@ export class HookServer {
   private ownerRequestsShown = new Map<string, { sessionId: string | null; any: boolean }>();
   private stuckCardsShown = new Map<string, { sessionId: string | null; any: boolean }>();
   private ownerQuestionsShown = new Map<string, { sessionId: string | null; any: boolean }>();
+  /** Agents flagged to have their protocol re-injected on their next UserPromptSubmit
+   *  (used for Gemini CLI, which fires PreCompress / resume but drops hook output
+   *  until BeforeAgent / UserPromptSubmit, #298). */
+  private pendingProtocolReInjection = new Set<string>();
   /** The idle toast line shown last, so the next one differs, and when. */
   private lastIdleLine: string | null = null;
   private lastIdleAt: number | null = null;
@@ -493,7 +497,8 @@ export class HookServer {
 
   private handle(p: HookPayload): unknown {
     const agentId = p.agent_id ?? undefined;
-    const event = p.hook_event_name ?? 'Unknown';
+    const rawEvent = p.hook_event_name ?? 'Unknown';
+    const event = rawEvent === 'BeforeAgent' ? 'UserPromptSubmit' : rawEvent;
     // A Task subagent's calls are checked as its team member (every gate below),
     // but its own finish, transcript and session are not the agent's: a
     // subagent stopping must not mark the agent idle or replace its transcript.
@@ -618,14 +623,27 @@ export class HookServer {
     // token burst can't trip the Δoutput arms; PostCompact — or any SessionStart,
     // since a fresh session makes in-flight compaction state moot — closes it
     // down to the trailing grace (a no-op when nothing was compacting).
-    if (event === 'PreCompact' && agentId) this.breaker?.recordCompactStart(agentId);
+    if ((event === 'PreCompact' || event === 'PreCompress') && agentId) this.breaker?.recordCompactStart(agentId);
     // Logged so compaction can be measured (tools/agent-metrics.cjs).
-    if (event === 'PreCompact' && agentId) {
+    if ((event === 'PreCompact' || event === 'PreCompress') && agentId) {
       const trigger = (p as { trigger?: unknown }).trigger;
       try { this.hive.appendLog({ kind: 'compact', agentId, trigger: typeof trigger === 'string' ? trigger : 'unknown' }); } catch { /* best-effort */ }
     }
     if ((event === 'PostCompact' || event === 'SessionStart') && agentId) {
       this.breaker?.recordCompactEnd(agentId);
+    }
+
+    // Gemini PreCompress: Gemini fires PreCompress before compaction but ignores
+    // its reply. Mark the agent so the protocol is re-injected on its next
+    // prompt (BeforeAgent / UserPromptSubmit) instead (#298).
+    if (event === 'PreCompress' && agentId) {
+      const reg = this.hive.registry?.();
+      const meta = reg?.agents[agentId];
+      const provider = meta?.provider ?? 'claude';
+      const preset = providerPreset(provider);
+      if (preset.instructionsDelivery === 're-injected on compact') {
+        this.pendingProtocolReInjection.add(agentId);
+      }
     }
 
     if ((event === 'Stop' || event === 'SubagentStop') && agentId) {
@@ -1026,8 +1044,21 @@ export class HookServer {
       const provider = meta?.provider ?? 'claude';
       const preset = providerPreset(provider);
       if (preset.instructionsDelivery === 're-injected on compact') {
-        reInjectedProtocol = this.hive.injectedPromptFor?.(agentId) ?? null;
+        if (provider === 'gemini') {
+          // Gemini CLI ignores SessionStart output; mark the agent so its protocol
+          // is injected on the following BeforeAgent / UserPromptSubmit (#298).
+          if (p.source === 'resume' || p.source === 'compact') {
+            this.pendingProtocolReInjection.add(agentId);
+          }
+        } else {
+          reInjectedProtocol = this.hive.injectedPromptFor?.(agentId) ?? null;
+        }
       }
+    }
+
+    if (event === 'UserPromptSubmit' && agentId && this.pendingProtocolReInjection.has(agentId)) {
+      this.pendingProtocolReInjection.delete(agentId);
+      reInjectedProtocol = this.hive.injectedPromptFor?.(agentId) ?? null;
     }
 
     if (steer || roster || goal || knowledgeNote || profile || foundations || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards || reInjectedProtocol) {
