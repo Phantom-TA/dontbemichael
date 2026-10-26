@@ -157,6 +157,18 @@ test('file tabs: one per file, at most five, closing the selected one goes left 
   assert.equal(c.activeFileTab, 'f6', 'closing another tab keeps the selection');
 });
 
+test('closing a tab in the background keeps you in the file you are reading', () => {
+  const tab = (id, at) => ({ id, title: id, kind: 'markdown', who: {}, openedAt: at });
+  let s = openTab({ fileTabs: [], activeFileTab: null }, tab('/office/q3-report.md', 1));
+  s = openTab(s, tab('/office/notes.md', 2));
+  const c = closeTab(s, '/office/q3-report.md');
+  assert.deepEqual(c.fileTabs.map((f) => f.id), ['/office/notes.md']);
+  assert.equal(c.activeFileTab, '/office/notes.md');
+  // The store turns a null select into the last fixed view, so this keeps the file view.
+  assert.equal(c.select, 'file');
+  assert.match(read('src/renderer/src/store/store.ts'), /s\.floorView !== 'file' \? s\.floorView : r\.select \?\? s\.lastFixedView/);
+});
+
 test('CSV and TSV become a table; broken quoting falls back to text (E3)', () => {
   // Value: protects=quoted commas stay in one cell; fails_when=the parser splits inside quotes; why_new=no CSV parser existed; seam=none
   assert.deepEqual(parseDelimited('name,note\n"Acme, Inc","said ""hi"""\r\nB,\n', ','), [['name', 'note'], ['Acme, Inc', 'said "hi"'], ['B', '']]);

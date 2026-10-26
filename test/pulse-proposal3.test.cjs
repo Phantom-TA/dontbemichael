@@ -45,6 +45,10 @@ test('the held list reads its rows, drops lines that are not rows, and tidies li
   assert.deepEqual(H.parseHeld(JSON.stringify({ at: 1, way: 'in', from: 'human', to: 'research', toName: 'Pete', subject: 's', opening: 'o', why: 'failed', told: 'michael' })),
     { at: 1, way: 'in', from: 'human', fromName: null, to: 'research', toName: 'Pete', subject: 's', opening: 'o', why: 'failed', told: 'michael' });
   assert.equal(H.tidy('Say \u201chi\u201d\nnow', 80), 'Say hi now');
+  assert.equal(H.tidy('Can\u2019t find Maria\u2019s price list', 80), "Can't find Maria's price list", 'an apostrophe is no quote mark');
+  assert.equal(H.tidy('He said \u2018ship it\u2019 today', 80), 'He said ship it today');
+  const cut = H.tidy('a'.repeat(79) + '\u{1F95B} milk', 80);
+  assert.equal(cut, 'a'.repeat(79) + '\u{1F95B}', 'an emoji at the cut stays whole');
   const why = (v) => H.heldWhy(v, R.REFUSAL_CHECK_FAILED, R.REFUSAL_TOO_LONG);
   assert.deepEqual(['length', 'no-answer', 'unreadable', 'settings'].map((by) => why({ reason: 'x', by })), ['too-long', 'no-answer', 'unreadable', 'settings']);
   assert.deepEqual(['model', 'pattern', 'recheck'].map((by) => why({ reason: 'x', by })), [null, null, null]);

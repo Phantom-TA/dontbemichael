@@ -32,6 +32,12 @@ export function parseStarterSchedule(schedule: string, hours: StarterHours): Ret
  * The schedules a hire gets from its pack card: each starter job for `defId`,
  * owned by `to` (the new team member's id), skipping a job it already has by
  * the same name. Created as the owner's, since the owner chose the hire.
+ *
+ * A job a teammate already runs by that name comes switched off. That is a
+ * second hire into the same job (Erin as a copy of Pam, hire-redesign R2): the
+ * office wants the job done once, and her mailbox and schedules are set on
+ * Capabilities, where she opens (E4). A closed teammate's jobs are paused, so
+ * someone hired in their place gets the jobs running.
  */
 export function starterMissionsFor(
   jobs: StarterJob[] | undefined,
@@ -42,7 +48,9 @@ export function starterMissionsFor(
   godId: string,
   newId: (i: number) => string
 ): ScheduledMission[] {
-  const have = new Set(missionsFor(existing, to, godId).map((m) => m.label.trim().toLowerCase()));
+  const mine = missionsFor(existing, to, godId);
+  const have = new Set(mine.map((m) => m.label.trim().toLowerCase()));
+  const running = new Set(existing.filter((m) => m.enabled && !mine.includes(m)).map((m) => m.label.trim().toLowerCase()));
   const out: ScheduledMission[] = [];
   for (const job of jobs ?? []) {
     if (job.agentId !== defId || have.has(job.title.trim().toLowerCase())) continue;
@@ -58,7 +66,7 @@ export function starterMissionsFor(
       to,
       body: '',
       focus,
-      enabled: true,
+      enabled: !running.has(job.title.trim().toLowerCase()),
       createdBy: OWNER
     });
     have.add(job.title.trim().toLowerCase());

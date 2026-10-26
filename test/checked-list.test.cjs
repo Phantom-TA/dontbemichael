@@ -310,6 +310,18 @@ test('a long text shows its changes with some text around them, and hidden chara
   assert.deepEqual(C.withHidden('a​​b﻿'), ['a', { hidden: 2 }, 'b', { hidden: 1 }]);
 });
 
+test('a cut at the cap or around a change never keeps half an emoji', () => {
+  // Value: protects=the list never shows a broken character; fails_when=a cut lands between the two halves of an emoji and keeps one; why_new=bug found by repro (an emoji on the 4,000th or 80th character); seam=none
+  const half = (s) => /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(s);
+  const k = C.keepText('a'.repeat(3999) + '\u{1F600} rest');
+  assert.deepEqual(k, { text: 'a'.repeat(3999), cut: true });
+  const before = 'x'.repeat(100) + '\u{1F600}' + 'y'.repeat(79);
+  const after = 'z'.repeat(79) + '\u{1F600}' + 'w'.repeat(100);
+  const ctx = C.changesInContext([{ op: 'same', text: before }, { op: 'del', text: 'BAD ' }, { op: 'same', text: after }]);
+  assert.deepEqual(ctx, [null, { op: 'same', text: 'y'.repeat(79) }, { op: 'del', text: 'BAD ' }, { op: 'same', text: 'z'.repeat(79) }, null]);
+  assert.ok(ctx.filter(Boolean).every((p) => !half(p.text)));
+});
+
 test('both tiles open their list, the lists follow the approved design, and every string is in three languages', () => {
   // Value: protects=design DD2 to DD15 at the seams the source shows; fails_when=a tile loses its link, the held list loses its error state, or a locale misses a key or uses a dash; why_new=new view; seam=source pins; no_claim=pixel layout (live check against checked-lists-v2.html)
   const view = read('src/renderer/src/components/pulse/PulseView.tsx');
