@@ -162,10 +162,12 @@ test('the palace keeps company knowledge only: any other section clears it once'
 
 test('an office under a linked folder: a link in a member\'s own folder to a teammate\'s is refused (ship review)', posix, async (t) => {
   // Value: protects=the wall holds when the app's home path has a linked part; fails_when=memberWallDecision judges the real target only against the hive root as named; why_new=security review 2026-10-17; seam=HookServer.handle
-  const real = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-private-real-')));
-  const link = path.join(fs.realpathSync.native(os.tmpdir()), `md-private-link-${process.pid}-${Date.now()}`);
+  const fixture = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-private-fixture-')));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const real = path.join(fixture, 'real');
+  const link = path.join(fixture, 'link');
+  fs.mkdirSync(real);
   fs.symlinkSync(real, link);
-  t.after(() => { fs.rmSync(link, { force: true }); fs.rmSync(real, { recursive: true, force: true }); });
   const hive = new HiveManager(() => link);
   await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: link, isGod: true });
   await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: link });

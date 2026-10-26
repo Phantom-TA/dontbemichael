@@ -7,7 +7,7 @@ It is generated from the pull requests themselves rather than from commit metada
 dropped because their git email does not happen to match their GitHub account. It is regenerated
 from merged pull requests, so you appear without having to ask.
 
-**126 people** have contributed so far.
+**153 people** have contributed so far.
 
 <a href="https://github.com/agentvivekkumar/dontbemichael/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=agentvivekkumar/dontbemichael" alt="Contributor avatars">
@@ -22,8 +22,8 @@ requests, and a pull request always has a real account behind it.
 
 | Contributor | Contributions | First | Most recent |
 |---|---:|---|---|
-| [@agentvivekkumar](https://github.com/agentvivekkumar) | 53 | 2026-09-15 | 2026-10-19 |
-| [@amartya1523](https://github.com/amartya1523) | 36 | 2026-10-10 | 2026-10-18 |
+| [@amartya1523](https://github.com/amartya1523) | 66 | 2026-10-10 | 2026-10-26 |
+| [@agentvivekkumar](https://github.com/agentvivekkumar) | 65 | 2026-09-15 | 2026-10-24 |
 | [@SantoshMalana](https://github.com/SantoshMalana) | 9 | 2026-10-12 | 2026-10-13 |
 | [@dhruvpuri](https://github.com/dhruvpuri) | 7 | 2026-10-10 | 2026-10-10 |
 | [@Kartikey1306](https://github.com/Kartikey1306) | 6 | 2026-10-12 | 2026-10-12 |
@@ -31,15 +31,20 @@ requests, and a pull request always has a real account behind it.
 | [@adhi2801](https://github.com/adhi2801) | 3 | 2026-10-12 | 2026-10-12 |
 | [@ketki-mude](https://github.com/ketki-mude) | 3 | 2026-10-13 | 2026-10-13 |
 | [@kaustumbh7](https://github.com/kaustumbh7) | 3 | 2026-10-14 | 2026-10-14 |
+| [@Johanofcourse](https://github.com/Johanofcourse) | 3 | 2026-10-17 | 2026-10-21 |
 | [@mohuxaiphasalik](https://github.com/mohuxaiphasalik) | 3 | 2026-10-18 | 2026-10-18 |
+| [@Manibharadwaj](https://github.com/Manibharadwaj) | 3 | 2026-10-21 | 2026-10-21 |
 | [@init-pushu](https://github.com/init-pushu) | 2 | 2026-10-10 | 2026-10-12 |
 | [@shrinivas-sn](https://github.com/shrinivas-sn) | 2 | 2026-10-11 | 2026-10-11 |
+| [@coolman-97](https://github.com/coolman-97) | 2 | 2026-10-12 | 2026-10-21 |
 | [@Shreyas652](https://github.com/Shreyas652) | 2 | 2026-10-13 | 2026-10-14 |
+| [@Arrrttyyyys](https://github.com/Arrrttyyyys) | 2 | 2026-10-16 | 2026-10-25 |
 | [@manognyachindam-14](https://github.com/manognyachindam-14) | 2 | 2026-10-16 | 2026-10-17 |
 | [@Yash-Nimkar0](https://github.com/Yash-Nimkar0) | 2 | 2026-10-17 | 2026-10-18 |
 | [@ThanishaDewangan](https://github.com/ThanishaDewangan) | 2 | 2026-10-17 | 2026-10-17 |
 | [@Shamsher2000](https://github.com/Shamsher2000) | 2 | 2026-10-18 | 2026-10-18 |
 | [@Utsavd7](https://github.com/Utsavd7) | 2 | 2026-10-18 | 2026-10-18 |
+| [@lukmanj19](https://github.com/lukmanj19) | 2 | 2026-10-21 | 2026-10-21 |
 | [@josephzhang0602](https://github.com/josephzhang0602) | 1 | 2026-10-10 | 2026-10-10 |
 | [@rajukancharla21](https://github.com/rajukancharla21) † | 1 | 2026-10-10 | 2026-10-10 |
 | [@Junaid522](https://github.com/Junaid522) | 1 | 2026-10-10 | 2026-10-10 |
@@ -74,7 +79,6 @@ requests, and a pull request always has a real account behind it.
 | [@din-tezekbayev](https://github.com/din-tezekbayev) | 1 | 2026-10-12 | 2026-10-12 |
 | [@mlnu5-markaashish](https://github.com/mlnu5-markaashish) | 1 | 2026-10-12 | 2026-10-12 |
 | [@Ayash3690](https://github.com/Ayash3690) | 1 | 2026-10-12 | 2026-10-12 |
-| [@coolman-97](https://github.com/coolman-97) | 1 | 2026-10-12 | 2026-10-12 |
 | [@YRoyal-Inc](https://github.com/YRoyal-Inc) | 1 | 2026-10-12 | 2026-10-12 |
 | [@ncodekeng](https://github.com/ncodekeng) | 1 | 2026-10-12 | 2026-10-12 |
 | [@aria-sharifnia](https://github.com/aria-sharifnia) | 1 | 2026-10-12 | 2026-10-12 |
@@ -116,7 +120,6 @@ requests, and a pull request always has a real account behind it.
 | [@Sahil8383](https://github.com/Sahil8383) | 1 | 2026-10-14 | 2026-10-14 |
 | [@iNoumanMalik](https://github.com/iNoumanMalik) | 1 | 2026-10-14 | 2026-10-14 |
 | [@ashishdabhi019](https://github.com/ashishdabhi019) | 1 | 2026-10-16 | 2026-10-16 |
-| [@Arrrttyyyys](https://github.com/Arrrttyyyys) | 1 | 2026-10-16 | 2026-10-16 |
 | [@Meltcus](https://github.com/Meltcus) | 1 | 2026-10-16 | 2026-10-16 |
 | [@Suryanshu185](https://github.com/Suryanshu185) | 1 | 2026-10-16 | 2026-10-16 |
 | [@AminMahmodi81](https://github.com/AminMahmodi81) | 1 | 2026-10-16 | 2026-10-16 |
@@ -124,7 +127,6 @@ requests, and a pull request always has a real account behind it.
 | [@kimtour](https://github.com/kimtour) | 1 | 2026-10-17 | 2026-10-17 |
 | [@Olamilekan2580](https://github.com/Olamilekan2580) | 1 | 2026-10-17 | 2026-10-17 |
 | [@klaxman0554-lab](https://github.com/klaxman0554-lab) | 1 | 2026-10-17 | 2026-10-17 |
-| [@Johanofcourse](https://github.com/Johanofcourse) | 1 | 2026-10-17 | 2026-10-17 |
 | [@nightrdr](https://github.com/nightrdr) | 1 | 2026-10-17 | 2026-10-17 |
 | [@kksrini89](https://github.com/kksrini89) | 1 | 2026-10-17 | 2026-10-17 |
 | [@fayzan-cbr](https://github.com/fayzan-cbr) | 1 | 2026-10-17 | 2026-10-17 |
@@ -148,8 +150,33 @@ requests, and a pull request always has a real account behind it.
 | [@rekkun8](https://github.com/rekkun8) | 1 | 2026-10-19 | 2026-10-19 |
 | [@MickyG03](https://github.com/MickyG03) | 1 | 2026-10-19 | 2026-10-19 |
 | [@umairdevlife-jpg](https://github.com/umairdevlife-jpg) | 1 | 2026-10-19 | 2026-10-19 |
+| [@MriBoyd](https://github.com/MriBoyd) | 1 | 2026-10-21 | 2026-10-21 |
+| [@Aparna-analyst](https://github.com/Aparna-analyst) | 1 | 2026-10-21 | 2026-10-21 |
+| [@sonawanemithilesh-wq](https://github.com/sonawanemithilesh-wq) | 1 | 2026-10-21 | 2026-10-21 |
+| [@adixzenix](https://github.com/adixzenix) | 1 | 2026-10-21 | 2026-10-21 |
+| [@fazalgonzer](https://github.com/fazalgonzer) | 1 | 2026-10-21 | 2026-10-21 |
+| [@programme0419](https://github.com/programme0419) | 1 | 2026-10-21 | 2026-10-21 |
+| [@bdouglas5](https://github.com/bdouglas5) | 1 | 2026-10-21 | 2026-10-21 |
+| [@Kahan99](https://github.com/Kahan99) | 1 | 2026-10-21 | 2026-10-21 |
+| [@PrasunKundu](https://github.com/PrasunKundu) | 1 | 2026-10-21 | 2026-10-21 |
+| [@Yashvardhansingh2](https://github.com/Yashvardhansingh2) | 1 | 2026-10-21 | 2026-10-21 |
+| [@yash-not-bot22](https://github.com/yash-not-bot22) | 1 | 2026-10-21 | 2026-10-21 |
+| [@dalva-code](https://github.com/dalva-code) | 1 | 2026-10-21 | 2026-10-21 |
+| [@abhishek09827](https://github.com/abhishek09827) | 1 | 2026-10-21 | 2026-10-21 |
+| [@Abdallahhhassan](https://github.com/Abdallahhhassan) | 1 | 2026-10-21 | 2026-10-21 |
+| [@jcsabilf-netizen](https://github.com/jcsabilf-netizen) | 1 | 2026-10-21 | 2026-10-21 |
+| [@cloudDev1017](https://github.com/cloudDev1017) | 1 | 2026-10-21 | 2026-10-21 |
+| [@thisisaman408](https://github.com/thisisaman408) | 1 | 2026-10-21 | 2026-10-21 |
+| [@pick-cee](https://github.com/pick-cee) | 1 | 2026-10-21 | 2026-10-21 |
+| [@juni2003](https://github.com/juni2003) | 1 | 2026-10-21 | 2026-10-21 |
+| [@0DevDutt0](https://github.com/0DevDutt0) | 1 | 2026-10-21 | 2026-10-21 |
+| [@aofakore](https://github.com/aofakore) | 1 | 2026-10-21 | 2026-10-21 |
+| [@Rushabh-Beep-ML](https://github.com/Rushabh-Beep-ML) | 1 | 2026-10-21 | 2026-10-21 |
+| [@akshaysultane26-sketch](https://github.com/akshaysultane26-sketch) | 1 | 2026-10-21 | 2026-10-21 |
+| [@sanjayb23](https://github.com/sanjayb23) | 1 | 2026-10-21 | 2026-10-21 |
+| [@tuduun](https://github.com/tuduun) | 1 | 2026-10-24 | 2026-10-24 |
 
-_251 pull requests from 126 people._
+_327 pull requests from 153 people._
 
 ## † Contributions that never got the merged badge
 

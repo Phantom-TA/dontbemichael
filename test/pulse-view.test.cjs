@@ -30,18 +30,47 @@ test('Pulse is a fixed view tab between Tasks and Who talks to whom, and takes t
   assert.match(read('src/renderer/src/store/store.ts'), /if \(view === 'office' \|\| view === 'file'\) return \{\};/);
 });
 
-test('sections run recommendations, what got done, kept safe, learning, the office row, then team at work', () => {
-  // Value: protects=D2 and D3 order as the owner set it on 2026-10-15 (proposal 3: Kept safe and Learning in the top area, Team at work in place of the Team tiles, "Recommendations" title), the saved card only once something was applied, and the start date with its reason; fails_when=a section moves, a table returns, the saved card shows with nothing in it, or the start date loses its reason; why_new=owner ask 2026-10-15; seam=none; no_claim=none beyond protects
+test('sections run recommendations, what got done (one grid, then the quiet chips), then team at work', () => {
+  // Value: protects=D2 and D3 order (owner, 2026-10-15) as the smart view set it on 2026-10-19 (pulse-smart-view.md 1E: Kept safe and the row of four join the What got done grid, eng R3), the saved card only once something was applied, and the start date with its reason behind the (i); fails_when=a section moves, the grid stops reading pulseTiles, a table returns, the saved card shows with nothing in it, or the start date loses its reason; why_new=owner asks 2026-10-15 and 2026-10-19; seam=none; no_claim=pixel layout (live check)
   assert.equal(en.pulse.recommendations, 'Recommendations');
   assert.match(view, /const savedShown = view\.saved\.state !== 'none';/);
   assert.match(view, /\{savedShown && <div/);
   assert.match(en.pulse.adviceStarts, /\{\{day\}\}[\s\S]*two full weeks[\s\S]*\{\{since\}\}/);
   assert.doesNotMatch(en.pulse.adviceStarts, /record/i, 'business words, not records (owner, 2026-10-15)');
-  assert.match(view, /t\('pulse\.adviceStarts', \{ day: fmtDay\(view\.adviceFrom\), since: /);
-  const order = ['pulse.recommendations', 'pulse.whatGotDone', 'pulse.safe.title', 'pulse.learning.title', 'pulse.whereMoneyWent', 'pulse.work.title'].map((k) => view.indexOf(`t('${k}')`));
+  assert.match(view, /tip=\{noAdvice && view\.adviceFrom \? t\('pulse\.adviceStarts', \{ day: fmtDay\(view\.adviceFrom\), since: /, 'the why sits behind the header (i) (1D)');
+  assert.match(view, /view\.adviceFrom \? t\('pulse\.adviceFrom', \{ day: fmtDay\(view\.adviceFrom\) \}\) : t\('pulse\.nothingToChange'\)/, 'one short line before advice (1D)');
+  assert.equal(en.pulse.adviceFrom, 'Advice from {{day}}');
+  const order = ["t('pulse.recommendations')", "t('pulse.whatGotDone')", 'tilesNow.shown.map', "t('pulse.quiet.row')", "t('pulse.work.title')"].map((k) => view.indexOf(k, view.indexOf('body = (')));
   assert.ok(order.every((i) => i > 0), 'every section is there');
   assert.deepEqual([...order].sort((a, b) => a - b), order);
+  assert.match(view, /const tilesNow = pulseTiles\(\{ snapshot: s, keptSafe: safe, learning: cur \}, pv && pk \? \{ snapshot: pv, keptSafe: pk, learning: pl \} : null, opened\);/);
   assert.doesNotMatch(view, /<table/);
+});
+
+test('a quiet chip is a labelled button that opens its tile, moves focus to it and reads it out (5A, 2A, 6A)', () => {
+  // Value: protects=pulse-smart-view.md 5A, 2A and 6A; fails_when=a chip loses its label, opening stops adding the tile, focus or the polite line, or opened tiles survive a period change; why_new=new behavior; seam=none; no_claim=focus ring and VoiceOver output (live check)
+  assert.match(view, /<button key=\{id\} type="button" className=\{`cth-quiet-chip/);
+  assert.match(view, /aria-label=\{t\('pulse\.quiet\.chipAria', \{ name, period: periodWord \}\)\}/);
+  assert.match(view, /onClick=\{\(\) => \{ setOpened\(\(o\) => new Set\(o\)\.add\(id\)\); setFocusTile\(id\); setNotice\(t\('pulse\.quiet\.opened'/);
+  assert.match(view, /document\.getElementById\(`pulse-tile-\$\{focusTile\}`\)\?\.focus\(\);/);
+  assert.match(view, /id=\{`pulse-tile-\$\{id\}`\} tabIndex=\{-1\} role="group"/);
+  assert.match(view, /useEffect\(\(\) => \{ setOpened\(new Set\(\)\); setQuietRowsOpen\(false\); \}, \[period\]\);/);
+  assert.equal(en.pulse.quiet.chipAria, '{{name}}: 0 {{period}}. Show tile.');
+  const css = read('src/renderer/src/design/global.css');
+  assert.match(css, /\.cth-quiet-chip \{[\s\S]*?height: 26px;[\s\S]*?background: var\(--cth-neutral-soft\);/);
+  assert.match(css, /\.cth-tile-in \{ animation: cth-tile-in 150ms var\(--cth-ease\) both; \}/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.cth-tile-in \{ animation: none; \} \}/);
+});
+
+test('Team at work folds members with no working time into one disclosure row, and says when nobody worked (1C, 2B)', () => {
+  // Value: protects=pulse-smart-view.md 1C and 2B, eng D1; fails_when=idle members get full rows again, the fold loses aria-expanded, or an empty period goes back to one bare line; why_new=new behavior; seam=none; no_claim=pixel layout (live check)
+  assert.match(view, /const busyRows = rows\.filter\(\(m\) => m\.busyMs > 0\);\n    const idleRows = rows\.filter\(\(m\) => m\.busyMs <= 0\);/);
+  assert.match(view, /<button type="button" aria-expanded=\{quietRowsOpen\}/);
+  assert.match(view, /\{quietRowsOpen && idleRows\.map\(memberRow\)\}/);
+  assert.match(view, /t\(`pulse\.work\.nobody\.\$\{s\.period\}`\)/);
+  assert.equal(en.pulse.work.quietMore, '{{n}} more were quiet');
+  assert.equal(en.pulse.work.nobody.today, 'Nobody has worked yet today.');
+  assert.equal(en.pulse.work.none, undefined, 'the old bare line is gone');
 });
 
 test('suggestions are amber soft cards, applied ones green with Undo; no coral and no left stripe anywhere', () => {
@@ -64,7 +93,7 @@ test('line icons, never emoji; Team at work lists everyone on the team busiest f
   assert.doesNotMatch(view, /pulse\.learning\.headline|pulse\.learning\.trend/, 'no Learning header or headline (owner, 2026-10-15)');
   assert.doesNotMatch(view, /pulse\.work\.perHour|stripOf\(|pulse\.work\.knows/, 'no day strip, per hour or Knows column (owner, 2026-10-15)');
   assert.match(view, /onClick=\{\(\) => setDetail\(m\.agentId\)\}/);
-  for (const i of ['shield', 'search', 'pause', 'lock', 'book', 'help']) assert.match(view, new RegExp(`icon="${i}"`), i);
+  for (const i of ['shield', 'search', 'pause', 'lock', 'book']) assert.match(view, new RegExp(`icon="${i}"`), i);
 });
 
 test('Kept safe counts what was stopped apart from what could not be checked, and held work is the only amber tile', () => {
@@ -111,10 +140,16 @@ test('Apply, Not now, Undo and Try again are PixelButtons, so they get the hover
   // Value: protects=one button look across the app and Apply showing it is busy; fails_when=a Pulse action goes back to a hand styled button; why_new=TODOS.md "Pulse buttons use PixelButton"; seam=source pins; no_claim=pixel layout
   assert.match(view, /import \{ PixelButton \} from '\.\.\/PixelButton';/);
   assert.doesNotMatch(view, /\bbtn\(/, 'no hand styled button helper');
-  assert.match(view, /<PixelButton size="sm" disabled=\{busy === a\.id\} onClick=\{\(\) => \{ void apply\(a\); \}\}>/, 'Apply is the primary button and is disabled while busy');
+  assert.match(view, /<PixelButton size="sm" disabled=\{busy !== null && a\.change\.kind !== 'editor'\} onClick=\{\(\) => \{ void apply\(a\); \}\}>/, 'Apply is the primary button and is disabled while busy');
   for (const key of ['pulse.notNow', 'pulse.undo', 'pulse.tryAgain']) {
     assert.match(view, new RegExp(`<PixelButton variant="secondary" size="sm"[^\\n]*\\{t\\('${key.replace('.', '\\.')}'\\)\\}</PixelButton>`), key);
   }
+});
+
+test('while one suggestion is being applied, every other Apply shows it is off too', () => {
+  // Value: protects=an Apply never looks clickable when a click would do nothing; fails_when=only the busy card's Apply is disabled while apply() ignores every click; why_new=apply() returns early on any busy, but only the busy card showed it; seam=source pins; no_claim=pixel layout
+  assert.match(view, /if \(a\.change\.kind === 'editor'\) \{ openAgentProfile\(a\.agentId\); return; \}\n\s+if \(busy\) return;/, 'Open schedules only opens a panel, before the busy check, so it stays clickable');
+  assert.match(view, /disabled=\{busy !== null && a\.change\.kind !== 'editor'\}/, 'every other Apply is disabled while one runs');
 });
 
 test('every pulse string is in all three locales, and the plan ring shows only on a plan', () => {
@@ -155,7 +190,7 @@ test('Compare: the app\'s switch reading Compare, remembered, kept in place and 
   assert.match(ui, /aria-disabled=\{unavailable \|\| undefined\}/);
   assert.match(ui, /onClick=\{unavailable \? undefined : onClick\}/);
   assert.match(ui, /cursor: disabled \? 'progress' : unavailable \? 'default' : 'pointer'/, 'not ready is not busy');
-  assert.equal((view.match(/\bpair\(/g) || []).length, 9, 'got done (one per tile), four Kept safe, questions, spent, your time, while away');
+  assert.equal((view.match(/\bpair\(/g) || []).length, 8, 'got done (one per tile), four Kept safe, spent, your time, while away (questions joined your time, 2026-10-20)');
   assert.equal((view.match(/<WeekBars before /g) || []).length, 2, 'the pair helper and the stacked Learning bars');
   assert.match(view, /outline: '1px solid var\(--cth-ink-3\)'/, 'the earlier bar\'s outline (design D8)');
   assert.match(view, /\{total !== null && \(/, 'a missing value draws no bar (eng O2)');
@@ -210,4 +245,58 @@ test('the Learning number opens the notes behind it, read on open by the same ru
   const main = read('src/main/index.ts');
   assert.match(main, /ipcMain\.handle\('pulse:learned'/);
   assert.match(main, /kind: 'note-added', ts, attrs: \{ id: n\.id, source: n\.source \}/, 'the record carries the id and source, never the note');
+});
+
+test('emails sent says how many went out approved without edits, and only once any were sent', () => {
+  // Value: protects=the owner's 2026-10-19 wording ("as written" read as jargon; "0 as written" said nothing at zero); fails_when=the second part returns at zero or the old words come back; why_new=owner ask 2026-10-19; seam=none; no_claim=ar and zh-CN wording (presence only)
+  assert.equal(en.pulse.outcome.sent, 'emails sent for you, {{sub}} approved without edits');
+  assert.equal(en.pulse.outcome.sentNone, 'emails sent for you');
+  assert.match(view, /t\(o\.kind === 'sent' && o\.total === 0 \? 'pulse\.outcome\.sentNone' : `pulse\.outcome\.\$\{o\.kind\}`, \{ sub: o\.sub \?\? 0 \}\)/);
+  for (const loc of ['ar', 'zh-CN']) {
+    const o = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).pulse.outcome;
+    assert.ok(o.sentNone && o.sent.includes('{{sub}}') && !o.sentNone.includes('{{sub}}'), loc);
+  }
+});
+
+test('before advice, Pulse shows what the rules see so far under a bold line, as facts with nothing to apply (owner, 2026-10-19)', () => {
+  // Value: protects=the owner's bold "not advice yet" ask, eng D1 and D2 on screen; fails_when=the bold line goes, an early line gets Apply or a model name, or an older main without early crashes the view; why_new=new UI; seam=none; no_claim=layout (live look)
+  assert.equal(en.pulse.early.title, 'What Pulse sees so far, not advice yet.');
+  assert.match(view, /const early = view\.early \?\? \[\];/, 'an older main sends no early lines');
+  assert.match(view, /\{noAdvice && early\.length > 0 \? \(/, 'insight cards replace the bare line (design A, owner 2026-10-19)');
+  assert.match(view, /<Icon name="sparkle" size=\{0\.75\} \/>\{t\('pulse\.early\.pill'\)\}[\s\S]{0,120}fontWeight: 600[^}]*\}\}>\{t\('pulse\.early\.title'\)\}/, 'the Early look pill and the title (600, DESIGN.md 4.1)');
+  assert.match(view, /t\('pulse\.early\.dayOf', \{ n: learnDay, days: ADVICE_DAYS \}\)/, 'the countdown to advice');
+  const block = view.slice(view.indexOf('Before advice: what the advice rules see so far'), view.indexOf("noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)'"));
+  const cardFn = view.slice(view.indexOf('function EarlyCard('), view.indexOf('/** A Kept safe tile'));
+  for (const part of [block, cardFn]) assert.doesNotMatch(part, /PixelButton|pulse\.apply|pulse\.notNow|savesAbout|<button/, 'facts only, nothing to apply');
+  assert.match(cardFn, /role="group" aria-label=\{text\}/, 'each card is spoken as its full sentence');
+  const facts = Object.values(en.pulse.early).join(' ');
+  assert.doesNotMatch(facts, /\{\{model\}\}|model/i, 'a model fact names no model');
+  for (const loc of ['ar', 'zh-CN']) {
+    const o = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).pulse.early;
+    assert.deepEqual(Object.keys(o).sort(), Object.keys(en.pulse.early).sort(), loc);
+    assert.doesNotMatch(Object.values(o).join(' '), /[\u2013\u2014]/, `${loc}: no dashes`);
+  }
+});
+
+
+test('Questions to you is part of Your time: the count, then two small stats, the typical wait and the rate', () => {
+  // Value: protects=the merge the owner chose (2026-10-20, eng review D1 A, D2 A); fails_when=the rate tile returns, Your time loses the rate or its too few line, Compare draws a second pair, or the wait reads as an average; why_new=the Questions to you tile was removed; seam=none; no_claim=pixel layout (live check in the app)
+  const view = read('src/renderer/src/components/pulse/PulseView.tsx');
+  assert.doesNotMatch(view, /\n      questions: \(/, 'no Questions to you tile');
+  const yt = view.slice(view.indexOf('      yourTime: ('), view.indexOf('    // One member'));
+  // Two small stats at the foot (owner, 2026-10-20): the typical wait and the rate, never a rate under 20 requests.
+  assert.match(yt, /<div style=\{label\}>\{t\('pulse\.questionsToYou'\)\}<InfoTip text=\{t\('pulse\.yourTimeTip'\)\} \/><\/div>\s*<div[^>]*>\{s\.yourTime\.asks\}<\/div>/, 'the column is named for what it counts (owner, 2026-10-20)');
+  assert.equal(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse.questionsToYou, 'Questions to you');
+  assert.match(yt, /\{s\.yourTime\.medianWaitMs !== null \? duration\(s\.yourTime\.medianWaitMs, t\) : '…'\}<\/span>\s*<span[^>]*>\{t\('pulse\.typicalWait'\)\}/);
+  assert.match(yt, /\{rate !== null \? rate\.toFixed\(1\) : '…'\}<\/span>\s*<span[^>]*>\{t\('pulse\.per100Requests'\)\}/);
+  assert.match(yt, /\{pl && <span[^>]*>\{`\$\{pairLabels\[0\]\}: \$\{pl\.per100 !== null \? pl\.per100\.toFixed\(1\) : '…'\}`\}<\/span>\}/, 'with Compare, the span before\'s rate');
+  assert.equal((yt.match(/\bpair\(/g) || []).length, 2, 'one pair on the count, one on the away share');
+  const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse;
+  assert.equal(en.typicalWait, 'typical wait', 'a median is not an average');
+  assert.equal(en.per100Requests, 'per 100 requests');
+  for (const l of ['ar', 'zh-CN']) {
+    const p = JSON.parse(read(`src/renderer/src/i18n/locales/${l}.json`)).pulse;
+    assert.ok(p.typicalWait && p.per100Requests, l);
+    assert.equal(p.quiet.name.questions, undefined, `${l}: no chip name for a tile that is gone`);
+  }
 });

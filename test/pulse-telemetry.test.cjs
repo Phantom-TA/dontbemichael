@@ -37,7 +37,7 @@ const electron = require.resolve('electron');
 require.cache[electron] = { id: electron, filename: electron, loaded: true, exports: { app: { getPath: () => os.tmpdir() } } };
 const { PersistStore } = loadTs('src/main/db.ts');
 const { TelemetryStore } = loadTs('src/main/telemetryStore.ts');
-const { TelemetryProcessor, RUN_IDLE_END_MS, RUN_CAP_MS } = loadTs('src/main/telemetryProcessor.ts');
+const { TelemetryProcessor, RUN_IDLE_END_MS, RUN_CAP_MS, RAW_KEEP_MS, TICK_BATCH, TICK_PASSES } = loadTs('src/main/telemetryProcessor.ts');
 
 function setup(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-pulse-'));
@@ -55,7 +55,7 @@ test('the migration makes the tables once, and nothing but kind, time, value and
   // Value: protects=the store shape and no text in telemetry; fails_when=a migration is edited or prompt text lands in a row; why_new=D16; seam=none; no_claim=a database made by an older build (user_version 1 upgrades here)
   const { persist, store } = setup(t);
   const db = persist.database();
-  assert.equal(db.pragma('user_version', { simple: true }), 4);
+  assert.equal(db.pragma('user_version', { simple: true }), 5);
   const idx = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_tr_open', 'idx_te_office_id', 'idx_te_office_kind_ts')").all().map((r) => r.name).sort();
   assert.deepEqual(idx, ['idx_te_office_id', 'idx_te_office_kind_ts', 'idx_tr_open'], 'the hot reads have their indexes');
   store.record({ agentId: 'pam', kind: 'tool', ts: 1, attrs: { tool: 'Write' } });
@@ -140,9 +140,11 @@ test('a failed write is counted for its day and the day is reported; records kee
   store.record({ agentId: 'pam', kind: 'email', ts: when, value: 3 });
   store.flush();
   assert.deepEqual(store.failureDays('/office'), ['2026-10-14'], 'pending failure is reported');
+  assert.deepEqual(store.failedWrites('/office'), { '2026-10-14': 1 });
   open = true;
   store.flush();
   assert.deepEqual(store.failureDays('/office'), ['2026-10-14'], 'saved once the store works');
+  assert.deepEqual(store.failedWrites('/office'), { '2026-10-14': 1 }, 'counted once when saved');
 
   const { store: s2, proc } = setup(t);
   const t0 = new Date(2026, 9, 15, 9).getTime();
@@ -161,14 +163,15 @@ test('a failed write is counted for its day and the day is reported; records kee
   assert.deepEqual([day.tasks, day.emails, day.awayPieces], [1, 2, 3], 'the owner was away for all of it');
 });
 
-const { PulseService } = loadTs('src/main/pulse.ts');
+const { PulseService, earliest } = loadTs('src/main/pulse.ts');
 
 function service(t, opts = {}) {
   const env = setup(t);
   const t0 = new Date(2026, 9, 1, 9).getTime();
   env.clock.at(t0);
-  // 14 runs over two weeks of Toby's check, 12 found nothing.
-  for (let i = 0; i < 14; i++) {
+  // 14 runs over two weeks of Toby's check, 12 found nothing (opts.days stops sooner).
+  const runDays = opts.days ?? 14;
+  for (let i = 0; i < runDays; i++) {
     const at = t0 + i * 86_400_000;
     env.store.record({ agentId: 'toby', kind: 'run-dispatch', ts: at, attrs: { mission: 'm1' } });
     env.store.record({ agentId: 'toby', kind: 'prompt', ts: at + 1000 });
@@ -177,7 +180,7 @@ function service(t, opts = {}) {
     env.clock.at(at + 2000 + 3 * 60_000);
     env.proc.tick('/office');
   }
-  env.clock.at(t0 + 15 * 86_400_000);
+  env.clock.at(t0 + (runDays + 1) * 86_400_000);
   let missions = [{ id: 'm1', label: 'Benefits inbox check', to: 'toby', intervalMs: 2 * 3600_000, body: '', enabled: true, kind: 'dispatch' }];
   const models = opts.models ?? [{ agentId: 'toby', provider: 'claude', model: 'claude-opus-5-5' }];
   const svc = new PulseService({
@@ -185,10 +188,27 @@ function service(t, opts = {}) {
     members: () => [{ id: 'toby', isGod: false }, { id: 'god', isGod: true }], godId: () => 'god', tasks: () => [],
     missions: () => missions, models: () => models, ladder: () => [], priceOf: () => undefined,
     applyMissions: (change) => { const next = change(missions); if (!next) return { ok: false, error: 'not found' }; missions = next; return { ok: true }; },
-    billing: () => opts.billing ?? 'account', plan: () => opts.plan ?? null, memory: () => ({ notes: [], procedures: {} }), now: env.clock.now
+    billing: () => opts.billing ?? 'account', plan: () => opts.plan ?? null, memory: () => ({ notes: [], procedures: {} }), now: env.clock.now,
+    ...(opts.memberJobs ? { memberJobs: opts.memberJobs } : {}),
+    ...(opts.foundationsAnswers ? { foundationsAnswers: opts.foundationsAnswers } : {})
   });
   return { ...env, svc, missions: () => missions, setMissions: (m) => { missions = m; } };
 }
+
+test('before 14 live days Pulse shows what the advice rules see so far, as facts; on day 15 the advice takes over (owner, 2026-10-19)', (t) => {
+  // Value: protects=eng D1 (the four rules early, at half their evidence, live days only) and the hand over to advice; fails_when=early lines show after advice is ready, show nothing at half the evidence, or advice shows before 14 days; why_new=new early mode; seam=none; no_claim=the wording on screen (pulse-view pins)
+  const early = service(t, { days: 8 });
+  const v8 = early.svc.snapshot('this-week');
+  assert.deepEqual(v8.advice, [], 'no advice before 14 live days');
+  assert.equal(v8.early.length, 1);
+  assert.equal(v8.early[0].kind, 'run-less');
+  assert.deepEqual(v8.early[0].evidence, { runs: 8, nothing: 6 }, 'counted over the 8 live days only');
+  const few = service(t, { days: 4 });
+  assert.deepEqual(few.svc.snapshot('this-week').early, [], '4 runs: under half the 10 run minimum');
+  const ready = service(t).svc.snapshot('this-week');
+  assert.deepEqual(ready.early, [], 'no early lines once advice can show');
+  assert.equal(ready.advice[0].kind, 'run-less');
+});
 
 test('Apply changes a schedule only if it still is what the advice saw; Undo restores it; Not now hides it', (t) => {
   // Value: protects=D10 apply and undo, compare and set, D13 dismiss; fails_when=a stale or double click overwrites a schedule, Undo restores the wrong value, or a dismissed card stays; why_new=new apply path; seam=none; no_claim=the Schedules UI refresh (missions:updated is sent by applyMissions)
@@ -309,6 +329,24 @@ test('from v 3 the hive\'s trust-checked line is what counts; the trust layer\'s
   assert.deepEqual([k.held, k.heldIn, k.heldOut], [1, 0, 1], 'a line with no known way is skipped');
 });
 
+test('two backfills of one office at once write its history once', async (t) => {
+  // Value: protects=Pulse totals after an office switch; fails_when=a second backfill started while the first is still reading (the owner switched offices and back) writes every point again; why_new=PR #514 review 2026-10-23 (Codex adversarial); seam=two runBackfill calls on one db; no_claim=the app's own one at a time guard in index.ts
+  const { persist } = setup(t);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'md-bf2-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hive = path.join(root, 'hive');
+  fs.mkdirSync(hive, { recursive: true }); fs.mkdirSync(path.join(root, 'projects'), { recursive: true });
+  const live = Date.now(), past = live - 2 * 86_400_000;
+  fs.writeFileSync(path.join(hive, 'log.jsonl'), [
+    { ts: past, kind: 'mail-organize', agentId: 'pam', ids: ['a', 'b'] },
+    { ts: past + 1000, kind: 'mail-sent', agentId: 'pam' }
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  const deps = { db: persist.database(), office: '/office', hiveRoot: hive, projectsRoot: path.join(root, 'projects'), members: new Set(['pam']), now: live };
+  const counts = await Promise.all([runBackfill(deps), runBackfill(deps)]);
+  assert.deepEqual(counts.sort(), [0, 2], 'one run writes, the other finds the marker');
+  assert.equal(persist.database().prepare("SELECT COUNT(*) AS n FROM telemetry_events WHERE office = '/office'").get().n, 2);
+});
+
 test('the backfill reads the office log, sessions and cost ledger once, before the first live point', async (t) => {
   // Value: protects=a fresh Pulse not starting at zero; fails_when=the backfill reads past the live start, counts twice on a second start, misses a session's working time or a refused step, or loses a member's cost across an app restart; why_new=owner proposal 3; seam=temp hive, projects root and db; no_claim=real transcripts' every line shape
   const { persist, store, proc, clock } = setup(t);
@@ -357,6 +395,33 @@ test('the backfill reads the office log, sessions and cost ledger once, before t
   const { keptSafe } = loadTs('src/shared/pulseSafety.ts');
   const ks = keptSafe(proc.safetyRows('/office', '2000-01-01', '2999-01-01'));
   assert.deepEqual([ks.webAnswers.clean, ks.rules.quickbooks], [1, 1]);
+});
+
+test('a backfill drains over a few ticks, a batch at a time, to the same totals', (t) => {
+  // Value: protects=the main thread on the first launch after an update; fails_when=one tick folds every backfilled point at once, or a drained point is lost or counted twice; why_new=ship performance review 2026-10-16; seam=points written straight to the table as runBackfill writes them; no_claim=how long a batch takes
+  const { proc, persist } = setup(t);
+  const db = persist.database();
+  const cap = TICK_BATCH * TICK_PASSES;
+  const ts = new Date(2026, 9, 1, 12).getTime();
+  const ins = db.prepare("INSERT INTO telemetry_events (office, agent_id, kind, ts, value, attrs) VALUES ('/office', 'pam', 'busy', ?, 60000, '{\"bf\":1}')");
+  db.transaction(() => { for (let i = 0; i < cap + 1000; i++) ins.run(ts); })();
+  assert.equal(proc.tick('/office'), cap, 'one tick folds a batch');
+  assert.equal(proc.tick('/office'), 1000, 'the next one folds the rest');
+  assert.equal(proc.tick('/office'), 0);
+  const d = db.prepare('SELECT busy_ms, turns FROM telemetry_daily WHERE agent_id = ?').get('pam');
+  assert.deepEqual([d.turns, d.busy_ms], [cap + 1000, (cap + 1000) * 60000]);
+});
+
+test('runs older than 400 days are pruned with the raw points; newer ones stay', (t) => {
+  // Value: protects=E4 storage bound; fails_when=a run older than the raw keep window stays forever, or a recent run is pruned; why_new=ship performance review 2026-10-16; seam=none; no_claim=VACUUM timing
+  const { store, proc, clock, persist } = setup(t);
+  const now = clock.now();
+  store.record({ agentId: 'toby', kind: 'run-dispatch', ts: now - RAW_KEEP_MS - 86_400_000, attrs: { mission: 'old' } });
+  store.record({ agentId: 'pam', kind: 'run-dispatch', ts: now - 86_400_000, attrs: { mission: 'new' } });
+  proc.tick('/office');
+  const db = persist.database();
+  assert.deepEqual(db.prepare('SELECT mission_id FROM telemetry_runs').all().map((r) => r.mission_id), ['new']);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM telemetry_events').get().n, 1, 'the old point went too');
 });
 
 test("on a plan, each member's cost is their part of the plan's cost so far this period; on an API key nothing is split", (t) => {
@@ -576,4 +641,39 @@ test('note-added records come back by office with id and source, and the first o
   ]);
   const row = persist.database().prepare("SELECT attrs FROM telemetry_events WHERE kind = 'note-added' AND agent_id = 'pam' AND attrs IS NOT NULL").get();
   assert.deepEqual(Object.keys(JSON.parse(row.attrs)).sort(), ['id', 'source'], 'never the note itself');
+});
+
+test('the foundations proof splits a member\'s work at the first answered hit question, and the record decides what is answered', (t) => {
+  // Value: protects=D14 proof (half the evidence on each side) and that the record, not lossy events, says what is answered; fails_when=the split uses the wrong time, one side under the minimum still shows a proof, a broken row throws, or a lost answered event leaves a question missing; why_new=pulse.ts foundations() had only a source pin; seam=none; no_claim=on screen wording (pulse-view pins)
+  let answers = { customers: { at: new Date(2026, 9, 10, 9).toISOString() } };
+  const env = service(t, { days: 2, memberJobs: () => ({ toby: ['marketing'] }), foundationsAnswers: () => answers });
+  const t0 = new Date(2026, 9, 1, 9).getTime();
+  const tAnswer = new Date(2026, 9, 10, 9).getTime();
+  env.store.record({ agentId: 'toby', kind: 'foundation', ts: t0 + 1000, attrs: { q: 'customers', change: 'hit' } });
+  // The answered event is lost: only the record knows.
+  env.store.record({ agentId: 'toby', kind: 'foundation', ts: t0 + 2000, attrs: { q: 'voice', change: 'hit' } });
+  env.persist.database().prepare("INSERT INTO telemetry_events (office, agent_id, kind, ts, value, attrs) VALUES ('/office', 'toby', 'foundation', ?, NULL, '{broken')").run(t0 + 3000);
+  for (let i = 0; i < 5; i++) {
+    env.store.record({ agentId: 'toby', kind: 'mail-decision', ts: tAnswer - (i + 1) * 3600_000, attrs: { decision: i < 2 ? 'approve' : 'edit' } });
+    env.store.record({ agentId: 'toby', kind: 'mail-decision', ts: tAnswer + (i + 1) * 3600_000, attrs: { decision: i < 4 ? 'approve' : 'edit' } });
+  }
+  env.store.flush();
+  const f = env.svc.foundations('/office');
+  assert.equal(f.members.toby.proof.question, 'customers');
+  assert.equal(f.members.toby.proof.without, 0.4);
+  assert.equal(f.members.toby.proof.with, 0.8);
+  assert.deepEqual(f.members.toby.missing, ['voice'], 'customers answered per the record');
+  assert.deepEqual(f.jobs.map((j) => [j.job, j.waiting]), [['marketing', ['voice']]]);
+  // The record says customers is no longer answered: it is missing again, and no proof shows.
+  answers = {};
+  const g = env.svc.foundations('/office');
+  assert.deepEqual(g.members.toby.missing.sort(), ['customers', 'voice']);
+  assert.equal(g.members.toby.proof, undefined);
+});
+
+test('early lines: most evidence first, at most three', () => {
+  // Value: protects=earliest orders by evidence and caps at EARLY_MAX; fails_when=the sort or the cap changes; why_new=only one early line was ever tested; seam=none; no_claim=which rules produce lines
+  const a = (id, evidence) => ({ id, evidence });
+  const r = earliest([a('x', { runs: 5 }), a('y', { decisions: 9, reopens: 1 }), a('z', { runs: 7 }), a('w', { reopens: 2 })]);
+  assert.deepEqual(r.map((x) => x.id), ['y', 'z', 'x']);
 });

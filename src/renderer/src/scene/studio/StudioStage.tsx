@@ -22,21 +22,27 @@ import { useHasTerminalDraft } from '@/components/terminalPool';
 import { useOfficeBreak } from '@/components/OfficeBreakNotice';
 import type { OfficeBreakView } from '@shared/officeBreak';
 import { useMissions } from '@/components/triggers/ScheduleList';
-import { openQuestions, parseTasks } from '@/components/TasksKanban';
+import { parseTasks } from '@/components/TasksKanban';
 import { missionsFor, nextRunAt } from '@shared/missions';
 import { createBanter, createIdleLines } from '@/scene/office/cafeteriaLines';
 import { browserStorage, markWelcomed, welcomeArmed } from '@/scene/office/peteWelcome';
-import { getNeedsYouFeed, newestAskFor, useNeedsYou, useNeedsYouCount } from '@/shell/useNeedsYou';
+import { getNeedsYouFeed, newestAskFor, shownQuestions, useNeedsYou, useNeedsYouCount } from '@/shell/useNeedsYou';
 import { chatCandidates, stillIn } from '@/shell/closingFloor';
 
 /** Nobody has gone home (not closing time). */
 const NOBODY: ReadonlySet<string> = new Set();
 import { P, STAGE_H, STAGE_W, type Pt } from './iso';
+import { PROGRAM_MARK, PROGRAM_TITLE, PROGRAM_URL } from '@shared/appName';
+
 import { family, sceneTokens, type Family } from './theme';
 import { HUB, HUB_CARD, POST_GY, cardRect, departmentOf, planStudio, postGx, roleOf, type PodPlan } from './layout';
 import { FLIGHT_MS, bendFor, useStudioLife } from './life';
 import { SHOW_MAILBOXES } from '@shared/buildFeatures';
 import { DECOR, Decor, Flow, Hub, MailPost, Platform, Pod, PodGlow, StudioDefs, plateAt, plateWidth, type DeskState } from './StudioArt';
+
+/** The program mark's letter size on the stage: small enough to sit inside the
+ *  platform's side band, between its top edge and the light line. */
+const MARK_SIZE = 7;
 
 
 /** The agent fields the office draws. Changes to anything else (the terminal
@@ -65,7 +71,7 @@ interface TaskSnapshot { board: Board; doingBy: Record<string, number>; forYouBy
 function useTaskSnapshot(godId: string): TaskSnapshot {
   // The shared task read (shell/useNeedsYou.ts, eng R4): the "for you" chips
   // always match the pill and the board.
-  const { tasks } = useNeedsYou();
+  const { tasks, foundations } = useNeedsYou();
   return useMemo(() => {
     const board: Board = { todo: 0, doing: 0, waiting: 0, blocked: 0, done: 0 };
     const doingBy: Record<string, number> = {};
@@ -77,11 +83,12 @@ function useTaskSnapshot(godId: string): TaskSnapshot {
       board[t.status]++;
       if (t.status === 'done') done[t.id] = t.assignee;
       if (t.status === 'doing' && t.assignee) doingBy[t.assignee] = (doingBy[t.assignee] ?? 0) + 1;
-      if (t.assignee) { const asks = openQuestions(t).length; if (asks) forYouBy[t.assignee] = (forYouBy[t.assignee] ?? 0) + asks; }
+      // Only asks Needs you shows: a foundation question answered another way or put off is left out.
+      if (t.assignee) { const asks = shownQuestions(t, foundations).length; if (asks) forYouBy[t.assignee] = (forYouBy[t.assignee] ?? 0) + asks; }
       if (t.status !== 'done' && (t.assignee === godId || t.assignee === 'god')) kept++;
     }
     return { board, doingBy, forYouBy, kept, done };
-  }, [tasks, godId]);
+  }, [tasks, foundations, godId]);
 }
 
 /** Jobs Michael handed out today: his `request` messages in the hive log. */
@@ -466,6 +473,30 @@ export const StudioStage = memo(function StudioStage({ config: initialConfig, bl
           {life.svg}
         </svg>
 
+        {/* The program the app is part of (owner, 2026-10-22,
+            docs/designs/floor-business-name.md): a link lettered small on the
+            platform's right side from near its front corner, along the side's
+            2:1 slope, set on its baseline in SVG so no letter crosses the
+            side's top edge. It sits over the scene, so a pod hanging across the
+            side never cuts it, and under the day's light. target _blank goes
+            through the window open handler, so the site opens in the browser. */}
+        <svg viewBox={`0 0 ${STAGE_W} ${STAGE_H}`} width={STAGE_W * k} height={STAGE_H * k}
+          style={{ position: 'absolute', left: ox, top: oy, overflow: 'visible', pointerEvents: 'none' }}>
+          {(() => {
+            const [x, y] = P(5, 4.6, -13);
+            return (
+              <a href={PROGRAM_URL} target="_blank" rel="noreferrer" className="cth-st-mark"
+                style={{ pointerEvents: 'auto', ['--mark-op' as string]: T.markOp }}>
+                <title>{PROGRAM_TITLE}</title>
+                <g transform={`matrix(1 -0.5 0 1 ${x} ${y})`}>
+                  <text direction="ltr" fontFamily="Sora, sans-serif" fontWeight={600} fontSize={MARK_SIZE} letterSpacing={1}
+                    fill={T.markFill}>{PROGRAM_MARK}</text>
+                </g>
+              </a>
+            );
+          })()}
+        </svg>
+
         {/* The light of the day (DESIGN.md 8.12): morning sun from the left, a
             golden evening, a darker night where working desks keep their lamps on. */}
         <DayLight hour={hour} dark={dark} />
@@ -653,7 +684,7 @@ function PodCard({ style, dept, members, c, snap, selected, onSelect, missions, 
           // Opens the board at this pod's newest ask, focus in its reply (D11).
           <button
             className="cth-for-you"
-            onClick={() => useStore.getState().openNeedsYou({ taskId: newestAskFor(members.map((a) => a.id), getNeedsYouFeed().tasks) })}
+            onClick={() => useStore.getState().openNeedsYou({ taskId: newestAskFor(members.map((a) => a.id), getNeedsYouFeed().tasks, getNeedsYouFeed().foundations) })}
             style={{ ...forYouBadge, background: undefined, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
           ><i style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--cth-coral-base)', display: 'block' }} />{t('studio.forYou', { count: forYou })}</button>
         )}

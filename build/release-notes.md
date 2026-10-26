@@ -1,5 +1,5 @@
-- **Clocking in** shows your team arriving.
-- **Waiting cards** come back on their date.
-- **Pulse** lists what the team learned.
-- **Run a job now** from its schedule.
-- **Members' notes** stay their own.
+- **Change a job** by saying what should change.
+- **Add a file** right from a Company foundations card.
+- **One look** for every form in the app.
+- Hiring asks what the new person will do, once.
+- Safer background checks and messages to the team.

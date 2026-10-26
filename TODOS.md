@@ -1,5 +1,19 @@
 # TODOS
 
+## Release notes accuracy (from the eng review of the site's 0.2.5 and 0.2.6 plan, 2026-10-24)
+
+### The 0.2.5 changelog says engine records are closed to every member's shell
+
+**What:** Reword CHANGELOG.md's 0.2.5 line "closed to every member's tools and shell, Michael included" to what the app does on every platform.
+
+**Why:** On Windows Claude Code has no sandbox, so shell commands are not limited; only Claude's own file tools are walled there (src/shared/folderAccess.ts:16-20). As written, the line is a privacy claim that is false on Windows, in public release history.
+
+**Context:** Commit 8f6b9038 (#387) walls the engine records: folderAccess.ts:97-101 adds them to the sandbox deny lists and to the Read and Edit deny rules for every agent, Michael included, and test/folder-access.test.cjs covers it. The site's wording is the model: "The app keeps each team member's conversation records out of every other member's file tools, Michael's included." The published v0.2.5 GitHub release body carries the same words and needs a hand edit too; release bodies are built from RELEASE.md on the tag run, so edit the published body directly rather than re-running the tag workflow.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ## Connections
 
 ### One call at a time per connected app, and a throttle notice
@@ -14,28 +28,7 @@
 **Priority:** P2
 **Depends on:** Decision 2 (per-agent grants), Decision 22 (serialized executor); only relevant from Phase 2, when agents make real third-party calls.
 
-### A write to a connected app is never sent twice (issue #54)
-
-**What:** The send once rule mail already has, for writes the broker forwards to a connected app (anything other than GET or HEAD): an identical write is recorded before it goes upstream and answered from that record if it comes again, across a restart too.
-
-**Why:** The broker forwards a write with no dedupe behind a 30 second timeout (`src/main/integrationBroker.ts`, `UPSTREAM_TIMEOUT_MS`). If the provider accepts it but the answer is lost, or the app stops before it comes back, the agent's retry creates a second invoice, booking or contact. Plain mail sends got this in PR #126; connected app writes did not.
-
-**Context:** Reuse PR #126's pattern inside the broker, not a new store: an app private journal like `mail-send-journal.json`, keyed on the agent, integration, method, path and a hash of the body, written as pending before the upstream call and settled after. Pass the key upstream where the provider takes one (an `Idempotency-Key` header, QuickBooks `requestid`). A write left pending after a stop that the app cannot check is refused with a plain reason telling the agent to tell Michael, as PR #126 does for mail; the app never makes or moves a card for it (Michael owns every card). Issue #54 also proposed a per task work record for engine hand off and proof of done; those stay with "Make a second engine (Codex first) ready for an office", #36, #48 and #51.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** None
-
 ## Research agent (deferred from the third ship of mit/named-links, 2026-10-13)
-
-### A checked message for Pete is never dropped when delivery fails
-
-**What:** `queueForResearch()` in `src/main/hive.ts` removes the message's row from `research-pending.json` before `deliverToResearch()` and the commit succeed, and a delivery error is only logged. Keep the row until delivery succeeds, requeue it on failure, and tell Michael when it can't be delivered.
-
-**Why:** Found by the Codex adversarial review of the mit/named-links ship (2026-10-14). A disk or git error drops an owner or app message for Pete with no trace, and the record that would have recovered it is already gone.
-
-**Effort:** S
-**Priority:** P2
 
 ### Catch money amounts in the privacy check's pattern recheck
 
@@ -60,21 +53,9 @@
 **Priority:** P1
 **Depends on:** None
 
-### Keep Claude Code's transcripts and history out of agents' reach
-
-**What:** Wall every agent's file tools and shell from Claude Code's projects folder and `history.jsonl` (under `CLAUDE_CONFIG_DIR` or `~/.claude`), apart from what the app itself needs.
-
-**Why:** Any team member can read the other team members' Claude Code conversations there, and the prompts hidden checks send, which can quote what a teammate asked Pete before the trust layer cleaned it. The trust layer now removes each check's transcript as it ends and sweeps leftovers at launch (`src/main/hiddenClaude.ts` dropTranscript), but a check's prompt may also be kept in Claude Code's history.
-
-**Context:** Found by the security review and Codex in the third ship. Pete is already walled from both. Adding `claudeProjectsRoot()` to every agent's read walls needs care: Michael reads his own transcript through the app, not his tools.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Take the internet from team members' shells on Windows
 
-**What:** Hold team members' shell commands off the internet on Windows, where Claude Code has no sandbox, or say on the Research screen that it only holds on a Mac.
+**What:** Hold team members' shell commands off the internet on Windows, where the engine has no sandbox. Until then, the Research screen says so on Windows (done 2026-10-18).
 
 **Why:** On Windows only the web tools are refused; a shell command can still reach the internet, so the rule that only Pete uses the internet is not enforced there. The CHANGELOG names this.
 
@@ -106,18 +87,6 @@
 
 ## Team performance (from the CEO review of docs/designs/team-performance.md, 2026-10-15)
 
-### Move the cost ledger into the telemetry store
-
-**What:** Move the circuit breaker and lifetime totals from `hive/cost-ledger.jsonl` onto the telemetry store in harness.db, then stop writing the file.
-
-**Why:** After the team performance build, cost data lives in two places that can drift apart, and the file is agent writable and grows forever (403,830 rows in its first 3 weeks).
-
-**Context:** `db.ts` already reserves a `cost_ledger` table with the file's column names. Readers today: `costLifetime.ts`, `runBreakerBeat` in `index.ts`, `tools/agent-metrics.cjs`. The team performance processor already folds cost points from the store with `src/shared/costFold.ts`. Owner decision D17.
-
-**Effort:** M (human) / S (CC)
-**Priority:** P2
-**Depends on:** The team performance build (telemetry store)
-
 ### Give Fable a tier and a price
 
 **What:** Add Fable's tier (top, middle or small) to `modelCatalog.json` and its price rows to `pricing.ts`, from Anthropic's published pricing.
@@ -130,37 +99,12 @@
 **Priority:** P2
 **Depends on:** The team performance build
 
-### A health readout for the Pulse telemetry (T9)
-
-**What:** Add `telemetry:health` (last batch time, events per batch, failed writes, refused hook frames per member from `HookServer.rejectedFrames()`), one log line per processor batch, and a single warning when the processor stalls.
-
-**Why:** When a Pulse number looks wrong there is no way to see whether points stopped flowing, writes failed or frames were refused; today nothing reads `rejectedFrames()`.
-
-**Context:** Deferred from plan: docs/designs/team-performance.md (T9, E3), owner choice at /ship of mit/delete-team-member, 2026-10-16. The store already counts failed writes per day (D15); the processor runs every 30 s from `index.ts`.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P1
-**Depends on:** None
-
-### Keep Pulse's heavy reads off the main thread
 
 **What:** Read transcripts for the backfill line by line with a yield every few hundred lines, skip lines before the window before parsing tool results, and let the 30 s tick drain backfilled points instead of folding up to 100,000 at once; prune `telemetry_runs` with the events.
 
 **Why:** On the first launch after an update the backfill and its fold can hold the main thread for seconds while every agent starts and sends hook frames; a very large office log or transcript is read whole into memory (Codex review).
 
 **Context:** From the /ship performance review, 2026-10-16. Migration 4 added the indexes the hot reads needed; this is the remaining part. `pulseBackfill.ts` readTranscript and `pulseBackfillOnce` in `index.ts`.
-
-**Effort:** M (human) / S (CC)
-**Priority:** P2
-**Depends on:** None
-
-### An owner's answer is never lost between the card and Michael
-
-**What:** Record the answer on the card and queue Michael's routing request in one main side step, or keep unsent routing requests and retry them in the same launch.
-
-**Why:** If the card patch lands but the message to Michael fails, the ask leaves Ask me and Michael never hears until a restart (the catch up runs once per launch).
-
-**Context:** From the second Codex adversarial review, 2026-10-16. The pattern predates this branch: `AskMeTab.tsx` sendAnswer patches then sends; `index.ts` catchUpOwnerAnswers is gated by ownerCatchUpDone.
 
 **Effort:** M (human) / S (CC)
 **Priority:** P2
@@ -202,18 +146,6 @@
 **Priority:** P2
 **Depends on:** None
 
-### Let only the main session release a prompt hold
-
-**What:** Pass whether a hook frame is a subagent's to the worker wake watchdog, and let only the main session's events (or the denial of the prompted tool) end the hold; give the hold a long ceiling.
-
-**Why:** A Task subagent's PostToolUse can end the hold while a permission prompt is still on screen, and a prompt escaped with no follow up event keeps the member from ever being nudged.
-
-**Context:** From the /ship testing and red team reviews, 2026-10-16. The stuck restart now restarts a member on a permission prompt within seconds, which makes both cases rare. `workerWake.ts` MOVED_ON_EVENTS.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P2
-**Depends on:** None
-
 ### Hand the hook secret over where another process cannot read it
 
 **What:** On engines and platforms where a sibling process can read another's environment (Linux /proc, Windows), pass the hook secret through a 0600 file or descriptor only that agent's sandbox can read, or check the peer on the socket.
@@ -224,30 +156,6 @@
 
 **Effort:** M (human) / M (CC)
 **Priority:** P1
-**Depends on:** None
-
-### Tell Michael when a timed out restart worked after all
-
-**What:** When a restarted member's session starts after the 61 s confirm window already told Michael they were stuck, send him a short follow up that the restart went through.
-
-**Why:** Otherwise Michael may move work the member is already doing and keep an Ask me question about a member who is fine.
-
-**Context:** From the /ship fix review, 2026-10-16 (confidence 4). `hooks.ts` checkStuckRestarts and stuckProgress.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** None
-
-### Pulse buttons use PixelButton
-
-**What:** Draw Apply, Not now, Undo and Try again with PixelButton (sm) so they get the hover and the 45% disabled state of DESIGN.md 7.7.
-
-**Why:** Apply looks unchanged while it is busy.
-
-**Context:** From the /ship design review, 2026-10-16. `PulseView.tsx` btn().
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
 **Depends on:** None
 
 ### Fill in Pulse's earlier checks off the main process
@@ -268,6 +176,80 @@
 
 **Effort:** S
 **Priority:** P4
+**Depends on:** None
+
+## Company foundations (deferred from the ship of mit/file-tab-no-bottom-bar, 2026-10-20)
+
+### Ordinary Ask me cards take a file
+
+**What:** A member's own question in Needs you (an ordinary Ask me card) gets the same Add a file as a Company foundations card; the file goes to the asking member by path, the way a message attachment does.
+
+**Why:** The owner's ask on 2026-10-22 was to upload right from the Ask me card; the eng review built it for Company foundations cards only (D1 A), so an ordinary question answered with a document still needs its path typed.
+
+**Pros:** The owner never types a path or file name anywhere in Needs you.
+
+**Cons:** A second path from the foundations one: the file goes to one member, not company knowledge, and needs a look at which folders a member may read (the sandbox), plus copying the file somewhere that survives a restart (`pastes.ts` does this for pasted images).
+
+**Context:** `docs/designs/foundation-card-upload.md` (R1, R9). Start from `AskAnswerFields.tsx` and `AskMeTab.tsx`, the answer route in `src/shared/askMeRouting.ts`, and `dialog:attachFiles` (`src/main/index.ts:6402`).
+
+**Effort:** M (human) / S (CC)
+**Priority:** P3
+**Depends on:** The foundation card upload (docs/designs/foundation-card-upload.md)
+
+### Name a missing foundation's proof in Early look and Recommendations
+
+**What:** Once the kept as is evidence exists for a question, add a line to Early look and Recommendations such as "Answer who we sell to: Ryan's posts are kept as is 45% without it, 85% with", built from the same proof the member detail box shows.
+
+**Why:** The strip in Recommendations names the jobs whose work hit an empty answer, but not what answering it would win; the proof today is only in a member's detail box, one click away.
+
+**Context:** Deferred from plan: docs/designs/office-foundations.md (section 7, "Early look and Recommendations"), owner choice D2 at /ship, 2026-10-20. The proof is computed in `src/main/pulse.ts` foundations() and shown by `FoundationsBox` in `PulseView.tsx`; advice lines come from `src/shared/teamAdvice.ts`.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P1
+**Depends on:** None
+
+### Read an edited document in again off the main thread
+
+**What:** Move `kg-core` reindex (and the index rewrite it does) to a worker or child process, or keep the index in one file per document, so a save's work is bounded to the edited document.
+
+**Why:** Every save of a document opened from Settings rewrites the whole `index.jsonl` synchronously on the main process; with a large store one save can stall routing and the window for a moment (Codex adversarial review).
+
+**Context:** From the Codex adversarial pass at /ship, 2026-10-20 (owner choice D11). Saves now wait 3 s of quiet before a read in (`knowledgeEdits.ts`), and the index is replaced whole by rename (`kg-core.cjs` writeAtomic). A copy kept from a broken `foundations.json` (`foundations.json.broken-*` in the private folder) is not yet erased by a factory reset.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P2
+**Depends on:** None
+
+### Keep the other hidden checks' text out of Claude's history
+
+**What:** Turn on `isolateConfig` (`src/main/hiddenClaude.ts`) for the other hidden checks that paste private text: the Research privacy check (`src/main/index.ts`, the trust layer, which already sets `dropTranscript`) and the mail standing fit check. Measure the cost first: each isolated run is about 1.4 s slower and writes about 1 MB to a temporary folder, and the trust layer can run a dozen checks at app launch.
+
+**Why:** Ship review 2026-10-23 found Claude Code keeps every pasted prompt in its shared `~/.claude/history.jsonl` and `paste-cache`, which dropping the transcript does not touch. The file fit check is isolated now (verified live: nothing written under ~/.claude); a message to Pete and an email's text still land there.
+
+**Context:** Isolation relies on `CLAUDE_SECURESTORAGE_CONFIG_DIR`, found in the Claude Code binary and not documented. If a later Claude drops it the session stops at sign in and the check fails closed, which for the trust layer means every message to Pete is held, so check that before widening it. The API key sign in and Windows are untested. The file fit check is isolated on every platform (owner, 2026-10-23), so check a foundation card file upload on Windows first: Claude keeps its sign in in `.credentials.json` inside the settings folder there, and if the variable doesn't reach it every file is refused as "couldn't check".
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Give the other job helpers the job change's settings
+
+**What:** `convertWorkStyle` (plain words) and `checkFocusArea` in `src/main/workStyleConvert.ts` still start their hidden session with the office folder's settings and hooks and keep the transcript. Give them what `reviseWorkStyle` has: `settingSources: 'user'`, `disableAllHooks` and `dropTranscript`.
+
+**Why:** Codex adversarial pass 2 (2026-10-23): the job text reaches any hook of the owner's or the office folder's. The job change itself keeps no isolated folder by the owner's choice (D9: speed; Claude's history is already closed to members), so its prompt stays in the owner's own Claude history.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### A foundation file the card did not take is always removed
+
+**What:** In `saveFileAnswer` (`src/renderer/src/shell/foundationSave.ts`), when the card refuses the answer and `kgRemove` also fails, keep the document id, say so on the card, and remove it again at the next launch. Also ingest the bytes that were checked, not the path again (`src/main/foundations.ts` addFile, `knowledge.ts` ingest), so a file replaced in the seconds between check and save can't slip in.
+
+**Why:** Codex adversarial passes 1 and 2 (2026-10-23). Both need two things to go wrong at once, so they were left out of the ship.
+
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ## Terminal links (from the ship review of mit/named-links, 2026-10-13)
@@ -295,6 +277,30 @@
 **Effort:** M
 **Priority:** P3
 
+### A memory reset clears each other engine's own history before that engine ships
+
+**What:** Before Codex, Grok, Antigravity, Crush, OpenCode or Pi joins `BUILD_ENGINES`, Reset memory deletes that engine's own conversation history for each member (Codex `sessions` and `archived_sessions` and its state database; `.gemini-hive`, `.pi-agent`, `.opencode`, `.crush-data`), never the engine's sign in or settings.
+
+**Why:** Reset memory clears Claude members fully; a member on another engine gets a new conversation but its old history stays in its own folder, where it can look back (owner, 2026-10-22, D8).
+
+**Context:** `docs/designs/reset-agent-memory.md` row R4. History locations: `src/main/hive.ts:5204`, `:5336`, `:5455`, `:5492`, `:5540`. Add it to each engine's ship checklist with a test that the history goes and the sign in stays.
+
+**Effort:** S (human) / S (CC) per engine
+**Priority:** P3
+**Depends on:** The memory reset; the engine joining BUILD_ENGINES
+
+### A memory reset also clears a member's conversations from earlier working folders
+
+**What:** Reset memory deletes a member's recorded Claude Code conversations and auto memory only in the working folders the roster names today (current, restorable and archived, worktrees included). A member moved to another folder earlier keeps its old conversations and auto memory in the old folder's Claude Code project.
+
+**Why:** If the owner points that member back at the old folder, Claude Code's auto memory for it loads again, so the member is not on its first day there (Codex adversarial pass at ship, 2026-10-22). Its old conversations can't be resumed (the session ids are cleared), so the risk is the auto memory.
+
+**Context:** `src/main/memoryReset.ts` `foldersFromRoster` and `memoryResetTargets`. Options: record each member's past working folders in the private record beside its sessions, or delete `<sid>.jsonl` under every project folder for the trusted session ids. Either way, nothing a member can write may name a folder (R5).
+
+**Effort:** S (human) / S (CC)
+**Priority:** P2
+**Depends on:** The memory reset
+
 ## Attachments (from the Codex adversarial review of design/studio-v2, 2026-10-01)
 
 ### Keep each agent's mail pass out of other agents' reach
@@ -302,17 +308,6 @@
 **What:** Move each agent's `md-mail.mcp.json` (it holds that agent's broker token) out of the shared hive folder, or block other agents from reading `<hive>/agents/<other>/md-mail.mcp.json`, and delete it when the agent's terminal closes.
 
 **Why:** Sandboxed team agents cannot reach the broker, but Michael runs unsandboxed and could read a Can send agent's token and send from its mailbox. Found in the pre-landing security review (`src/main/index.ts`, the md-mail block before `ptyManager.spawn`).
-
-**Effort:** S
-**Priority:** P1
-
-### Say "cannot check email" beside a schedule
-
-**What:** When a schedule's agent has email off, show a short note on that schedule ("Pam cannot check email") in the On a schedule section and the office schedule.
-
-**Why:** Plan CEO Section 4. A mail check schedule on an agent without email is silently ignored.
-
-**Context:** Deferred from plan: docs/designs/multi-mailbox.md
 
 **Effort:** S
 **Priority:** P1
@@ -335,15 +330,6 @@
 **Why:** The router now keeps an agent's time no later than now, but the files it reads back are Michael's own, and a past time (a timezone slip) can sort a reply before your question or leave a done question open.
 
 **Effort:** S
-**Priority:** P2
-
-### Deliver an outbox message once across a crash
-
-**What:** The router delivers a message, then stamps and archives the agent's file. If the app dies in between, the file is routed again on restart under a new app id, so the recipient gets it twice. Move the file into a router owned pending area (or record the id the app chose) before the first delivery, and reuse that id on replay so the second copy replaces the first.
-
-**Why:** Found by the Codex adversarial review (ship, 2026-10-18). Agent written ids used to make a replay overwrite itself; the app now makes every id, so nothing dedupes a replay. Rare (a crash in a few milliseconds), but it doubles owner traffic and task notes when it happens.
-
-**Effort:** M
 **Priority:** P2
 
 ### Compare To do reminder times by the instant
@@ -440,34 +426,7 @@
 **Effort:** M
 **Priority:** P1
 
-### Base the QuickBooks default on the role, not the agent id
-
-**What:** Give hired agents with a books role the on + Read only default.
-
-**Why:** Only an agent whose id is literally `oscar` gets it (`booksReadRoleIds` in `src/main/index.ts`); a bookkeeper hired later starts off.
-
-**Effort:** S
-**Priority:** P3
-
-### Show a locally added QuickBooks server in the status
-
-**What:** Read non-`claude.ai` QuickBooks servers from `claude mcp list` too.
-
-**Why:** A QuickBooks server added with `claude mcp add` is gated but Settings says it is not connected.
-
-**Effort:** S
-**Priority:** P3
-
 ## Closing time (deferred from ship of feat/closing-time-progress, 2026-09-29)
-
-### Feed each row's latest line from the agent's transcript
-
-**What:** Show the last thing each agent said under its row, read from its Claude transcript.
-
-**Why:** The row's "latest line" was removed before release because `recentAssistantText` is only set by `src/renderer/src/mocks/mockEvents.ts`; real agents never fill it. The owner asked for it to tell a long process from a stuck one.
-
-**Effort:** M
-**Priority:** P2
 
 ### Rows in a second window
 
@@ -530,18 +489,6 @@
 
 ## Schedules
 
-### Starter jobs in an agent's empty Schedules tab
-
-**What:** Show up to three suggested jobs from the office pack's `starterMissions` in an agent's empty Schedules tab, each added paused with one click (design decision 5A in `docs/designs/per-agent-schedules.md`).
-
-**Why:** An empty tab is where an owner first learns an agent can run jobs on its own. A suggestion turns that into one click instead of inventing a job.
-
-**Context:** Deferred while building per-agent schedules (2026-09-25) because no shipped pack in `resources/packs/` has `starterMissions`, and its `schedule` field is a free string with no defined format (`src/shared/officePack.ts:76`). The empty tab ships with its copy and add button. To build: define the schedule format (reuse `parseWhen` in `src/shared/missions.ts`), write starters into the packs, map pack agent ids to hive agent ids, and add the suggestion rows.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** starter jobs written into the shipped packs.
-
 ### Michael turns repeated work into a routine (issue #41)
 
 **What:** When the same kind of work keeps getting done (for example chasing overdue invoices three weeks running), Michael sets it up as a scheduled job for the team member who does it, with its how in that member's Work style.
@@ -555,18 +502,6 @@
 **Depends on:** nothing.
 
 ## Agents and 1:1
-
-### Show the rewritten instructions before saving a work style
-
-**What:** When the owner edits a plain work style (hire or Edit Agent), show the instructions the app wrote from it and let them accept or undo, instead of saving straight away.
-
-**Why:** The owner edits a summary; details the summary left out could still be lost in a rewrite. The prompt now keeps them, but the owner can't see the result.
-
-**Context:** From the /ship pre-landing review of feat/hire-wizard (2026-09-27). `src/main/workStyleConvert.ts`, `toInstructionsPrompt` in `src/shared/workStyleText.ts`, AddAgentModal and EditAgentModal save paths.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** nothing.
 
 ### End a hidden Claude call early when it can't answer
 
@@ -771,20 +706,6 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 **Priority:** P1
 **Depends on:** nothing.
 
-## Schedules
-
-### Make the heartbeat's description honest
-
-**What:** The heartbeat card in Schedules shows an editable description box, but the heartbeat never sends that text. It sends a summary it builds itself (`buildHeartbeatDigest`, `src/main/index.ts`). Either show the heartbeat's description as fixed text, or send the owner's text ahead of the summary.
-
-**Why:** An owner who edits the box expects Michael to receive it. Every other schedule stopped carrying a prompt on 2026-09-25 (the label names the job and the agent's Work style says how), so the heartbeat is the one card left with a box, and it's a box that does nothing.
-
-**Context:** Found in the 2026-09-25 agent instructions audit; the owner chose to leave the heartbeat as it is for now (it ships off). `src/renderer/src/components/triggers/ScheduleList.tsx` keeps the box for `kind: 'heartbeat'` only.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** nothing.
-
 ## Engines
 
 ### Run Gemini members in Gemini's own sandbox
@@ -844,17 +765,6 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 
 ## Release
 
-### Sign and notarize the Mac build with an Apple Developer ID
-
-**What:** Add the Developer ID Application cert and notarization credentials as repo secrets (`APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`). `release.yml` and `build/notarize.cjs` already use them when present.
-
-**Why:** 0.0.1 ships ad-hoc signed. Owners must clear a "could not verify" dialog through Privacy & Security on first open, and Squirrel.Mac cannot update an ad-hoc app in place, so every update falls back to "download the new version" instead of restart to install. macOS also forgets folder grants between versions without a stable signature.
-
-**Context:** Needs an Apple Developer Program membership (paid, per organization). Once the secrets exist, the ad-hoc fallback in `release.yml` switches off by itself; update RELEASE.md's install steps then.
-
-**Effort:** S (after the Apple account exists)
-**Priority:** P1
-**Depends on:** Apple Developer Program membership
 
 ## Repo
 
@@ -883,6 +793,32 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 **Depends on:** None
 
 ## Completed
+
+### Sign and notarize the Mac build with an Apple Developer ID
+
+**What:** Add the Developer ID Application cert and notarization credentials as repo secrets (`APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`). `release.yml` and `build/notarize.cjs` already use them when present.
+
+**Why:** 0.0.1 ships ad-hoc signed. Owners must clear a "could not verify" dialog through Privacy & Security on first open, and Squirrel.Mac cannot update an ad-hoc app in place, so every update falls back to "download the new version" instead of restart to install. macOS also forgets folder grants between versions without a stable signature.
+
+**Context:** Needs an Apple Developer Program membership (paid, per organization). Once the secrets exist, the ad-hoc fallback in `release.yml` switches off by itself; update RELEASE.md's install steps then.
+
+**Effort:** S (after the Apple account exists)
+**Priority:** P1
+**Depends on:** Apple Developer Program membership
+**Completed:** v0.2.6 (2026-10-23) is the first Mac release signed with Developer ID team B5EHD4JBD2, notarized and stapled (`spctl`: `source=Notarized Developer ID`). RELEASE.md, README.md and dontbemichael.com now give the signed steps, and a tagged release without the certificate fails instead of shipping ad hoc (`REQUIRE_DEVELOPER_ID`, `test/release-mac-only.test.cjs`).
+
+### A write to a connected app is never sent twice (issue #54)
+
+**What:** The send once rule mail already has, for writes the broker forwards to a connected app (anything other than GET or HEAD): an identical write is recorded before it goes upstream and answered from that record if it comes again, across a restart too.
+
+**Why:** The broker forwards a write with no dedupe behind a 30 second timeout (`src/main/integrationBroker.ts`, `UPSTREAM_TIMEOUT_MS`). If the provider accepts it but the answer is lost, or the app stops before it comes back, the agent's retry creates a second invoice, booking or contact. Plain mail sends got this in PR #126; connected app writes did not.
+
+**Context:** Reuse PR #126's pattern inside the broker, not a new store: an app private journal like `mail-send-journal.json`, keyed on the agent, integration, method, path and a hash of the body, written as pending before the upstream call and settled after. Pass the key upstream where the provider takes one (an `Idempotency-Key` header, QuickBooks `requestid`). A write left pending after a stop that the app cannot check is refused with a plain reason telling the agent to tell Michael, as PR #126 does for mail; the app never makes or moves a card for it (Michael owns every card). Issue #54 also proposed a per task work record for engine hand off and proof of done; those stay with "Make a second engine (Codex first) ready for an office", #36, #48 and #51.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+**Completed:** Connected app writes are recorded in `broker-write-journal.json` before they go upstream (`src/main/brokerWriteOnce.ts`). A repeat of a write that worked gets the first answer; a failed one may go again with the same key. A write still pending after a restart is refused, and the agent is told to tell Michael. No card is opened. QuickBooks also gets a stable `requestid`. A damaged journal is set aside and a fresh one started (PR #212).
 
 ### Message when the OS cannot encrypt stored credentials
 
@@ -1162,7 +1098,7 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 ### Trust boundaries Codex raised on Ask me (2026-10-05)
 
 **What:** Codex adversarial pass 2 raised these items. Each one either already exists on main or needs a design decision:
-1. **Question text in Michael's request.** The question is copied verbatim into Michael's `from: human` request, and an agent writes that question. Label it as card text and fold it to one line, or send only the card id plus the owner's answer.
+1. ~~**Question text in Michael's request.**~~ Done 2026-10-18: the question goes in as one line labelled as card text, through cardText, which also folds C1 line breaks and drops format characters.
 2. **Who closed the question.** Open or closed is decided by whether a string is present, so a worker that writes tasks.json can set `a` or `dismissedAt` and hide a question. Give answers and withdrawals provenance: the recorded owner answer keys for answers, plus a trusted withdrawal marker.
 3. ~~**The 30-day window.**~~ Done 2026-10-06 (michael-replies.md): a fixed floor replaces the rolling window.
 4. ~~**Reply alias.**~~ Done 2026-10-06 (michael-replies.md): any name that reaches the owner closes a request.

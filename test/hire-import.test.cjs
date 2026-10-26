@@ -34,6 +34,20 @@ test('batch import keeps every valid manifest and reports invalid files independ
   }
 });
 
+test('a manifest saved as UTF-8 with a byte order mark imports like any other', () => {
+  // Value: protects=a hire file edited and saved on Windows still imports; fails_when=the leading mark reaches JSON.parse; why_new=Notepad and PowerShell 5 save UTF-8 with one; seam=none
+  const dir = mkdtempSync(join(tmpdir(), 'munder-hire-import-'));
+  try {
+    const pam = join(dir, 'pam-notepad.json');
+    writeFileSync(pam, '\uFEFF' + JSON.stringify(manifest('Pam')));
+    const result = readHireManifestFiles([pam]);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.manifests.map((m) => m.name), ['Pam']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('an empty file selection is a valid empty batch', () => {
   assert.deepEqual(readHireManifestFiles([]), { manifests: [], errors: [] });
 });

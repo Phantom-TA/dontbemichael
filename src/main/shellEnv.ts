@@ -101,6 +101,7 @@ export function resolveCommand(command: string): string {
     const appData = process.env.APPDATA ?? '';
     const localAppData = process.env.LOCALAPPDATA ?? '';
     const home = process.env.USERPROFILE ?? process.env.HOME ?? '';
+    const programFiles = process.env.ProgramFiles ?? '';
     const winCandidates = [
       `${appData}\\npm\\${command}.cmd`,
       `${appData}\\npm\\${command}`,
@@ -108,6 +109,9 @@ export function resolveCommand(command: string): string {
       // Claude's own installer (install.ps1) puts claude.exe here and updates the
       // user PATH in the registry, which this already running app never sees.
       `${home}\\.local\\bin\\${command}.exe`,
+      // The app's own Node install (nodeInstall.ts) lands here, and this running
+      // app's PATH predates it. Never built from an unset variable (drive root).
+      ...(programFiles ? [`${programFiles}\\nodejs\\${command}.exe`, `${programFiles}\\nodejs\\${command}.cmd`] : []),
       `${home}\\.claude\\local\\${command}.cmd`,
       `${home}\\.claude\\local\\${command}`
     ];

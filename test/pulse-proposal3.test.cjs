@@ -45,6 +45,10 @@ test('the held list reads its rows, drops lines that are not rows, and tidies li
   assert.deepEqual(H.parseHeld(JSON.stringify({ at: 1, way: 'in', from: 'human', to: 'research', toName: 'Pete', subject: 's', opening: 'o', why: 'failed', told: 'michael' })),
     { at: 1, way: 'in', from: 'human', fromName: null, to: 'research', toName: 'Pete', subject: 's', opening: 'o', why: 'failed', told: 'michael' });
   assert.equal(H.tidy('Say \u201chi\u201d\nnow', 80), 'Say hi now');
+  assert.equal(H.tidy('Can\u2019t find Maria\u2019s price list', 80), "Can't find Maria's price list", 'an apostrophe is no quote mark');
+  assert.equal(H.tidy('He said \u2018ship it\u2019 today', 80), 'He said ship it today');
+  const cut = H.tidy('a'.repeat(79) + '\u{1F95B} milk', 80);
+  assert.equal(cut, 'a'.repeat(79) + '\u{1F95B}', 'an emoji at the cut stays whole');
   const why = (v) => H.heldWhy(v, R.REFUSAL_CHECK_FAILED, R.REFUSAL_TOO_LONG);
   assert.deepEqual(['length', 'no-answer', 'unreadable', 'settings'].map((by) => why({ reason: 'x', by })), ['too-long', 'no-answer', 'unreadable', 'settings']);
   assert.deepEqual(['model', 'pattern', 'recheck'].map((by) => why({ reason: 'x', by })), [null, null, null]);
@@ -145,11 +149,15 @@ test('Team at work: busiest, several times the average, quiet, and costly for it
   assert.deepEqual(w.topTwo.ids, ['god', 'pam']);
   assert.equal(w.costliest.agentId, 'creed');
   assert.deepEqual(teamAtWork([{ agentId: 'a', busyMs: 0, usd: 3 }]).chips, {});
+  // Value: protects=eng review D1 (2026-10-19): the headline names only members who worked a little; fails_when=a member with no time is called mostly quiet again; why_new=no 0 ms row before; seam=none; no_claim=none beyond protects
+  const idle = teamAtWork([{ agentId: 'a', busyMs: 2 * h, usd: 1 }, { agentId: 'b', busyMs: 2 * h, usd: 1 }, { agentId: 'c', busyMs: 0.1 * h, usd: 0 }, { agentId: 'd', busyMs: 0, usd: 0 }]);
+  assert.deepEqual(idle.quiet, ['c'], 'the slow member is named, the idle one is not');
+  assert.equal(idle.chips.d, undefined);
   const two = teamAtWork([{ agentId: 'a', busyMs: h, usd: 100 }, { agentId: 'b', busyMs: h, usd: 1 }]);
   assert.equal(two.costliest, null, 'too few to compare');
 });
 
-test('a transcript gives working time per request and the steps a setting refused, once each', () => {
+test('a transcript gives working time per request and the steps a setting refused, once each', async () => {
   // Value: protects=the backfill's hours and rules; fails_when=a tool result starts a request, a request runs past an hour, a refusal counts twice, or AskUserQuestion counts; why_new=owner proposal 3 backfill; seam=none; no_claim=every Claude Code line shape
   const iso = (ms) => new Date(ms).toISOString();
   const t0 = Date.UTC(2026, 9, 12, 15);
@@ -164,13 +172,52 @@ test('a transcript gives working time per request and the steps a setting refuse
     { type: 'assistant', timestamp: iso(t0 + 200_000 + 3 * 3_600_000), message: { content: [] } },
     'not json'
   ].map((l) => (typeof l === 'string' ? l : JSON.stringify(l)));
-  const r = readTranscript(lines, t0 - 1, t0 + 10 * 3_600_000);
+  const r = await readTranscript(lines, t0 - 1, t0 + 10 * 3_600_000);
   assert.deepEqual(r.turns, [{ ts: t0, ms: 120_000 }, { ts: t0 + 200_000, ms: 3_600_000 }]);
   assert.deepEqual(r.refused, [{ ts: t0 + 70_000, gate: 'internet' }]);
   assert.equal(gateOfTool('mcp__md-mail__send', ''), 'mail');
   assert.equal(gateOfTool('mcp__claude_ai_Gmail__search', ''), 'connector');
   assert.equal(gateOfTool('Edit', 'The harness folder is plumbing only'), 'office-files');
   assert.equal(gateOfTool('Read', 'That folder is private'), 'folder');
+});
+
+test('a long transcript is read with breaks, so hook frames and timers are not held up', async () => {
+  // Value: protects=the main thread during a first launch backfill; fails_when=a transcript is read in one go without letting the event loop run; why_new=ship performance review 2026-10-16; seam=none; no_claim=how long a break is
+  const iso = (ms) => new Date(ms).toISOString();
+  const t0 = Date.UTC(2026, 9, 12, 15);
+  let ran = false, ranBeforeEnd = false;
+  function* feed() {
+    yield JSON.stringify({ type: 'user', timestamp: iso(t0), message: { content: 'hello' } });
+    for (let i = 1; i < 2000; i++) yield JSON.stringify({ type: 'assistant', timestamp: iso(t0 + i), message: { content: [] } });
+    ranBeforeEnd = ran;
+  }
+  setImmediate(() => { ran = true; });
+  const r = await readTranscript(feed(), t0 - 1, t0 + 3_600_000);
+  assert.equal(ranBeforeEnd, true, 'a timer waiting before the read ran during it');
+  assert.deepEqual(r.turns, [{ ts: t0, ms: 1999 }]);
+});
+
+test('a tool result outside the window is never searched for a refusal', async (t) => {
+  // Value: protects=backfill cost on long sessions; fails_when=a tool result before or after the window is searched, or one inside it is missed; why_new=ship performance review 2026-10-16; seam=RegExp exec spy; no_claim=JSON parsing cost of the line itself
+  const iso = (ms) => new Date(ms).toISOString();
+  const t0 = Date.UTC(2026, 9, 12, 15);
+  const result = (ts, id, text) => JSON.stringify({ type: 'user', timestamp: iso(ts), message: { content: [{ type: 'tool_result', tool_use_id: id, content: [{ type: 'text', text }] }] } });
+  const lines = [
+    JSON.stringify({ type: 'user', timestamp: iso(t0 - 7_200_000), message: { content: 'earlier' } }),
+    result(t0 - 3_600_000, 'a', 'PreToolUse:WebFetch hook error: outside-window'),
+    JSON.stringify({ type: 'user', timestamp: iso(t0), message: { content: 'now' } }),
+    result(t0 + 1000, 'b', 'PreToolUse:Bash hook error: not here'),
+    result(t0 + 7_200_000, 'c', 'PreToolUse:WebSearch hook error: outside-window')
+  ];
+  const exec = RegExp.prototype.exec;
+  let searched = 0;
+  RegExp.prototype.exec = function (s) { if (typeof s === 'string' && s.includes('outside-window')) searched++; return exec.call(this, s); };
+  t.after(() => { RegExp.prototype.exec = exec; });
+  const r = await readTranscript(lines, t0, t0 + 3_600_000);
+  RegExp.prototype.exec = exec;
+  assert.equal(searched, 0, 'no result outside the window was searched');
+  assert.deepEqual(r.refused, [{ ts: t0 + 1000, gate: 'sandbox' }]);
+  assert.deepEqual(r.turns, [{ ts: t0, ms: 3_600_000 }], 'a later line still ends the request, capped at an hour');
 });
 
 test('office log points carry the past mark, and only a member\'s message is work', () => {

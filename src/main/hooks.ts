@@ -22,7 +22,7 @@ import type { ControlRegistry } from './control';
 import type { CircuitBreaker } from './breaker';
 import { estimateCostUsd } from './pricing';
 import { claudeProjectsRoot, projectDir } from './transcript';
-import { HOOK_PATH_UNCHECKED, HOOK_SENDER_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, isTerminalPrompt, validateHookEvent } from '../shared/hookEvents';
+import { HOOK_PATH_UNCHECKED, HOOK_SENDER_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, batchToolUseIds, isTerminalPrompt, validateHookEvent } from '../shared/hookEvents';
 export { TERMINAL_PROMPT_TYPES, isTerminalPrompt };
 import { resolveGodName } from '../shared/godIdentity';
 import { ownValue } from '../shared/ownValue';
@@ -40,7 +40,9 @@ export const STUCK_AGAIN_MS = 30 * 60_000;
 /** A restart counts once the member's session starts again within this long;
  *  otherwise Michael hears they are still stuck (ship review, 2026-10-16). */
 export const STUCK_CONFIRM_MS = 60_000;
-/** Events that show a stuck member moved on: the stuck episode ends. */
+/** Events that show a stuck member moved on: the stuck episode ends. A
+ *  UserPromptSubmit does not end one already raised to Michael: a message to
+ *  the member is not a sign it recovered. */
 const STUCK_MOVED_ON = new Set(['UserPromptSubmit', 'PostToolUse', 'Stop']);
 
 /** A Claude Code session transcript: a .jsonl file in Claude's own projects
@@ -96,7 +98,7 @@ import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, webAccess } from '../shared/webAcce
 import { isQuickBooksConnectorTool, isQuickBooksResourceCall, quickbooksAccess, quickbooksCapability } from '../shared/quickbooks';
 import { handoffContext } from '../shared/safeClear';
 import { ownerQuestionsContext, ownerRequestsContext, stuckCardsContext } from '../shared/ownerRequests';
-import { lastAssistantText } from './transcriptText';
+import { lastAssistantLine, lastAssistantText, type SaidLine } from './transcriptText';
 import { stopReasonFor, type OfficeStopReason } from '../shared/officeBreak';
 import { RESTARTED_NOTE } from '../shared/upkeep';
 
@@ -139,6 +141,8 @@ interface HookPayload {
   /** Set by the hook program when it cut a call's long fields to fit a frame. */
   tool_input_trimmed?: boolean;
   tool_use_id?: string;
+  /** PostToolBatch only: the batch's calls, sent by the hook program with only their ids. */
+  tool_calls?: unknown;
   stop_hook_active?: boolean;
   prompt?: string;
   source?: string;
@@ -183,6 +187,7 @@ export class HookServer {
   /** The company profile last delivered to each agent's session: same once per
    *  session, again on change, rule as the goal. */
   private deliveredProfileByAgent = new Map<string, { sessionId: string | null; text: string | null }>();
+  private deliveredFoundationsByAgent = new Map<string, { sessionId: string | null; text: string | null }>();
   /** What roster each agent's session was last given, so it is sent again only on a change. */
   private deliveredRosterByAgent = new Map<string, { sessionId: string | null; layoutKey: string; statusKey: string }>();
   /** The session each agent was last given its memory index in. */
@@ -255,8 +260,9 @@ export class HookServer {
     private getStandingGoal?: (agentId: string) => string | null,
     /** Optional observer of every hook boundary (agentId, event, message). The
      *  worker inbox-wake watchdog (workerWake.ts) feeds on this to learn when an
-     *  agent is parked on a permission/HITL prompt so it never types into it. */
-    private onEvent?: (agentId: string | undefined, event: string, message: string | undefined, toolName?: string) => void,
+     *  agent is parked on a permission/HITL prompt so it never types into it.
+     *  `subagent` is true for a Task subagent's frame. */
+    private onEvent?: (agentId: string | undefined, event: string, message: string | undefined, toolName?: string, subagent?: boolean) => void,
     /** Company knowledge's live state, so turning it on or off reaches running
      *  agents on their next prompt instead of at their next start. */
     private getKnowledge?: () => { active: boolean; cliPath?: string; root?: string; meaning?: { bin: string; palace: string } },
@@ -272,7 +278,11 @@ export class HookServer {
     /** The office break's signals (issue 124): a status line's usage windows,
      *  a turn cut off by the usage limit, a prompt taken, a turn finished.
      *  Optional so tests can omit it. */
-    private onPlan?: (signal: PlanSignal) => void
+    private onPlan?: (signal: PlanSignal) => void,
+    /** Company foundations as this agent reads them (office-foundations.md):
+     *  its job's section, the whole document for Michael, or null. Optional
+     *  so tests can omit it. */
+    private getFoundations?: (agentId: string) => string | null
   ) {}
 
   start(): void {
@@ -364,7 +374,7 @@ export class HookServer {
   }
 
   /** Frames refused for a missing or wrong secret, by the agent they named
-   *  (or "unknown"). Kept for the telemetry health readout (TODOS.md); tests read it today. */
+   *  (or "unknown"). The health readout (telemetry:health) shows them. */
   rejectedFrames(): ReadonlyMap<string, number> {
     return this.rejected;
   }
@@ -451,6 +461,17 @@ export class HookServer {
     return this.transcriptPaths.get(agentId);
   }
 
+  /** The last thing this agent said, as one safe line, and when, for its
+   *  closing-time row. Read only from a transcript in the engine's own folder: the path
+   *  comes from a hook frame, which an agent could write. */
+  latestLine(agentId: string): SaidLine | undefined {
+    const file = this.transcriptPaths.get(agentId);
+    if (!file || !isClaudeTranscript(file)) return undefined;
+    const said = lastAssistantLine(file);
+    const text = said ? safeLine(said.text) : undefined;
+    return text ? { ...said, text } : undefined;
+  }
+
   /** The latest context-window accounting for an agent (current tokens + the real
    *  window size), or undefined if no statusLine tick has fired for it yet. */
   contextFor(agentId: string): { tokens: number; limit: number; ts: number } | undefined {
@@ -477,7 +498,7 @@ export class HookServer {
     // subagent stopping must not mark the agent idle or replace its transcript.
     const subagent = typeof p.subagent_id === 'string' && p.subagent_id.length > 0;
     if (subagent && event === 'SubagentStop') return {};
-    this.onEvent?.(agentId, event, p.message, p.tool_name);
+    this.onEvent?.(agentId, event, p.message, p.tool_name, subagent);
     // Before any early return below (SessionStart and Stop usually return early).
     if (agentId && !subagent && event !== 'Notification' && this.stuckEpisodes.has(agentId)) this.stuckProgress(agentId, event);
     if (agentId && !subagent && typeof p.transcript_path === 'string' && p.transcript_path) {
@@ -930,6 +951,25 @@ export class HookServer {
       }
     }
 
+    // Company foundations (office-foundations.md, eng D1): the member's job
+    // section, or the whole document for Michael, delivered like the profile:
+    // at the start of each session and again when it changes. Never to
+    // Research (eng finding 1).
+    let foundations: string | null = null;
+    if ((event === 'SessionStart' || event === 'UserPromptSubmit') && agentId && this.getFoundations && !isResearchAgent) {
+      let text: string | null = null;
+      try { text = this.getFoundations(agentId); } catch { text = null; }
+      const sessionId = p.session_id ?? null;
+      const delivered = this.deliveredFoundationsByAgent.get(agentId);
+      const fresh = event === 'SessionStart' || !delivered || delivered.sessionId !== sessionId;
+      if (fresh || delivered.text !== text) {
+        this.deliveredFoundationsByAgent.set(agentId, { sessionId, text });
+        if (text) foundations = text;
+        // Silence would leave the old section alive in the model's context.
+        else if (!fresh && delivered?.text) foundations = 'COMPANY FOUNDATIONS. Your job no longer has a company foundations section; the answers given earlier no longer apply to your work.';
+      }
+    }
+
     // The agent's memory index (owner, 2026-09-25): once at the start of each
     // session, and never again within it, so it stays in the prompt cache. The
     // tidy-up's changes arrive with the next session.
@@ -974,12 +1014,12 @@ export class HookServer {
       ? this.hive.knowledgeUpdate(agentId, this.getKnowledge())
       : null;
 
-    if (steer || roster || goal || knowledgeNote || profile || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards) {
+    if (steer || roster || goal || knowledgeNote || profile || foundations || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards) {
       this.emit(agentId, event, p);
       return {
         hookSpecificOutput: {
           hookEventName: event,
-          additionalContext: [roster, profile, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean).join('\n\n')
+          additionalContext: [roster, profile, foundations, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean).join('\n\n')
         }
       };
     }
@@ -1134,7 +1174,17 @@ export class HookServer {
       const name = this.displayName(agentId);
       this.tellMichael(agentId, `${name} was restarted after all`, `${name}'s session started again after all, so the restart went through and ${name} is not stuck. Leave ${name}'s open work with them, and if you asked the owner whether ${name} is stuck, withdraw that question.`);
     } else if (STUCK_MOVED_ON.has(event)) {
+      // A message arriving is not recovery: a member still on its prompt gets
+      // them too. Keep a raised episode until real work shows.
+      if (ep.escalated && event === 'UserPromptSubmit') return;
       this.stuckEpisodes.delete(agentId);
+      if (!ep.escalated) return;
+      // Michael heard the member is stuck: tell him it is over, or the card he
+      // raised stays on Ask me long after the member got going (owner,
+      // 2026-10-23: Pete answered at 05:27, the card went up at 05:30).
+      this.relayedPrompts.delete(agentId);
+      const name = this.displayName(agentId);
+      this.tellMichael(agentId, `${name} is working again`, `${name} got past what stopped them and is working again, so ${name} is not stuck. If you put a question on the owner's Ask me board saying ${name} is stuck, withdraw it; if you have not raised it yet, don't. ${name} can take work again.`);
     }
   }
 
@@ -1307,6 +1357,7 @@ export class HookServer {
       event,
       tool: p.tool_name,
       toolUseId: typeof p.tool_use_id === 'string' ? p.tool_use_id : undefined,
+      toolUseIds: event === 'PostToolBatch' ? batchToolUseIds(p.tool_calls) : undefined,
       notificationType: p.notification_type,
       source: p.source,
       message: p.message,
@@ -1366,10 +1417,16 @@ const TOOL_LINE_MAX = 80;
  *  agent cannot disguise the line the owner decides by. */
 export function toolLine(tool: unknown, input: unknown): string | undefined {
   const d = toolDetail(tool, input);
-  if (!d) return undefined;
+  return d ? safeLine(d) : undefined;
+}
+
+/** Any agent text as one line the owner may read: redacted, without control
+ *  or invisible characters, at most 80 characters (toolLine, and the last
+ *  thing an agent said on its closing-time row). */
+export function safeLine(text: string): string | undefined {
   // Invisible format characters are removed, not spaced, so one hidden
   // inside a token cannot split it past redaction.
-  const plain = d.replace(/\p{Cf}+/gu, '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, TOOL_LINE_SCAN_MAX);
+  const plain = text.replace(/\p{Cf}+/gu, '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, TOOL_LINE_SCAN_MAX);
   // Cut by code point so an emoji is never split in half.
   const redacted = redactSecrets(plain);
   if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(redacted)) return undefined;

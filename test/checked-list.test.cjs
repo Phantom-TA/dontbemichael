@@ -310,6 +310,18 @@ test('a long text shows its changes with some text around them, and hidden chara
   assert.deepEqual(C.withHidden('a​​b﻿'), ['a', { hidden: 2 }, 'b', { hidden: 1 }]);
 });
 
+test('a cut at the cap or around a change never keeps half an emoji', () => {
+  // Value: protects=the list never shows a broken character; fails_when=a cut lands between the two halves of an emoji and keeps one; why_new=bug found by repro (an emoji on the 4,000th or 80th character); seam=none
+  const half = (s) => /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(s);
+  const k = C.keepText('a'.repeat(3999) + '\u{1F600} rest');
+  assert.deepEqual(k, { text: 'a'.repeat(3999), cut: true });
+  const before = 'x'.repeat(100) + '\u{1F600}' + 'y'.repeat(79);
+  const after = 'z'.repeat(79) + '\u{1F600}' + 'w'.repeat(100);
+  const ctx = C.changesInContext([{ op: 'same', text: before }, { op: 'del', text: 'BAD ' }, { op: 'same', text: after }]);
+  assert.deepEqual(ctx, [null, { op: 'same', text: 'y'.repeat(79) }, { op: 'del', text: 'BAD ' }, { op: 'same', text: 'z'.repeat(79) }, null]);
+  assert.ok(ctx.filter(Boolean).every((p) => !half(p.text)));
+});
+
 test('both tiles open their list, the lists follow the approved design, and every string is in three languages', () => {
   // Value: protects=design DD2 to DD15 at the seams the source shows; fails_when=a tile loses its link, the held list loses its error state, or a locale misses a key or uses a dash; why_new=new view; seam=source pins; no_claim=pixel layout (live check against checked-lists-v2.html)
   const view = read('src/renderer/src/components/pulse/PulseView.tsx');
@@ -413,7 +425,7 @@ test('checks from before the lists kept words are put together once from the off
   assert.equal(rows(home).length, 0, 'once per office');
   const { PRIVATE_ENTRIES } = loadTs('src/main/factoryReset.ts');
   assert.ok(PRIVATE_ENTRIES.includes('checked-backfill.json'));
-  assert.match(read('src/main/homeFolder.ts'), /'checked-archive', 'checked-backfill\.json'\]/);
+  assert.match(read('src/main/homeFolder.ts'), /'checked-archive', 'checked-backfill\.json'[,\]]/);
   assert.match(read('src/main/index.ts'), /ensureCheckedBackfill\(privateRoot\(home\), \{/);
   assert.equal(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse.checked.found, "Put together later from the office's files: what kind of detail was taken out wasn't recorded then.");
 });
@@ -486,4 +498,15 @@ test('word changes put back together give both texts, whatever is shared at the 
     assert.equal(sq(parts.filter((p) => p.op !== 'del').map((p) => p.text).join('')), sq(b), `new side ${k}`);
   }
   assert.deepEqual(wordChanges('same words here', 'same words here'), [{ op: 'same', text: 'same words here' }]);
+});
+
+test('a folded row opens to the whole question or answer it stands for', () => {
+  // Value: protects=the owner can read what an unchanged answer said (owner, 2026-10-20: "see answer does not show anything useful like what was it"); fails_when=a folded row is a one line label again, or its text is not shown or is cut without a way to see the rest; why_new=the fold showed only a clipped subject while up to 4,000 characters were kept; seam=source pins; no_claim=pixel layout
+  const view = read('src/renderer/src/components/pulse/PulseView.tsx');
+  const fold = view.slice(view.indexOf('{foldOpen && rest.map('));
+  assert.match(fold, /<button type="button" aria-expanded=\{opened\} onClick=\{\(\) => toggle\(setOpenRows, k\)\}/, 'each folded row is a button that opens');
+  assert.match(fold, /\{opened && <>\s*<div dir="auto" style=\{textStyle\}>\{all \? text : `\$\{text\.slice\(0, 600\)\}…`\}<\/div>/, 'the text as it went, long ones shortened with Show the whole');
+  assert.match(fold, /pulse\.checked\.showWholeAnswer/);
+  assert.match(fold, /\{r\.cut && <div[^>]*>\{t\('pulse\.checked\.cut'\)\}<\/div>\}/, 'a text cut at the cap says so');
+  assert.match(fold, /\{next\(r\)\}/, 'and what happened next');
 });

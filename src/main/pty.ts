@@ -247,7 +247,7 @@ export function parseNpmCmdShim(shimPath: string, content: string): NpmShimTarge
    *  expands WITH a trailing backslash) into an absolute, normalized path. Any
    *  other surviving `%` means a variable we did not model → refuse. */
   const expand = (raw: string): string | null => {
-    let s = raw.replace(/%~dp0%?|%dp0%/gi, `${dir}\\`);
+    let s = raw.replace(/%~dp0%?|%dp0%/gi, () => `${dir}\\`);
     if (s.includes('%')) return null;
     if (!s.trim()) return null;
     // `<dir>\` + `\node_modules\…` produces a doubled separator that Windows
@@ -453,6 +453,7 @@ export class PtyManager {
       const appData = process.env.APPDATA ?? '';
       const localAppData = process.env.LOCALAPPDATA ?? '';
       const home = process.env.USERPROFILE ?? process.env.HOME ?? '';
+      const programFiles = process.env.ProgramFiles ?? '';
       const winCandidates = [
         `${appData}\\npm\\${command}.cmd`,
         `${appData}\\npm\\${command}`,
@@ -460,6 +461,9 @@ export class PtyManager {
       // Claude's own installer (install.ps1) puts claude.exe here and updates the
       // user PATH in the registry, which this already running app never sees.
       `${home}\\.local\\bin\\${command}.exe`,
+        // The app's own Node install (nodeInstall.ts) lands here, and this running
+        // app's PATH predates it. Never built from an unset variable (drive root).
+        ...(programFiles ? [`${programFiles}\\nodejs\\${command}.exe`, `${programFiles}\\nodejs\\${command}.cmd`] : []),
         `${home}\\.claude\\local\\${command}.cmd`,
         `${home}\\.claude\\local\\${command}`
       ];

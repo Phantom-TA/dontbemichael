@@ -41,9 +41,10 @@ import { inferAgentProvider, BUILD_ENGINES, type AgentProvider } from '../shared
 import { ALLOW_VOICE_HIRE } from '../shared/buildFeatures';
 import { clearCommandForProvider } from '../shared/providerAutomation';
 import { resolveGodName } from '../shared/godIdentity';
-import { cleanFocus } from '../shared/missions';
+import { cleanFocus, deleteMission, setMissionEnabled } from '../shared/missions';
 import { cardConversation, openAskIndexes } from '../shared/askMeRouting';
 import { ownerChangeNote } from '../shared/ownerRequests';
+import { RESEARCH_ID } from '../shared/research';
 
 export const VOICE_ACTOR = 'michael-voice';
 
@@ -161,8 +162,7 @@ const SETTING_POLICY: Record<string, {
   costCapTokens: { tier: 'confirm', type: 'number', min: 0, max: 1_000_000_000 },
   maxTurns: { tier: 'confirm', type: 'number', min: 1, max: 1000 },
   slackEnabled: { tier: 'confirm', type: 'boolean' },
-  webhookEnabled: { tier: 'confirm', type: 'boolean' },
-  semanticMemory: { tier: 'confirm', type: 'boolean' }
+  webhookEnabled: { tier: 'confirm', type: 'boolean' }
 };
 
 const PENDING_TTL_MS = 120_000;
@@ -634,8 +634,10 @@ function buildEditSchedule(
   return async () => {
     const all = deps.listMissions();
     let next: ScheduledMission[];
-    if (action === 'delete') next = all.filter((m) => m.id !== mission.id);
-    else next = all.map((m) => (m.id === mission.id ? { ...m, enabled: action === 'enable' } : m));
+    if (action === 'delete') next = deleteMission(all, mission.id);
+    // As the Schedules tab toggle: a job turned back on waits for its next
+    // slot, not the one that passed while it was off.
+    else next = setMissionEnabled(all, mission.id, action === 'enable', Date.now()) ?? all;
     deps.saveMissions(next);
     attribute(deps, 'edit_schedule', mission.id, { action });
     return `${action === 'delete' ? 'Deleted' : action === 'enable' ? 'Enabled' : 'Disabled'} the "${mission.label}" schedule.`;
@@ -757,6 +759,11 @@ function proposeDestructive(deps: RealtimeActionDeps, verb: string, a: Record<st
     const to = str(a.to) || str(a.agentId) || 'god';
     const target = resolveAgent(to, reg);
     const targetId = 'error' in target ? 'god' : target.id;
+    // Research gets no schedules (design review D19); voice refuses one as
+    // missions:upsert and agent schedule requests do.
+    if (!('error' in target) && target.id === RESEARCH_ID) {
+      return { ok: false, spoken: `${target.name} has no schedules. They answer the questions teammates send them.` };
+    }
     const mission: ScheduledMission = {
       id: `voice-${slug(label)}-${shortId()}`,
       label,

@@ -27,6 +27,7 @@ import type { AgentDefinitionV2 } from '../../../shared/agentDefinition';
 import { FIRST_TASK_EDITED_MAX, withoutLegacyFirstTask } from '../../../shared/firstTask';
 import { firstTaskSection } from '../../../shared/workStyleText';
 import { splitAgentRole } from '../../../shared/agentRole';
+import { pasteSafe } from '../../../shared/pasteSafe';
 import { ACTION_AT_PROMPT, ACTION_CLOCKING_IN } from '@/store/store';
 import { ENGINE_READY_EVENT } from '@/shell/useNeedsYou';
 import { seedStarterJobs } from '@/shell/seedStarterJobs';
@@ -144,7 +145,11 @@ function submitToPty(
     // stray "\n" doesn't submit early (#24). Single-line text (nudges, slash
     // commands) is sent raw — some TUIs (Antigravity's agy) treat the paste
     // markers as literal input and never submit, so skipping them is more robust.
-    const payload = text.includes('\n') ? `\x1b[200~${text}\x1b[201~` : text;
+    // No control characters from the message itself: a quoted email holding
+    // ESC[201~ would end the paste and type the rest as keystrokes (ship
+    // review, 2026-10-23). A lone return is pasted too, never typed as Enter.
+    const safe = pasteSafe(text);
+    const payload = /[\r\n]/.test(safe) ? `\x1b[200~${safe}\x1b[201~` : safe;
     // writePty NEVER rejects for a dead pty — it resolves { ok:false, error:
     // 'no pty: …' } — so an unchecked await here made every failed delivery look
     // successful (the queue-drain then destroyed the message it had already
@@ -744,17 +749,20 @@ export function useHive(config: HarnessConfig | null): void {
         if (!breakerArmed) updateAgent(e.agentId, { status: 'working', currentStation: m.station, carrying: m.carry, action: `using ${e.tool}`, actionDetail: e.detail, actionAt: Date.now() });
         if (e.toolUseId) runningCalls.start(e.agentId, e.toolUseId, { tool: e.tool, detail: e.detail, at: Date.now() });
         useStore.getState().bumpToolCount(e.agentId); // usage proxy for the command center
-      } else if (e.event === 'PostToolUse' || e.event === 'UserPromptSubmit') {
+      } else if (e.event === 'PostToolUse' || e.event === 'PostToolUseFailure' || e.event === 'PostToolBatch' || e.event === 'UserPromptSubmit') {
         // A turn is in progress (prompt submitted / tool just finished) — keep
         // it working so it doesn't flicker idle between tool calls. The
         // finished tool's detail goes, so the closing-time row never shows a
         // tool that already ended as still running (owner, 2026-09-29).
         if (!breakerArmed) updateAgent(e.agentId, { status: 'working', actionDetail: undefined, actionAt: Date.now() });
         // With parallel calls, the row goes back to the latest one still running.
-        const running = e.event === 'PostToolUse' ? runningCalls.end(e.agentId, e.toolUseId) : undefined;
+        // A call that failed ends the same way, by its own id. A finished
+        // batch ends every call it names, the ones the engine refused too.
+        const toolEnded = e.event !== 'UserPromptSubmit';
+        const running = toolEnded ? runningCalls.end(e.agentId, e.toolUseIds ?? e.toolUseId) : undefined;
         if (running && !breakerArmed) updateAgent(e.agentId, { action: `using ${running.tool}`, actionDetail: running.detail, actionAt: running.at });
         // Nothing still running: the row stops naming the tool that finished.
-        else if (e.event === 'PostToolUse' && !breakerArmed) updateAgent(e.agentId, { action: 'thinking' });
+        else if (toolEnded && !breakerArmed) updateAgent(e.agentId, { action: 'thinking' });
         // The prompt landed: a submit waiting on it stops pressing Enter.
         if (e.event === 'UserPromptSubmit') { promptSubmits.note(e.agentId); runningCalls.clear(e.agentId); }
       } else if (e.event === 'PreInvocation') {
