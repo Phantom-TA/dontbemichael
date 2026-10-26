@@ -41,7 +41,7 @@ import { inferAgentProvider, BUILD_ENGINES, type AgentProvider } from '../shared
 import { ALLOW_VOICE_HIRE } from '../shared/buildFeatures';
 import { clearCommandForProvider } from '../shared/providerAutomation';
 import { resolveGodName } from '../shared/godIdentity';
-import { cleanFocus } from '../shared/missions';
+import { cleanFocus, deleteMission, setMissionEnabled } from '../shared/missions';
 import { cardConversation, openAskIndexes } from '../shared/askMeRouting';
 import { ownerChangeNote } from '../shared/ownerRequests';
 
@@ -633,8 +633,10 @@ function buildEditSchedule(
   return async () => {
     const all = deps.listMissions();
     let next: ScheduledMission[];
-    if (action === 'delete') next = all.filter((m) => m.id !== mission.id);
-    else next = all.map((m) => (m.id === mission.id ? { ...m, enabled: action === 'enable' } : m));
+    if (action === 'delete') next = deleteMission(all, mission.id);
+    // As the Schedules tab toggle: a job turned back on waits for its next
+    // slot, not the one that passed while it was off.
+    else next = setMissionEnabled(all, mission.id, action === 'enable', Date.now()) ?? all;
     deps.saveMissions(next);
     attribute(deps, 'edit_schedule', mission.id, { action });
     return `${action === 'delete' ? 'Deleted' : action === 'enable' ? 'Enabled' : 'Disabled'} the "${mission.label}" schedule.`;
