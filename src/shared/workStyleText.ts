@@ -317,8 +317,10 @@ export function thirdPerson(text: string, label: string): string {
     .replace(/\b[Yy]our\b/g, () => `${label}'s`)
     // "you don't" is "doesn't"; "you won't" and "you can't" stay as they are.
     .replace(/\b[Yy]ou (do|have|are|were)n(['’])t\b/g, (_m, verb: string, q: string) => `${label} ${irregular[verb]}n${q}t`)
-    // "you'd" before a past participle is "had": "You'd finished it" is not "would finished".
-    .replace(/\b[Yy]ou['’]d(?=\s+[a-z]+ed\b)/g, () => `${label} had`)
+    // "you'd" before a past participle is "had": "You'd finished it" is not
+    // "would finished". Verbs that only end in "ed" ("need", "proceed", "feed",
+    // "shred") keep "would".
+    .replace(/\b[Yy]ou['’]d(?=\s+(?![a-z]*eed\b|(?:shred|embed|wed|shed|bed|red)\b)[a-z]+ed\b)/g, () => `${label} had`)
     .replace(/\b[Yy]ou['’](ll|d|ve)\b/g, (_m, c: string) => `${label} ${contracted[c]}`)
     // Only a "you" that opens a clause is the subject, so the adverb passes the s
     // on; an object "you" ("asks you first before") leaves the next words alone.

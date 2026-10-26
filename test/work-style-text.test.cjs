@@ -132,6 +132,12 @@ test('an object you leaves the words after it alone; only a you that opens a cla
   assert.equal(s('Done.\nYou never send refunds.'), 'Done.\nSupport never sends refunds.');
   assert.equal(s("You'd finished the invoice already."), 'Support had finished the invoice already.');
   assert.equal(s('You’d reply first.'), 'Support would reply first.', 'not before a past participle');
+  assert.equal(s("You'd checked it twice."), 'Support had checked it twice.');
+  // A verb that only ends in "ed" is not a past participle.
+  assert.equal(s("You'd need to check the inbox first."), 'Support would need to check the inbox first.');
+  assert.equal(s("you'd proceed only after Michael agrees."), 'Support would proceed only after Michael agrees.');
+  assert.equal(s("You'd feed the summary to Michael."), 'Support would feed the summary to Michael.');
+  assert.equal(s("You'd shred old drafts."), 'Support would shred old drafts.');
 });
 
 test('the Add and Edit agent views read a work style by role, never by the agent\'s name', () => {
