@@ -22,8 +22,8 @@ requests, and a pull request always has a real account behind it.
 
 | Contributor | Contributions | First | Most recent |
 |---|---:|---|---|
+| [@amartya1523](https://github.com/amartya1523) | 66 | 2026-10-10 | 2026-10-26 |
 | [@agentvivekkumar](https://github.com/agentvivekkumar) | 65 | 2026-09-15 | 2026-10-24 |
-| [@amartya1523](https://github.com/amartya1523) | 63 | 2026-10-10 | 2026-10-25 |
 | [@SantoshMalana](https://github.com/SantoshMalana) | 9 | 2026-10-12 | 2026-10-13 |
 | [@dhruvpuri](https://github.com/dhruvpuri) | 7 | 2026-10-10 | 2026-10-10 |
 | [@Kartikey1306](https://github.com/Kartikey1306) | 6 | 2026-10-12 | 2026-10-12 |
@@ -38,6 +38,7 @@ requests, and a pull request always has a real account behind it.
 | [@shrinivas-sn](https://github.com/shrinivas-sn) | 2 | 2026-10-11 | 2026-10-11 |
 | [@coolman-97](https://github.com/coolman-97) | 2 | 2026-10-12 | 2026-10-21 |
 | [@Shreyas652](https://github.com/Shreyas652) | 2 | 2026-10-13 | 2026-10-14 |
+| [@Arrrttyyyys](https://github.com/Arrrttyyyys) | 2 | 2026-10-16 | 2026-10-25 |
 | [@manognyachindam-14](https://github.com/manognyachindam-14) | 2 | 2026-10-16 | 2026-10-17 |
 | [@Yash-Nimkar0](https://github.com/Yash-Nimkar0) | 2 | 2026-10-17 | 2026-10-18 |
 | [@ThanishaDewangan](https://github.com/ThanishaDewangan) | 2 | 2026-10-17 | 2026-10-17 |
@@ -119,7 +120,6 @@ requests, and a pull request always has a real account behind it.
 | [@Sahil8383](https://github.com/Sahil8383) | 1 | 2026-10-14 | 2026-10-14 |
 | [@iNoumanMalik](https://github.com/iNoumanMalik) | 1 | 2026-10-14 | 2026-10-14 |
 | [@ashishdabhi019](https://github.com/ashishdabhi019) | 1 | 2026-10-16 | 2026-10-16 |
-| [@Arrrttyyyys](https://github.com/Arrrttyyyys) | 1 | 2026-10-16 | 2026-10-16 |
 | [@Meltcus](https://github.com/Meltcus) | 1 | 2026-10-16 | 2026-10-16 |
 | [@Suryanshu185](https://github.com/Suryanshu185) | 1 | 2026-10-16 | 2026-10-16 |
 | [@AminMahmodi81](https://github.com/AminMahmodi81) | 1 | 2026-10-16 | 2026-10-16 |
@@ -176,7 +176,7 @@ requests, and a pull request always has a real account behind it.
 | [@sanjayb23](https://github.com/sanjayb23) | 1 | 2026-10-21 | 2026-10-21 |
 | [@tuduun](https://github.com/tuduun) | 1 | 2026-10-24 | 2026-10-24 |
 
-_323 pull requests from 153 people._
+_327 pull requests from 153 people._
 
 ## † Contributions that never got the merged badge
 
