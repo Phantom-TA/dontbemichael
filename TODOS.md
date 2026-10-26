@@ -8,6 +8,8 @@
 
 **Why:** `validateOps` gets `ownerWords` for the whole pass (src/main/memoryTidy.ts). When any owner note is pending, an op the model built from an inbox line can claim owner, and only the prompt keeps the two apart. Michael gets an owner note for every dock message, so his passes almost always run that way.
 
+Go with it: keep only the owner's own words (the answer, the edit, the note) in `owner_notes.text` and the quoted context (the member's question, a card title, an email subject, pasted text) in a field of its own that the tidy prompt labels as not the owner's; today one line in the instructions asks the model to tell them apart (D4). And file an owner note only when a pass used it, or keep the ones it set aside for a later pass, so a planted inbox note can't talk the tidy-up into dropping the owner's words (adversarial review, DeepSeek, 2026-10-26).
+
 **Effort:** M
 **Priority:** P2
 
@@ -28,6 +30,15 @@
 
 **Effort:** M
 **Priority:** P2
+
+### Run comparison reads transcripts it finds by name
+
+**What:** Record each member session's transcript path (and size) when the app starts the session, and have run comparison read only that file, instead of finding `<session id>.jsonl` anywhere under Claude's projects folder.
+
+**Why:** On a Mac members' shells are walled off from that folder, but on Windows a member's shell could write a file under its own session id. The member's own transcript already holds whatever it chose to say, and every suggestion still waits for the owner's Review and Apply, so this is defense in depth. The injection screen on a suggestion is a pattern list, not a boundary; the owner's Apply is (adversarial review, DeepSeek, 2026-10-26).
+
+**Effort:** S
+**Priority:** P3
 
 ### Voice confirms for schedules and settings carry no target
 

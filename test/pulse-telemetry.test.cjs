@@ -744,12 +744,17 @@ test('Pulse reads how long the office ran into the period and the span before', 
 });
 
 test('the app drives the running clock: a beat each minute, paused and saved before a sleep, a quit or a memory reset, restarted on arm', () => {
-  // Value: protects=owner D1 at the app's edges, where the store's rules meet powerMonitor; fails_when=a quit or memory reset flushes without saving the buffered minutes (up to 5 lost each time), a suspend stops pausing the clock (each sleep then counts up to the 15 minute cap), the beat stops passing the stopped flag, or a resume no longer restarts the clock with a first beat; why_new=the store tests call the clock by hand and nothing pinned the calls in index.ts; seam=none (source pins, as powerMonitor needs Electron); no_claim=powerMonitor's events themselves
+  // Value: protects=owner D1 at the app's edges, where the store's rules meet powerMonitor; fails_when=a quit, memory reset, office switch or start over flushes without saving the buffered minutes (up to 5 lost each time), a suspend stops pausing the clock (each sleep then counts up to the 15 minute cap), the beat stops passing the stopped flag, or a resume no longer restarts the clock with a first beat; why_new=the store tests call the clock by hand and nothing pinned the calls in index.ts; seam=none (source pins, as powerMonitor needs Electron); no_claim=powerMonitor's events themselves
   const main = fs.readFileSync(path.resolve(__dirname, '../src/main/index.ts'), 'utf8');
   const body = (start, end) => main.slice(main.indexOf(start), main.indexOf(end, main.indexOf(start)));
   const saveThenFlush = 'pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush();';
   assert.ok(body('function teardownAndQuit', '\n}\n').includes(saveThenFlush), 'quit saves the running minutes before the flush');
   assert.ok(body("ipcMain.handle('app:resetMemory'", 'persist.close()').includes(saveThenFlush), 'a memory reset does too, before the database closes');
+  // An office switch or a start over relaunches too (adversarial review, ship 2026-10-26).
+  const change = body("writeConfig({ harnessHome: newHome });", 'restartApp(app)');
+  assert.ok(main.slice(main.lastIndexOf('allowQuit = true;', main.indexOf('writeConfig({ harnessHome: newHome });')), main.indexOf('writeConfig({ harnessHome: newHome });')).includes(saveThenFlush), 'switching offices saves the old one\'s minutes first');
+  assert.ok(change.length > 0);
+  assert.ok(body("console.error('[startOverHere] pulse flush:'", 'restartApp(app)').length > 0 && main.includes(`try { ${saveThenFlush} } catch (e) { console.error('[startOverHere] pulse flush:', e); }`), 'so does starting over');
   assert.match(main, /powerMonitor\.on\('suspend', \(\) => \{[^\n]*pulseTelemetry\.runningPause\(officeStopped\(\)\); pulseTelemetry\.presence\(0, true\);/);
   assert.match(body('function pulsePresenceBeat', '\n}\n'), /pulseTelemetry\.running\(officeStopped\(\)\);/);
   assert.match(body('function officeStopped', '\n}\n'), /return !!v && !v\.checking;/, 'a check in progress is running time');

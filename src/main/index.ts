@@ -4976,6 +4976,8 @@ ipcMain.handle('config:changeHome', async (_evt, payload: unknown) => {
   // Repoint config and relaunch so every service re-bootstraps against newHome.
   // (Identical recovery path to resetAll — relaunch is the clean re-bind.)
   allowQuit = true;
+  // The old office's running time and buffered points land before the switch.
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[changeHome] pulse flush:', e); }
   writeConfig({ harnessHome: newHome });
   try { ptyManager.killAll(); } catch (e) { console.error('[changeHome] killAll:', e); }
   restartApp(app);
@@ -5008,6 +5010,7 @@ ipcMain.handle('config:startOverHere', () => {
   // bring the owner straight back to the "can't find your office" screen.
   try { hive.ensureHive(); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
   allowQuit = true;
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[startOverHere] pulse flush:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[startOverHere] killAll:', e); }
   restartApp(app);
   return { ok: true as const }; // unreachable (process exits)
