@@ -157,6 +157,7 @@ import { SilentWatch, type WatchMember } from './silentWatch';
 import { mailFor, noticeForOpened, type SilentEpisode } from '../shared/silentEngine';
 import {
   argsWithAutoModeFlag,
+  argsWithTurnCap,
   bridgeOf,
   inferAgentProvider,
   isClaudeProvider,
@@ -4377,10 +4378,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         .trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
       if (label) args.push('--remote-control-session-name-prefix', label);
     }
-    // Coarse runaway cap.
-    if (typeof cfg.maxTurns === 'number' && cfg.maxTurns > 0 && !args.includes('--max-turns')) {
-      args.push('--max-turns', String(cfg.maxTurns));
-    }
+    // Coarse runaway cap. A --max-turns already in the command (the owner's, or
+    // one a shared hire brought in) can only lower it, never raise it.
+    args.splice(0, args.length, ...argsWithTurnCap(args, cfg.maxTurns));
     // Resume: an explicit session id (Add Agent "resume session" field, #2) wins,
     // else this agent's last recorded session (#1 restore-on-restart / #6.6a).
     // Seed the transcript into the target cwd's Claude project dir first — Claude
