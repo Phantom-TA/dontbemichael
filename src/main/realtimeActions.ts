@@ -253,12 +253,29 @@ function confirmAccepted(phrase: string, confirmWord: string): boolean {
   return false;
 }
 
+/** Does the phrase name a team member other than `targetId`, by id, full name or
+ *  first name? "Confirm kill of Nolan" while Jim's kill waits is about Nolan, so
+ *  it must not run Jim's. Words the target's own names share are skipped, so
+ *  two members called Jim never cancel each other. */
+function namesSomeoneElse(phrase: string, targetId: string, reg: Registry): boolean {
+  const p = ` ${norm(phrase)} `;
+  // A first word like "the" in "The Closer" is not a name of its own.
+  const words = (id: string, name?: string): string[] =>
+    [id, name ?? '', (name ?? '').split(' ')[0]].map(norm)
+      .filter((w) => w.length > 1 && !['the', 'an', 'my', 'our', 'mr', 'ms', 'mrs', 'dr'].includes(w));
+  const own = new Set(words(targetId, reg.agents?.[targetId]?.name));
+  return Object.entries(reg.agents ?? {}).some(([id, m]) =>
+    id !== targetId && words(id, m.name).some((w) => !own.has(w) && p.includes(` ${w} `)));
+}
+
 // ─── pending (single-slot two-phase confirm) ────────────────────────────────
 
 interface Pending {
   verb: string;
   confirmWord: string;
   targetLabel: string;
+  /** The team member the action is for, when it is for one. */
+  targetId?: string;
   createdAt: number;
   commit: () => Promise<string>;
 }
@@ -668,7 +685,7 @@ function proposeDestructive(deps: RealtimeActionDeps, verb: string, a: Record<st
       : buildArchive(deps, r);
     const breaker = deps.controlSnapshot(r.id);
     const note = breaker?.halted ? ' (note: already halted)' : breaker?.paused ? ' (note: already paused)' : '';
-    pending = { verb, confirmWord: spec.confirmWord, targetLabel: r.name, createdAt: Date.now(), commit };
+    pending = { verb, confirmWord: spec.confirmWord, targetLabel: r.name, targetId: r.id, createdAt: Date.now(), commit };
     const consequence = verb === 'clear_context'
       ? `That wipes ${r.name}'s working memory of the current conversation.`
       : verb === 'archive'
@@ -768,7 +785,7 @@ function proposeDestructive(deps: RealtimeActionDeps, verb: string, a: Record<st
       createdBy: 'owner'
     };
     pending = {
-      verb, confirmWord: 'schedule', targetLabel: label, createdAt: Date.now(),
+      verb, confirmWord: 'schedule', targetLabel: label, targetId, createdAt: Date.now(),
       commit: async () => {
         deps.saveMissions([...deps.listMissions(), mission]);
         attribute(deps, 'create_schedule', mission.id, { title: label.slice(0, 120) });
@@ -915,6 +932,15 @@ export function registerRealtimeActionIpc(deps: RealtimeActionDeps): void {
     const cur = pendingFresh();
     if (!cur) return { ok: false, spoken: 'There\'s nothing waiting to confirm.' } satisfies ActionResult;
     const phrase = str(p.phrase) || str(p.confirm) || str(p.text);
+    // A confirm naming someone else is about them, not the staged one: drop it,
+    // so neither this phrase nor a later one runs it on the wrong person.
+    if (cur.targetId && namesSomeoneElse(phrase, cur.targetId, deps.hiveRegistry())) {
+      pending = null;
+      return {
+        ok: false,
+        spoken: `That named someone other than ${cur.targetLabel}, so I cancelled the ${cur.verb.replace('_', ' ')}. Ask again for the one you mean.`
+      } satisfies ActionResult;
+    }
     if (!confirmAccepted(phrase, cur.confirmWord)) {
       return {
         ok: false,
