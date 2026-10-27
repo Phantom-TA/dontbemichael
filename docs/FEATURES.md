@@ -64,8 +64,8 @@ moving, and brings you only the decisions that need you.
   cards to hand on. Michael, his assistant and Pete can't be deleted.
 
 ### 3. A mailbox for every job
-- Connect as many mailboxes as your business runs on: Gmail, Google Workspace, iCloud, Yahoo, Zoho
-  or any IMAP mailbox. Passwords stay encrypted on your computer.
+- Connect as many mailboxes as your business runs on: Gmail or GSuite (one choice, they connect
+  the same way), iCloud, Yahoo, Zoho or any IMAP mailbox. Passwords stay encrypted on your computer.
 - A mail server that isn't encrypted from the start must switch to encryption before the app sends
   the password. One that can't is refused, and the mailbox says so in plain words, with the
   encrypted port to use instead.

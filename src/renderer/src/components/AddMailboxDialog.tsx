@@ -27,7 +27,9 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
   onSaved: (rec: MailboxRecord) => void;
 }) {
   const { t } = useTranslation();
-  const [provider, setProvider] = useState<MailProvider>(fix?.provider ?? 'gmail');
+  // A mailbox saved as Google Workspace opens on the one Google tile, and
+  // saves as gmail: the same servers (owner, 2026-10-26).
+  const [provider, setProvider] = useState<MailProvider>(fix?.provider === 'google-workspace' ? 'gmail' : (fix?.provider ?? 'gmail'));
   const [address, setAddress] = useState(fix?.address ?? '');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -71,7 +73,7 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
     else setError(res.reason);
   };
 
-  const label = (p: MailProvider): string => (p === 'other' ? t('mailboxes.other') : PROVIDER_PRESETS[p].label);
+  const label = (p: MailProvider): string => (p === 'other' ? t('mailboxes.other') : p === 'gmail' ? t('mailboxes.googleTile') : PROVIDER_PRESETS[p].label);
 
   // Arrow keys move and choose within the service tiles (DESIGN.md 7.10a);
   // left and right follow reading direction.

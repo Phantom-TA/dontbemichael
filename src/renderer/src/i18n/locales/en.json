@@ -2001,6 +2001,7 @@
     "openFolderFailed": "Couldn't open the folder. It may have been moved or deleted."
   },
   "mailboxes": {
+    "googleTile": "Gmail or GSuite",
     "title": "Mailboxes",
     "intro": "Mailboxes your team can work in. You choose who uses which one on each team member's Access tab.",
     "add": "Add a mailbox",
@@ -2039,8 +2040,7 @@
     "testing": "Testing {{address}}. One sec.",
     "tryAgain": "Try again",
     "help": {
-      "gmail": "Gmail needs an app password, not your normal one. Turn on 2 Step Verification, then create one at myaccount.google.com/apppasswords.",
-      "google-workspace": "Use an app password from myaccount.google.com/apppasswords. If that page is missing, your Workspace admin has turned app passwords off.",
+      "gmail": "Gmail and GSuite need an app password, not your normal one. Turn on 2 Step Verification, then create one at myaccount.google.com/apppasswords. On GSuite, if that page is missing, your admin has turned app passwords off.",
       "icloud": "iCloud needs an app specific password. Create one at account.apple.com under Sign In and Security.",
       "yahoo": "Yahoo needs an app password. Create one in Account Security, then Generate app password.",
       "zoho": "Zoho needs an app specific password from Security, then App Passwords, with IMAP turned on in Mail settings.",

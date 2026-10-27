@@ -6,7 +6,7 @@ import { InfoTip } from './InfoTip';
 import { AddMailboxDialog } from './AddMailboxDialog';
 import { useHarnessConfig } from '@/hooks/useHarnessConfig';
 import { useStore } from '@/store/store';
-import { PROVIDER_PRESETS, sendersFrom, type MailboxRecord } from '@shared/mailboxes';
+import { PROVIDER_PRESETS, googleLabel, isGoogleProvider, sendersFrom, type MailboxRecord } from '@shared/mailboxes';
 import { SENDING_LABEL_KEY } from './sendingLabels';
 import { groupName, hint, panelStyle } from './fieldText';
 
@@ -133,7 +133,8 @@ export function MailboxesSettings({ focus }: { focus?: { add?: boolean; seq: num
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 600, wordBreak: 'break-all' }}>{m.address}</div>
                         <div style={hint}>
-                          {m.provider === 'other' ? t('mailboxes.other') : PROVIDER_PRESETS[m.provider].label}
+                          {/* One Google tile: the row says Gmail or GSuite by the address. */}
+                          {m.provider === 'other' ? t('mailboxes.other') : isGoogleProvider(m.provider) ? googleLabel(m.address) : PROVIDER_PRESETS[m.provider].label}
                           {' · '}
                           {users.length ? t('mailboxes.usedBy', { names: list(users) }) : t('mailboxes.usedByNobody')}
                         </div>
