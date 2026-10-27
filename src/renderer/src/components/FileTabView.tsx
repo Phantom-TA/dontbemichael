@@ -42,7 +42,7 @@ function FileTabBody({ tab }: { tab: FileTab }) {
   const [said, setSaid] = useState('');
   useEffect(() => {
     if (!opened) return;
-    const frame = requestAnimationFrame(() => { title.current?.focus({ preventScroll: true }); setSaid(t('fileTab.opened', { name: tab.title })); });
+    const frame = requestAnimationFrame(() => { title.current?.focus({ preventScroll: true }); setSaid(t('fileTab.opened', { name: tab.title })); useStore.getState().clearFileOpened(); });
     return () => cancelAnimationFrame(frame);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);

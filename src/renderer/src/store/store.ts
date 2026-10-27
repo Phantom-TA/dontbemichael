@@ -296,6 +296,9 @@ interface State {
   /** The file that just took the center from the wide 1:1, for its view to
    *  focus its title and say it opened (decision 3). */
   fileOpened: { id: string; seq: number } | null;
+  /** The view has focused and announced it: going back to that tab later
+   *  says nothing again (decision 3, only when the file takes the center). */
+  clearFileOpened: () => void;
   /** Who opened last, the 1:1 or the right column: that one takes the center
    *  (8A, shell/wideCenter.ts). Never remembered. */
   centerClaim: CenterClaim;
@@ -1069,6 +1072,7 @@ export const useStore = create<State>((set, get) => ({
   dockSideForNow: false,
   dockAsideForFile: false,
   fileOpened: null,
+  clearFileOpened: () => set({ fileOpened: null }),
   setDockSideForNow: (on) => set({ dockSideForNow: on }),
   centerClaim: null,
   sidebarTab: initialSidebarTab,

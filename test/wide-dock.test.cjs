@@ -143,7 +143,9 @@ test('a file shown while the 1:1 is wide takes the center, and closing it brings
   // The file's title takes the focus on the next frame (the office stops being inert after), and a line says it opened.
   const view = read('src/renderer/src/components/FileTabView.tsx');
   assert.match(view, /const opened = useStore\(\(s\) => \(s\.fileOpened\?\.id === tab\.id \? s\.fileOpened\.seq : 0\)\);/);
-  assert.match(view, /requestAnimationFrame\(\(\) => \{ title\.current\?\.focus\(\{ preventScroll: true \}\); setSaid\(t\('fileTab\.opened', \{ name: tab\.title \}\)\); \}\)/);
+  // Once: handled, it is cleared, so going back to that tab later takes no focus and says nothing (review, 2026-10-27).
+  assert.match(view, /requestAnimationFrame\(\(\) => \{ title\.current\?\.focus\(\{ preventScroll: true \}\); setSaid\(t\('fileTab\.opened', \{ name: tab\.title \}\)\); useStore\.getState\(\)\.clearFileOpened\(\); \}\)/);
+  assert.match(store, /clearFileOpened: \(\) => set\(\{ fileOpened: null \}\),/);
   assert.match(view, /<div ref=\{title\} tabIndex=\{-1\}/);
   for (const loc of ['en', 'ar', 'zh-CN']) assert.match(JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).fileTab.opened, /\{\{name\}\}/, loc);
 });
