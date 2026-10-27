@@ -7,7 +7,7 @@ It is generated from the pull requests themselves rather than from commit metada
 dropped because their git email does not happen to match their GitHub account. It is regenerated
 from merged pull requests, so you appear without having to ask.
 
-**155 people** have contributed so far.
+**156 people** have contributed so far.
 
 <a href="https://github.com/agentvivekkumar/dontbemichael/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=agentvivekkumar/dontbemichael" alt="Contributor avatars">
@@ -22,7 +22,7 @@ requests, and a pull request always has a real account behind it.
 
 | Contributor | Contributions | First | Most recent |
 |---|---:|---|---|
-| [@amartya1523](https://github.com/amartya1523) | 81 | 2026-10-10 | 2026-10-27 |
+| [@amartya1523](https://github.com/amartya1523) | 82 | 2026-10-10 | 2026-10-27 |
 | [@agentvivekkumar](https://github.com/agentvivekkumar) | 70 | 2026-09-15 | 2026-10-27 |
 | [@SantoshMalana](https://github.com/SantoshMalana) | 9 | 2026-10-12 | 2026-10-13 |
 | [@dhruvpuri](https://github.com/dhruvpuri) | 7 | 2026-10-10 | 2026-10-10 |
@@ -177,8 +177,9 @@ requests, and a pull request always has a real account behind it.
 | [@tuduun](https://github.com/tuduun) | 1 | 2026-10-24 | 2026-10-24 |
 | [@codewithwaleed](https://github.com/codewithwaleed) | 1 | 2026-10-27 | 2026-10-27 |
 | [@srinathdoggala-tech](https://github.com/srinathdoggala-tech) | 1 | 2026-10-27 | 2026-10-27 |
+| [@soham842op](https://github.com/soham842op) | 1 | 2026-10-27 | 2026-10-27 |
 
-_349 pull requests from 155 people._
+_351 pull requests from 156 people._
 
 ## † Contributions that never got the merged badge
 
