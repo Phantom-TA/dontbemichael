@@ -13,6 +13,7 @@ import { homeRows, type HomeChoice } from '@shared/jobChange';
 export type ReviseResult = Awaited<ReturnType<Window['cth']['workStyleRevise']>>;
 export type ReviseOk = Extract<ReviseResult, { kind: 'ok' }>;
 type Question = Extract<ReviseResult, { kind: 'question' }>;
+type Failure = Exclude<Extract<ReviseResult, { kind: 'error' }>['reason'], 'cancelled'>;
 type Progress = Parameters<Parameters<Window['cth']['onWorkStyleProgress']>[1]>[0];
 type Answer = { question: string; answer: string };
 
@@ -87,8 +88,17 @@ type State =
   | { at: 'question'; q: Question }
   | { at: 'home'; question: string }
   | { at: 'explain'; back: { ok: ReviseOk; from: string; overlap: Overlap } }
-  | { at: 'error' }
+  | { at: 'error'; reason: Failure }
   | { at: 'moved' };
+
+/** Each cause's line, so the owner knows what to do; "try again in a moment"
+ *  only where a retry can help (owner, 2026-10-26). */
+const FAILURE_NOTE: Record<Exclude<Failure, 'failed'>, string> = {
+  'no-name': 'jobChange.errorNoName',
+  'not-started': 'jobChange.errorNotStarted',
+  slow: 'jobChange.errorSlow',
+  unreadable: 'jobChange.errorUnreadable'
+};
 
 const SUMMARY_SHOWN = 6;
 
@@ -163,9 +173,9 @@ export function JobChangeReview(p: JobChangeReviewProps) {
     off?.();
     if (runId.current !== requestId) return; // stopped, or a newer run
     runId.current = null;
-    if (res.kind === 'error') { setState(res.reason === 'cancelled' ? { at: 'idle' } : { at: 'error' }); return; }
+    if (res.kind === 'error') { setState(res.reason === 'cancelled' ? { at: 'idle' } : { at: 'error', reason: res.reason }); return; }
     if (res.kind === 'question') { setState({ at: 'question', q: res }); return; }
-    if (res.kind === 'home') { setState(p.homeChoices ? { at: 'home', question: res.question } : { at: 'error' }); return; }
+    if (res.kind === 'home') { setState(p.homeChoices ? { at: 'home', question: res.question } : { at: 'error', reason: 'failed' }); return; }
     // An overlap never blocks a job change: the preview names the teammates
     // the change adds, with a way to explain the split, and Apply stays on
     // (owner, 2026-10-24: the check stopped the same change four times that
@@ -308,7 +318,7 @@ export function JobChangeReview(p: JobChangeReviewProps) {
     panel = (
       <div role="alert" style={panelStyle}>
         {head(t('jobChange.errorTitle'))}
-        <span style={noteStyle}>{t(p.autoRun ? 'jobChange.errorNoteCard' : 'jobChange.errorNote')}</span>
+        <span style={noteStyle}>{t(state.reason !== 'failed' ? FAILURE_NOTE[state.reason] : p.autoRun ? 'jobChange.errorNoteCard' : 'jobChange.errorNote')}</span>
         <div style={rowEnd}>
           <PixelButton variant="secondary" size="sm" onClick={cancel}>{t('jobChange.cancel')}</PixelButton>
           <PixelButton variant="primary" size="sm" onClick={() => { void start(extras, answersRef.current); }}>{t('jobChange.tryAgain')}</PixelButton>

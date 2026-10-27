@@ -243,7 +243,7 @@ test('the card: an overlap never blocks a change; the preview names it with two 
   assert.match(src, /role="radio" aria-checked=\{on\} aria-disabled=\{off \|\| undefined\}/);
   assert.match(src, /tabIndex=\{off \? -1 :/);
   assert.match(src, /const live = rows\.map\(\(r, i\) => \(r\.choice\.off \? -1 : i\)\)\.filter\(\(i\) => i >= 0\);/, 'arrows move only between pickable rows');
-  assert.match(src, /if \(res\.kind === 'home'\) \{ setState\(p\.homeChoices \? \{ at: 'home', question: res\.question \} : \{ at: 'error' \}\); return; \}/);
+  assert.match(src, /if \(res\.kind === 'home'\) \{ setState\(p\.homeChoices \? \{ at: 'home', question: res\.question \} : \{ at: 'error', reason: 'failed' \}\); return; \}/);
 });
 
 test('only overlaps the change adds count, and every verdict is logged', () => {

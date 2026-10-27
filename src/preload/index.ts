@@ -724,7 +724,7 @@ const api = {
       handoffs?: Array<{ toId: string; scope: string }>; drops?: Array<{ toId: string; scope: string }> }
     | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> }
     | { kind: 'home'; question: string }
-    | { kind: 'error'; reason: 'failed' | 'cancelled' }
+    | { kind: 'error'; reason: 'no-name' | 'not-started' | 'slow' | 'unreadable' | 'failed' | 'cancelled' }
   > => ipcRenderer.invoke('workStyle:convert', { ...req, to: 'revise' }),
   /** Where a rewrite is (starting, reading, writing) and what it has written
    *  so far, by its request id. Returns the unsubscribe. */

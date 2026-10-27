@@ -6231,7 +6231,12 @@ const reviseRuns = new Map<string, AbortController>();
 ipcMain.handle('workStyle:convert', async (evt, payload: unknown) => {
   if ((payload as { to?: unknown } | null)?.to === 'revise') {
     const rev = readReviseRequest(payload);
-    if (!rev) return { kind: 'error', reason: 'failed' };
+    if (!rev) {
+      // Logged, and said as what to fix: a request with no name or no change
+      // fails the same way on every try (owner, 2026-10-26).
+      try { hive.appendLog({ kind: 'work-style-revise-failed', reason: 'request unreadable (no name or no change)' }); } catch { /* best-effort */ }
+      return { kind: 'error', reason: 'no-name' };
+    }
     const stop = new AbortController();
     if (rev.requestId) reviseRuns.set(rev.requestId, stop);
     const cfg = readConfig();

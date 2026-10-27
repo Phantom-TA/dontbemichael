@@ -29,7 +29,7 @@ test('the job list offers the character\'s own job, the office\'s jobs, a new jo
   assert.match(modal, /tr\('addAgent\.wizard\.showAll', \{ count: hiddenCount \}\)/);
   assert.match(modal, /\{familyJobs\.map\(\(j\) => \(/);
   assert.match(modal, /cardJobs\(res\.packs\.map\(\(p\) => p\.pack\), res\.core, config\.businessType, business\)/);
-  assert.match(modal, /const copy = jobFor\(chosenJob, name\.trim\(\)\);/, 'the name is swapped in');
+  assert.match(modal, /const copy = jobFor\(chosenJob, hireWho\);/, 'the name the screen shows is swapped in');
 });
 
 test('Setup opens only for a verified role: distinct, or bound; Hire checks again', () => {
@@ -171,8 +171,10 @@ test('the job check starts on the job step, and Review reuses it', () => {
   // Value: protects=the owner does not wait for the check on Review when the picked job's check could already run; fails_when=the job step stops starting it, it checks different text than Review shows, Review starts a second one while it runs, or a return to the job step leaves it dropped; why_new=owner 2026-10-03; seam=source pin
   const modal = read('src/renderer/src/components/AddAgentModal.tsx');
   const pre = modal.slice(modal.indexOf('const prefetchSig = useRef'), modal.indexOf('The instant rules always count'));
-  assert.match(pre, /if \(step !== 'job' \|\| !chosenJob \|\| !name\.trim\(\)\) return;/);
-  assert.match(pre, /const copy = jobFor\(chosenJob, name\.trim\(\)\);/, 'the same text Review applies');
+  // The name the screen shows, so a cleared Name box still checks (test/hire-change-reason.test.cjs).
+  assert.match(pre, /if \(step !== 'job' \|\| !chosenJob\) return;/);
+  assert.match(pre, /const copy = jobFor\(chosenJob, hireWho\);/);
+  assert.match(modal, /    const copy = jobFor\(chosenJob, hireWho\);\n    setTitle\(copy\.title\);/, 'the same text Review applies');
   assert.match(pre, /const sig = `\$\{job\.name\}\\n\$\{job\.routing\}`;/);
   assert.match(modal, /const checkSig = `\$\{profile\.name\}\\n\$\{profile\.routing\}`;/, 'Review keys its verdict the same way');
   assert.match(pre, /if \(check\?\.sig === sig \|\| prefetchSig\.current === sig\) return;/, 'one check per job');
