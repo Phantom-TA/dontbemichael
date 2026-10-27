@@ -289,6 +289,11 @@ export function PulseView() {
     return [f.acc, f.m, f.d][nth % 3];
   }, [byId, dark]);
   const fmtShort = (day: string): string => new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, { day: 'numeric', month: 'short' });
+  /** When the running clock began: its time on the period's first day (it
+   *  can start partway into Today), else its day. */
+  const fmtSince = (ms: number, from: string): string => (dayKey(ms) === from
+    ? new Date(ms).toLocaleTimeString(i18n.language, { hour: 'numeric', minute: '2-digit' })
+    : fmtShort(dayKey(ms)));
   const fmtSpan = (from: string, to: string): string => (from === to ? fmtDay(from) : t('pulse.daySpan', { from: fmtShort(from), to: fmtShort(to) }));
   const listNames = (names: string[]): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(names); } catch { return names.join(', '); } };
   const fmtDay = (day: string | number): string => new Date(typeof day === 'number' ? day : `${day}T12:00:00`).toLocaleDateString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short' });
@@ -539,7 +544,7 @@ export function PulseView() {
                   (owner, 2026-10-25, D2): two stats at the foot, as on the left. */}
               <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
                 {([
-                  [s.running?.ms, pv ? pv.running?.ms : undefined, s.running?.since ? t('pulse.officeRanSince', { day: fmtShort(s.running.since) }) : t('pulse.officeRan')],
+                  [s.running?.ms, pv ? pv.running?.ms : undefined, s.running?.since ? t('pulse.officeRanSince', { day: fmtSince(s.running.since, s.from) }) : t('pulse.officeRan')],
                   [s.running?.awayMs, pv ? pv.running?.awayMs : undefined, t('pulse.youAway')]
                 ] as Array<[number | undefined, number | undefined, string]>).map(([ms, before, name]) => (
                   <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
