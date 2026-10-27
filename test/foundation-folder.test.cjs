@@ -64,6 +64,10 @@ test('a folder is refused only for plain mistakes, each with its own reason', (t
   fs.mkdirSync(deep, { recursive: true });
   fs.writeFileSync(path.join(deep, 'a.txt'), 'x');
   assert.deepEqual(o.w.checkFolder('money', deep), { ok: false, error: 'too-long' });
+  // A folder with more to read than the probe reads is not called empty: client folders, one per client (review, 2026-10-27).
+  const clients = path.join(o.user, 'Clients');
+  for (let i = 0; i < 205; i++) fs.mkdirSync(path.join(clients, `Client ${i}`, '2026'), { recursive: true });
+  assert.equal(o.w.checkFolder('money', clients).ok, true);
 });
 
 test('the owner\'s folder answer names the real folder and grants only the jobs that use it', (t) => {
@@ -118,6 +122,16 @@ test('a granted member reads the named folder in the business folder but never w
   assert.deepEqual(folderDecision(oscar, layout, 'Read', stmt, ci), { deny: false });
   assert.deepEqual(folderDecision(oscar, layout, 'Grep', REC, ci), { deny: false });
   assert.equal(folderDecision(oscar, layout, 'Write', stmt, ci).deny, true, 'read only');
+  // Read only outside the business folder too (review, 2026-10-27).
+  const BOOKS = path.resolve('/Users/me/Dropbox/Books');
+  const keeper = { isGod: false, cwd: OSCAR, readFolders: [BOOKS] };
+  assert.deepEqual(folderDecision(keeper, layout, 'Read', path.join(BOOKS, 'ledger.xlsx'), ci), { deny: false });
+  assert.equal(folderDecision(keeper, layout, 'Edit', path.join(BOOKS, 'ledger.xlsx'), ci).deny, true, 'named folder elsewhere: read only');
+  assert.deepEqual(folderDecision(keeper, layout, 'Write', path.resolve('/Users/me/Dropbox/Other/x.md'), ci), { deny: false }, 'the rest outside stays as before');
+  // A grant inside Claude's session records never reopens them to the shell.
+  const PROJECTS = path.resolve('/Users/me/.claude/projects');
+  const peek = { isGod: false, cwd: OSCAR, readFolders: [path.join(PROJECTS, '-Users-me-Documents-Pho')] };
+  assert.equal(folderPolicy(peek, { ...layout, engineRecords: { projects: PROJECTS, history: path.resolve('/Users/me/.claude/history.jsonl') } }, ci).sandbox.allowRead.includes(peek.readFolders[0]), false);
   assert.equal(folderDecision(oscar, layout, 'Read', path.join(B, 'Payroll', 'x.csv'), ci).deny, true, 'the rest of the business folder stays closed');
   assert.equal(folderDecision(sales, layout, 'Read', stmt, ci).deny, true, 'no grant, today\'s rules');
   // The shell reads it from the member's start.

@@ -603,20 +603,22 @@ function firstText(path: string): string | undefined {
 }
 
 /** Whether a folder holds at least one file, at its top or one level down,
- *  reading at most FOLDER_PROBE_MAX entries (never a whole tree). */
+ *  reading at most FOLDER_PROBE_MAX entries (never a whole tree). A folder
+ *  with more than that to read is not called empty: "Clients" with hundreds
+ *  of client folders is a real answer (review, 2026-10-27). */
 function holdsAFile(dir: string): boolean {
   let seen = 0;
   const subs: string[] = [];
   try {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
-      if (++seen > FOLDER_PROBE_MAX) break;
+      if (++seen > FOLDER_PROBE_MAX) return true;
       if (e.name.startsWith('.')) continue;
       if (e.isFile()) return true;
       if (e.isDirectory()) subs.push(join(dir, e.name));
     }
     for (const s of subs) {
       for (const e of readdirSync(s, { withFileTypes: true })) {
-        if (++seen > FOLDER_PROBE_MAX) return false;
+        if (++seen > FOLDER_PROBE_MAX) return true;
         if (!e.name.startsWith('.') && e.isFile()) return true;
       }
     }

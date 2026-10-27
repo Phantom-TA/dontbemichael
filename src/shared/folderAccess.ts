@@ -84,11 +84,15 @@ function grantedReads(agent: FolderAgent, layout: FolderLayout, caseInsensitive:
   const inside = insideFn(caseInsensitive);
   const same = sameFn(caseInsensitive);
   const team = teamFoldersOf(layout, same).filter((f) => !same(f, agent.cwd));
-  const kept = [layout.business, ...team, layout.appPrivate, ...(layout.appLocked ?? []), layout.engineRecords?.projects, layout.engineRecords?.history]
+  const closed = [layout.appPrivate, ...(layout.appLocked ?? []), layout.engineRecords?.projects, layout.engineRecords?.history]
     .filter((f): f is string => !!f);
+  const kept = [layout.business, ...team, ...closed].filter((f): f is string => !!f);
+  // Nor one inside the app's own folders or Claude's session records: the
+  // shell's allowRead would reopen what denyRead closes (review, 2026-10-27).
   return (agent.readFolders ?? []).filter((f) => !!f && isAbsolute(f)
     && !kept.some((k) => inside(f, k))
-    && !team.some((t) => inside(t, f)));
+    && !team.some((t) => inside(t, f))
+    && !closed.some((c) => inside(c, f)));
 }
 
 /** Claude's file tools that only read. */
@@ -200,6 +204,14 @@ export function folderDecision(
     return {
       deny: true,
       reason: `That is ${godName}'s folder, and only ${godName} can open it. If you need something from it, ask ${godName}.`
+    };
+  }
+  // A folder the owner named on a Company foundations card is read only
+  // wherever it is (review, 2026-10-27).
+  if (writes && grantedReads(agent, layout, caseInsensitive).some((f) => inside(f, target))) {
+    return {
+      deny: true,
+      reason: `The owner shared that folder for reading only. If something in it needs to change, ask ${godName}.`
     };
   }
   return { deny: false };
