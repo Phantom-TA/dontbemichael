@@ -1565,7 +1565,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           {t('settings.agentsModels.advanced')}
                         </h3>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <span style={{ fontSize: 13, color: 'var(--cth-ink-900)' }}>{t('settings.agentsModels.maxTurns')}</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--cth-ink-900)' }}>
+                            {t('settings.agentsModels.maxTurns')}<InfoTip text={t('settings.agentsModels.maxTurnsTip')} />
+                          </span>
                           <input
                             type="number" min="1" step="10" value={maxTurnsVal}
                             onChange={(e) => setMaxTurnsVal(e.target.value)}

@@ -305,6 +305,7 @@
       "defaultModelDesc": "每个新生成的 Claude 团队成员默认使用此模型，除非为该成员单独选择。{{godName}} 有自己的模型设置。在模型选择器中标记为「· 默认」。",
       "advanced": "高级",
       "maxTurns": "每次运行最大轮数",
+      "maxTurnsTip": "一轮就是一次工具调用，因此同时调用多个工具会用掉多轮。一次运行从团队成员收到一条消息开始，到下一条消息为止。",
       "unlimited": "无限制",
       "blankUnlimited": "留空 = 无限制",
       "planPrice": "你的 Claude 套餐",

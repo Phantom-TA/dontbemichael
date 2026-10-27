@@ -305,6 +305,7 @@
       "defaultModelDesc": "Every newly spawned Claude team member starts on this model unless another is picked for that member. {{godName}} has a separate model setting. Marked \"· default\" in the model pickers.",
       "advanced": "Advanced",
       "maxTurns": "Max turns per run",
+      "maxTurnsTip": "A turn is one tool call, so several tools called at once use several turns. A run starts when a team member gets a message and lasts until the next one.",
       "unlimited": "Unlimited",
       "blankUnlimited": "Blank = unlimited",
       "planPrice": "Your Claude plan",

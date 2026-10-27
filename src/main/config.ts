@@ -413,8 +413,10 @@ export interface HarnessConfig {
   /** Agent ids whose automatic inbox/queue delivery is paused. Pending messages
    *  stay durable until the operator explicitly resumes delivery. */
   autoDeliveryPausedAgents?: string[];
-  /** Passed to every spawned agent as `--max-turns <n>` when set; unset = no cap
-   *  (Claude Code's default). A coarse runaway guard independent of the breaker. */
+  /** Tool calls an agent may make per run (since its last prompt) when set;
+   *  unset = no cap. Counted by the hook server (turnCap.ts), because Claude
+   *  Code's `--max-turns` works in print mode only. A coarse runaway guard
+   *  independent of the breaker. */
   maxTurns?: number;
   /** Max concurrent god-triggered ephemeral Slack workers; extra spawn-requests
    *  wait in the queue (natural backpressure, a resource backstop). Default 4. */
