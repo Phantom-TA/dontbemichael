@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
-## [Unreleased]
+## [0.2.8] (2026-10-27)
 
 ### Added
 - **Copy any file that opens in a tab.** An email draft or a blog post pastes with its headings, bold, lists and links into Gmail, Outlook, Google Docs or WordPress, and as clean words with no Markdown marks into a plain box such as LinkedIn. A spreadsheet pastes as real cells, a picture as a picture, and a part you select pastes as clean as the whole.
@@ -20,11 +20,23 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - A file you open while the conversation with Michael is wide shows in the middle, with the conversation waiting at the side; closing the file brings it back.
 - Pulse's Recommendations start folded to one line with View recommendations, and stay open once you open them.
 - When a job change can't be worked out, the box says why and what to do: name the hire, check Claude is signed in, wait, or reword.
+- A team member on Codex gets its rules at the system level, and one on Gemini gets them again after a compaction or a resume, so the rules survive a long run on every engine (contributed in #311).
+- Max turns per run in Settings now really caps a run: each tool call since the member's last prompt counts, and the one past the cap is refused and the run stops (contributed in #601).
+- A webhook asking whether it is fine, alright or safe to act, or whether there is any objection, waits for approval like "is it ok to" does, and charging, wiping, erasing or purging counts as acting (contributed in #540).
 
 ### Fixed
 - Clearing the Name box when hiring no longer makes every job change and overlap check fail.
 - While you were away says when the office's running clock began, even when it began today.
 - Went wrong waits until it has finished with a run's session file, so Windows can tidy the folder after it.
+- A shared hire can no longer put a word after a flag that takes no value, which the engine would have read as its first instruction (contributed in #539).
+- Company profile edits save with the Settings Save button, survive switching sections and a failed save, and closing Settings with unsaved changes asks first (contributed in #554).
+- An office pack window that ends before it starts is refused instead of silently dropping its schedules (contributed in #520).
+- A mailbox set up as Other can pair incoming 993 with outgoing 587: the outgoing server's encryption follows its own port (contributed in #574).
+- A pasted block of several lines in a team member's terminal stays one draft instead of being sent line by line (contributed in #548).
+- The Git tab draws a merge's second parent in its own lane, keeps a shared parent in its lane, and lists the log in order (contributed in #544 and #641).
+- A link to a file whose name has spaces, or that starts at the workspace root, opens that file (contributed in #543).
+- A folded Ask me card that starts with a list item or a quote shows its question (contributed in #542).
+- A skill saved with a byte order mark, or with a blank line in its description, shows its name and whole description (contributed in #564).
 
 ## [0.2.7] (2026-10-26)
 

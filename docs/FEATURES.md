@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.7). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.8). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -206,6 +206,29 @@ moving, and brings you only the decisions that need you.
 
 ## Part 2: Every change, release by release
 
+### 0.2.8 (2026-10-27)
+- Copy on every file that opens in a tab: a draft pastes with its headings, bold, lists and links
+  into Gmail, Outlook, Google Docs or WordPress, and as clean words into a plain box such as
+  LinkedIn; a spreadsheet pastes as real cells and a picture as a picture.
+- Report a problem sits in the top bar on every view, in place of the Beta pill: a prefilled bug
+  report and a picture of the window saved in Downloads.
+- Places in Settings named by Michael or a card are buttons that open Settings on that group. Email
+  work asked for before email is connected ends with Connect your email, then who should read it,
+  and Michael does it once that is set.
+- Add a whole folder from a Company foundations card, picked or dropped: nothing is copied, the
+  answer names the folder, and the team members whose job uses that question can read it, read
+  only.
+- A file you open while the conversation with Michael is wide shows in the middle, with the
+  conversation waiting at the side; closing the file brings the conversation back.
+- Pulse's Early look shows the four things it watches: schedules finding nothing, schedules with
+  more to do, a cheaper model and a stronger model. Recommendations start folded.
+- Gmail and Google Workspace are one choice, Gmail or GSuite, set up in three numbered steps with
+  buttons that open the right Google page.
+- Contributor changes: rules that survive a long run on Codex and Gemini, Max turns per run that
+  really caps a run, more webhook asks held for approval, a safer shared hire, Company profile
+  saving, office pack windows checked, mailbox ports, terminal pastes, the Git graph, links with
+  spaces, Ask me headlines and skill descriptions.
+
 ### 0.2.7 (2026-10-26)
 - Every memory note says what showed it, shown behind an info icon on the Memory tab. Your Ask me
   answers, email decisions and words to Michael in the dock are kept where no team member can
@@ -232,16 +255,6 @@ moving, and brings you only the decisions that need you.
 - Hiring asks what the new person will do once; a pack update keeps your earlier changes.
 - Add a file right from a Company foundations card, pictures included: it is checked against the
   question before it joins company knowledge, and nothing of it stays in Claude's history.
-- A file you open while the conversation with Michael is wide now shows in the middle, with the
-  conversation waiting at the side; closing the file brings the conversation back. The file's
-  title takes the keyboard focus and a screen reader hears that it opened.
-- Pulse's Early look shows the four things it watches: schedules finding nothing, schedules with
-  more to do, a cheaper model and a stronger model, each lit with what it found or saying it
-  waits, with the member closest to a cheaper model. Each card names its rule. Recommendations
-  start folded to one line with View recommendations, and stay open once you open them.
-- Add a whole folder from a Company foundations card, picked or dropped: nothing is copied, the
-  answer names the folder, and the team members whose job uses that question can read it, read
-  only, even inside the business folder.
 - Settings, Access, the Command Center, the company profile, the schedule editor and Add a mailbox
   share Edit agent's panels and labels. Edit agent shows scheduled jobs as their own group.
 - A mailbox check that times out tries again by itself; a recovered stuck member is reported to
