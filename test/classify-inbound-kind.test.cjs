@@ -177,6 +177,11 @@ test('any to before a verb, an ok if, an or, or a dot inside a word is held, wha
     'Has Oscar invoiced the client?',
     'Is it fine if we nuke the cache?'
   ]) assert.equal(classifyInboundKind(text), 'directive', text);
+  // Each of these is held by one new rule alone ("zap" is on no list), so
+  // taking that rule out lets it through.
+  assert.equal(classifyInboundKind('Is the job done or can we zap the server?'), 'directive', 'or joins two clauses');
+  assert.equal(classifyInboundKind('Is it done.zap the server?'), 'directive', 'a dot inside a word');
+  assert.equal(classifyInboundKind('Is it ok if we zap the server?'), 'directive', 'ok if');
   for (const text of ['Is it raining?', 'Is now a good time?', 'How long has the job been running?', 'Who is on call today?', 'Is the standup at 10:30?', 'Any news on the invoice?']) {
     assert.equal(classifyInboundKind(text), 'communication', text);
   }
