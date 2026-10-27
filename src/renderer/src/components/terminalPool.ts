@@ -372,9 +372,9 @@ export function acquireTerminal(ptyId: string, theme?: ThemeMap, fontSize = 14):
     }
     // The user's own Ctrl-U (kill-line) clears the prompt exactly like ours does.
     if (data === '\x15') entry.lineBuf = '';
-    // Bracketed paste is still user-owned draft text; remove only its wrapper so
-    // pasted content marks the prompt dirty instead of looking automation-safe.
-    const input = data.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '');
+    // Bracketed paste is still user-owned draft text; only its wrapper is skipped
+    // below, so pasted content marks the prompt dirty instead of looking
+    // automation-safe.
     // A PASTE is never a submit: the TUI drops its newlines into the input box
     // and waits for a real Enter. xterm rewrites pasted newlines to "\r", so
     // without this a five-line paste would look like five submitted messages —
@@ -383,9 +383,22 @@ export function acquireTerminal(ptyId: string, theme?: ThemeMap, fontSize = 14):
     // and is counted there.)
     const pasted = data.includes('\x1b[200~');
     let submitted = false;
-    for (let i = 0; i < input.length; i++) {
-      const ch = input[i];
-      if (ch === '\r' || ch === '\n') {
+    // Inside the paste markers a line break is pasted text. An Enter after the
+    // closing marker in the same chunk (a paste and send) really submits, so it
+    // is tracked by position, not for the whole chunk.
+    let inPaste = false;
+    for (let i = 0; i < data.length; i++) {
+      if (data.startsWith('\x1b[200~', i) || data.startsWith('\x1b[201~', i)) {
+        inPaste = data[i + 4] === '0';
+        i += 5;
+        continue;
+      }
+      const ch = data[i];
+      if ((ch === '\r' || ch === '\n') && inPaste) {
+        // A pasted line break stays in the draft, so the prompt stays dirty and
+        // the queue waits for the owner's real Enter.
+        entry.lineBuf += '\n';
+      } else if (ch === '\r' || ch === '\n') {
         const t = entry.lineBuf.trim();
         entry.lineBuf = '';
         if (entry.automationBlocked) {
@@ -493,7 +506,15 @@ export function hasTerminalDraft(ptyId: string | undefined, now = Date.now()): b
   if (!ptyId) return false;
   const entry = pool.get(ptyId);
   if (!entry) return false;
-  return entry.inputDirty && promptLineHasText(entry, now) !== false;
+  return draftHeld(entry, now);
+}
+
+/** The draft the keystroke count holds, unless the screen shows the prompt
+ *  empty. A draft with a line break is never cleared that way: a paste that ends
+ *  with one leaves the cursor on a fresh row, and that one row can't show
+ *  whether the pasted lines above it are still waiting. */
+function draftHeld(entry: TerminalEntry, now: number): boolean {
+  return entry.inputDirty && (entry.lineBuf.includes('\n') || promptLineHasText(entry, now) !== false);
 }
 
 /** `hasTerminalDraft` as React state. The flag lives on a mutable pool entry
@@ -515,7 +536,7 @@ export function useHasTerminalDraft(ptyId: string | undefined): boolean {
 
 function automationStateOf(entry: TerminalEntry, now = Date.now()) {
   // The screen wins over the keystroke count, but only when it says "empty".
-  const inputDirty = entry.inputDirty && promptLineHasText(entry, now) !== false;
+  const inputDirty = draftHeld(entry, now);
   return {
     exited: entry.exited,
     pickerOpen: entry.automationBlocked,
