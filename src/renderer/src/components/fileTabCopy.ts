@@ -65,7 +65,9 @@ function keptHref(href: string | null): string | null {
 /** Elements that never reach a paste, with everything inside them. */
 function dropped(n: CopyNode): boolean {
   const t = tag(n);
-  if (DROP.has(t) || attr(n, 'data-copy') === 'skip') return true;
+  // A button marked data-copy="words" (a place in Settings named in the
+  // text) pastes as its words; any other button is the app's own control.
+  if ((DROP.has(t) && attr(n, 'data-copy') !== 'words') || attr(n, 'data-copy') === 'skip') return true;
   const c = classes(n);
   // GFM's hidden "Footnotes" heading and the app's screen reader words.
   if (c.includes('sr-only') || c.includes('cth-sr-only')) return true;

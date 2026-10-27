@@ -31,6 +31,8 @@ export function PlaceChip({ place, children, words }: { place: Place; children: 
     <button
       type="button"
       className="cth-file-chip"
+      // Copying the text keeps these words (fileTabCopy.ts).
+      data-copy="words"
       onClick={() => openPlace(place)}
       aria-label={t('markdown.openPlace', { place: words })}
       style={{

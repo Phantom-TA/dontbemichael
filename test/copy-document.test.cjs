@@ -102,6 +102,16 @@ test('agent text cannot inject markup or a harmful link (security)', () => {
   assert.equal(escapeHtml('<a href="x">&</a>'), '&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;');
 });
 
+test('a place in Settings named in the text pastes as its words, without its icon', () => {
+  // Value: protects=a copied draft keeps "Connect your email" from a dbm: link; fails_when=the place chip is dropped like an app button; why_new=PlaceChip renders a button inside file tab text; seam=PlaceChip's data-copy marker; no_claim=the chip's click
+  const chip = el('button', { class: 'cth-file-chip', 'data-copy': 'words', 'aria-label': 'Open Settings' },
+    el('span', { 'aria-hidden': 'true' }, el('svg', null, 'gear')), el('span', { dir: 'auto' }, 'Connect your email'));
+  const { html, text } = cleanCopy(el('p', null, 'Then ', chip, '.'));
+  assert.equal(html, '<p>Then Connect your email.</p>');
+  assert.equal(text, 'Then Connect your email.');
+  assert.match(read('src/renderer/src/markdown/PlaceChip.tsx'), /data-copy="words"/);
+});
+
 test('a link reads "words (address)" only when the words are not the address', () => {
   const words = (a) => cleanCopy(el('p', null, a)).text;
   assert.equal(words(el('a', { href: 'http://www.example.com' }, 'www.example.com')), 'www.example.com', 'GFM www autolink (isBareLink)');
