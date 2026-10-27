@@ -350,7 +350,7 @@ test('a profile page saves only the fields the owner changed, on top of the late
   const edited = { hours: 'Daily 11 to 10', fiscalYearStartMonth: 1 };
   const latest = { hours: 'Mon to Fri 9 to 5', fiscalYearStartMonth: 7 };
   assert.deepEqual(mergeEditedProfile(opened, edited, latest), { hours: 'Mon to Fri 9 to 5', fiscalYearStartMonth: 1 });
-  assert.match(read('src/renderer/src/components/CompanyProfileSettings.tsx'), /mergeEditedProfile\(opened, cleanCompanyProfile\(profile\), latest\)/);
+  assert.match(read('src/renderer/src/components/SettingsModal.tsx'), /mergeEditedProfile\(cleanCompanyProfile\(savedCompanyDraft.profile\), cleanCompanyProfile\(companyDraft.profile\), latest\)/);
 });
 
 test('profile sync: a launch never undoes the owner\'s words; a Settings save changes only the fields it changed', (t) => {

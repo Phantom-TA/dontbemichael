@@ -25,7 +25,7 @@ import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkspaceImage } from '@/hooks/useWorkspaceImage';
-import { isBareLink, isExternal, isRelativeMd, labelMismatch, linkName, resolveLocalImageRel, resolveRel } from './mdLinks';
+import { isBareLink, isExternal, labelMismatch, linkName, resolveLocalImageRel, resolveMdLinkRel } from './mdLinks';
 import { Icon } from '@/components/Icon';
 import { remarkSoftBreaks } from './remarkSoftBreaks';
 import { remarkFileChips } from './remarkFileChips';
@@ -121,15 +121,15 @@ export const MarkdownPreview = memo(function MarkdownPreview({
               const place = parsePlace(h);
               return place ? <PlaceChip place={place} words={hastText(node)}>{children}</PlaceChip> : <>{children}</>;
             }
+            // The .md file a link opens, judged on its cleaned path (resolveMdLinkRel).
+            const mdTarget = onOpenMarkdownLink && !isExternal(h) ? resolveMdLinkRel(baseRel, h) : null;
             const onClick = (e: React.MouseEvent) => {
               e.preventDefault();
               if (isExternal(h)) { void window.cth.openExternal?.(h); return; }
-              if (isRelativeMd(h) && onOpenMarkdownLink) {
-                onOpenMarkdownLink(resolveRel(baseRel, h.replace(/#.*$/, '')));
-              }
+              if (mdTarget !== null) onOpenMarkdownLink?.(mdTarget);
               // anything else (file:, anchors into self, unknown schemes): inert
             };
-            const clickable = isExternal(h) || (isRelativeMd(h) && !!onOpenMarkdownLink);
+            const clickable = isExternal(h) || mdTarget !== null;
             if (card && isExternal(h)) {
               const text = hastText(node);
               const bare = isBareLink(text, h);

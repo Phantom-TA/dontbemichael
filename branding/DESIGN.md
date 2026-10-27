@@ -1849,15 +1849,18 @@ Same as the app (§6, §7.13): `card`, `line`, `r-xl`, `shadow-md`.
 How it works' "Everything else" list (§9.22) is six tiles: three across at 980 px and up, two
 across from 481 to 979 px, one column at 480 px and under (owner, 2026-10-09). A tile is an
 `ink` 20 px icon on a 36 px `neutral-soft` square, a `w-h3` title and a short paragraph in
-`ink-2`, two to six lines depending on the width (measured on the live site, 2026-10-24). The Ask Michael tile adds decorative status pills (§7.13 colors: Sent idle, Michael
+`ink-2`, two to sixteen lines depending on the width (re-measured 2026-10-26 with the 0.2.7 lines: Work on a
+schedule and Limits in writing, the longest, run 7 and 8 lines at 1440 px and 16 at 481 px, side by side in one row). The Ask Michael tile adds decorative status pills (§7.13 colors: Sent idle, Michael
 has it working, Waiting on someone `amber-soft` with `amber-text`, Answered done), hidden
 from screen readers; its text carries the meaning. Its last line also says that when Michael
 offers choices you pick one and press Reply, and his pick is tagged (§7.8; owner, 2026-10-19).
 Limits in writing also says a job is changed by saying what should change, with the app's own
 example form ("ask me before any refund over $200"), and that you see the difference before you
-Apply (Edit agent, since 0.2.6). Work on a schedule also says a team member with no jobs yet is
-offered starter jobs from its pack, added paused until you turn them on (since 0.2.5; owner,
-2026-10-24).
+Apply (Edit agent, since 0.2.6), and, since 0.2.7, that when a change overlaps a teammate's work
+you say how they split it and Michael routes by that. Work on a schedule also says a team member with
+no jobs yet is offered starter jobs from its pack, added paused until you turn them on (since 0.2.5;
+owner, 2026-10-24), and, since 0.2.7, that you can say a run went wrong and Michael suggests a fix in
+Pulse that changes nothing until you Apply (§7.26; owner, 2026-10-26).
 
 ### 9.6 Footer
 
@@ -2038,7 +2041,11 @@ one line: each team member keeps its own notes and inbox, and teammates, Michael
 told to ask it instead of opening them; and, since 0.2.5, one line on mail: email a team member
 reads from a mailbox the owner adds is labelled as written by its sender, information and never
 instructions, lines written to steer an AI are pointed out so the member skips them and carries
-on, and Michael is told once for each such email; owner, 2026-10-24), The trust
+on, and Michael is told once for each such email; owner, 2026-10-24; and, since 0.2.7, one line on
+memory: each note says what showed it, such as an email and its date, or a file, and the app keeps
+the owner's own answers, email decisions and what they tell Michael apart from the team's notes, and
+only those count as the owner's, so the owner's word wins when notes disagree; never "where no team
+member can write", which Windows does not hold; owner, 2026-10-26), The trust
 layer (out: as written, cleaned or not sent; in: instructions removed, the answer labelled, an
 answer that tries to steer flagged to Michael; nothing goes through when the check can't run, the teammate who asked is told and so is Michael, and Pulse lists each message held because the check couldn't run (when, who it was between,
 what it was about, why, and who was told); every message the app passes to Pete, from a teammate,
@@ -2055,7 +2062,8 @@ key; Pete runs only on Claude; at 0.2.3 Claude is the only engine the app offers
 data lives (kept on the computer, passwords encrypted under a key the system keeps; and, since 0.2.5,
 the app keeps each team member's conversation records out of every other member's file tools,
 Michael's included: file tools, which the app holds on Mac and Windows, never shell, which Windows
-does not hold; owner, 2026-10-24). Every sentence holds on Mac and Windows and for every
+does not hold; owner, 2026-10-24; and, since 0.2.7, a mailbox's password is sent only over an
+encrypted connection, and a mail server that won't switch to one is refused; owner, 2026-10-26). Every sentence holds on Mac and Windows and for every
 engine, and the page states no limit notes: a privacy sentence says what the app gives, tells or
 passes through the app and its trust layer, never that something can't happen where the app can't
 enforce it (Windows has no sandbox, so a member's shell is not held there; owner, 2026-10-20). Send
@@ -2068,8 +2076,10 @@ The full Pulse is a How it works section (§9.22) after the file tabs and before
 else" tiles (owner, 2026-10-19, site design review; moved 2026-10-24): eyebrow "Pulse", heading "See what the office got
 done, and what it cost.", lead "A Pulse tab beside Tasks shows the week: what each team member
 did, what it cost, and ways to save that wait for your Apply. See the emails lists every email the
-team archived, marked read or moved to junk, and who moved it. Here it is on Friday afternoon."
-(the See the emails sentence since 0.2.5, §7.27; owner, 2026-10-24; the three notes stay three)
+team archived, marked read or moved to junk, and who moved it. Your time also shows how long the
+office ran, and how much of that you were away. Here it is on Friday afternoon." (the See the emails
+sentence since 0.2.5, §7.27; owner, 2026-10-24; the Your time sentence since 0.2.7, owner,
+2026-10-26; the three notes stay three; the picture keeps its Your time tile as drawn)
 A read only picture of Pulse (§7.27) in the story's cast for This week, Compare off: the
 header ("Pulse" 18/24 600, the period select reading This week, the Compare switch off,
 "Collecting since" in `t-meta` `ink-3`); one recommendation card in the app's own words (Run Kelly's "check the support inbox" less
@@ -2154,7 +2164,8 @@ wide; under that the card goes under the text, up to 420 px wide. Never scrolls 
 
 The home page answers the four questions an owner asks, in this order (owner, 2026-10-24, design
 review Direction A): the hero (§9.3, unchanged, with its Privacy first badge and the live studio),
-then four sections, then "Questions owners ask", then the closing call to action. Each section has a
+then the customer band (§9.23; owner, 2026-10-26), then four sections, then "Questions owners ask",
+then the closing call to action. Each of the four sections has a
 mono eyebrow ("1 · What is it?", "2 · What does it take off my plate?", "3 · Can I trust it?", "4 ·
 How do I keep an eye on it?"), a `w-h2` heading and one picture or set of cards. The words a visitor
 sees when the page loads stay at 900 or fewer, not counting the board and Pulse pictures or the FAQ
@@ -2214,6 +2225,33 @@ Privacy and the trust layer (§9.15); The board with its notes (§9.13); Files (
 memory question. Links shared before the move (`/#setup`, `/#story`, `/#sending`, `/#privacy`,
 `/#board`, `/#files`, `/#pulse`, `/#handled`, `/#open-source`) land on the same section here. The page never scrolls
 sideways, also at 320 px with a scrollbar.
+
+### 9.23 Customer band (web)
+
+Businesses already running the app, on the home page between the hero and "1 · What is it?" (owner,
+2026-10-26, CEO review D4, picked from HTML mockups of three placements). An unnumbered section,
+centered, 96 px from its neighbours: the mono eyebrow "Already running at", no heading and no lead,
+then the list.
+
+- One `card` per business (`r-xl`, `shadow-md`, hairline), padding 14 (18 on the right), 14 px gaps:
+  the business's own logo, its name (16/22, 600, `ink`), a kind of business line in the business's
+  own terms (13/18, `ink-3`) and a 16 px `i-right` chevron in `ink-3`. Hover lifts to `shadow-lg`,
+  with the transition only when reduced motion is off. Focus shows the site's focus ring.
+- The logo fits a 120 x 48 box with its shape kept (TalBiz Solutions' tall mark is 45 x 48), so a
+  wide wordmark stays readable. It has `alt=""`; the name beside it is the text.
+- The whole card is one link to the business's own site, opened in a new tab so the visitor keeps
+  this page (`target="_blank" rel="noopener"`; owner, 2026-10-27). It is the site's only new tab
+  link; screen readers hear "(opens in a new tab)" after the kind of business.
+- Cards wrap centered, 16 px apart, the list at most 960 px wide; one card sits alone in the center.
+  No coral, no placeholder cards. With no businesses the whole section goes, eyebrow included.
+- Logos are copies of the business's own PNG, served from `/assets/customer-<slug>.png?v=N`, never
+  loaded from the business's site, so no visitor's browser calls a third party. A new file bumps `N`.
+- Order: the order businesses joined. First: TalBiz Solutions, "Staffing and talent",
+  https://www.talbizsolutions.com/.
+- A business goes on the band only with its OK, noted in the site CHANGELOG line that adds it. One
+  that asks to come off leaves the band, `llms.txt` and the home JSON-LD together.
+- `llms.txt` names each business in its own "In use at" line, and the home JSON-LD lists them as
+  `mentions` on the WebSite node, in the band's order.
 
 ---
 
@@ -2474,6 +2512,9 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-26 | Agent text: a place in Settings ("Settings, Connections, Mailboxes") or a member's Access tab, Email shows as a file chip shaped button with a gear (or lock) icon; one click opens Settings there, scrolled to the group, unfolded and ringed in indigo for 2 s (docs/designs/settings-links-in-replies.md). |
 | 2026-10-26 | Top bar: Report a problem replaces the Beta pill, a solid lemon pill with a flag, on every view; one click opens the prefilled report and saves a picture of the window to Downloads, shown in Finder; Help ▸ Report a problem… does the same. Settings: no Beta pill, no Report a problem link. No Beta anywhere (§7.1; docs/designs/report-problem-top-bar.md). |
 | 2026-10-25 | Scheduled jobs: each job's last run with Went wrong, a one line box, Ask Michael and Cancel, and a line on what came of it (§7.26). Pulse: the run suggestion card first in Recommendations, in the recommendation card's build, with Review the change and Not now, and "Nothing to change" left out while one shows; Your time's While you were away half says "of the work" beside the share and, at its foot, how long the office ran and how long of that you were away (§7.27). |
+| 2026-10-27 | Web: the customer band's card opens the business's site in a new tab, with "(opens in a new tab)" for screen readers (§9.23). |
+| 2026-10-26 | Web: the site catches up with 0.2.7, for owners. Tiles (§9.5): Work on a schedule says a run can be marked went wrong and Michael suggests a fix in Pulse that changes nothing until you Apply; Limits in writing says how two members split work Michael routes by. Pulse lead (§9.17): Your time shows how long the office ran and how much of that you were away. /security (§9.16): each memory note says what showed it and only the owner's own answers count as theirs; a mailbox's password goes only over an encrypted connection. |
+| 2026-10-26 | Web: the customer band (§9.23), businesses already running the app, between the hero and the four questions (§9.19): eyebrow "Already running at", one card per business with its own logo in a 120 x 48 box, its name, its kind of business and a link to its site. First: TalBiz Solutions. Logos are served from the site, never the business's own site; `llms.txt` and the home JSON-LD name the same businesses. |
 
 ---
 

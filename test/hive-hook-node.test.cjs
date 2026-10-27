@@ -521,11 +521,12 @@ test('Gemini gets isolated lifecycle settings and an interactive protocol seed',
   const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
   assert.deepEqual(
     Object.keys(settings.hooks),
-    ['SessionStart', 'BeforeAgent', 'BeforeTool', 'AfterTool', 'AfterAgent']
+    ['SessionStart', 'BeforeAgent', 'BeforeTool', 'AfterTool', 'AfterAgent', 'PreCompress']
   );
   assert.equal(settings.hooksConfig.enabled, true);
   assert.equal(settings.hooks.BeforeTool[0].matcher, '.*');
   assert.ok(settings.hooks.AfterAgent[0].hooks[0].command.includes('gemini-hook.cjs'));
+  assert.ok(settings.hooks.PreCompress[0].hooks[0].command.includes('gemini-hook.cjs'));
   // The seed comes after Gemini's own flags (its workspace folders).
   const seed = injection.args.indexOf('-i');
   assert.ok(seed >= 0, 'gemini spawn carries -i');

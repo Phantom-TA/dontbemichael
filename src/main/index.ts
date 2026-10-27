@@ -4438,8 +4438,10 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         .trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
       if (label) args.push('--remote-control-session-name-prefix', label);
     }
-    // Coarse runaway cap. A --max-turns already in the command (the owner's, or
-    // one a shared hire brought in) can only lower it, never raise it.
+    // Max turns per run is counted by the hook server (turnCap.ts), because
+    // Claude Code honours --max-turns in print mode only. The flag is still
+    // passed: it costs nothing, and a --max-turns already in the command (the
+    // owner's, or one a shared hire brought in) can only lower it, never raise it.
     args.splice(0, args.length, ...argsWithTurnCap(args, cfg.maxTurns));
     // Resume: an explicit session id (Add Agent "resume session" field, #2) wins,
     // else this agent's last recorded session (#1 restore-on-restart / #6.6a).
@@ -4507,9 +4509,11 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         if (typedSid) resumeNotFound = true;
       } else {
         if (ownerHome !== myHome) opts.env = { ...(opts.env ?? {}), CODEX_HOME: ownerHome };
+        const prompt = opts.hive ? hive.injectedPromptFor(opts.hive.id) : undefined;
+        if (prompt) hive.writeCodexInstructions(ownerHome, prompt);
         const args = opts.args ?? [];
         // Positional order matters: `codex resume [OPTIONS] [SESSION_ID] [PROMPT]`.
-        // The hive identity prompt rides in `args` as a POSITIONAL (codex has no
+        // The seed prompt rides in `args` as a POSITIONAL (codex has no
         // prompt flag), so the id must come BEFORE it — appending the id last made
         // codex read the prompt as SESSION_ID ("No saved session found with ID
         // You are \"Dev2\"…") and the id as the prompt.

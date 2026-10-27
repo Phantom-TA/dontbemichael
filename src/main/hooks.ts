@@ -27,6 +27,7 @@ export { TERMINAL_PROMPT_TYPES, isTerminalPrompt };
 import { resolveGodName } from '../shared/godIdentity';
 import { ownValue } from '../shared/ownValue';
 import { APP_NAME } from '../shared/appName';
+import { providerPreset } from '../shared/agentProvider';
 
 /** The same terminal prompt is relayed to Michael at most once in this window. */
 const PROMPT_RELAY_DEDUPE_MS = 10 * 60_000;
@@ -87,6 +88,7 @@ export const ASK_TOOL_REFUSAL =
   "Don't ask the owner here: nobody answers your terminal. File it as one new file in the hive's triage folder (your questions as one \"ask\", what you were doing in \"description\"). Michael checks it and puts it on the owner's ASK ME board.";
 
 import { GUARDED_TOOLS, harnessWriteDecision } from './harnessGuard';
+import { TurnCap } from './turnCap';
 import { FOLDER_READ_TOOLS, FOLDER_WRITE_TOOLS, agentTmpDecision, agentTmpName, folderDecision, folderToolTarget, AGENT_TMP_DIR, isSharedTempSave, researchFolderDecision, sharedTempWriteDecision, tempFolders, researchWallDecision, memberWallDecision } from '../shared/folderAccess';
 import { REFUSAL_WEB_TOOL, REFUSAL_WEB_TOOL_OFF, RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_SANDBOX_ONLY, RESEARCH_UNCHECKED_TOOL, researchText } from '../shared/research';
 import { folderLayoutFor } from './officeFile';
@@ -168,6 +170,8 @@ export type PlanSignal =
 
 export class HookServer {
   private server: Server | null = null;
+  /** Max turns per run, counted per agent (turnCap.ts). */
+  private turnCap = new TurnCap();
   /** agentId → the live session's transcript file, learned from hook payloads.
    *  Lets the harness read per-agent telemetry (e.g. current context size)
    *  even when several agents share one cwd. */
@@ -197,6 +201,10 @@ export class HookServer {
   private ownerRequestsShown = new Map<string, { sessionId: string | null; any: boolean }>();
   private stuckCardsShown = new Map<string, { sessionId: string | null; any: boolean }>();
   private ownerQuestionsShown = new Map<string, { sessionId: string | null; any: boolean }>();
+  /** Agents flagged to have their protocol re-injected on their next UserPromptSubmit
+   *  (used for Gemini CLI, which fires PreCompress / resume but drops hook output
+   *  until BeforeAgent / UserPromptSubmit, #298). */
+  private pendingProtocolReInjection = new Set<string>();
   /** The idle toast line shown last, so the next one differs, and when. */
   private lastIdleLine: string | null = null;
   private lastIdleAt: number | null = null;
@@ -496,7 +504,8 @@ export class HookServer {
 
   private handle(p: HookPayload): unknown {
     const agentId = p.agent_id ?? undefined;
-    const event = p.hook_event_name ?? 'Unknown';
+    const rawEvent = p.hook_event_name ?? 'Unknown';
+    const event = rawEvent === 'BeforeAgent' ? 'UserPromptSubmit' : rawEvent;
     // A Task subagent's calls are checked as its team member (every gate below),
     // but its own finish, transcript and session are not the agent's: a
     // subagent stopping must not mark the agent idle or replace its transcript.
@@ -554,6 +563,9 @@ export class HookServer {
       return {};
     }
     if (event === 'UserPromptSubmit' && agentId && !subagent) this.plan({ kind: 'prompt', agentId });
+    // A compaction fires SessionStart (source "compact") in the middle of a run;
+    // it keeps the count, or the long runs this cap is for would never hit it.
+    if ((event === 'UserPromptSubmit' || (event === 'SessionStart' && p.source !== 'compact')) && agentId && !subagent) this.turnCap.newRun(agentId);
     if (event === 'Stop' && agentId && !subagent && !p.stop_hook_active) this.plan({ kind: 'turn', agentId });
 
     // 7C.3 — a graceful operator HALT overrides everything (incl. the inbox
@@ -621,9 +633,9 @@ export class HookServer {
     // token burst can't trip the Δoutput arms; PostCompact — or any SessionStart,
     // since a fresh session makes in-flight compaction state moot — closes it
     // down to the trailing grace (a no-op when nothing was compacting).
-    if (event === 'PreCompact' && agentId) this.breaker?.recordCompactStart(agentId);
+    if ((event === 'PreCompact' || event === 'PreCompress') && agentId) this.breaker?.recordCompactStart(agentId);
     // Logged so compaction can be measured (tools/agent-metrics.cjs).
-    if (event === 'PreCompact' && agentId) {
+    if ((event === 'PreCompact' || event === 'PreCompress') && agentId) {
       const trigger = (p as { trigger?: unknown }).trigger;
       try { this.hive.appendLog({ kind: 'compact', agentId, trigger: typeof trigger === 'string' ? trigger : 'unknown' }); } catch { /* best-effort */ }
     }
@@ -632,6 +644,19 @@ export class HookServer {
     }
     if (event === 'SessionStart' && agentId) {
       try { this.onSessionStart?.(agentId); } catch (e) { console.warn('[hooks] session start listener:', e); }
+    }
+
+    // Gemini PreCompress: Gemini fires PreCompress before compaction but ignores
+    // its reply. Mark the agent so the protocol is re-injected on its next
+    // prompt (BeforeAgent / UserPromptSubmit) instead (#298).
+    if (event === 'PreCompress' && agentId) {
+      const reg = this.hive.registry?.();
+      const meta = reg?.agents[agentId];
+      const provider = meta?.provider ?? 'claude';
+      const preset = providerPreset(provider);
+      if (preset.instructionsDelivery === 're-injected on compact') {
+        this.pendingProtocolReInjection.add(agentId);
+      }
     }
 
     if ((event === 'Stop' || event === 'SubagentStop') && agentId) {
@@ -665,6 +690,28 @@ export class HookServer {
             hookEventName: 'PreToolUse',
             permissionDecision: 'deny',
             permissionDecisionReason: d.reason ?? 'Denied by operator.'
+          }
+        };
+      }
+    }
+
+    // Max turns per run (turnCap.ts): Claude Code ignores --max-turns outside
+    // print mode, so the cap is counted here. Refuse the call AND stop the run;
+    // continue:false alone still lets this one call run first. An unreadable
+    // config skips only this cap; the gates below still refuse on their own.
+    if (event === 'PreToolUse' && agentId && !subagent) {
+      let max: number | undefined;
+      try { max = this.getConfig().maxTurns; } catch { max = undefined; }
+      const d = this.turnCap.toolCall(agentId, max);
+      if (d.stop) {
+        this.emitRefused(agentId, event, p);
+        return {
+          continue: false,
+          stopReason: d.reason,
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: d.reason
           }
         };
       }
@@ -1025,12 +1072,41 @@ export class HookServer {
       ? this.hive.knowledgeUpdate(agentId, this.getKnowledge())
       : null;
 
-    if (steer || roster || goal || knowledgeNote || profile || foundations || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards) {
+    // Protocol re-injection for engines with no native system prompt channel (#298).
+    // On compaction or resume, auto-compaction summarizes history and drops initial
+    // rules; engines whose instructions delivery is 're-injected on compact'
+    // re-receive their protocol via additionalContext here.
+    let reInjectedProtocol: string | null = null;
+    if (event === 'SessionStart' && (p.source === 'compact' || p.source === 'resume') && agentId) {
+      const reg = this.hive.registry?.();
+      const meta = reg?.agents[agentId];
+      const provider = meta?.provider ?? 'claude';
+      const preset = providerPreset(provider);
+      if (preset.instructionsDelivery === 're-injected on compact') {
+        if (provider === 'gemini') {
+          // Gemini CLI ignores SessionStart output; mark the agent so its protocol
+          // is injected on the following BeforeAgent / UserPromptSubmit (#298).
+          if (p.source === 'resume' || p.source === 'compact') {
+            this.pendingProtocolReInjection.add(agentId);
+          }
+        } else {
+          reInjectedProtocol = this.hive.injectedPromptFor?.(agentId) ?? null;
+        }
+      }
+    }
+
+    if (event === 'UserPromptSubmit' && agentId && this.pendingProtocolReInjection.has(agentId)) {
+      this.pendingProtocolReInjection.delete(agentId);
+      reInjectedProtocol = this.hive.injectedPromptFor?.(agentId) ?? null;
+    }
+
+    if (steer || roster || goal || knowledgeNote || profile || foundations || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards || reInjectedProtocol) {
       this.emit(agentId, event, p);
+      const liveContext = [roster, profile, foundations, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean);
       return {
         hookSpecificOutput: {
           hookEventName: event,
-          additionalContext: [roster, profile, foundations, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean).join('\n\n')
+          additionalContext: [reInjectedProtocol, ...liveContext].filter(Boolean).join('\n\n')
         }
       };
     }
