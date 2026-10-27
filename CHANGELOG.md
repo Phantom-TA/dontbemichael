@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [Unreleased]
+
+### Added
+- **Copy any file that opens in a tab.** An email draft or a blog post pastes with its headings, bold, lists and links into Gmail, Outlook, Google Docs or WordPress, and as clean words with no Markdown marks into a plain box such as LinkedIn. A spreadsheet pastes as real cells, a picture as a picture, and a part you select pastes as clean as the whole.
+- **Report a problem sits in the top bar,** on every view, in place of the Beta pill. One click opens a bug report with the app version and your system filled in, and saves a picture of the window in your Downloads, ready to add. Help, Report a problem does the same.
+- **Places in Settings are buttons.** When Michael or a card names a place in Settings, one click opens Settings right there, on the right group. Ask for email work before email is connected, and Michael's answer ends with Connect your email, then asks who should read it, and does the job once you give it to them.
+- **Add a whole folder from a Company foundations card,** picked or dropped. Nothing is copied: the answer names the folder, and the team members whose job uses that question can read it, read only.
+- **Pulse's Early look shows the four things it watches:** schedules finding nothing, schedules with more to do, a cheaper model and a stronger model, each lit with what it found so far or saying it waits.
+
+### Changed
+- Gmail and Google Workspace are one choice in Add a mailbox, "Gmail or GSuite", and setting it up is three numbered steps, each with a button that opens the right Google page. Typing your normal Google password says so in plain words, instead of saying the provider refused the app password.
+- A file you open while the conversation with Michael is wide shows in the middle, with the conversation waiting at the side; closing the file brings it back.
+- Pulse's Recommendations start folded to one line with View recommendations, and stay open once you open them.
+- When a job change can't be worked out, the box says why and what to do: name the hire, check Claude is signed in, wait, or reword.
+
+### Fixed
+- Clearing the Name box when hiring no longer makes every job change and overlap check fail.
+- While you were away says when the office's running clock began, even when it began today.
+- Went wrong waits until it has finished with a run's session file, so Windows can tidy the folder after it.
+
 ## [0.2.7] (2026-10-26)
 
 ### Added
