@@ -2990,6 +2990,12 @@
       "byWho": "{{name}}: {{where}}",
       "none": "No emails organized in this period.",
       "earlier": "{{count}} more organized before the app kept their names."
+    },
+    "recs": {
+      "view": "View recommendations",
+      "hide": "Hide",
+      "title": "Pulse has suggestions for your team.",
+      "ready": "{{count}} ready"
     }
   },
   "foundations": {

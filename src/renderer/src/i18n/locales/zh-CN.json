@@ -2990,6 +2990,12 @@
       "byWho": "{{name}}：{{where}}",
       "none": "这段时间没有整理邮件。",
       "earlier": "还有 {{count}} 封是在应用开始记录名称之前整理的。"
+    },
+    "recs": {
+      "view": "查看建议",
+      "hide": "收起",
+      "title": "Pulse 有一些关于你团队的建议。",
+      "ready": "{{count}} 条已就绪"
     }
   },
   "foundations": {

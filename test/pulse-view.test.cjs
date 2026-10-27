@@ -319,3 +319,16 @@ test('the Early look shows all four things Pulse watches, lit or waiting, and ea
   for (const k of ['runLess', 'runMore', 'cheaper', 'stronger']) assert.ok(en.watch[k] && en.watch[`${k}Tip`] && en.tag[k], k);
   assert.match(en.watch.cheaperTip, /\{\{godName\}\}/, 'Michael by his name in this office');
 });
+
+test('Recommendations start folded under their header, with View recommendations to open them, and the choice is kept (owner, 2026-10-26)', () => {
+  // Value: protects=a new owner is not met by the whole Recommendations section open at the top; fails_when=it opens by default, the toggle loses aria-expanded, the Early look body or the advice cards show while folded, or the choice is not kept; why_new=owner ask; seam=none; no_claim=layout (live look)
+  const view = read('src/renderer/src/components/pulse/PulseView.tsx');
+  assert.match(view, /const \[recsOpen, setRecsOpen\] = useState<boolean>\(\(\) => \{ try \{ return window\.localStorage\.getItem\(LS_RECS\) === '1'; \} catch \{ return false; \} \}\);/, 'folded unless the owner opened them');
+  assert.match(view, /window\.localStorage\.setItem\(LS_RECS, v \? '1' : '0'\)/, 'the choice is kept');
+  assert.match(view, /<RecsToggle open=\{recsOpen\} onToggle=\{toggleRecs\} controls="pulse-recs-early" \/>\n\s*<\/div>\n\s*\{recsOpen && <div id="pulse-recs-early">/, 'the Early look header stays, its body only when open');
+  assert.match(view, /\{\(\(!noAdvice && recsOpen\) \|\| \(noAdvice && savedShown\)\) && <div id="pulse-recs-advice"/, 'advice cards only when open');
+  assert.match(view, /aria-expanded=\{open\} aria-controls=\{controls\}/);
+  const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse.recs;
+  assert.equal(en.view, 'View recommendations');
+  for (const loc of ['ar', 'zh-CN']) assert.deepEqual(Object.keys(JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).pulse.recs).sort(), Object.keys(en).sort(), loc);
+});

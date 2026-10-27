@@ -45,6 +45,8 @@ import { fieldLabel, groupName } from '../fieldText';
 
 const LS_PERIOD = 'cth.pulsePeriod';
 const LS_COMPARE = 'cth.pulseCompare';
+/** Recommendations open: closed until the owner opens them (owner, 2026-10-26). */
+const LS_RECS = 'cth.pulseRecsOpen';
 const KIND_ICON: Record<WorkKind, IconName> = { email: 'mail', sent: 'send', task: 'check', check: 'clock' };
 /** A quiet tile's chip: its short name and icon (pulse-smart-view.md 5A). Spent never folds. */
 const QUIET_ICON: Record<PulseTile, IconName> = { email: 'mail', sent: 'send', task: 'check', check: 'clock', toInternet: 'shield', webAnswers: 'search', held: 'pause', rules: 'lock', learned: 'book', spent: 'ledger', yourTime: 'bell' };
@@ -232,6 +234,10 @@ export function PulseView() {
   });
   // The owner's choice, kept even while a period cannot compare yet (design D4).
   const [compare, setCompare] = useState<boolean>(() => { try { return window.localStorage.getItem(LS_COMPARE) === '1'; } catch { return false; } });
+  // Recommendations start folded to their header (owner, 2026-10-26: open by
+  // default at the top, they overwhelm a new owner); the choice is kept.
+  const [recsOpen, setRecsOpen] = useState<boolean>(() => { try { return window.localStorage.getItem(LS_RECS) === '1'; } catch { return false; } });
+  const toggleRecs = (): void => { const v = !recsOpen; setRecsOpen(v); try { window.localStorage.setItem(LS_RECS, v ? '1' : '0'); } catch { /* per-Mac nicety */ } };
   const [data, setData] = useState<PulseData | null>(null);
   /** Run comparison cards showing in Recommendations (RunSuggestions). */
   const [runCards, setRunCards] = useState(0);
@@ -416,6 +422,8 @@ export function PulseView() {
     const outcomeAria = (o: Outcome): string => `${outcomeLabel(o)}: ${o.by.map((b) => `${nameOf(b.agentId)} ${b.count}`).join(', ')}`;
     // Saved by your changes shows only once a change was applied (owner, 2026-10-15).
     const savedShown = view.saved.state !== 'none';
+    // What the shown suggestions would save a week together, for the folded bar.
+    const adviceSaves = shownAdvice.slice(0, Math.max(0, 3 - applied.length)).reduce((sum, a) => sum + (a.savesPerWeek !== null && a.savesPerWeek > 0 ? a.savesPerWeek : 0), 0);
     const noAdvice = shownAdvice.length === 0 && applied.length === 0;
     // A main process older than this view sends no early lines.
     const early = view.early ?? [];
@@ -633,7 +641,9 @@ export function PulseView() {
                     {t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) })}
                   </span>
                 )}
+                <RecsToggle open={recsOpen} onToggle={toggleRecs} controls="pulse-recs-early" />
               </div>
+              {recsOpen && <div id="pulse-recs-early">
               {/* Company foundations, under the Early look header while it shows (D3). */}
               {foundationJobs.length > 0 && <div style={{ padding: '6px 16px 4px' }}><FoundationsStrip jobs={foundationJobs} /></div>}
               {/* The four things Pulse watches (owner, 2026-10-26: the cards
@@ -645,10 +655,22 @@ export function PulseView() {
                   {early.map((a) => <EarlyCard key={a.id} a={a} name={nameOf(a.agentId)} sub={a.missionId ? jobOf(a.missionId) : (byId.get(a.agentId) ? roleOf(byId.get(a.agentId)!) : '')} text={earlyText(a)} />)}
                 </div>
               )}
+              </div>}
             </div>
           ) : foundationJobs.length > 0 && <div style={{ ...card, padding: '12px 16px', marginBottom: 10 }}><FoundationsStrip jobs={foundationJobs} /></div>}
           {!(noAdvice && (early.length > 0 || !!watch)) && (view.adviceFrom || runCards === 0) && noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
-          {(!noAdvice || savedShown) && <div style={grid(sugCols)}>
+          {!noAdvice && (
+            <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 16px', marginBottom: recsOpen ? 10 : 0, background: 'linear-gradient(90deg, var(--cth-amber-soft), var(--cth-card) 70%)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 22, padding: '0 9px', borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-card)', color: 'var(--cth-amber-text)', fontSize: 11, fontWeight: 600 }}>
+                <Icon name="sparkle" size={0.75} />{t('pulse.recs.ready', { count: shownAdvice.length + applied.length })}
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--cth-ink)' }}>{t('pulse.recs.title')}</span>
+              <span style={{ flex: 1 }} />
+              {adviceSaves > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--cth-green-text)', background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-pill)', padding: '2px 8px' }}>{t('pulse.savesAbout', { usd: money(adviceSaves) })}</span>}
+              <RecsToggle open={recsOpen} onToggle={toggleRecs} controls="pulse-recs-advice" />
+            </div>
+          )}
+          {((!noAdvice && recsOpen) || (noAdvice && savedShown)) && <div id="pulse-recs-advice" style={grid(sugCols)}>
             {applied.map((x) => (
               <div key={`a-${x.appliedId}`} style={{ background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{t('pulse.applied')} {x.text}</div>
@@ -813,6 +835,16 @@ export function PulseView() {
         return <OrganizedDetail from={view.snapshot.from} to={view.snapshot.to} agentId={organizedOpen.agentId} count={count} nameOf={nameOf} onClose={() => setOrganizedOpen(null)} />;
       })()}
     </div>
+  );
+}
+
+/** Opens or folds Recommendations under their header (owner, 2026-10-26). */
+function RecsToggle({ open, onToggle, controls }: { open: boolean; onToggle: () => void; controls: string }) {
+  const { t } = useTranslation();
+  return (
+    <PixelButton variant={open ? 'secondary' : 'primary'} size="sm" aria-expanded={open} aria-controls={controls} onClick={onToggle}>
+      {open ? t('pulse.recs.hide') : t('pulse.recs.view')}
+    </PixelButton>
   );
 }
 
