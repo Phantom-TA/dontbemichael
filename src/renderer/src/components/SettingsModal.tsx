@@ -1143,7 +1143,7 @@ export function SettingsModal({ config, onClose, initialSection, place }: Settin
                       <button
                         key={section}
                         type="button"
-                        onClick={() => setActiveSection(section)}
+                        onClick={() => { setActiveSection(section); setGroupFocus(null); }}
                         aria-current={active ? 'page' : undefined}
                         style={{
                           display: 'block', width: '100%', textAlign: 'start',

@@ -112,6 +112,12 @@ test('Michael hears about a new mailbox and a new reader, once each, after the r
   assert.match(told[3].b, /not active with it yet/);
   assert.deepEqual(disk, []);
 
+  // A running member that already has mail tools (a swap) reads it at once: no restart comes (review, 2026-10-27).
+  notes.granted('nick', 'billing@example.com', false);
+  assert.equal(told.length, 5);
+  assert.match(told[4].b, /has started with it/);
+  assert.deepEqual(disk, []);
+
   // A failed disk write still tells Michael rather than never.
   const now = [];
   createMailboxNotes({ readPending: () => [], writePending: () => { throw new Error('EACCES'); }, tell: (s) => { now.push(s); return true; },
@@ -134,7 +140,10 @@ test('the roster names mailboxes nobody reads yet', () => {
   assert.match(unheldMailboxesLine(cfg), /^Mailboxes nobody reads yet: sales@example\.com\. Only the owner gives one/);
   assert.equal(unheldMailboxesLine({ ...cfg, mailboxes: [cfg.mailboxes[0]] }), null);
   assert.equal(unheldMailboxesLine({}), null);
-  assert.match(read('src/main/hooks.ts'), /const unheld = unheldMailboxesLine\(cfg\);\n\s+if \(r && unheld\) \{ r\.full = `\$\{r\.full\}\\n\$\{unheld\}`; r\.layoutKey = `\$\{r\.layoutKey\}\|\$\{unheld\}`; \}/);
+  // An archived or deleted reader keeps its settings but reads nothing (review, 2026-10-27).
+  assert.match(unheldMailboxesLine(cfg, (id) => id !== 'nick'), /^Mailboxes nobody reads yet: office@example\.com, sales@example\.com\./);
+  assert.match(read('src/main/hooks.ts'), /const unheld = unheldMailboxesLine\(cfg, this\.memberPresent\);/);
+  assert.match(read('src/main/hooks.ts'), /const unheld = unheldMailboxesLine\(cfg, this\.memberPresent\);\n\s+if \(r && unheld\) \{ r\.full = `\$\{r\.full\}\\n\$\{unheld\}`; r\.layoutKey = `\$\{r\.layoutKey\}\|\$\{unheld\}`; \}/);
 });
 
 test('Michael\'s rules: links for places, a query with Connect your email, follow ups, silence', () => {
@@ -160,7 +169,9 @@ test('wiring: notes on new mailboxes and new readers, delivery on session start,
   assert.match(main, /const before = readableMailboxes\(agentId\);[\s\S]{0,200}setAgentCapabilities[\s\S]{0,300}newlyHeld\(before, readableMailboxes\(agentId\)\)/);
   assert.match(main, /hookServer\.onSessionStart = \(agentId\) => mailboxNotes\.sessionStarted\(agentId\);/);
   assert.match(main, /setInterval\(\(\) => mailboxNotes\.sweep\(\), 60_000\)\.unref\(\);/);
-  assert.match(read('src/main/hooks.ts'), /if \(event === 'SessionStart' && agentId\) \{\s+try \{ this\.onSessionStart\?\.\(agentId\); \}/);
+  // A compaction or a clear is the same process: the mail tools came with no new start (review, 2026-10-27).
+  assert.match(read('src/main/hooks.ts'), /if \(event === 'SessionStart' && agentId && p\.source !== 'compact' && p\.source !== 'clear'\) \{\s+try \{ this\.onSessionStart\?\.\(agentId\); \}/);
+  assert.match(main, /if \(address\) mailboxNotes\.granted\(agentId, address, res\.restartNeeded\);/);
   assert.match(read('src/main/factoryReset.ts'), /'mailbox-grant-notes\.json'/);
   assert.match(read('src/main/homeFolder.ts'), /'mailbox-grant-notes\.json', 'organized\.jsonl'/);
 });
@@ -174,6 +185,8 @@ test('wiring: a button opens Settings at the group or a member\'s Access tab at 
   assert.match(modal, /\}, \[place\?\.seq\]\);/, 'a new request moves an open Settings');
   assert.match(modal, /<div data-settings-group="claude-connectors"/);
   assert.match(modal, /<div data-settings-group="mailboxes"[^>]*>\s+<MailboxesSettings focus=\{groupFocus\?\.group === 'mailboxes' \? groupFocus : undefined\} \/>/);
+  // The owner's own section switch ends the place: coming back never reopens Add a mailbox or highlights again (review, 2026-10-27).
+  assert.match(modal, /onClick=\{\(\) => \{ setActiveSection\(section\); setGroupFocus\(null\); \}\}/);
   assert.match(modal, /classList\.add\('cth-place-highlight'\)/);
   const mail = read('src/renderer/src/components/MailboxesSettings.tsx');
   assert.match(mail, /setOpen\(true\);\s+if \(focus\.add\) setDialog\(\{\}\);/);

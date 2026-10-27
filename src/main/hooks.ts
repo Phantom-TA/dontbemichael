@@ -642,7 +642,8 @@ export class HookServer {
     if ((event === 'PostCompact' || event === 'SessionStart') && agentId) {
       this.breaker?.recordCompactEnd(agentId);
     }
-    if (event === 'SessionStart' && agentId) {
+    // A compaction or a clear keeps the same process, so no tools were added.
+    if (event === 'SessionStart' && agentId && p.source !== 'compact' && p.source !== 'clear') {
       try { this.onSessionStart?.(agentId); } catch (e) { console.warn('[hooks] session start listener:', e); }
     }
 
@@ -949,7 +950,7 @@ export class HookServer {
       const r = this.hive.teamRoster((id) => accessLine(agentAccessSummary(cfg, id, this.roleReadsBooks?.(id) ?? false, this.memberPresent)));
       // Mailboxes nobody reads yet ride with the roster, and change its layout
       // key, so Michael knows to name a reader (settings-links-in-replies.md).
-      const unheld = unheldMailboxesLine(cfg);
+      const unheld = unheldMailboxesLine(cfg, this.memberPresent);
       if (r && unheld) { r.full = `${r.full}\n${unheld}`; r.layoutKey = `${r.layoutKey}|${unheld}`; }
       const sessionId = p.session_id ?? null;
       const last = this.deliveredRosterByAgent.get(agentId!);

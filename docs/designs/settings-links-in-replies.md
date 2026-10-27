@@ -191,17 +191,19 @@ Michael says the mailbox is connected and who to give it to, with the button, bu
 - **When Michael is told.** `mail:save` for a new mailbox (no fix id) sends
   "mailbox added". `mail:setCapabilities` records "mailbox given to <name>"
   only when the member now holds a mailbox id they did not hold before (a swap
-  counts; a Sending change alone does not). A grant needs the member's restart
-  (restartNeeded; the member restarts when idle, up to 10 minutes,
+  counts; a Sending change alone does not). A grant that brings mail tools the
+  running member lacks needs their restart (restartNeeded; a swap, or a member
+  who had the tools from a Send only grant, reads it at once and the note goes
+  then; the member restarts when idle, up to 10 minutes,
   useHive.ts:1462-1490), so the note goes to Michael on that member's next
-  session start (main's HookServer sees SessionStart per member,
-  hooks.ts:626; eng 1.1), or at once if they have no running session; he never hands
+  session start (main's HookServer sees SessionStart per member, hooks.ts:626;
+  eng 1.1; a compaction or a clear is the same process and does not count), or at once if they have no running session; he never hands
   mail work to someone without mail tools yet. The pending note is kept on
   disk in the app's private folder (`<home>/private/mailbox-grant-notes.json`,
   added to factoryReset's PRIVATE_ENTRIES and the office copy list, the
   held-has-no-record pattern), so a quit before the restart loses nothing. If
-  the restart fails (useHive.ts:1480) or 15 minutes pass without a session
-  start, the note goes anyway, saying the member is not active yet. Both notes list the open dock
+  15 minutes pass without a session start (a failed restart, useHive.ts:1480,
+  included: nothing signals it sooner), the note goes anyway, saying the member is not active yet. Both notes list the open dock
   questions (id and text), the way `ownerRemind` does (hive.ts:4850), so he
   needs no memory of them. With no open dock question that needed email (the
   owner set email up unprompted), Michael says nothing: the dock shows only

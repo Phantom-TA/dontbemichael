@@ -5512,7 +5512,7 @@ ipcMain.handle('mail:setCapabilities', (_evt, agentId: unknown, caps: unknown) =
   if (res.ok) {
     for (const id of newlyHeld(before, readableMailboxes(agentId))) {
       const address = (readConfig().mailboxes ?? []).find((m) => m.id === id)?.address;
-      if (address) mailboxNotes.granted(agentId, address);
+      if (address) mailboxNotes.granted(agentId, address, res.restartNeeded);
     }
   }
   return res;

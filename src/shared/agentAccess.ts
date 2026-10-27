@@ -54,8 +54,10 @@ export function agentAccessSummary(cfg: MailAccessConfig & ConnectorConfig, agen
 export function unheldMailboxesLine(cfg: {
   mailboxes?: Array<{ id: string; address: string }>;
   agentCapabilities?: Record<string, { email?: { enabled?: boolean; mailboxes?: string[] } } | undefined>;
-}): string | null {
-  const held = new Set(Object.values(cfg.agentCapabilities ?? {}).flatMap((c) => (c?.email?.enabled ? c.email.mailboxes ?? [] : [])));
+}, present?: (agentId: string) => boolean): string | null {
+  // An archived or deleted member keeps its settings but reads nothing.
+  const held = new Set(Object.entries(cfg.agentCapabilities ?? {})
+    .flatMap(([id, c]) => (c?.email?.enabled && (present?.(id) ?? true) ? c.email.mailboxes ?? [] : [])));
   const free = (cfg.mailboxes ?? []).filter((m) => !held.has(m.id)).map((m) => m.address);
   if (!free.length) return null;
   return `Mailboxes nobody reads yet: ${free.join(', ')}. Only the owner gives one to a member, on their Access tab, Email: link it as [<name>, Access, Email](dbm:member/<id>/access/email).`;

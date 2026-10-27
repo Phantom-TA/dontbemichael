@@ -5,10 +5,10 @@
  *
  *   mail:save, a new mailbox ──> "A mailbox was added" (now)
  *   mail:setCapabilities, a member now holds a mailbox they did not
- *      ├─ member not running ──> "<name> can read <address>" (now)
+ *      ├─ member not running, or running with mail tools already ──> "<name> can read <address>" (now)
  *      └─ running: a grant needs their restart ──> pending note on disk
- *            ├─ their next SessionStart ──> sent
- *            └─ 15 minutes without one (or a failed restart) ──> sent, "not active yet"
+ *            ├─ their next session start (not a compaction or a clear) ──> sent
+ *            └─ 15 minutes without one (a failed restart included) ──> sent, "not active yet"
  *
  * Every note lists the owner's open dock questions with their ids, so Michael
  * answers the one that waited on email, and says nothing when none did. The
@@ -87,9 +87,11 @@ export function createMailboxNotes(deps: MailboxNoteDeps) {
     mailboxAdded(address: string): void {
       send(mailboxAddedNote(address, deps.openQuestions()));
     },
-    granted(agentId: string, address: string): void {
+    /** needsRestart: the grant brings mail tools the running member lacks; a
+     *  swap, or one who had them from a Send only grant, reads it at once. */
+    granted(agentId: string, address: string, needsRestart = true): void {
       const g = { agentId, address, at: deps.now() };
-      if (!deps.isRunning(agentId)) { deliver(g, true); return; }
+      if (!deps.isRunning(agentId) || !needsRestart) { deliver(g, true); return; }
       // Kept on disk so a quit before the restart loses nothing; a failed
       // write still tells Michael now rather than never.
       if (!keep([...pending().filter((p) => !(p.agentId === agentId && p.address === address)), g])) deliver(g, false);
