@@ -678,7 +678,7 @@ export class HookServer {
       try { max = this.getConfig().maxTurns; } catch { max = undefined; }
       const d = this.turnCap.toolCall(agentId, max);
       if (d.stop) {
-        this.emitRefused(agentId, event, p);
+        this.emitRefused(agentId, event, p, 'turn-cap');
         return {
           continue: false,
           stopReason: d.reason,

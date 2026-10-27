@@ -51,6 +51,8 @@ export function gateOfTool(tool: string, reason: string): RefusalGate | null {
   if (/^AskUserQuestion$/.test(tool)) return null;
   // Every floor control refusal (a paused member or a gated tool) counts as paused, as hooks.ts counts it live.
   if (/paused|gated by the operator|Denied by operator/i.test(reason)) return 'paused';
+  // turnCapReason's words, so a stop on Bash is not filed under the sandbox.
+  if (/limit of \d+ turns? per run/i.test(reason)) return 'turn-cap';
   if (/QuickBooks/i.test(tool)) return 'quickbooks';
   if (/^mcp__md-mail__/.test(tool)) return 'mail';
   if (/^mcp__/.test(tool)) return 'connector';
