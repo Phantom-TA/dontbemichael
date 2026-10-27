@@ -72,6 +72,14 @@ export function layoutGraph(commits: CommitInput[]): GraphLayout {
   return { rows, maxLane };
 }
 
+/** The lane a link's long straight run is drawn in. A first parent's line goes
+ *  on down the child's lane; a merge's other parent turns into the lane the
+ *  layout kept for it just below the merge, so it never runs over the first
+ *  parent's line or through a dot drawn in the merge's own lane. */
+export function runLane(child: CommitLayout, parentIndex: number): number {
+  return parentIndex === 0 ? child.lane : child.parents[parentIndex].lane;
+}
+
 // Color cycle per lane for the rail
 export const LANE_COLORS = [
   'var(--cth-sky)',

@@ -91,7 +91,9 @@ export async function getLog(cwd: string, n: number): Promise<GitCommit[] | { er
   const sep = '\x1e';   // record separator
   const fsep = '\x1f';  // field separator
   const fmt = ['%H', '%P', '%s', '%an', '%at', '%D'].join(fsep) + sep;
-  const res = await runGit(cwd, ['log', '--all', `--max-count=${n}`, `--pretty=format:${fmt}`]);
+  // Topological, as the graph layout assumes (getLogGraph): a parent never
+  // comes before its child, so a link never points at an empty lane.
+  const res = await runGit(cwd, ['log', '--all', '--topo-order', `--max-count=${n}`, `--pretty=format:${fmt}`], 15000);
   if (!res.ok) return { error: res.error };
   const out: GitCommit[] = [];
   for (const rec of res.stdout.split(sep)) {
