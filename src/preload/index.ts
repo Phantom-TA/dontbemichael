@@ -813,6 +813,16 @@ const api = {
   // ─── Clipboard ─────────────────────────────────────────────────────────────
   copyToClipboard: (text: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('app:copyToClipboard', text),
+  /** The file tab's Copy: text, and HTML when given, in one clipboard write. */
+  copyRich: (data: { text: string; html?: string }): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:copyRich', data),
+  /** The file tab's Copy for a picture: PNG bytes drawn from the shown picture. */
+  copyImage: (png: Uint8Array): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:copyImage', png),
+  /** Report a problem: a picture of the window, the prefilled bug report, then
+   *  the picture shown in Downloads. Answers once the report page opened. */
+  reportProblem: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:reportProblem'),
   /** The right-click "Copy link address" label, in the app language. */
   setCopyLinkLabel: (label: string): void =>
     ipcRenderer.send('app:setCopyLinkLabel', label),

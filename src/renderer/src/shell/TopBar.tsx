@@ -7,7 +7,6 @@ import { Icon } from '@/components/Icon';
 import { useAppTheme, toggleAppTheme } from '@/design/theme';
 import { notifyThemeChangeAll } from '@/components/terminalPool';
 import { UpdateBadge } from '@/components/UpdateBadge';
-import { BetaPill } from '@/components/BetaPill';
 import { CliUpdateBadge } from '@/components/CliUpdateNotice';
 import { OfficeBreakChip } from '@/components/OfficeBreakNotice';
 import { pillState, useNeedsYou, useNeedsYouCount } from './useNeedsYou';
@@ -18,8 +17,9 @@ import lockupDark from '@brandkit/logo/lockup/dbm-lockup-horizontal-dark.svg?url
 
 /**
  * The v2 top bar (branding/DESIGN.md 7.1): lockup, view tabs, then the clock,
- * version, theme, focus mode, Settings and the Needs you button. It is also the
- * window's drag region; every control opts out with cth-titlebar-nodrag.
+ * version, Report a problem, theme, focus mode, Settings and the Needs you
+ * button. It is also the window's drag region; every control opts out with
+ * cth-titlebar-nodrag.
  */
 export function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { t } = useTranslation();
@@ -64,14 +64,7 @@ export function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
         <ClockPill />
         <span className="cth-titlebar-nodrag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <UpdateBadge />
-          {/* Beta beside the version, as in Settings (owner, 2026-10-05). Its
-              own layer, so its tip opens above the stage (50), the right
-              column (60) and the bottom bar (70), and stays under focus mode
-              (250) and toasts (400). The bar itself keeps no layer: the update
-              badge's cards compete at 400 as before. */}
-          <span style={{ position: 'relative', zIndex: 240, display: 'inline-flex' }}>
-            <BetaPill info={t('shell.betaInfo')} align="end" />
-          </span>
+          <ReportProblemButton />
           <CliUpdateBadge />
           <OfficeBreakChip />
         </span>
@@ -389,6 +382,64 @@ export function NeedsYouStrip() {
 /* ── Icon buttons and glyphs (DESIGN.md 10: outline, 1.75 stroke) ──────────── */
 
 /** The visible tip doubles as the accessible name, so both read in the app's language. */
+/**
+ * Report a problem, hard to miss on every view (owner, 2026-10-26: out of
+ * Settings, no Beta; docs/designs/report-problem-top-bar.md). Solid amber:
+ * coral means "waiting on you" and stays Needs you's. The hover text is a
+ * native title (drawn above every layer) and the same words in
+ * aria-description, so the public warning reaches keyboard and screen reader
+ * users too. Main opens the report and saves a picture of the window.
+ */
+function ReportProblemButton() {
+  const { t } = useTranslation();
+  const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle');
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; clearTimeout(timer.current); };
+  }, []);
+  const tip = t('shell.reportProblemTip');
+  const report = async () => {
+    setState('busy');
+    let ok = false;
+    try { ok = (await window.cth.reportProblem()).ok; } catch { ok = false; }
+    if (!mounted.current) return;
+    clearTimeout(timer.current);
+    if (ok) { setState('idle'); return; }
+    // The report page didn't open: say so on the button, briefly (F1).
+    setState('failed');
+    timer.current = setTimeout(() => setState('idle'), 2000);
+  };
+  return (
+    <>
+      <button
+        type="button"
+        className="cth-titlebar-nodrag"
+        onClick={() => void report()}
+        disabled={state === 'busy'}
+        title={tip}
+        aria-description={tip}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 12px',
+          border: 'none', borderRadius: 'var(--cth-r-pill)', cursor: state === 'busy' ? 'default' : 'pointer',
+          fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+          background: 'var(--cth-lemon)', color: 'var(--cth-on-accent)'
+        }}
+      >
+        <Icon name="flag" size={13 / 16} />
+        {/* Both words share one cell, so the button keeps the wider one's width. */}
+        <span style={{ display: 'inline-grid' }}>
+          {[t('shell.reportProblem'), t('shell.reportProblemFailed')].map((w, i) => (
+            <span key={i} style={{ gridArea: '1 / 1', visibility: i === (state === 'failed' ? 1 : 0) ? 'visible' : 'hidden' }}>{w}</span>
+          ))}
+        </span>
+      </button>
+      <span className="cth-sr-only" aria-live="polite">{state === 'failed' ? t('shell.reportProblemFailed') : ''}</span>
+    </>
+  );
+}
+
 function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
     <button

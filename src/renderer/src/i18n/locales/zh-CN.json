@@ -220,13 +220,10 @@
     "killConfirmSchedulesPlural": "关闭 {{name}}？{{name}} 有 {{count}} 个开启的定时任务，它们会暂停。"
   },
   "settingsHero": {
-    "beta": "测试版",
-    "betaInfo": "这是早期版本。如果有问题，请使用下方的“反馈问题”。",
     "sponsoredBy": "赞助方",
     "visit": "访问",
     "whatsNew": "新功能",
-    "starOnGitHub": "在 GitHub 上标星",
-    "reportProblem": "反馈问题"
+    "starOnGitHub": "在 GitHub 上标星"
   },
   "settings": {
     "title": "设置",
@@ -1840,6 +1837,9 @@
     "close": "关闭 {{name}}",
     "office": "办公室",
     "openInApp": "在应用中打开",
+    "copy": "复制",
+    "copied": "已复制",
+    "copyFailed": "无法复制",
     "reading": "正在读取…",
     "empty": "空文件",
     "tooLarge": "文件太大，无法在此显示",
@@ -2174,7 +2174,9 @@
     "focus": "专注模式",
     "exitFocus": "退出专注模式（Esc）",
     "settings": "设置",
-    "betaInfo": "这是早期版本。如果有问题，请使用“设置”中的“反馈问题”。",
+    "reportProblem": "反馈问题",
+    "reportProblemTip": "在 GitHub 上打开错误报告（需免费账号）。此窗口的截图已保存在“下载”文件夹中，可添加到报告里。报告是公开的：请先检查截图。",
+    "reportProblemFailed": "无法打开",
     "briefPlaceholder": "和 {{godName}} 说点什么…",
     "brief": "和 {{godName}} 说",
     "attach": "附加文件",

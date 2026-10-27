@@ -121,7 +121,8 @@ owner did not ask for.
    stays on the right; opening the column while on a file tab stays on the tab. Closing the selected tab selects the
    tab to its left.
 4. **File view.** Header: file name, its folder in `ink-3` (tooltip full path), and two
-   `sm` buttons, "Open in app" and "Show in Finder". "Open in app" shows only for kinds on `OPEN_EXTENSIONS` (not JSON, per the
+   `sm` buttons, "Open in app" and "Show in Finder" (a Copy button comes first since
+   2026-10-26: docs/designs/copy-document.md). "Open in app" shows only for kinds on `OPEN_EXTENSIONS` (not JSON, per the
    2026-10-04 eng allowlist). Body by kind: Markdown through `MarkdownPreview`, its
    images loaded through a new `loadImage(rel)` prop that resolves against the file's
    folder and calls `fs:readAskFile` (the same check) (shown only when inside the folders, else their

@@ -494,12 +494,11 @@ Names in parentheses are today's components that the v2 component replaces or re
 ### 7.1 Top bar
 
 Left to right: lockup (§1.5, 26 px mark); view tabs (§7.2); then, pushed right: clock
-pill (§7.3), version chip (§7.4), Beta pill (lemon-light, 10 px caps, with an InfoTip that opens toward the start), icon buttons (theme, Settings; focus mode hidden in this build, `SHOW_FOCUS_MODE`; 32 × 32,
+pill (§7.3), version chip (§7.4), Report a problem (a solid `lemon` pill, `on-accent` text, 28 px high, 12/600 with a flag icon; its hover text is a native title and `aria-description`, and it reads "Couldn't open" for 2 s if the report page fails; docs/designs/report-problem-top-bar.md), icon buttons (theme, Settings; focus mode hidden in this build, `SHOW_FOCUS_MODE`; 32 × 32,
 `r-md`, `ink-2` icons, hover fills `card` with a `line` border), and the Needs you button
-(§7.5). The bar is a drag region; interactive children are `no-drag`. The Beta pill is its
-own layer (240) above the stage, the right column and the bottom bar, so its tip is never
-drawn under the Tasks board; focus mode, toasts and dialogs stay above it. The bar itself
-has no layer, so the update badge's cards keep competing at 400.
+(§7.5). The bar is a drag region; interactive children are `no-drag`. Coral stays Needs
+you's alone ("waiting on you"); Report a problem uses `lemon`. The bar itself has no
+layer, so the update badge's cards keep competing at 400.
 
 ### 7.2 View tabs (TopBar)
 
@@ -2472,6 +2471,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-23 | Web: install dialog drawings for the signed Mac build (§9.10): the downloaded from the Internet sheet in its own words with Open highlighted, a Checked by Apple panel, and two Mac install steps; Windows unchanged. |
 | 2026-10-24 | Web: the site catches up with 0.2.5 and 0.2.6. Tiles (§9.5): their real length, Limits in writing names changing a job by saying what should change, Work on a schedule names paused starter jobs. Footer (§9.6): the legal line names GAACC AI Labs, linked. Privacy note (§9.15) and /security Who is given what (§9.16): email a member reads is labelled as the sender's words, steering lines pointed out, Michael told, never "removed". /security Where your data lives (§9.16): conversation records kept out of other members' file tools, Michael's included. Pulse lead (§9.17): See the emails. Setup foundations inset (§9.18): the 0.2.6 card hint and its Add a file link, and the inset line names adding a file. |
 | 2026-10-24 | Web: the home page answers four owner questions (design review Direction A, §9.19): what it is, what it takes off your plate (job cards and the flow line, §9.21), can I trust it (trust cards, §9.20) and how you keep an eye on it (Needs you, the board, and a home Pulse trimmed to work done, cost and each member's time and cost, §9.17). The detail moves to a new How it works page (§9.22): the setup insets, the refund story and Sending switch, the privacy section, the file tabs, the full Pulse, the tiles and open source. Nav: What it does, Trust, Keeping watch, How it works (§9.1). |
+| 2026-10-26 | Top bar: Report a problem replaces the Beta pill, a solid lemon pill with a flag, on every view; one click opens the prefilled report and saves a picture of the window to Downloads, shown in Finder; Help ▸ Report a problem… does the same. Settings: no Beta pill, no Report a problem link. No Beta anywhere (§7.1; docs/designs/report-problem-top-bar.md). |
 | 2026-10-25 | Scheduled jobs: each job's last run with Went wrong, a one line box, Ask Michael and Cancel, and a line on what came of it (§7.26). Pulse: the run suggestion card first in Recommendations, in the recommendation card's build, with Review the change and Not now, and "Nothing to change" left out while one shows; Your time's While you were away half says "of the work" beside the share and, at its foot, how long the office ran and how long of that you were away (§7.27). |
 
 ---

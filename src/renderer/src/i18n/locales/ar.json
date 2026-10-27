@@ -220,13 +220,10 @@
     "killConfirmSchedulesPlural": "إغلاق {{name}}؟ لدى {{name}} {{count}} مواعيد مفعلة. ستتوقف مؤقتًا."
   },
   "settingsHero": {
-    "beta": "تجريبي",
-    "betaInfo": "هذه نسخة مبكرة. إذا بدا شيء غير صحيح، استخدم أبلغ عن مشكلة بالأسفل.",
     "sponsoredBy": "برعاية",
     "visit": "زيارة",
     "whatsNew": "ما الجديد",
-    "starOnGitHub": "ضع نجمة على GitHub",
-    "reportProblem": "أبلغ عن مشكلة"
+    "starOnGitHub": "ضع نجمة على GitHub"
   },
   "settings": {
     "title": "الإعدادات",
@@ -1840,6 +1837,9 @@
     "close": "إغلاق {{name}}",
     "office": "المكتب",
     "openInApp": "فتح في التطبيق",
+    "copy": "نسخ",
+    "copied": "تم النسخ",
+    "copyFailed": "تعذّر النسخ",
     "reading": "جارٍ القراءة…",
     "empty": "ملف فارغ",
     "tooLarge": "الملف كبير جدًا لعرضه هنا",
@@ -2174,7 +2174,9 @@
     "focus": "وضع التركيز",
     "exitFocus": "الخروج من وضع التركيز (Esc)",
     "settings": "الإعدادات",
-    "betaInfo": "هذه نسخة مبكرة. إذا بدا شيء غير صحيح، استخدم أبلغ عن مشكلة في الإعدادات.",
+    "reportProblem": "أبلغ عن مشكلة",
+    "reportProblemTip": "يفتح بلاغًا عن خطأ على GitHub (بحساب مجاني). تُحفظ صورة لهذه النافذة في مجلد التنزيلات لتضيفها إليه. البلاغات علنية: راجع الصورة أولًا.",
+    "reportProblemFailed": "تعذّر الفتح",
     "briefPlaceholder": "تحدّث مع {{godName}}…",
     "brief": "تحدّث مع {{godName}}",
     "attach": "إرفاق ملفات",

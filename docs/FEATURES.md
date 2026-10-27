@@ -189,6 +189,14 @@ moving, and brings you only the decisions that need you.
   or takes an Anthropic API key instead. Skip it, and Ask me keeps a card until Michael can start.
 - If your settings file was damaged, setup says that is why it starts again and where a copy of
   the file was kept.
+- Report a problem sits in the top bar on every view, hard to miss. One click opens a bug report
+  with the app version and your system filled in, and saves a picture of the window in your
+  Downloads, ready to add. Help, Report a problem does the same. Reports are public, so the hover
+  text says to check the picture first.
+- Copy on every file that opens in a tab: an email draft or a blog post pastes with its headings,
+  bold, lists and links into Gmail, Outlook, Google Docs or WordPress, and as clean words with no
+  Markdown marks into a plain box such as LinkedIn. A spreadsheet pastes as real cells, a picture
+  as a picture, and a part you select pastes as clean as the whole, in light or dark mode.
 
 ## Part 2: Every change, release by release
 

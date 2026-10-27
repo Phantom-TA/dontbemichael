@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
 import { cutText } from '../shared/cutText';
@@ -195,6 +195,8 @@ import {
   withCodexRemoteArgs
 } from '../shared/codexRemote';
 import { canRelaunch, restartApp } from './restart';
+import { copyImage, copyRich } from './clipboardCopy';
+import { createReporter } from './reportProblem';
 import { PromptSubmits, confirmSubmit } from '../shared/submitConfirm';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
@@ -3759,6 +3761,30 @@ const QUIT_LABEL = 'Close Office';
  *  "Hide Don't Be Michael" read as a double negative (owner, 2026-09-24). */
 const HIDE_LABEL = 'Hide Office';
 
+/** Report a problem (docs/designs/report-problem-top-bar.md): one reporter for
+ *  the top bar button and Help ▸ Report a problem…, so a second click from
+ *  either while a report starts is ignored. */
+const reporter = createReporter<BrowserWindow>({
+  capture: async (win) => {
+    if (!win || win.isDestroyed()) return null;
+    const image = await win.webContents.capturePage();
+    return image.isEmpty() ? null : image.toPNG();
+  },
+  wait: (ms) => new Promise((done) => { setTimeout(done, ms); }),
+  openExternal: (url) => shell.openExternal(url),
+  downloads: () => app.getPath('downloads'),
+  exists: (path) => existsSync(path),
+  // wx: never overwrite, even if a file appeared after the name was chosen.
+  writeFile: (path, bytes) => fsPromises.writeFile(path, bytes, { flag: 'wx' }),
+  showItemInFolder: (path) => shell.showItemInFolder(path),
+  now: () => new Date(),
+  urlInputs: () => ({
+    appVersion: app.getVersion(), platform: process.platform, arch: process.arch,
+    osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : ''
+  }),
+  warn: (step, error) => console.warn(`[report] ${step} failed:`, error)
+});
+
 /** Build + install the application menu: standard role-based items so
  *  copy/paste/quit work per platform, trimmed to what an office owner uses. */
 function installAppMenu(): void {
@@ -3832,7 +3858,17 @@ function installAppMenu(): void {
         { role: 'togglefullscreen' }
       ]
     },
-    { role: 'windowMenu' }
+    { role: 'windowMenu' },
+    // The same report as the top bar button. role help: macOS puts it last and
+    // adds its search field. Windows hides the menu bar with this title bar
+    // style, so there the button is the way in.
+    {
+      role: 'help',
+      submenu: [{
+        label: 'Report a problem…',
+        click: (_item, focused) => { void reporter.report(focused instanceof BrowserWindow ? focused : mainWindow); }
+      }]
+    }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -4697,6 +4733,16 @@ ipcMain.handle('app:copyToClipboard', (_evt, text: unknown) => {
   if (typeof text !== 'string') return { ok: false, error: 'invalid text' };
   try { clipboard.writeText(text); return { ok: true }; }
   catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+});
+// The file tab's Copy (docs/designs/copy-document.md): formatted and plain in
+// one write, or the picture the tab shows.
+ipcMain.handle('app:copyRich', (_evt, input: unknown) => copyRich(clipboard, input));
+ipcMain.handle('app:copyImage', (_evt, bytes: unknown) => copyImage(clipboard, nativeImage, bytes));
+// The top bar's Report a problem: it answers once the report page opened; the
+// picture keeps saving after (docs/designs/report-problem-top-bar.md).
+ipcMain.handle('app:reportProblem', async (evt) => {
+  const r = await reporter.report(BrowserWindow.fromWebContents(evt.sender));
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
 });
 // The link menu's label in the app language (linkMenu.ts), sent by the renderer.
 let copyLinkLabel = DEFAULT_COPY_LINK_LABEL;

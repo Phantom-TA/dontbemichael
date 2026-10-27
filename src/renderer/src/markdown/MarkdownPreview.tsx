@@ -183,8 +183,10 @@ function hastText(node: unknown): string {
 /** Fallback for anything we won't (or can't) load: remote URLs, non-images,
  *  and local files that turned out to be missing or undecodable. */
 function ImageChip({ alt, src, note }: { alt?: string; src?: string; note?: string }) {
+  // data-alt is the author's words for the picture: the file tab's Copy reads
+  // it, never the chip's visible words (docs/designs/copy-document.md).
   return (
-    <span className="cth-md-img" title={src}>
+    <span className="cth-md-img" title={src} data-alt={alt ?? ''}>
       🖼 {alt || 'image'}{note ? ` (${note})` : ''}
     </span>
   );
@@ -204,6 +206,7 @@ function MdImage({ root, rel, alt, src }: { root: string; rel: string; alt?: str
       className="cth-md-image"
       src={img.url}
       alt={alt || rel}
+      data-alt={alt ?? ''}
       title={src}
       onError={() => setDecodeFailed(true)}
     />

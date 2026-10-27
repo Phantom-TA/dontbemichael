@@ -1115,7 +1115,7 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 
 ### Copy diagnostics for problem reports
 
-**What:** A "Copy diagnostics" button beside Settings' Report a problem: app and OS versions, the last 50 office event types from `log.jsonl`, agent exit summaries, with paths and names redacted; copied to the clipboard only.
+**What:** A "Copy diagnostics" step with the top bar's Report a problem (it moved out of Settings on 2026-10-26, docs/designs/report-problem-top-bar.md): app and OS versions, the last 50 office event types from `log.jsonl`, agent exit summaries, with paths and names redacted; copied to the clipboard only.
 
 **Why:** Report a problem carries version numbers only, on purpose, so beta reports can lack what happened just before the failure.
 

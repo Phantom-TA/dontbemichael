@@ -220,13 +220,10 @@
     "killConfirmSchedulesPlural": "Close {{name}}? {{name}} has {{count}} schedules on. They'll pause."
   },
   "settingsHero": {
-    "beta": "Beta",
-    "betaInfo": "An early version. If something looks wrong, use Report a problem below.",
     "sponsoredBy": "Sponsored by",
     "visit": "visit",
     "whatsNew": "What's new",
-    "starOnGitHub": "Star on GitHub",
-    "reportProblem": "Report a problem"
+    "starOnGitHub": "Star on GitHub"
   },
   "settings": {
     "title": "Settings",
@@ -1840,6 +1837,9 @@
     "close": "Close {{name}}",
     "office": "Office",
     "openInApp": "Open in app",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Couldn't copy",
     "reading": "Reading…",
     "empty": "Empty file",
     "tooLarge": "Too large to show here",
@@ -2174,7 +2174,9 @@
     "focus": "Focus mode",
     "exitFocus": "Exit focus mode (Esc)",
     "settings": "Settings",
-    "betaInfo": "An early version. If something looks wrong, use Report a problem in Settings.",
+    "reportProblem": "Report a problem",
+    "reportProblemTip": "Opens a bug report on GitHub (a free account). A picture of this window is saved in your Downloads to add to it. Reports are public: check the picture first.",
+    "reportProblemFailed": "Couldn't open",
     "briefPlaceholder": "Talk to {{godName}}…",
     "brief": "Talk to {{godName}}",
     "attach": "Attach files",
