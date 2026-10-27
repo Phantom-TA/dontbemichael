@@ -55,10 +55,19 @@ export function createReporter<W>(deps: ReporterDeps<W>) {
       const at = deps.now();
       let n = 1;
       while (deps.exists(join(dir, pictureName(at, n)))) n++;
-      const path = join(dir, pictureName(at, n));
-      await deps.writeFile(path, png);
-      deps.showItemInFolder(path);
-      return path;
+      // Two reports in the same minute can pick the same name; wx refuses the
+      // second, which takes the next name (review, 2026-10-27).
+      for (let tries = 0; ; tries++, n++) {
+        const path = join(dir, pictureName(at, n));
+        try {
+          await deps.writeFile(path, png);
+        } catch (e) {
+          if ((e as { code?: string })?.code === 'EEXIST' && tries < 20) continue;
+          throw e;
+        }
+        deps.showItemInFolder(path);
+        return path;
+      }
     } catch (e) {
       deps.warn('save', e);
       return null;

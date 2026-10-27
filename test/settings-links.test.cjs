@@ -118,6 +118,26 @@ test('Michael hears about a new mailbox and a new reader, once each, after the r
   assert.match(told[4].b, /has started with it/);
   assert.deepEqual(disk, []);
 
+  // Michael not reachable yet (the office not up at start): the note stays for the next sweep (review, 2026-10-27).
+  let up = false;
+  let held = [{ agentId: 'nick', address: 'late@example.com', at: 0 }];
+  const sent = [];
+  const later = createMailboxNotes({ readPending: () => held, writePending: (l) => { held = l; }, tell: (s) => { if (!up) return false; sent.push(s); return true; },
+    openQuestions: () => [], isRunning: () => true, nameOf: (id) => id, now: () => GRANT_NOTE_FALLBACK_MS, warn: () => {} });
+  later.sweep();
+  assert.equal(held.length, 1, 'kept when Michael did not get it');
+  up = true;
+  later.sweep();
+  assert.deepEqual(sent, ['nick can read late@example.com']);
+  assert.deepEqual(held, []);
+  // A file that can't be read is never written over: the new note goes now instead.
+  let wrote = false;
+  const told2 = [];
+  createMailboxNotes({ readPending: () => { throw new SyntaxError('bad json'); }, writePending: () => { wrote = true; }, tell: (s) => { told2.push(s); return true; },
+    openQuestions: () => [], isRunning: () => true, nameOf: (id) => id, now: () => 0, warn: () => {} }).granted('nick', 'y@example.com');
+  assert.equal(wrote, false);
+  assert.equal(told2.length, 1);
+
   // A failed disk write still tells Michael rather than never.
   const now = [];
   createMailboxNotes({ readPending: () => [], writePending: () => { throw new Error('EACCES'); }, tell: (s) => { now.push(s); return true; },

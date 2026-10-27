@@ -69,18 +69,23 @@ export function newlyHeld(before: string[] | undefined, after: string[] | undefi
 }
 
 export function createMailboxNotes(deps: MailboxNoteDeps) {
-  const send = (n: { subject: string; body: string }): void => {
+  /** Whether Michael got it. */
+  const send = (n: { subject: string; body: string }): boolean => {
     try {
-      if (!deps.tell(n.subject, n.body)) deps.warn('send', new Error('hive refused the note'));
+      if (deps.tell(n.subject, n.body)) return true;
+      deps.warn('send', new Error('hive refused the note'));
     } catch (e) { deps.warn('send', e); }
+    return false;
   };
-  const pending = (): PendingGrant[] => {
-    try { return deps.readPending(); } catch (e) { deps.warn('read', e); return []; }
+  /** Null when the file can't be read: then nothing is written over it
+   *  (review, 2026-10-27), so a passing fault never loses the notes in it. */
+  const pending = (): PendingGrant[] | null => {
+    try { return deps.readPending(); } catch (e) { deps.warn('read', e); return null; }
   };
   const keep = (list: PendingGrant[]): boolean => {
     try { deps.writePending(list); return true; } catch (e) { deps.warn('write', e); return false; }
   };
-  const deliver = (g: PendingGrant, active: boolean): void =>
+  const deliver = (g: PendingGrant, active: boolean): boolean =>
     send(grantNote(deps.nameOf(g.agentId), g.address, active, deps.openQuestions()));
 
   return {
@@ -92,24 +97,26 @@ export function createMailboxNotes(deps: MailboxNoteDeps) {
     granted(agentId: string, address: string, needsRestart = true): void {
       const g = { agentId, address, at: deps.now() };
       if (!deps.isRunning(agentId) || !needsRestart) { deliver(g, true); return; }
-      // Kept on disk so a quit before the restart loses nothing; a failed
-      // write still tells Michael now rather than never.
-      if (!keep([...pending().filter((p) => !(p.agentId === agentId && p.address === address)), g])) deliver(g, false);
+      // Kept on disk so a quit before the restart loses nothing; a file that
+      // can't be read or written still tells Michael now rather than never.
+      const list = pending();
+      if (!list || !keep([...list.filter((p) => !(p.agentId === agentId && p.address === address)), g])) deliver(g, false);
     },
     sessionStarted(agentId: string): void {
       const list = pending();
-      const mine = list.filter((p) => p.agentId === agentId);
-      if (!mine.length) return;
-      keep(list.filter((p) => p.agentId !== agentId));
-      for (const g of mine) deliver(g, true);
+      const mine = (list ?? []).filter((p) => p.agentId === agentId);
+      if (!list || !mine.length) return;
+      // A note Michael didn't get (the office not up yet) stays for the sweep.
+      const missed = mine.filter((g) => !deliver(g, true));
+      keep([...list.filter((p) => p.agentId !== agentId), ...missed]);
     },
     /** Called on a timer and at start: notes past the fallback go anyway. */
     sweep(): void {
       const list = pending();
-      const late = list.filter((p) => deps.now() - p.at >= GRANT_NOTE_FALLBACK_MS);
-      if (!late.length) return;
-      keep(list.filter((p) => !late.includes(p)));
-      for (const g of late) deliver(g, false);
+      const late = (list ?? []).filter((p) => deps.now() - p.at >= GRANT_NOTE_FALLBACK_MS);
+      if (!list || !late.length) return;
+      const missed = late.filter((g) => !deliver(g, false));
+      keep([...list.filter((p) => !late.includes(p)), ...missed]);
     }
   };
 }

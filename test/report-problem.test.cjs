@@ -99,6 +99,10 @@ test('a picture never overwrites one already in Downloads', async () => {
   assert.equal(f.ok, true);
   assert.equal(await f.saving, null);
   assert.deepEqual(steps(failing.log), ['open', 'warn']);
+  // Two reports in the same minute picked the same name: wx refuses the second, which takes the next (review, 2026-10-27).
+  const taken = new Set([`${base}.png`]);
+  const racing = fakeReporter({ deps: { exists: () => false, writeFile: async (p) => { if (taken.has(p)) throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' }); taken.add(p); } } });
+  assert.equal(await (await racing.reporter.report({})).saving, `${base} 2.png`);
 });
 
 test('a second click while a report starts is ignored; a failed open says so and frees the next click', async () => {
