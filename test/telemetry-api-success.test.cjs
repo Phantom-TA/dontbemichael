@@ -11,6 +11,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
 const { TelemetryCollector, TELEMETRY_TOKEN_HEADER } = loadTs('src/main/telemetry.ts');
@@ -89,4 +91,35 @@ test('a turn that logs several api_errors and then succeeds leaves an idle agent
     const [d] = breaker.tick([{ agentId: 'agent-1', sample: null, progressing: true }], 1_000_000 + i * 30_000);
     assert.equal(d.state.level, 'healthy', `beat ${i}: ${d.state.reason}`);
   }
+});
+
+test('an api_request named only in the body still reports a success', async (t) => {
+  // The collector falls back to the body when event.name is missing, and the
+  // body carries the claude_code. prefix.
+  const { telemetry, endpoint } = await started(t);
+  const token = telemetry.tokenFor('agent-1');
+  const successes = [];
+  const errors = [];
+  telemetry.onApiSuccess((id) => successes.push(id));
+  telemetry.onApiError((id) => errors.push(id));
+  const batch = {
+    resourceLogs: [{
+      resource: { attributes: [{ key: 'agent.id', value: { stringValue: 'agent-1' } }] },
+      scopeLogs: [{
+        logRecords: [{
+          body: { stringValue: 'claude_code.api_request' },
+          attributes: [{ key: 'session.id', value: { stringValue: 's1' } }]
+        }]
+      }]
+    }]
+  };
+  assert.equal(await post(endpoint, batch, token), 200);
+  assert.deepEqual(successes, ['agent-1']);
+  assert.deepEqual(errors, []);
+});
+
+test('main subscribes the breaker to api_request successes', () => {
+  // The scenarios above copy the wiring; index.ts needs Electron, so pin the source.
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
+  assert.match(main, /telemetry\.onApiSuccess\(\(agentId\) => breaker\.clearErrors\(agentId\)\);/);
 });
