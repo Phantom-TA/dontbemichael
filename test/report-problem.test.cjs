@@ -52,7 +52,8 @@ test('one click opens the prefilled report, then saves the picture in Downloads 
   const { reporter, log } = fakeReporter();
   const r = await reporter.report({});
   assert.equal(r.ok, true);
-  assert.equal(await r.saving, "/Users/me/Downloads/Don't Be Michael report 2026-10-26 20.15.png");
+  // The save joins with path.join, so Windows gets back slashes.
+  assert.equal(await r.saving, path.join('/Users/me/Downloads', "Don't Be Michael report 2026-10-26 20.15.png"));
   assert.deepEqual(steps(log), ['open', 'write', 'show'], 'the report opens before anything is written');
   const url = new URL(log[0][1]);
   assert.equal(url.searchParams.get('app-version'), '0.2.8');
@@ -89,7 +90,7 @@ test('no picture, an empty one, a failed one or a slow one never stops the repor
 });
 
 test('a picture never overwrites one already in Downloads', async () => {
-  const base = "/Users/me/Downloads/Don't Be Michael report 2026-10-26 20.15";
+  const base = path.join('/Users/me/Downloads', "Don't Be Michael report 2026-10-26 20.15");
   const { reporter } = fakeReporter({ files: [`${base}.png`, `${base} 2.png`] });
   const r = await reporter.report({});
   assert.equal(await r.saving, `${base} 3.png`);
