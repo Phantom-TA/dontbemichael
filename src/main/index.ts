@@ -4455,9 +4455,11 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         if (typedSid) resumeNotFound = true;
       } else {
         if (ownerHome !== myHome) opts.env = { ...(opts.env ?? {}), CODEX_HOME: ownerHome };
+        const prompt = opts.hive ? hive.injectedPromptFor(opts.hive.id) : undefined;
+        if (prompt) hive.writeCodexInstructions(ownerHome, prompt);
         const args = opts.args ?? [];
         // Positional order matters: `codex resume [OPTIONS] [SESSION_ID] [PROMPT]`.
-        // The hive identity prompt rides in `args` as a POSITIONAL (codex has no
+        // The seed prompt rides in `args` as a POSITIONAL (codex has no
         // prompt flag), so the id must come BEFORE it — appending the id last made
         // codex read the prompt as SESSION_ID ("No saved session found with ID
         // You are \"Dev2\"…") and the id as the prompt.

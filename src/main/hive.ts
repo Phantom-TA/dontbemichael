@@ -63,7 +63,8 @@ import {
   canReceiveInbox,
   providerPreset,
   bridgeOf,
-  type AgentProvider
+  type AgentProvider,
+  ON_SHIFT_PROMPT
 } from '../shared/agentProvider';
 import { MCP_CATALOG } from '../shared/mcpCatalog';
 import { answeredAtOf, cardConversation, openAskIndexes } from '../shared/askMeRouting';
@@ -1431,6 +1432,7 @@ export class HiveManager {
       const preset = providerPreset(meta.provider ?? 'claude');
       const flag = preset.initialPromptFlag;
       const prompt = this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business);
+      this._injectedPrompts.set(meta.id, prompt);
       // agy, codex, and grok expose a Claude-style lifecycle-hook surface, so each
       // gets the SAME live status + Stop→inbox-drain Claude does — selected by the
       // preset's `hookBridge`. agy needs a translating shim (its hook stdin/stdout
@@ -1455,7 +1457,7 @@ export class HiveManager {
           if (desc.kind === 'hooks') {
             if (desc.shim === 'agy') this.installAgyHooks();
             else if (desc.shim === 'codex') {
-              env.CODEX_HOME = this.installCodexHooks(dir, meta.id);
+              env.CODEX_HOME = this.installCodexHooks(dir, meta.id, prompt);
               if (opts.skillsDir) this.copyBundledSkills(opts.skillsDir, join(env.CODEX_HOME, 'skills'), false);
               // Codex refuses to run hooks from a config dir without persisted
               // "hook trust" (normally an interactive gate). Our hooks.json is
@@ -1560,11 +1562,16 @@ export class HiveManager {
       // type-into-tui (Crush): the bare TUI reads a positional as a Cobra subcommand
       // → `Unknown command`. So DROP the positional and hand the protocol back as
       // seedPrompt; the renderer types it into the TUI after boot (ondev-b).
+      //
+      // For engines with system-level instructions delivery (Codex), the
+      // full protocol lives in developer_instructions, so argv
+      // carries only the short shift seed prompt instead of the full protocol (#298).
+      const userPrompt = preset.instructionsDelivery === 'system-level' ? ON_SHIFT_PROMPT : prompt;
       const deg = degraded ? { degraded } : {};
-      if (preset.seedDelivery === 'type-into-tui') return { args: [...preArgs], env, seedPrompt: prompt, ...deg };
+      if (preset.seedDelivery === 'type-into-tui') return { args: [...preArgs], env, seedPrompt: userPrompt, ...deg };
       // If a provider somehow exposes neither a flag nor a positional prompt, spawn bare.
-      if (flag) return { args: [...preArgs, flag, prompt], env, ...deg };
-      if (preset.positionalInitialPrompt) return { args: [...preArgs, prompt], env, ...deg };
+      if (flag) return { args: [...preArgs, flag, userPrompt], env, ...deg };
+      if (preset.positionalInitialPrompt) return { args: [...preArgs, userPrompt], env, ...deg };
       return { args: preArgs, env, ...deg };
     }
 
@@ -1587,7 +1594,9 @@ export class HiveManager {
     const args: string[] = [];
     if (!claudeProvider) return { args, env };
 
-    args.push('--append-system-prompt', this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business));
+    const claudePrompt = this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business);
+    this._injectedPrompts.set(meta.id, claudePrompt);
+    args.push('--append-system-prompt', claudePrompt);
 
     // Phase 1 — autonomy: attach lifecycle hooks via --settings (no edits to the
     // user's repo) so the agent reports activity and drains its inbox on Stop.
@@ -2380,6 +2389,7 @@ export class HiveManager {
         : `YOUR FOLDERS: you work in ${meta.cwd}. The owner keeps the documents you need there, so read it for context first, and save everything you produce there: drafts, reports, spreadsheets. It is private: only you, anyone sharing this folder, and ${godNameForPrompt} can open it, and other team members' folders are private to them.`)
         + ` The hive (${root}) is only for coordination: your memory notes, inbox and outbox. Save documents, drafts and other work outside it. You can open PDFs and images directly.`
       : '';
+
     // A business office (one with a business folder) gets the rewritten
     // instructions (agent instructions audit, 2026-09-25): Michael's standing
     // instructions or the shared team member instructions, then the house
@@ -5308,13 +5318,37 @@ export class HiveManager {
           BeforeAgent: [hook('before-agent')],
           BeforeTool: [hook('before-tool', '.*')],
           AfterTool: [hook('after-tool', '.*')],
-          AfterAgent: [hook('after-agent')]
+          AfterAgent: [hook('after-agent')],
+          PreCompress: [hook('pre-compress')]
         },
         ...(writableDirs.length ? { context: { includeDirectories: writableDirs } } : {})
       };
       writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
     } catch (e) { console.error('[hive] installGeminiHooks failed:', e); }
     return settingsPath;
+  }
+
+  private _injectedPrompts = new Map<string, string>();
+
+  /** The full protocol prompt injected for an agent, cached from ensureAgent.
+   *  Used by HookServer to re-inject rules on compaction/resume
+   *  for engines without native system-level prompt delivery (#298). */
+  injectedPromptFor(agentId: string): string | undefined {
+    return this._injectedPrompts.get(agentId);
+  }
+
+  /** Write developer instructions into an existing CODEX_HOME's config.toml,
+   *  ensuring resumed sessions pick up updated work style / role text (#298). */
+  writeCodexInstructions(codexHome: string, instructions: string): void {
+    try {
+      const configPath = join(codexHome, 'config.toml');
+      let config = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
+      config = config.replace(/^\s*developer_instructions\s*=.*(\r?\n)?/gm, '');
+      config = `developer_instructions = ${JSON.stringify(instructions)}\n\n` + config;
+      writeFileSync(configPath, config, 'utf8');
+    } catch (e) {
+      console.error('[hive] writeCodexInstructions failed:', e);
+    }
   }
 
   /** Codex lifecycle-hook bridge → full hive parity for a `codex` worker (live
@@ -5336,7 +5370,7 @@ export class HiveManager {
    *  ~/.codex/auth.json is linked in and their config.toml is copied + extended
    *  (login + model/provider/trust settings still apply).
    *  Returns the CODEX_HOME path for the caller to put in the worker's env. */
-  private installCodexHooks(dir: string, agentId: string): string {
+  private installCodexHooks(dir: string, agentId: string, instructions?: string): string {
     const home = join(dir, '.codex');
     try {
       mkdirSync(home, { recursive: true });
@@ -5390,9 +5424,13 @@ export class HiveManager {
       // `codex app-server` → initialize → `hooks/list` reports the normalized
       // timeoutSec per event.
       const shim = this.shimPath();
-      let config = existsSync(join(userHome, 'config.toml'))
-        ? readFileSync(join(userHome, 'config.toml'), 'utf8') : '';
-      if (shim) {
+      const userConfigPath = join(userHome, 'config.toml');
+      let config = existsSync(userConfigPath) ? readFileSync(userConfigPath, 'utf8') : '';
+      if (instructions) {
+        config = config.replace(/^\s*developer_instructions\s*=.*(\r?\n)?/gm, '');
+        config = `developer_instructions = ${JSON.stringify(instructions)}\n\n` + config;
+      }
+      if (shim && !config.includes('munder-hive lifecycle hooks')) {
         const events = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop',
           'SessionStart', 'UserPromptSubmit', 'PreCompact', 'PostCompact'];
         // On Windows a command with no space and no quote: see codexHookWindows.
@@ -6961,7 +6999,8 @@ process.stdin.on('end', () => {
     BeforeAgent: 'UserPromptSubmit',
     BeforeTool: 'PreToolUse',
     AfterTool: 'PostToolUse',
-    AfterAgent: 'Stop'
+    AfterAgent: 'Stop',
+    PreCompress: 'PreCompress'
   };
   const payload = {
     ...gemini,
