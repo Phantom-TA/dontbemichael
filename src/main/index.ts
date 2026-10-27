@@ -425,6 +425,11 @@ let pulsePresenceTimer: ReturnType<typeof setInterval> | null = null;
 telemetry.onApiError((agentId) => {
   if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId);
 });
+// Claude Code logs one api_error only after it gives up on a request, and a
+// later api_request shows the session recovered. A request re-issued after a
+// streaming failure starts `attempt` again at 1, so one turn can log several
+// errors and then succeed: a request that gets through clears the count.
+telemetry.onApiSuccess((agentId) => breaker.clearErrors(agentId));
 // Shared roster on disk — created early so HookServer can re-read standing goals
 // on every UserPromptSubmit (Edit Agent saves land here via persistAgents).
 const roster = new RosterStore(() => readConfig().harnessHome);

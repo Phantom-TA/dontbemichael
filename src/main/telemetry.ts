@@ -154,6 +154,9 @@ export class TelemetryCollector {
   /** api_error subscribers — feeds Lane A's breaker error-storm trip (#6), which
    *  has no input source of its own (hook payloads don't expose api errors). */
   private readonly apiErrorSubs = new Set<(agentId: string) => void>();
+  /** api_request subscribers: a request that completed, which shows the
+   *  session recovered from the api_errors before it (breaker.clearErrors). */
+  private readonly apiSuccessSubs = new Set<(agentId: string) => void>();
   /** token → the agent it speaks for. In memory only, minted by tokenFor. Usage
    *  feeds the cost cap, so a batch counts only for the agent whose token sent
    *  it: not for another agent it names, and not from a process holding none. */
@@ -231,6 +234,19 @@ export class TelemetryCollector {
   onApiError(cb: (agentId: string) => void): () => void {
     this.apiErrorSubs.add(cb);
     return () => this.apiErrorSubs.delete(cb);
+  }
+
+  /** In-process api_request feed: fires when a request completes. Claude Code
+   *  logs a single api_error only after it gives up on a request (retries in
+   *  between are not logged), and a later api_request is how the docs tell a
+   *  recovered session from a stalled one. A request re-issued after a
+   *  streaming failure starts `attempt` again at 1, so one turn can log several
+   *  api_errors and then succeed. Do not read the error count as per retry.
+   *  At integration: `telemetry.onApiSuccess((agentId) => breaker.clearErrors(agentId))`.
+   *  Returns an unsubscribe fn. */
+  onApiSuccess(cb: (agentId: string) => void): () => void {
+    this.apiSuccessSubs.add(cb);
+    return () => this.apiSuccessSubs.delete(cb);
   }
 
   /** Drop an agent's live usage so a respawn starts with a fresh counter.
@@ -398,6 +414,10 @@ export class TelemetryCollector {
             const decision = str(attrs['decision']) === 'reject' ? 'reject' : 'accept';
             const ring = this.spans.get(agentId);
             if (ring?.length) ring[ring.length - 1].decision = decision;
+          } else if (name === 'api_request' || name === 'claude_code.api_request') {
+            // event.name carries the bare name; the body fallback carries the
+            // claude_code. prefix, so accept both.
+            for (const cb of this.apiSuccessSubs) { try { cb(agentId); } catch { /* subscriber threw */ } }
           } else if (name === 'api_error' || (name && name.includes('error'))) {
             const error = str(attrs['error']) || str(attrs['message']) || name;
             for (const cb of this.apiErrorSubs) { try { cb(agentId); } catch { /* subscriber threw */ } }

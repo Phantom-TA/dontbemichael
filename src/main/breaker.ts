@@ -201,7 +201,10 @@ export class CircuitBreaker {
   }
 
   /** The errors so far were the account refusing this agent's turn (the office
-   *  stopped on it), not a storm of its own. */
+   *  stopped on it), not a storm of its own. Also called when a later
+   *  api_request shows the session recovered: Claude Code logs one api_error
+   *  only after it gives up, but a request re-issued after a streaming failure
+   *  starts `attempt` again at 1, so one turn can log several and then succeed. */
   clearErrors(agentId: string): void {
     this.get(agentId).errorCount = 0;
   }

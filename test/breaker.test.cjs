@@ -76,6 +76,16 @@ test('error storm trips', () => {
   assert.match(d.state.reason, /error storm/);
 });
 
+test('errors with no success between them still trip the storm', () => {
+  const b = makeBreaker();
+  for (let i = 0; i < 3; i++) b.recordError('a');
+  b.clearErrors('a');                      // an api_request: that turn recovered
+  for (let i = 0; i < 5; i++) b.recordError('a');
+  const d = beat(b, 'a', null, true, T0);
+  assert.equal(d.state.level, 'steering');
+  assert.match(d.state.reason, /error storm: 5/);
+});
+
 test('token velocity spike trips on the second sample', () => {
   const b = makeBreaker();
   beat(b, 'a', sample('a', T0, 0), true, T0);
