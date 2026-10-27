@@ -2155,7 +2155,8 @@ wide; under that the card goes under the text, up to 420 px wide. Never scrolls 
 
 The home page answers the four questions an owner asks, in this order (owner, 2026-10-24, design
 review Direction A): the hero (§9.3, unchanged, with its Privacy first badge and the live studio),
-then four sections, then "Questions owners ask", then the closing call to action. Each section has a
+then the customer band (§9.23; owner, 2026-10-26), then four sections, then "Questions owners ask",
+then the closing call to action. Each of the four sections has a
 mono eyebrow ("1 · What is it?", "2 · What does it take off my plate?", "3 · Can I trust it?", "4 ·
 How do I keep an eye on it?"), a `w-h2` heading and one picture or set of cards. The words a visitor
 sees when the page loads stay at 900 or fewer, not counting the board and Pulse pictures or the FAQ
@@ -2215,6 +2216,32 @@ Privacy and the trust layer (§9.15); The board with its notes (§9.13); Files (
 memory question. Links shared before the move (`/#setup`, `/#story`, `/#sending`, `/#privacy`,
 `/#board`, `/#files`, `/#pulse`, `/#handled`, `/#open-source`) land on the same section here. The page never scrolls
 sideways, also at 320 px with a scrollbar.
+
+### 9.23 Customer band (web)
+
+Businesses already running the app, on the home page between the hero and "1 · What is it?" (owner,
+2026-10-26, CEO review D4, picked from HTML mockups of three placements). An unnumbered section,
+centered, 96 px from its neighbours: the mono eyebrow "Already running at", no heading and no lead,
+then the list.
+
+- One `card` per business (`r-xl`, `shadow-md`, hairline), padding 14 (18 on the right), 14 px gaps:
+  the business's own logo, its name (16/22, 600, `ink`), a kind of business line in the business's
+  own terms (13/18, `ink-3`) and a 16 px `i-right` chevron in `ink-3`. Hover lifts to `shadow-lg`,
+  with the transition only when reduced motion is off. Focus shows the site's focus ring.
+- The logo fits a 120 x 48 box with its shape kept (TalBiz Solutions' tall mark is 45 x 48), so a
+  wide wordmark stays readable. It has `alt=""`; the name beside it is the text.
+- The whole card is one link to the business's own site, in the same tab like every other link on
+  the site.
+- Cards wrap centered, 16 px apart, the list at most 960 px wide; one card sits alone in the center.
+  No coral, no placeholder cards. With no businesses the whole section goes, eyebrow included.
+- Logos are copies of the business's own PNG, served from `/assets/customer-<slug>.png?v=N`, never
+  loaded from the business's site, so no visitor's browser calls a third party. A new file bumps `N`.
+- Order: the order businesses joined. First: TalBiz Solutions, "Staffing and talent",
+  https://www.talbizsolutions.com/.
+- A business goes on the band only with its OK, noted in the site CHANGELOG line that adds it. One
+  that asks to come off leaves the band, `llms.txt` and the home JSON-LD together.
+- `llms.txt` names each business in its own "In use at" line, and the home JSON-LD lists them as
+  `mentions` on the WebSite node, in the band's order.
 
 ---
 
@@ -2473,6 +2500,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-24 | Web: the site catches up with 0.2.5 and 0.2.6. Tiles (§9.5): their real length, Limits in writing names changing a job by saying what should change, Work on a schedule names paused starter jobs. Footer (§9.6): the legal line names GAACC AI Labs, linked. Privacy note (§9.15) and /security Who is given what (§9.16): email a member reads is labelled as the sender's words, steering lines pointed out, Michael told, never "removed". /security Where your data lives (§9.16): conversation records kept out of other members' file tools, Michael's included. Pulse lead (§9.17): See the emails. Setup foundations inset (§9.18): the 0.2.6 card hint and its Add a file link, and the inset line names adding a file. |
 | 2026-10-24 | Web: the home page answers four owner questions (design review Direction A, §9.19): what it is, what it takes off your plate (job cards and the flow line, §9.21), can I trust it (trust cards, §9.20) and how you keep an eye on it (Needs you, the board, and a home Pulse trimmed to work done, cost and each member's time and cost, §9.17). The detail moves to a new How it works page (§9.22): the setup insets, the refund story and Sending switch, the privacy section, the file tabs, the full Pulse, the tiles and open source. Nav: What it does, Trust, Keeping watch, How it works (§9.1). |
 | 2026-10-25 | Scheduled jobs: each job's last run with Went wrong, a one line box, Ask Michael and Cancel, and a line on what came of it (§7.26). Pulse: the run suggestion card first in Recommendations, in the recommendation card's build, with Review the change and Not now, and "Nothing to change" left out while one shows; Your time's While you were away half says "of the work" beside the share and, at its foot, how long the office ran and how long of that you were away (§7.27). |
+| 2026-10-26 | Web: the customer band (§9.23), businesses already running the app, between the hero and the four questions (§9.19): eyebrow "Already running at", one card per business with its own logo in a 120 x 48 box, its name, its kind of business and a link to its site. First: TalBiz Solutions. Logos are served from the site, never the business's own site; `llms.txt` and the home JSON-LD name the same businesses. |
 
 ---
 
