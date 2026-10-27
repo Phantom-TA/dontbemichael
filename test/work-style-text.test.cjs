@@ -104,6 +104,42 @@ test('the quick rewrite gives an s only to a verb: "you" as an object, and "don\
   assert.doesNotMatch(michael, /\b\w+s't\b| ins | tos | ands | fors /);
 });
 
+test('the quick rewrite reads right for were, you\'ll, you\'ve, an adverb before the verb, and yourself', () => {
+  // Value: protects=the plain description in Edit Agent reads as English; fails_when="were" gets an s, a contraction keeps its tail on the role, the verb after "also" or "never" keeps no s, or "yourself" becomes the role; why_new=bug found by repro ("Support weres hired"); seam=pure thirdPerson()
+  const s = (text) => W.thirdPerson(text, 'Support');
+  assert.equal(s('You were hired to sort mail.'), 'Support was hired to sort mail.');
+  assert.equal(s('You weren\'t told.'), 'Support wasn\'t told.');
+  assert.equal(s('You\'ll send the summary at five.'), 'Support will send the summary at five.');
+  assert.equal(s('You’d reply first.'), 'Support would reply first.');
+  assert.equal(s('You\'ve got the inbox.'), 'Support has got the inbox.');
+  assert.equal(s('You also send a summary to Michael.'), 'Support also sends a summary to Michael.');
+  assert.equal(s('You always reply within a day.'), 'Support always replies within a day.');
+  assert.equal(s('You first check the inbox, then reply.'), 'Support first checks the inbox, then reply.');
+  assert.equal(s('You still have the keys.'), 'Support still has the keys.');
+  assert.equal(s('You never send refunds yourself.'), 'Support never sends refunds themselves.');
+  assert.equal(s('You also can refund.'), 'Support also can refund.', 'a helper verb after the adverb stays');
+});
+
+test('an object you leaves the words after it alone; only a you that opens a clause passes the s on', () => {
+  // Value: protects=owner written lines still read right in Edit Agent; fails_when=the adverb rule runs after an object "you", so "asks you first before" reads "first befores", or "If you also send" loses its s; why_new=review on #572; seam=pure thirdPerson()
+  const s = (text) => W.thirdPerson(text, 'Support');
+  assert.equal(s('The owner asks you first before anything is sent.'), 'The owner asks Support first before anything is sent.');
+  assert.equal(s('Michael tells you only once a day.'), 'Michael tells Support only once a day.');
+  assert.equal(s('It reaches you just before noon.'), 'It reaches Support just before noon.');
+  assert.equal(s('Check with you first thing each morning.'), 'Check with Support first thing each morning.');
+  assert.equal(s('If you also send a quote, copy Michael.'), 'If Support also sends a quote, copy Michael.');
+  assert.equal(s('Sort the inbox, then you always log it.'), 'Sort the inbox, then Support always logs it.');
+  assert.equal(s('Done.\nYou never send refunds.'), 'Done.\nSupport never sends refunds.');
+  assert.equal(s("You'd finished the invoice already."), 'Support had finished the invoice already.');
+  assert.equal(s('You’d reply first.'), 'Support would reply first.', 'not before a past participle');
+  assert.equal(s("You'd checked it twice."), 'Support had checked it twice.');
+  // A verb that only ends in "ed" is not a past participle.
+  assert.equal(s("You'd need to check the inbox first."), 'Support would need to check the inbox first.');
+  assert.equal(s("you'd proceed only after Michael agrees."), 'Support would proceed only after Michael agrees.');
+  assert.equal(s("You'd feed the summary to Michael."), 'Support would feed the summary to Michael.');
+  assert.equal(s("You'd shred old drafts."), 'Support would shred old drafts.');
+});
+
 test('the Add and Edit agent views read a work style by role, never by the agent\'s name', () => {
   // Value: protects=no name reaches the plain description an owner edits and saves; fails_when=a view passes the agent's name to plainFallback or the rewrite; why_new=owner 2026-10-03: "fix the card job view to not use names either"; seam=source pin
   const read = (p) => require('node:fs').readFileSync(require('node:path').resolve(__dirname, '..', p), 'utf8');

@@ -275,18 +275,34 @@ export interface MailDeps {
   journalPath?: string;
 }
 
+// `secure: false` means STARTTLS (MailServer), and both libraries only try it
+// when the server offers it: one that doesn't (or someone on the network who
+// removes the offer) would get the password in the clear. So it is required,
+// and a server without encryption fails the login instead.
+
+/** ImapFlow's options for a server. It refuses doSTARTTLS next to secure, so
+ *  it is set only for a STARTTLS server. */
+export function imapOptions(server: MailServer, user: string, pass: string) {
+  return {
+    host: server.host, port: server.port, secure: server.secure, ...(server.secure ? {} : { doSTARTTLS: true }),
+    auth: { user, pass }, logger: false as const, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 60_000
+  };
+}
+
+/** nodemailer's options for a server. */
+export function smtpOptions(server: MailServer, user: string, pass: string) {
+  return {
+    host: server.host, port: server.port, secure: server.secure, requireTLS: !server.secure,
+    auth: { user, pass }, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 45_000
+  };
+}
+
 function defaultImap(server: MailServer, user: string, pass: string): ImapLike {
-  return new ImapFlow({
-    host: server.host, port: server.port, secure: server.secure,
-    auth: { user, pass }, logger: false, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 60_000
-  }) as unknown as ImapLike;
+  return new ImapFlow(imapOptions(server, user, pass)) as unknown as ImapLike;
 }
 
 function defaultSmtp(server: MailServer, user: string, pass: string): SmtpLike {
-  return nodemailer.createTransport({
-    host: server.host, port: server.port, secure: server.secure,
-    auth: { user, pass }, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 45_000
-  }) as unknown as SmtpLike;
+  return nodemailer.createTransport(smtpOptions(server, user, pass)) as unknown as SmtpLike;
 }
 
 /** Plain-language classification of an IMAP or SMTP failure. */
@@ -304,6 +320,14 @@ export function classifyMailError(e: unknown): MailError {
   }
   if (['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EHOSTUNREACH', 'ESOCKET', 'ECONNECTION', 'EPIPE', 'NoConnection'].includes(err?.code ?? '')) {
     return new MailError('network', "Couldn't reach the mail server. Check the server name and your connection.");
+  }
+  // A server not encrypted from the start that won't switch to encryption:
+  // the login is refused rather than sent in the clear (imapOptions, smtpOptions).
+  // Only the libraries' "not offered" errors: a certificate problem during the
+  // upgrade is a different story and keeps the server's own words.
+  // (imapflow marks every failed upgrade tlsFailed, a bad certificate too.)
+  if (/does not support (required )?STARTTLS|Error upgrading connection with STARTTLS/i.test(text)) {
+    return new MailError('unsupported', "This mail server doesn't offer encryption on this port, so the app won't send the password. Use the server's encrypted port (often 993 for reading, 465 for sending).");
   }
   if (/timed out/i.test(text)) return new MailError('timeout', 'The mail server took too long to answer.');
   return new MailError('unknown', `The mail server returned an error: ${String(err?.message ?? e).slice(0, 200)}`);
@@ -723,6 +747,17 @@ export class MailService {
       const folder = action === 'archive' ? (gmail ? label ?? null : destination) : null;
       return { done: found.map(String), missing: missing.map(String), ...(label ? { label } : {}), about, folder };
     }, action === 'mark_read' ? 'Marking mail read' : action === 'mark_junk' ? 'Moving mail to junk' : 'Archiving mail');
+  }
+
+  /** The thread headers a reply to `ref` carries, read when the reply is filed
+   *  for the owner: the email it answers is often archived or moved before
+   *  the owner says yes, and its inbox id then names nothing. Null when the
+   *  email has no Message-ID to thread on. */
+  async threadOf(id: string, ref: MailRef): Promise<ThreadHeaders | null> {
+    const parsed = await this.replyHeaders(id, ref);
+    if (!parsed.messageId) return null;
+    const prior = Array.isArray(parsed.references) ? parsed.references : parsed.references ? [parsed.references] : [];
+    return { inReplyTo: parsed.messageId, references: [...prior, parsed.messageId].slice(-50) };
   }
 
   /** The threading headers of the message a reply answers, without its body. */
@@ -1312,6 +1347,10 @@ async function runMailRequest(
         return { status: 403, body: { error: `${refused} The email was withdrawn; write it again without that.` } };
       }
       const approved: ComposeInput = { to: p!.to, cc: p!.cc, subject: p!.approved?.subject ?? p!.subject, body: p!.approved?.body ?? p!.body, replyTo: p!.replyTo, forward: p!.forward, attachFrom: p!.attachFrom, thread: p!.thread };
+      // A reply threads on the headers kept when it was proposed, so the email
+      // it answers may since have been archived; a card from before that keeps
+      // reading them through its reply id.
+      if (approved.thread) approved.replyTo = undefined;
       // Recorded as sending first: if that can't be saved nothing goes out, and
       // a restart after the send never sends it again.
       try { deps.proposals.markSending(p!.id); } catch {
@@ -1398,7 +1437,13 @@ async function runMailRequest(
           const why = unreadable ? 'It answers an email the check could not read in full, so the owner decides.'
             : tooLong ? 'It is longer than the check can read, so the owner decides.'
               : verdict && !verdict.fits ? verdict.reason : 'The check could not confirm it fits.';
-          const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: input.forward, attachFrom: input.attachFrom, ...(input.thread ? { thread: input.thread } : {}) });
+          // Its thread is kept as for any proposal; if the email it answers
+          // can't be read now, the send reads it then, as before.
+          let thread = input.thread;
+          if (!thread && input.replyTo) {
+            try { thread = (await svc.threadOf(mailbox!, input.replyTo)) ?? undefined; } catch { /* read at the send */ }
+          }
+          const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: input.forward, attachFrom: input.attachFrom, ...(thread ? { thread } : {}) });
           try { deps.audit?.({ kind: 'mail-standing-refused', agentId, mailbox, standing: rule!.id, proposal: p.id }); } catch { /* the filing stands */ }
           return { status: 200, body: { sent: false, proposal: p.id, state: 'waiting for the owner on Ask me', why: `Not sent under your standing approval: ${why}`, next: 'It is on Ask me now. You will get a message when the owner decides; then send it with this proposal id.' } };
         }
@@ -1459,7 +1504,17 @@ async function runMailRequest(
       if (!deps.proposals) return { status: 503, body: { error: 'Approvals are not available right now. Tell Michael.' } };
       if (!input.body.trim()) return { status: 400, body: { error: 'propose needs a "body".' } };
       const offer = str(body.offer_standing, STANDING_KIND_MAX)?.replace(/\s+/g, ' ').trim();
-      const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: input.forward, attachFrom: input.attachFrom, ...(input.thread ? { thread: input.thread } : {}), ...(offer ? { offerStanding: offer } : {}) });
+      // A reply's thread is read now and kept on the card: an id that names
+      // nothing fails here, while the agent can still search again, instead of
+      // after the owner has approved an email that can't go out. A server that
+      // can't be reached right now doesn't hold the card up; the send reads it.
+      let thread = input.thread;
+      if (!thread && input.replyTo) {
+        try { thread = (await svc.threadOf(mailbox!, input.replyTo)) ?? undefined; } catch (e) {
+          if (e instanceof MailError && (e.kind === 'not-found' || e.kind === 'bad-request')) throw e;
+        }
+      }
+      const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: input.forward, attachFrom: input.attachFrom, ...(thread ? { thread } : {}), ...(offer ? { offerStanding: offer } : {}) });
       return { status: 200, body: { proposal: p.id, state: 'waiting for the owner on Ask me', ...(p.replaces ? { replaced: p.replaces, note: `This replaces your earlier proposal ${p.replaces} for the same email; that id no longer works.` } : {}), next: 'Nothing is sent yet. You will get a message when the owner decides: approved (then call send with this proposal id), changes asked, or not sent. Do not send it another way.' } };
     }
     const out = await svc.send(agentId, mailbox!, input, () => {

@@ -30,7 +30,7 @@ export type PulseTile = (typeof PULSE_TILES)[number];
 
 /** One span's figures: the period, or the span before with Compare. */
 export interface TileSpan {
-  snapshot: Pick<PulseSnapshot, 'outcomes' | 'yourTime' | 'awayShare'>;
+  snapshot: Pick<PulseSnapshot, 'outcomes' | 'yourTime' | 'awayShare'> & Partial<Pick<PulseSnapshot, 'running'>>;
   keptSafe: KeptSafe;
   learning: LearningSpan | null;
 }
@@ -60,13 +60,19 @@ export function tileActivity(id: PulseTile, span: TileSpan): number {
 /** What a tile's Compare bars and lines draw over one span, as a key two
  *  spans compare by: for most tiles the same as its activity; Web answers
  *  draws the cleaned answers, Learned its three kinds, and Your time the
- *  questions, their rate per 100 requests and the away share. */
+ *  questions, their rate per 100 requests, the away share and how long the
+ *  office ran. */
 export function tileFigure(id: PulseTile, span: TileSpan): string {
   const l = span.learning;
   switch (id) {
     case 'webAnswers': return String(span.keptSafe.webAnswers.clean);
     case 'learned': return l ? `${l.added.you}|${l.added.job}|${l.added.michael}` : '0|0|0';
-    case 'yourTime': return `${span.snapshot.yourTime.asks}|${l?.per100 ?? null}|${span.snapshot.awayShare ?? null}`;
+    // Running time to the minute, as the tile shows it.
+    case 'yourTime': {
+      const r = span.snapshot.running;
+      const min = (ms: number | undefined): number | null => (ms === undefined ? null : Math.round(ms / 60_000));
+      return `${span.snapshot.yourTime.asks}|${l?.per100 ?? null}|${span.snapshot.awayShare ?? null}|${min(r?.ms)}|${min(r?.awayMs)}`;
+    }
     default: return String(tileActivity(id, span));
   }
 }

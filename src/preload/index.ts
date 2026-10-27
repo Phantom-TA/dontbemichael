@@ -1,4 +1,5 @@
 import type { Period } from '../shared/teamPerformance';
+import type { JobRun, RunSuggestion } from '../shared/runCompare';
 import type { HeldRow } from '../shared/heldRecord';
 import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
@@ -678,9 +679,13 @@ const api = {
   hireCheckDistinct: (
     job: { name: string; title: string; routing: string; workStyle?: string; mailbox?: string },
     team: Array<{ name: string; title: string; routing: string; workStyle?: string; mailbox?: string }>,
-    requestId?: string
+    requestId?: string,
+    /** 'change' from Edit agent: handoffs between them are not an overlap. */
+    mode?: 'hire' | 'change',
+    /** For a change: which job this reads, the one before it or after (logged). */
+    phase?: 'before' | 'after'
   ): Promise<{ distinct: boolean; overlapsWith: string[]; why: string; suggestion?: string; source: 'ai' | 'rules' }> =>
-    ipcRenderer.invoke('hire:checkDistinct', { job, team, requestId }),
+    ipcRenderer.invoke('hire:checkDistinct', { job, team, requestId, mode, phase }),
   /** Stop a check the owner moved past (another job picked, or back a step). */
   hireCheckStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('hire:checkStop', requestId),
   /** Rewrite a work style: the agent's instructions as the owner's plain
@@ -702,10 +707,23 @@ const api = {
     current: { instructions: string; handles: string };
     changes: string[];
     answer?: { question: string; answer: string };
+    /** Every answer the owner gave this change, oldest first (a clash and
+     *  where tracked numbers live). */
+    answers?: Array<{ question: string; answer: string }>;
     lead?: boolean;
+    /** How the owner says the work splits with the teammates the overlap
+     *  check named (`teammates`), and the member's live handoffs that a change
+     *  may take back (overlap split plan). */
+    explanation?: string;
+    teammates?: Array<{ id: string; name: string; title?: string }>;
+    handoffList?: Array<{ toId: string; scope: string; line: string; toTitle?: string }>;
+    /** Edit agent only: ask where tracked numbers live when the job doesn't say. */
+    askHome?: boolean;
   }): Promise<
-    | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string }
+    | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string;
+      handoffs?: Array<{ toId: string; scope: string }>; drops?: Array<{ toId: string; scope: string }> }
     | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> }
+    | { kind: 'home'; question: string }
     | { kind: 'error'; reason: 'failed' | 'cancelled' }
   > => ipcRenderer.invoke('workStyle:convert', { ...req, to: 'revise' }),
   /** Where a rewrite is (starting, reading, writing) and what it has written
@@ -986,8 +1004,8 @@ const api = {
     ipcRenderer.invoke('hive:clearedState', id),
   /** Undo a clear: restart the agent into its earlier conversation. */
   restoreConversation: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('agent:restoreConversation', id),
-  /** Add the owner's Ask me answer to the raising agent's memory notes. */
-  hiveRememberOwnerAnswer: (p: { agentId: string; task: string; q: string; a: string }): Promise<{ ok: boolean }> =>
+  /** Keep the owner's Ask me answer as an owner note for the raising agent's memory. */
+  hiveRememberOwnerAnswer: (p: { agentId: string; task: string; taskId: string; q: string; a: string }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('hive:rememberOwnerAnswer', p),
   hiveMemory: (id: string): Promise<string> => ipcRenderer.invoke('hive:memory', id),
   hiveMemoryDetail: (id: string): Promise<{ index: string; waiting: number }> => ipcRenderer.invoke('hive:memoryDetail', id),
@@ -1477,6 +1495,16 @@ const api = {
   pulseUndo: (appliedId: number): Promise<{ ok: true; kind: 'schedule' } | { ok: true; kind: 'model'; agentId: string; to: string | null } | { ok: false; error: 'stale' | 'unavailable' }> =>
     ipcRenderer.invoke('pulse:undo', appliedId),
   pulseDismiss: (id: string): Promise<boolean> => ipcRenderer.invoke('pulse:dismiss', id),
+  /** Each of a member's jobs with its last finished run and any "Went wrong" on it (shared/runCompare.ts). */
+  runCompareLastRuns: (agentId: string): Promise<Array<{ run: JobRun; suggestion: RunSuggestion | null }>> =>
+    ipcRenderer.invoke('runCompare:lastRuns', agentId),
+  /** The owner's "Went wrong": compares the run with an earlier good one; resolves when done. */
+  runCompareWentWrong: (p: { runId: number; agentId: string; note?: string; workStyle: string; previousWorkStyle?: string; changes?: Array<{ text: string; at: string }> }): Promise<RunSuggestion | null> =>
+    ipcRenderer.invoke('runCompare:wentWrong', p),
+  /** Suggestions ready for Pulse. */
+  runCompareSuggestions: (): Promise<RunSuggestion[]> => ipcRenderer.invoke('runCompare:suggestions'),
+  /** Not now on a suggestion. */
+  runCompareDismiss: (runId: number): Promise<boolean> => ipcRenderer.invoke('runCompare:dismiss', runId),
   /** Whether Pulse's points are flowing: the last batch, failed writes, refused hook frames. */
   telemetryHealth: (): Promise<PulseHealthView> => ipcRenderer.invoke('telemetry:health'),
   /** Fires when new telemetry was folded, so an open Pulse view refreshes. */

@@ -81,21 +81,31 @@ export function earliest(all: Advice[]): Advice[] {
 }
 
 export class PulseService {
-  private reading: PlanReading | null = null;
+  /** Every live usage window from the last status line that had one (E6). */
+  private readings: PlanReading[] = [];
   constructor(private readonly d: PulseDeps) {}
   private now(): number { return this.d.now ? this.d.now() : Date.now(); }
 
-  /** A status line's usage windows: keep the most constrained one (E6). */
+  /** The plan bar's window: the most constrained one that hasn't reset. A reset
+   *  five hour window falls back to the weekly one instead of an empty bar, and
+   *  a quiet office never shows a reset window as used up. */
+  private get reading(): PlanReading | null {
+    const now = this.now();
+    return this.readings.reduce<PlanReading | null>((best, r) => (r.resetsAt > now && (!best || r.usedPct > best.usedPct) ? r : best), null);
+  }
+
+  /** A status line's usage windows: keep each live one, so the most constrained
+   *  can be chosen when Pulse is read (E6). */
   noteRateLimits(rateLimits: unknown, at = this.now()): void {
     if (!rateLimits || typeof rateLimits !== 'object') return;
-    let best: PlanReading | null = null;
+    const live: PlanReading[] = [];
     for (const [name, w] of Object.entries(rateLimits as Record<string, { used_percentage?: unknown; resets_at?: unknown }>)) {
       const pct = typeof w?.used_percentage === 'number' ? w.used_percentage : NaN;
       const resets = typeof w?.resets_at === 'number' ? w.resets_at * 1000 : NaN;
       if (!(pct >= 0) || !(resets > at)) continue;
-      if (!best || pct > best.usedPct) best = { usedPct: pct, resetsAt: resets, windowMs: windowMs(name), at };
+      live.push({ usedPct: pct, resetsAt: resets, windowMs: windowMs(name), at });
     }
-    if (best) this.reading = best;
+    if (live.length) this.readings = live;
   }
 
   private asks(): AskFact[] {
@@ -236,12 +246,13 @@ export class PulseService {
     const decisions = this.d.processor.decisions(office, from);
     const asks = this.asks();
     const gapDays = this.d.store.failureDays(office);
+    const running = this.d.processor.running(office, from);
     // On a plan, each member's dollars are their part of the plan's real cost
     // for the period, split by share of the work (owner, 2026-10-15).
     const price = billing === 'account' ? this.planPrice() : null;
     const measure = (r: DayRange): { snapshot: PulseSnapshot; keptSafe: KeptSafe; periodCost: number; payPerUse: number } => {
       const raw = pulseSnapshot({
-        period, now, range: r, days, cards, decisions, asks, members: ids, gapDays,
+        period, now, range: r, days, cards, decisions, asks, members: ids, gapDays, running,
         sentAsWritten: decisions.filter((x) => x.decision === 'approve' && x.at >= r.fromMs && x.at <= r.toMs).length,
         ...(godId ? { michael: { agentId: godId, ...this.d.processor.michaelCounts(office, godId, r.fromMs, r.toMs) } } : {})
       });

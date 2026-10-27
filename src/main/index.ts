@@ -69,7 +69,7 @@ import { linkWorktreeDeps, unlinkWorktreeDeps } from './worktreeDeps';
 import { HiveManager, type AgentMeta, type HiveMessage, type HiveTask } from './hive';
 import { HookServer, type PlanSignal } from './hooks';
 import { OfficeBreak, type OfficeBreakState } from './officeBreak';
-import { heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
+import { countsTowardErrorStorm, heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
 import { loadBundledPacks, packsResourceDir } from './packs';
 import { businessFolderRoot, ensureFolder, safeFolderName } from './agentFolders';
 import { CircuitBreaker, breakerMessages, type BreakerInput } from './breaker';
@@ -77,11 +77,13 @@ import type { UsageProvider } from './usage';
 import { MemoryManager } from './memory';
 import { KnowledgeManager } from './knowledge';
 import { MemoryTidy } from './memoryTidy';
-import { checkDistinct, readJobProfile } from './hireCheck';
+import { checkDistinct, readCheckPhase, readDistinctMode, readJobProfile } from './hireCheck';
 import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readReviseRequest, reviseWorkStyle } from './workStyleConvert';
 import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
 import { TelemetryStore } from './telemetryStore';
+import { OwnerNotes } from './ownerNotes';
+import { localDay } from '../shared/messageView';
 import { TelemetryProcessor } from './telemetryProcessor';
 import { PulseHealth } from '../shared/pulseHealth';
 import { PulseService } from './pulse';
@@ -118,6 +120,8 @@ import { initCompletionWatcher } from './realtimeCompletionWatcher';
 import type { TaskCard, InboxMessage } from './realtimeCompletionWatcher';
 import { TelemetryCollector } from './telemetry';
 import { CostLedgerTotals } from './costLifetime';
+import { RUN_COMPARE_MODEL, RUN_COMPARE_TIMEOUT_MS, RunCompare } from './runCompare';
+import { runHiddenModel } from './hiddenModel';
 import { CostLedgerStore } from './costLedger';
 import { analytics, isRendererMessageSurface } from './analytics';
 import type { SpawnFailReason } from './analytics';
@@ -137,7 +141,7 @@ import { emailCalendarAllowed } from '../shared/mcpCatalog';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
 import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
-import { CHECK_FOLDERS, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
+import { CHECK_FOLDERS, RUN_COMPARE_DIR, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
 import { autoMemoryFolders, eraseMemoryTargets, foldersFromRoster, gitTopOf, idsFromCostRows, idsFromRecord, memberIdsIn, memoryResetTargets } from './memoryReset';
 import { groupMembers, hardKillTree, isAlive, KILL_GRACE_MS, snapshotRemains } from './procKill';
 import { buildWorkerLaunch } from './workerLaunch';
@@ -153,6 +157,7 @@ import { SilentWatch, type WatchMember } from './silentWatch';
 import { mailFor, noticeForOpened, type SilentEpisode } from '../shared/silentEngine';
 import {
   argsWithAutoModeFlag,
+  argsWithTurnCap,
   bridgeOf,
   inferAgentProvider,
   isClaudeProvider,
@@ -416,7 +421,10 @@ let pulseTickTimer: ReturnType<typeof setInterval> | null = null;
 let pulsePresenceTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
-telemetry.onApiError((agentId) => breaker.recordError(agentId));
+// Not while the office is stopped: a refused turn is the stop, not a storm.
+telemetry.onApiError((agentId) => {
+  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId);
+});
 // Shared roster on disk — created early so HookServer can re-read standing goals
 // on every UserPromptSubmit (Edit Agent saves land here via persistAgents).
 const roster = new RosterStore(() => readConfig().harnessHome);
@@ -585,7 +593,9 @@ const memoryTidy = new MemoryTidy(
     return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
   },
   // Learning counts notes from the app's own record (owner, 2026-10-18).
-  (agentId, added) => { const ts = Date.now(); for (const n of added) pulseTelemetry.record({ agentId, kind: 'note-added', ts, attrs: { id: n.id, source: n.source } }); }
+  (agentId, added) => { const ts = Date.now(); for (const n of added) pulseTelemetry.record({ agentId, kind: 'note-added', ts, attrs: { id: n.id, source: n.source } }); },
+  // The owner's notes, the only ones a pass reads as the owner's (memory evidence, D9).
+  () => ownerNotes
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
@@ -725,6 +735,10 @@ ipcMain.handle('silent:checkAgain', (_evt, id: unknown) => { if (typeof id === '
 const pulseOffice = (): string | null => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; };
 const pulseTelemetry = new TelemetryStore(() => persist.database(), pulseOffice);
 const pulseProcessor = new TelemetryProcessor(() => persist.database(), pulseTelemetry);
+// The owner's notes for members' memory, kept beside Pulse in harness.db where
+// no member can write (memory evidence, D9).
+const ownerNotes = new OwnerNotes(() => persist.database(), pulseOffice);
+hive.setOwnerNotes(ownerNotes);
 
 /** The team as Company foundations reads it, from one read of the registry
  *  and the roster (the hook asks on every prompt): each member's job (read
@@ -1003,7 +1017,7 @@ function closeMailboxCard(id: string, result: string): void {
 const mailApprovals = new MailApprovals({
   path: join(app.getPath('userData'), 'mail-proposals.json'),
   send: (msg) => { if (!hive.enabled()) return false; hive.send(msg, 'mail'); return true; },
-  remember: (agentId, line) => { hive.rememberOwnerNote(agentId, line); },
+  remember: (agentId, line, why) => { hive.rememberOwnerNote(agentId, line, why); },
   // Only Michael notifies the owner (docs/designs/michael-only-notifications.md).
   toast: (body) => ownerToast(michaelName(), body),
   agentName: (id) => { try { return hive.registry().agents[id]?.name?.trim() || id; } catch { return id; } },
@@ -2292,6 +2306,9 @@ function onPlanSignal(signal: PlanSignal): void {
   // owner's new key, with no automatic recheck (eng R2).
   const retry = !(signal.reason === 'signin' && readConfig().claudeAuth === 'apiKey');
   const step = officeBreak.limitReached(signal.agentId, signal.reason, retry);
+  // The engine's errors while it tried this turn, its retries included, were
+  // the account refusing it, so they don't count toward a storm either.
+  breaker.clearErrors(signal.agentId);
   const view = officeBreak.view();
   try { hive.appendLog({ kind: 'office-break', step, agentId: signal.agentId, reason: view?.reason ?? signal.reason, until: view?.until ?? null }); } catch { /* best-effort */ }
   if (step === 'started' && view) ownerToast(michaelName(), stopWords(view.reason, view.until).start);
@@ -4367,10 +4384,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         .trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
       if (label) args.push('--remote-control-session-name-prefix', label);
     }
-    // Coarse runaway cap.
-    if (typeof cfg.maxTurns === 'number' && cfg.maxTurns > 0 && !args.includes('--max-turns')) {
-      args.push('--max-turns', String(cfg.maxTurns));
-    }
+    // Coarse runaway cap. A --max-turns already in the command (the owner's, or
+    // one a shared hire brought in) can only lower it, never raise it.
+    args.splice(0, args.length, ...argsWithTurnCap(args, cfg.maxTurns));
     // Resume: an explicit session id (Add Agent "resume session" field, #2) wins,
     // else this agent's last recorded session (#1 restore-on-restart / #6.6a).
     // Seed the transcript into the target cwd's Claude project dir first — Claude
@@ -4960,6 +4976,8 @@ ipcMain.handle('config:changeHome', async (_evt, payload: unknown) => {
   // Repoint config and relaunch so every service re-bootstraps against newHome.
   // (Identical recovery path to resetAll — relaunch is the clean re-bind.)
   allowQuit = true;
+  // The old office's running time and buffered points land before the switch.
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[changeHome] pulse flush:', e); }
   writeConfig({ harnessHome: newHome });
   try { ptyManager.killAll(); } catch (e) { console.error('[changeHome] killAll:', e); }
   restartApp(app);
@@ -4992,6 +5010,7 @@ ipcMain.handle('config:startOverHere', () => {
   // bring the owner straight back to the "can't find your office" screen.
   try { hive.ensureHive(); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
   allowQuit = true;
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[startOverHere] pulse flush:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[startOverHere] killAll:', e); }
   restartApp(app);
   return { ok: true as const }; // unreachable (process exits)
@@ -5688,11 +5707,11 @@ ipcMain.handle('agent:restoreConversation', (_evt, id: unknown) => {
   try { liveWebContents()?.send('power:resume', { reason: 'restore-conversation', awayMs: 0, dead: [ptyId], total: 1 }); } catch { /* window gone */ }
   return { ok: true };
 });
-/** The owner's Ask me answer, added to the raising agent's memory notes. */
+/** The owner's Ask me answer, kept as an owner note for the raising agent's memory (ownerNotes.ts). */
 ipcMain.handle('hive:rememberOwnerAnswer', (_evt, p: unknown) => {
-  const o = (p ?? {}) as { agentId?: unknown; task?: unknown; q?: unknown; a?: unknown };
+  const o = (p ?? {}) as { agentId?: unknown; task?: unknown; taskId?: unknown; q?: unknown; a?: unknown };
   if (typeof o.agentId !== 'string' || typeof o.q !== 'string' || typeof o.a !== 'string') return { ok: false };
-  return { ok: hive.rememberOwnerAnswer(o.agentId, typeof o.task === 'string' ? o.task : '', o.q, o.a) };
+  return { ok: hive.rememberOwnerAnswer(o.agentId, typeof o.task === 'string' ? o.task : '', o.q, o.a, typeof o.taskId === 'string' ? o.taskId : '') };
 });
 ipcMain.handle('hive:send', (_evt, partial: Partial<HiveMessage>, from: unknown) => {
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
@@ -5894,6 +5913,9 @@ ipcMain.handle('owner:ask', (_evt, p: unknown) => {
   // A question whose genuine mark can't be saved would vanish after a restart:
   // it is withdrawn and the owner told it didn't send.
   if (!addOwnerDockKey(dockKey(msg))) { hive.ownerWithdraw(msg.id); return { ok: false }; }
+  // What the owner tells Michael is also his note from the owner, so a rule
+  // given in passing lasts past the conversation (memory evidence, D11).
+  hive.rememberOwnerNote(hiveGodId(), msg.body, `you told Michael in the dock, ${localDay(new Date().toISOString())}`);
   return { ok: true, id: msg.id, workOrder: ownerWorkOrder(msg.id, msg.body) };
 });
 ipcMain.handle('owner:conversation', () => hive.ownerConversationView(Date.now(), isOwnerDockMessage));
@@ -6044,7 +6066,7 @@ const checkRuns = new Map<string, AbortController>();
 /** The hire wizard's distinct job check (design D6): a hidden Haiku call that
  *  compares the new job with every teammate's, the instant rules when it can't. */
 ipcMain.handle('hire:checkDistinct', async (_evt, payload: unknown) => {
-  const p = (payload ?? {}) as { job?: unknown; team?: unknown; requestId?: unknown };
+  const p = (payload ?? {}) as { job?: unknown; team?: unknown; requestId?: unknown; mode?: unknown; phase?: unknown };
   const job = readJobProfile(p.job);
   if (!job) return { distinct: false, overlapsWith: [], why: '', source: 'rules' };
   const team = Array.isArray(p.team) ? p.team.map(readJobProfile).filter((m): m is NonNullable<typeof m> => !!m) : [];
@@ -6052,16 +6074,29 @@ ipcMain.handle('hire:checkDistinct', async (_evt, payload: unknown) => {
   const requestId = typeof p.requestId === 'string' ? p.requestId.slice(0, 80) : '';
   const stop = new AbortController();
   if (requestId) checkRuns.set(requestId, stop);
+  const mode = readDistinctMode(p.mode);
   try {
-    return await checkDistinct(job, team, {
+    const verdict = await checkDistinct(job, team, {
       engine: cfg.godProvider ?? 'claude',
       engineModel: cfg.godModel,
       cwd: cfg.harnessHome ?? app.getPath('home'),
       command: cfg.defaultCommand ?? 'claude',
       env: memory.env(),
       log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+      mode,
       signal: stop.signal
     });
+    // Every verdict, so a check that stops (or passes) a job can be read back
+    // later: a model check can answer differently for the same job
+    // (owner's Kelly change, 2026-10-24).
+    try {
+      hive.appendLog({
+        kind: 'distinct-check', mode, phase: readCheckPhase(p.phase), member: job.name,
+        distinct: verdict.distinct, overlapsWith: verdict.overlapsWith, source: verdict.source,
+        why: verdict.why.slice(0, 400), ...(verdict.suggestion ? { suggestion: verdict.suggestion.slice(0, 300) } : {})
+      });
+    } catch { /* best-effort */ }
+    return verdict;
   } finally {
     if (requestId) checkRuns.delete(requestId);
   }
@@ -6512,7 +6547,7 @@ function teardownAndQuit(): void {
   try { stopWebhookServer(); } catch (e) { console.error('[quit] webhook.stop:', e); }
   try { memory.stop(); } catch (e) { console.error('[quit] memory.stop:', e); }
   try { memoryTidy.stop(); } catch (e) { console.error('[quit] memoryTidy.stop:', e); }
-  try { pulseTelemetry.flush(); } catch (e) { console.error('[quit] pulse flush:', e); }
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[quit] pulse flush:', e); }
   try { persist.close(); } catch (e) { console.error('[quit] persist.close:', e); }
   try { hive.stopAllProxyBridges(); } catch (e) { console.error('[quit] stopAllProxyBridges:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[quit] killAll:', e); }
@@ -6667,7 +6702,7 @@ ipcMain.handle('app:resetMemory', async () => {
   // A tidy pass waiting on its model writes nothing when it returns.
   try { memoryTidy.halt(); } catch (e) { console.error('[memory reset] memoryTidy.halt:', e); }
   // Buffered cost samples reach the store before their ids are read.
-  try { pulseTelemetry.flush(); } catch (e) { console.error('[memory reset] pulse flush:', e); }
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[memory reset] pulse flush:', e); }
   // killAll forgets each terminal as it signals it, so the wait watches the
   // processes themselves, snapshotted first (Codex adversarial, ship).
   const trees = ptyManager.list().map((s) => ({ id: s.id, pid: s.pid, before: process.platform === 'win32' ? null : groupMembers(s.pid) }));
@@ -6695,6 +6730,8 @@ ipcMain.handle('app:resetMemory', async () => {
       ).all(office) as Array<{ agent_id: unknown; s: unknown }>, sessions);
     }
   } catch (e) { console.error('[memory reset] reading session ids:', e); }
+  // The owner's notes not yet filed go with the memory they were for.
+  try { const office = pulseOffice(); if (office) ownerNotes.clearOffice(office); } catch (e) { console.error('[memory reset] owner notes:', e); }
   try { persist.close(); } catch (e) { console.error('[memory reset] persist.close:', e); }
 
   const memberIds = memberIdsIn(hiveRoot);
@@ -6961,6 +6998,64 @@ ipcMain.handle('pulse:modelApplied', (_evt, id: unknown, agentId: unknown, from:
   typeof id === 'string' && typeof agentId === 'string' && typeof to === 'string' ? pulse.modelApplied(id, agentId, typeof from === 'string' ? from : null, to) : 0);
 ipcMain.handle('pulse:undo', (_evt, appliedId: unknown) => (typeof appliedId === 'number' ? pulse.undo(appliedId) : { ok: false, error: 'stale' }));
 ipcMain.handle('pulse:dismiss', (_evt, id: unknown) => (typeof id === 'string' ? pulse.dismiss(id) : false));
+
+// Compare runs we already have (eng review 2026-10-24, src/shared/runCompare.ts):
+// the owner's "Went wrong" on a job's last run, one isolated hidden call on
+// Michael's engine, a suggestion Pulse shows and Edit agent applies.
+const runCompare = new RunCompare({
+  db: () => persist.database(),
+  office: pulseOffice,
+  getKv: (key) => persist.getKv(key),
+  setKv: (key, value) => persist.setKv(key, value),
+  // The private record only: hive/log.jsonl is writable by members' shells.
+  sessionsOf: (agentId) => [...(idsFromRecord(hive.privateSessionsText()).get(agentId) ?? [])],
+  projectsRoot: claudeProjectsRoot,
+  runModel: (prompt) => {
+    const cfg = readConfig();
+    // An empty folder only the app writes, never the office folder: no
+    // CLAUDE.md a member left there can steer the suggestion (as standingFit).
+    const cwd = join(app.getPath('userData'), RUN_COMPARE_DIR);
+    try { mkdirSync(cwd, { recursive: true }); ensureClaudePermissionsAccepted(cwd); } catch { /* the call fails and the owner can try again */ }
+    return runHiddenModel(prompt, {
+      engine: cfg.godProvider ?? 'claude',
+      engineModel: cfg.godModel,
+      model: RUN_COMPARE_MODEL,
+      cwd,
+      command: cfg.defaultCommand ?? 'claude',
+      noTools: true,
+      // The runs hold customers' text: only the owner's user settings, no
+      // hooks, no transcript, and nothing in Claude Code's history (D4).
+      settingSources: 'user',
+      settingsJson: JSON.stringify({ disableAllHooks: true }),
+      dropTranscript: true,
+      isolateConfig: true,
+      thinking: false,
+      env: memory.env(),
+      timeoutMs: RUN_COMPARE_TIMEOUT_MS
+    });
+  },
+  memberName: (agentId) => { try { return hive.registry().agents[agentId]?.name?.trim() || agentId; } catch { return agentId; } },
+  mission: (missionId) => { const m = (readConfig().missions ?? []).find((x) => x.id === missionId); return m ? { label: m.label, focus: m.focus } : null; },
+  tellMichael: (subject, body) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body }, 'system'); },
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+});
+ipcMain.handle('runCompare:lastRuns', (_evt, agentId: unknown) => (typeof agentId === 'string' ? runCompare.lastRuns(agentId) : []));
+ipcMain.handle('runCompare:wentWrong', async (_evt, p: unknown) => {
+  const o = (p ?? {}) as { runId?: unknown; agentId?: unknown; note?: unknown; workStyle?: unknown; previousWorkStyle?: unknown; changes?: unknown };
+  if (typeof o.runId !== 'number' || typeof o.agentId !== 'string') return null;
+  const changes = Array.isArray(o.changes)
+    ? o.changes.flatMap((c) => (c && typeof c === 'object' && typeof (c as { text?: unknown }).text === 'string' && typeof (c as { at?: unknown }).at === 'string'
+      ? [{ text: String((c as { text: string }).text).slice(0, 1500), at: String((c as { at: string }).at).slice(0, 40) }] : [])).slice(0, 40)
+    : [];
+  return runCompare.wentWrong({
+    runId: o.runId, agentId: o.agentId, note: o.note,
+    workStyle: typeof o.workStyle === 'string' ? o.workStyle.slice(0, 20_000) : '',
+    previousWorkStyle: typeof o.previousWorkStyle === 'string' ? o.previousWorkStyle.slice(0, 20_000) : undefined,
+    changes
+  });
+});
+ipcMain.handle('runCompare:suggestions', () => runCompare.suggestions());
+ipcMain.handle('runCompare:dismiss', (_evt, runId: unknown) => (typeof runId === 'number' ? runCompare.dismiss(runId) : false));
 ipcMain.handle('missions:delete', (_evt, id: unknown): MissionOpResult =>
   typeof id === 'string' ? applyMissions((list) => deleteMission(list, id)) : { ok: false, error: 'invalid id' });
 ipcMain.handle('missions:setEnabled', (_evt, id: unknown, on: unknown): MissionOpResult =>
@@ -8351,6 +8446,20 @@ function runWorkerWakeBeat(): void {
   }
 }
 
+/** The office is stopped (plan limit, no credit, sign in failed) until a
+ *  check starts: that time is not running time (owner D1, 2026-10-25). */
+function officeStopped(): boolean {
+  const v = officeBreak.view();
+  return !!v && !v.checking;
+}
+
+function pulsePresenceBeat(): void {
+  try {
+    pulseTelemetry.presence(powerMonitor.getSystemIdleTime(), false);
+    pulseTelemetry.running(officeStopped());
+  } catch { /* presence is best-effort */ }
+}
+
 /** (Re)arm the always-on beats (decoupled from the optional heartbeat): the live
  *  fleet snapshot Michael reads (~8s) + the breaker/cost-ledger beat (~30s).
  *  Guarded (clear-then-set) so a re-bootstrap (changeHome recovery) OR a
@@ -8390,8 +8499,12 @@ function armAlwaysOnBeats(): void {
     const stalled = pulseHealth.stallWarning(office);
     if (stalled) console.warn(stalled);
   }, 30_000);
+  // Each minute also counts how long the office ran (owner, 2026-10-25). A
+  // first beat now, so a launch never keeps the last session's presence.
   if (pulsePresenceTimer) clearInterval(pulsePresenceTimer);
-  pulsePresenceTimer = setInterval(() => { try { pulseTelemetry.presence(powerMonitor.getSystemIdleTime(), false); } catch { /* presence is best-effort */ } }, 60_000);
+  pulseTelemetry.runningStart();
+  pulsePresenceBeat();
+  pulsePresenceTimer = setInterval(pulsePresenceBeat, 60_000);
   runWorkerWakeBeat(); // catch-up on arm — power-resume re-arms and drains the backlog
   // A break's timer freezes in system sleep like the beats above.
   armOfficeBreak();
@@ -8548,7 +8661,7 @@ app.whenReady().then(() => {
   // every window, so there is nothing to tear down on quit.
   powerMonitor.on('resume', () => { try { pulseTelemetry.presence(0, false); } catch { /* best-effort */ } onSystemResume('resume'); });
   powerMonitor.on('unlock-screen', () => onSystemResume('unlock-screen'));
-  powerMonitor.on('suspend', () => { lastSuspendAt = Date.now(); console.log('[power] suspend — system sleeping'); try { pulseTelemetry.presence(0, true); } catch { /* best-effort */ } });
+  powerMonitor.on('suspend', () => { lastSuspendAt = Date.now(); console.log('[power] suspend — system sleeping'); try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.presence(0, true); } catch { /* best-effort */ } });
   powerMonitor.on('lock-screen', () => { lastSuspendAt = Date.now(); console.log('[power] lock-screen'); });
   // The app's own menu, always: Electron's default carries Reload and the
   // developer tools, which are not for an office owner (owner, 2026-10-03).

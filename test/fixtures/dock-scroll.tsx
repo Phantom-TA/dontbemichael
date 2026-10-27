@@ -26,6 +26,38 @@ let resolveFiles: ((value: unknown) => void) | undefined;
 const runtimeErrors: string[] = [];
 window.addEventListener('error', (e) => runtimeErrors.push(e.message));
 window.addEventListener('unhandledrejection', (e) => runtimeErrors.push(String(e.reason)));
+
+// What moved the list, the last few steps, added to a failed check so a run
+// that fails only on a CI runner says how it got there.
+const trace: string[] = [];
+const traceStart = performance.now();
+const listEl = () => document.querySelector('.cth-dock > div:nth-child(2)') as HTMLElement | null;
+const note = (what: string) => {
+  const el = listEl();
+  const more = el ? [...el.querySelectorAll('button')].filter((b) => b.textContent === i18n.t('dock.more')).length : 0;
+  const line = `${what}${el ? ` top=${el.scrollTop} h=${el.scrollHeight} vh=${el.clientHeight} more=${more}` : ''}`;
+  const last = trace[trace.length - 1];
+  if (last?.endsWith(line)) { trace[trace.length - 1] = last.replace(/^(\d+ms)( x\d+)?/, (_, ms, n) => `${ms} x${n ? Number(n.slice(2)) + 1 : 2}`); return; }
+  trace.push(`${Math.round(performance.now() - traceStart)}ms ${line}`);
+  if (trace.length > 40) trace.shift();
+};
+const scrollTopDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!;
+Object.defineProperty(Element.prototype, 'scrollTop', {
+  ...scrollTopDesc,
+  set(this: Element, v: number) {
+    scrollTopDesc.set!.call(this, v);
+    if (this === listEl()) note(`set scrollTop ${Math.round(v)} by ${new Error().stack?.split('\n').slice(2, 4).map((s) => s.trim().split(' ')[1].replace(/^\S*\//, '')).join(' < ')}`);
+  }
+});
+document.addEventListener('scroll', (e) => { if (e.target === listEl()) note('scroll event'); }, true);
+note(`page ${document.visibilityState}, fonts ${document.fonts.status}`);
+document.fonts.addEventListener('loadingdone', () => note(`fonts loaded (${document.fonts.size})`));
+const NativeResizeObserver = window.ResizeObserver;
+window.ResizeObserver = class extends NativeResizeObserver {
+  constructor(callback: ResizeObserverCallback) {
+    super((entries, observer) => { note(`resize observer (${entries.length})`); callback(entries, observer); });
+  }
+};
 Object.assign(window, { cth: {
   platform: navigator.platform.startsWith('Win') ? 'win32' : navigator.platform.startsWith('Mac') ? 'darwin' : 'linux',
   hiveRegistry: async () => ({ agents: { god: { name: 'Michael' } } }),
@@ -79,18 +111,29 @@ createRoot(document.getElementById('root')!).render(<Fixture />);
 
 // Let layout/ResizeObserver delivery finish before checking preservation or
 // absence: those predicates can already be true before the action is handled.
-// A frame, or a short timer if no frame comes, so a stalled renderer fails a
-// check with its message instead of hanging the run.
-const frame = () => new Promise<void>((resolve) => {
-  const timer = setTimeout(resolve, 100);
-  requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
+// A frame, or a short timer if no frame comes; true only when one was drawn.
+const frame = () => new Promise<boolean>((resolve) => {
+  const timer = setTimeout(() => { note('no frame in 100ms'); resolve(false); }, 100);
+  requestAnimationFrame(() => { clearTimeout(timer); note('frame'); resolve(true); });
 });
-const settle = async () => { await frame(); await frame(); };
+// A busy machine can stop drawing for seconds (a loaded run here went 0.1 s to
+// 12 s without a frame, and a scroll event only arrives with one). So a wait
+// counts the frames that were drawn, not just the clock, and gives up on the
+// clock alone only after STALL_CAP_MS: a renderer that stopped drawing still
+// fails its check, with its message, instead of hanging the run.
+const STALL_CAP_MS = 30_000;
+const settle = async () => {
+  const cap = performance.now() + STALL_CAP_MS;
+  for (let drawn = 0; drawn < 2 && performance.now() < cap;) if (await frame()) drawn++;
+};
 async function until(predicate: () => unknown, message: string): Promise<void> {
-  const deadline = performance.now() + 2000;
+  // Two seconds and 120 drawn frames, whichever comes later.
+  const start = performance.now();
+  let drawn = 0;
   while (!predicate()) {
-    if (performance.now() >= deadline) throw new Error(`${message} (${where()})`);
-    await frame();
+    const waited = performance.now() - start;
+    if ((waited >= 2000 && drawn >= 120) || waited >= STALL_CAP_MS) throw new Error(`${message} (${where()})`);
+    if (await frame()) drawn++;
   }
 }
 async function scrollTo(top: number) {
@@ -111,7 +154,7 @@ const list = () => document.querySelector('.cth-dock > div:nth-child(2)') as HTM
 const where = () => {
   const el = document.querySelector('.cth-dock > div:nth-child(2)') as HTMLElement | null;
   if (!el) return 'no dock';
-  return `scrollTop ${el.scrollTop}, scrollHeight ${el.scrollHeight}, clientHeight ${el.clientHeight}, button ${document.querySelector('[data-dock-jump]')?.textContent ?? 'none'}`;
+  return `scrollTop ${el.scrollTop}, scrollHeight ${el.scrollHeight}, clientHeight ${el.clientHeight}, button ${document.querySelector('[data-dock-jump]')?.textContent ?? 'none'}\n  ${trace.join('\n  ')}`;
 };
 const jump = () => document.querySelector('[data-dock-jump]') as HTMLButtonElement | null;
 const bottom = () => list().scrollHeight - list().clientHeight - list().scrollTop;
@@ -120,6 +163,7 @@ function reset() {
   flushSync(() => useStore.getState().setDock(true));
 }
 function append(notes = false) {
+  note('replies arrive');
   const n = 20 + current.length;
   flushSync(() => update([...current, { ...reply(n, notes), replyTo: 'q13' }, ...(notes ? [] : [{ ...reply(n + 1), replyTo: 'q13' }])]));
 }

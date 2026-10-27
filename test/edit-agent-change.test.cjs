@@ -78,7 +78,7 @@ test('Edit agent: the job saves only through Apply, refused when it moved, routi
   assert.ok(apply.indexOf('hivePatchAgentRole') < apply.indexOf('updateAgent(agent.id, patch)'), 'the registry first');
   assert.match(apply, /setStatus\(t\('jobChange\.applied', \{ name: cur\.name \}\)\);/);
   const undo = src.slice(src.indexOf('const undoChange = async'), src.indexOf('const save = async'));
-  assert.match(undo, /const patch = undoJob\(cur\);/);
+  assert.match(undo, /const patch = undoJob\(cur, nameOf\);/, 'Undo knows who is on the team, for handoffs (eng SC2)');
   assert.match(undo, /setStatus\(t\('jobChange\.undone', \{ name: cur\.name \}\)\);\s*setFocusKey\(\(k\) => k \+ 1\);/, 'focus back in the box (DR10)');
   assert.match(src, /current: \{ instructions: effectiveWorkStyle\(cur\), handles: lead \? '' : split\.roleDescription \},/);
   assert.match(src, /checkOverlap=\{lead \? undefined : checkOverlap\}/);
@@ -94,7 +94,7 @@ test('the preview: working, ok, clash, overlap, error and changed meanwhile, wit
   const src = read('src/renderer/src/components/JobChangeReview.tsx');
   assert.match(src, /if \(e\.key === 'Enter' && \(e\.metaKey \|\| e\.ctrlKey\)\) \{ e\.preventDefault\(\); void start\(\); \}/);
   assert.match(src, /panel = <Working who=\{p\.who\} progress=\{state\.progress\} heading=\{head\(t\('jobChange\.working', \{ name: p\.who \}\)\)\} onStop=\{stop\} \/>;/, 'its steps and words (revise-progress.test.cjs)');
-  assert.equal((src.match(/<div role="alert" style=\{panelStyle\}>/g) ?? []).length, 3, 'overlap, error and changed meanwhile');
+  assert.equal((src.match(/<div role="alert" style=\{panelStyle\}>/g) ?? []).length, 2, 'error and changed meanwhile; an overlap is a note in the preview (owner, 2026-10-24)');
   assert.match(src, /heading\.current\?\.focus\(\{ preventScroll: true \}\);/, 'focus moves to each state\'s heading');
   assert.match(src, /\{state\.at === 'idle' && p\.status && <span role="status"/);
   assert.match(src, /aria-expanded=\{whole\}/);

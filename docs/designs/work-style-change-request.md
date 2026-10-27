@@ -243,7 +243,8 @@ reviseWorkStyle (main, Michael's engine, Sonnet, 90 s, abortable)
    |-- contradiction (job or foundations) -> { question } -> owner answers in the box, resubmit
    '-- ok --> { instructions, plain, handles | unchanged, summary[], oneTimeTask? }
                  |
-                 | handles changed?  yes -> hire:checkDistinct (existing) -> overlap? block Apply, name who
+                 | handles changed?  yes -> hire:checkDistinct (mode 'change', the job before and after)
+                 |                     -> overlaps the change adds? a note in the preview, Apply on (2026-10-24, below)
                  v
         JobChangeReview preview: summary lines, Apply / Cancel
                  |
@@ -458,6 +459,54 @@ finding above. Run with Claude Code or Codex; checkbox as you ship.
   - Files: none (recorded in the ship notes)
   - Verify: the three previews read right and Apply saves them
 
+## Overlap split (2026-10-24)
+
+The owner's case: Kelly (support) also runs client projects, and the check stopped
+the change because Nick answers technical questions. Most overlaps are two members
+who hand work to each other, so the overlap card offers a third way out (CEO, eng
+and design reviews of 2026-10-24; the plan and reports live in the gstack project
+folder, `overlap-clarify-ceo-review-20261024-114731.md`).
+
+**Overlaps never block a change (owner, 2026-10-24).** Tested on the owner's own
+office, the check stopped the Kelly change four times in a row (once on the change,
+three times after explaining the split) while a replay of the same change against
+the same team passed fifteen times out of fifteen: a model judging ten teammates'
+jobs answers differently for near identical wording, and a gate that flips makes a
+plain job change feel impossible. Now:
+
+- The check runs on the job before the change and after it (the before check once
+  per job), and only teammates the change adds are shown: teamwork the job already
+  had (Kelly already sends bugs to the IT Engineer) is never charged to the edit.
+- Those overlaps are a white note in the preview, "Nick already does part of this"
+  with the reason, Explain how they split it and Leave it with Nick as links, and
+  Apply stays on. The owner decides how the team works.
+- Every verdict is logged in the hive log (`distinct-check`: mode, before or after,
+  who was named, why, rules or AI), so the next surprise can be read back.
+- The hire wizard keeps today's check: a duplicate hire is a real cost, a wider job
+  is not.
+
+```
+preview with an overlap note ──[Explain how they split it]──► box in the card (the check's split
+  suggestion, or empty) ──[See what changes]──► reviseWorkStyle with the
+  explanation, the teammates the check named (by id) and the member's live
+  handoffs ──► handoffs [{to, scope}] / drops [n] ──► main writes "Not for X;
+  that goes to Nick." (or takes a line out) BEFORE the check ──► checkDistinct
+  mode 'change' (handoff lines first; rules leave out the lines between the
+  two) ──► preview: Goes to a teammate (+ / −), or "No split was written"
+  ──► Apply records handoffs [{toId, scope, at}]; Undo takes back what it did
+```
+
+- A handoff is live while its teammate is on the team and its line is in the
+  member's role line: leaving and returning already move the line, so there is
+  no stored paused flag (eng D3). Deleting the teammate removes the entry.
+- The teammate's side shows it read only, under "What Nick handles" in Edit agent
+  only; the Profile tab keeps no routing (owner, 2026-09-25; eng D2).
+- A change that asks for tracking with no place named asks first: a sheet in the
+  member's own folder, or a connector. Off in Settings > Connections is greyed and
+  skipped by the arrow keys; on but not given to the member is pickable, and the
+  preview says so with Open Access (design D5, D8; eng re-run D1).
+- The hire wizard's overlap step is deferred (TODOS.md).
+
 ## Build notes (2026-10-23)
 
 Built on the running branch: T1 to T7 and DT1 to DT4. T8, the live check with a real model,
@@ -502,7 +551,7 @@ all seven passes; DR2 ran Codex (gpt-5.4) as the outside design voice.
 | DR3 | Apply saves the job at once ("Pam's job is updated."). The footer is Close until Name, Role or Engine is edited, then Cancel and Save changes. (A) |
 | DR4 | Order: Name, Role, What Pam handles, What should change?, then How Pam works folded to four lines with Show all, Undo last change and the last change line. (A) Owner, 2026-10-23, after seeing it built: What should change? moves under How Pam works, the more natural place, in Edit agent and the hire wizard. |
 | DR5 | A clash is answered with two or three option rows (the Ask me radio style), one marked Suggested, plus Something else for a typed answer. The revise result returns these choices. (A) |
-| DR6 | Overlap: "Kelly already chases overdue invoices." with Leave it with Kelly (drops that part, previews again) and Edit my change (box, text kept). Changed meanwhile: the typed change stays; See what changes again reruns it. (A) |
+| DR6 | Overlap: "Kelly already chases overdue invoices." with Leave it with Kelly (drops that part, previews again) and Edit my change (box, text kept). Changed meanwhile: the typed change stays; See what changes again reruns it. (A) Since 2026-10-24 an overlap no longer blocks: it is a note in the preview with Explain how they split it and Leave it with Kelly, and Apply stays on (overlap split, below). |
 | DR7 | Undo is instant: "Pam's job is back to before your last change."; Michael's routing line goes back too; no dialog. (A) |
 | DR8 | The preview replaces the change box in place: `indigo-soft` fill, r-xl, no border or shadow; summary lines are plain text with a 6 px indigo dot. (A) |
 | DR9 | Labels: See what changes; See Jordan's job (hire); Apply; pack card title "A better job description for Pam", line "Your 2 changes will be kept.", See it, then Use it in the preview, and Keep mine. (A) |

@@ -22,7 +22,7 @@ import type { ScheduledMission } from '@shared/missions';
 import { refocusAfterRemoval, focusOnLoad, restoreFocus } from './focusMode';
 import { chooseRosterSource } from './rosterSource';
 import { renamePatches, swapName } from '@shared/hireTemplates';
-import type { JobChangeEntry, JobVersion, PlainWords } from '@shared/jobChange';
+import type { Handoff, JobChangeEntry, JobVersion, PlainWords } from '@shared/jobChange';
 import { canOpen } from '../shell/closingFloor';
 import type { CenterClaim } from '../shell/wideCenter';
 import { closeTab, openTab, type FileTab, type FixedView } from './fileTabs';
@@ -136,6 +136,10 @@ export interface Agent {
   jobPrevious?: JobVersion;
   /** The owner's applied change requests, oldest first (eng D7). */
   jobChanges?: JobChangeEntry[];
+  /** Work this member sends on to a teammate, as the owner explained it
+   *  (shared/jobChange.ts, overlap split plan): live while its line is in the
+   *  role line and the teammate is on the team. */
+  handoffs?: Handoff[];
   /** The office pack card this agent's job was copied from when it was hired,
    *  `<businessType>/<cardId>` (hire redesign E2): its Profile shows that card's
    *  does, asks first and connections. Setup's pack members need none, since
@@ -376,8 +380,9 @@ interface State {
   openTaskDetail: (id: string) => void;
   /** Open Edit {name} for a member from outside its panel (a Needs you card's
    *  Change engine, issue #326): its panel opens and Edit with it. */
-  editAgentRequest: { agentId: string; engine: boolean; seq: number } | null;
-  requestEditAgent: (agentId: string, opts?: { engine?: boolean }) => void;
+  editAgentRequest: { agentId: string; engine: boolean; change?: string; seq: number } | null;
+  /** `change` fills "What should change?" (a run comparison's suggestion). */
+  requestEditAgent: (agentId: string, opts?: { engine?: boolean; change?: string }) => void;
   /** Edit opened for the request: it is used once (ship review 2026-10-17). */
   clearEditAgentRequest: () => void;
   /** "Change on Access" (edit-agent-scheduled-jobs.md, SJ3): the member's
@@ -1278,7 +1283,7 @@ export const useStore = create<State>((set, get) => ({
     get().select(agentId);
     // After the select applies, so Keep editing drops the request with it; the
     // panel clears it once it opens Edit (ship review 2026-10-17).
-    afterLeave(() => set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, seq: (s.editAgentRequest?.seq ?? 0) + 1 } })));
+    afterLeave(() => set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, ...(opts?.change ? { change: opts.change } : {}), seq: (s.editAgentRequest?.seq ?? 0) + 1 } })));
   },
   clearEditAgentRequest: () => set({ editAgentRequest: null }),
   schedulesRequest: null,

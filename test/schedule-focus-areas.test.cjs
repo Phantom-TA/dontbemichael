@@ -100,7 +100,10 @@ test('Profile and Edit agent show each job with its focus, read only', () => {
   const list = read('src/renderer/src/components/ScheduledJobs.tsx');
   // Each job's focus under its name, read only (edit-agent-scheduled-jobs.md, SJ5).
   assert.match(list, /\{job\.focus\?\.trim\(\) \? \(\s*<span style=\{\{ \.\.\.focusStyle, color: off \? 'var\(--cth-ink-3\)' : 'var\(--cth-ink-2\)' \}\}>\{job\.focus\}<\/span>/);
-  assert.doesNotMatch(list, /<textarea|<input/);
+  // The job itself stays read only; the one box is the "Went wrong" note under the last run (runCompare.ts).
+  const row = list.slice(list.indexOf('function JobRow('), list.indexOf('/** On the Profile tab'));
+  assert.doesNotMatch(row, /<textarea|<input/);
+  assert.doesNotMatch(list, /<textarea/);
   assert.match(list, /color: 'var\(--cth-ink-3\)' \}\}>\{t\('scheduledJobs\.noFocus'\)\}<\/span>/, 'a quiet note, not a call to act on a read only list');
   assert.match(read('src/renderer/src/components/WorkStyleUpdateCards.tsx'), /<InfoTip text=\{t\('askMe\.workStyleReplaces', \{ name \}\)\}/, 'the detail sits behind an info icon');
   assert.match(read('src/renderer/src/components/ProfileTab.tsx'), /<ScheduledJobsSection agentId=\{agent\.id\} name=\{name\} god=\{god\} \/>/);
@@ -108,4 +111,14 @@ test('Profile and Edit agent show each job with its focus, read only', () => {
     const d = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`));
     assert.ok(d.scheduledJobs.title && d.scheduledJobs.focus.includes('{{focus}}') && d.scheduledJobs.noFocus, loc);
   }
+});
+
+test('the jobs list calls every hook before it leaves Research out', () => {
+  // Value: protects=the Profile tab switching between Research and a member; fails_when=useLastRuns runs after the Research return, so React throws "Rendered more hooks than during the previous render"; why_new=maintainability and design review; seam=source pin (no renderer harness for this list); no_claim=the rest of the list's render
+  const src = read('src/renderer/src/components/ScheduledJobs.tsx');
+  const body = src.slice(src.indexOf('export function ScheduledJobsList'), src.indexOf('function JobRow('));
+  const back = body.indexOf('if (agentId === RESEARCH_ID) return null;');
+  assert.ok(back > 0);
+  for (const hook of body.slice(back).match(/\buse[A-Z]\w*\(/g) ?? []) assert.fail(`${hook} runs after the Research return`);
+  assert.ok(body.indexOf('useLastRuns(agentId)') < back);
 });

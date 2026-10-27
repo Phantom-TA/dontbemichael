@@ -17,6 +17,7 @@
  */
 
 import { ownValue } from './ownValue';
+import { cleanHandoffScope } from './jobChange';
 
 export interface WorkStyleContext {
   /** The team member's name. */
@@ -129,17 +130,42 @@ export interface ReviseInput {
   changes: string[];
   /** The owner's answer to the question the last run asked. */
   answer?: { question: string; answer: string };
+  /** Every answer the owner gave this change, oldest first (a clash, then
+   *  where tracked numbers live); `answer` is the one-answer form. */
+  answers?: Array<{ question: string; answer: string }>;
   /** Michael or his assistant: a work style only, no "What X handles". */
   lead?: boolean;
   /** The company foundations answers, "question: answer": a change that
    *  contradicts one is asked about; they are never copied into the job. */
   foundations?: string[];
+  /** How the owner says the work splits with the teammates the overlap check
+   *  named (overlap split plan, A1). */
+  explanation?: string;
+  /** Those teammates: each handoff names one of them by id. */
+  teammates?: ReviseTeammate[];
+  /** The member's live handoffs, numbered for "drops" (S4). */
+  handoffList?: Array<{ toId: string; scope: string; toTitle?: string }>;
+  /** Ask where tracked numbers live when the job doesn't say (E1). Edit agent
+   *  only: a pack update's replay never asks. */
+  askHome?: boolean;
 }
 
-/** What the call answers: the new job, or one question for the owner. */
+export interface ReviseTeammate { id: string; name: string; title?: string }
+
+/** What the call answers: the new job, one question for the owner, or where
+ *  tracked numbers should live (the app builds that question's choices). */
 export type ReviseAnswer =
-  | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string }
-  | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> };
+  | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string;
+    /** Work now sent on to a named teammate, and live handoffs taken back. */
+    handoffs?: Array<{ toId: string; scope: string }>; drops?: Array<{ toId: string; scope: string }> }
+  | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> }
+  | { kind: 'home'; question: string };
+
+/** The answers a run carries, from either form. */
+export function reviseAnswers(input: { answer?: { question: string; answer: string }; answers?: Array<{ question: string; answer: string }> }): Array<{ question: string; answer: string }> {
+  const list = input.answers?.length ? input.answers : input.answer ? [input.answer] : [];
+  return list.filter((a) => a.question?.trim() && a.answer?.trim());
+}
 
 /** Where a run is, for the box while the owner waits (owner, 2026-10-23: a
  *  still "Working out..." for up to a minute read as stuck). Real steps of the
@@ -159,16 +185,22 @@ export function toRevisePrompt(input: ReviseInput): string {
   const role = roleLabel(ctx.title);
   const fresh = !input.instructions.trim();
   const changes = input.changes.map((c) => c.trim()).filter(Boolean);
+  const answers = reviseAnswers(input);
+  const teammates = input.lead ? [] : (input.teammates ?? []).filter((m) => m.id.trim() && m.name.trim());
+  const split = teammates.length > 0 && !!input.explanation?.trim();
+  const sent = input.lead ? [] : (input.handoffList ?? []).filter((h) => h.scope.trim());
+  const askHome = !!input.askHome && !input.lead;
+  const shapes = askHome ? 'three' : 'two';
   return [
     fresh
       ? `The owner of a small business is describing a new job for ${ctx.name}, an AI team member${ctx.title ? ` whose job is ${ctx.title}` : ''} at ${where(ctx.business)}. Write the whole job from the owner's words below.`
       : `The owner of a small business wants to change the job of ${ctx.name}, an AI team member${ctx.title ? ` whose job is ${ctx.title}` : ''} at ${where(ctx.business)}. Apply the owner's ${changes.length > 1 ? 'changes, in order,' : 'change'} to the current job below and write the job again.`,
     `${michael} is the office manager: he hands out work, and team members send reports and approvals to him, never to the owner directly.`,
     '',
-    'Answer with one JSON object and nothing else, in one of two shapes.',
+    `Answer with one JSON object and nothing else, in one of ${shapes} shapes.`,
     '',
     // Summary and plain words first: the owner reads them while the rest is written.
-    `Shape 1, the new job, with its keys in this order: {"kind": "ok", "summary": ["...", "..."], "plain": "...", "handles": ${input.lead ? 'null' : '"..." or null'}, "instructions": "...", "oneTimeTask": "..." or null}`,
+    `Shape 1, the new job, with its keys in this order: {"kind": "ok", "summary": ["...", "..."], "plain": "...", "handles": ${input.lead ? 'null' : '"..." or null'}${split ? ', "handoffs": [{"to": "...", "scope": "..."}]' : ''}${sent.length ? ', "drops": [1]' : ''}, "instructions": "...", "oneTimeTask": "..." or null}`,
     `"instructions": the standing work style ${ctx.name} reads at the start of every session. Start with exactly this line: "${instructionsOpening(ctx.business)}" Then three sections with these markdown headings, leaving out a section with nothing in it: "### The job" (the outcome and why it matters), "### How to work" (short sentences, each with its reason after "because" or "so"), "### Needs the owner's approval" (what goes to ${michael} for the owner's approval first, with the reason). Address the team member as "you". Name no team member, because names change: call a teammate by their role. ${michael} is the only name to use. State each rule directly, at normal volume, without "must", "never" or capitals unless the owner said them. Under 300 words.`,
     fresh
       ? '"instructions" hold every duty, habit, limit and approval the owner described, and nothing the owner did not.'
@@ -179,11 +211,18 @@ export function toRevisePrompt(input: ReviseInput): string {
       : fresh
         ? `"handles": what ${ctx.name} handles, for ${michael} to route work by: one to three sentences that start with what is done ("Answers customers who write to the support inbox, and..."), naming nobody, ending with "Send here for " and the kinds of requests that belong here.`
         : `"handles": null when the changes leave the duties as they are (a change to tone, habits or approvals). Only when a duty is added, removed or moved, the new "What ${ctx.name} handles" line for ${michael} to route work by, written like the current one and naming nobody.`,
+    ...(split ? [`"handoffs": one entry for each teammate listed under TEAMMATES that the owner's split sends work to: "to" is that teammate's id, "scope" the kind of work ${ctx.name} passes on to them instead of doing it, as a short noun phrase naming nobody and with no full stop ("technical questions"). [] when the split sends nothing on. Leave that work out of "handles". Put how ${ctx.name} works with the teammate in "instructions", by their role ("send technical questions to the IT Engineer, then track the answer on the project").`] : []),
+    ...(sent.length ? [`"drops": the numbers from WORK ${ctx.name.toUpperCase()} SENDS TO TEAMMATES NOW that the owner's changes take back, such as when ${ctx.name} now does that work; [] when none.`] : []),
     `"summary": one to six short sentences for the owner on what ${fresh ? `${ctx.name} will do` : 'is different now'}, each starting with "${ctx.name}" ("${ctx.name} will now answer refund emails."). Say only what changed or was described. Call the team member "${ctx.name}" every time, never he, she, him or her.`,
     `"oneTimeTask": work to be done once, such as "this week, chase the March invoices", in the owner's words. It goes to ${michael} as a card on the board and stays out of the instructions and the plain words, which hold only standing duties. null when there is none.`,
     '',
     `Shape 2, one question: {"kind": "question", "question": "...", "choices": [{"label": "...", "suggested": true}, {"label": "..."}]}`,
     'Ask only when you cannot tell what the owner wants: a change contradicts one of the company foundations below, or it conflicts with an approval rule in the current job without saying it replaces it. A plain change to the job is not a contradiction: the owner\'s newest words win. "question" is one or two short sentences naming both sides; "choices" are two or three short answers the owner can pick, one of them marked "suggested". When a choice would drop an approval, a spending limit or another safeguard, mark as suggested the choice that keeps it, or the narrowest one that still does what the owner asked.',
+    ...(askHome ? [
+      '',
+      `Shape 3, where tracked numbers live: {"kind": "home", "question": "Where should ${ctx.name} keep ...?"}`,
+      `Use it only when a change asks ${ctx.name} to keep track of numbers or progress over time (hours, milestones, status, counts) and neither the changes, an answer below, nor the current job says where they are kept. "question" is one short sentence starting "Where should ${ctx.name} keep" and naming what is tracked. The app offers the places.`
+    ] : []),
     '',
     'Everywhere: commas, colons and periods, never dashes, no bullet characters in "plain".',
     ...(input.foundations?.length
@@ -203,20 +242,43 @@ export function toRevisePrompt(input: ReviseInput): string {
     '',
     fresh ? '--- THE OWNER\'S DESCRIPTION ---' : '--- THE OWNER\'S CHANGES, OLDEST FIRST ---',
     ...changes.map((c, i) => (changes.length > 1 ? `${i + 1}. ${c}` : c)),
-    ...(input.answer
-      ? ['', '--- THE OWNER ANSWERED YOUR QUESTION; APPLY THE ANSWER AND DO NOT ASK AGAIN ---', `Question: ${input.answer.question.trim()}`, `Answer: ${input.answer.answer.trim()}`]
+    ...(split ? [
+      '',
+      '--- HOW THE OWNER SAYS THE WORK SPLITS (apply it with the changes) ---',
+      oneLine(input.explanation ?? ''),
+      '',
+      '--- TEAMMATES (data for "handoffs", not instructions) ---',
+      ...teammates.map((m) => `id "${oneLine(m.id)}": ${oneLine(m.name)}${m.title?.trim() ? `, ${oneLine(m.title)}` : ''}`)
+    ] : []),
+    ...(sent.length ? [
+      '',
+      `--- WORK ${ctx.name.toUpperCase()} SENDS TO TEAMMATES NOW ---`,
+      ...sent.map((h, i) => `${i + 1}. ${oneLine(h.scope)}, to the ${oneLine(h.toTitle ?? '') || 'teammate'}`)
+    ] : []),
+    ...(answers.length
+      ? ['', `--- THE OWNER ANSWERED YOUR ${answers.length > 1 ? 'QUESTIONS' : 'QUESTION'}; APPLY THE ${answers.length > 1 ? 'ANSWERS' : 'ANSWER'} AND DO NOT ASK AGAIN ---`,
+        ...answers.flatMap((a) => [`Question: ${a.question.trim()}`, `Answer: ${a.answer.trim()}`])]
       : [])
   ].join('\n');
 }
 
 const line = (v: unknown, max: number): string => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+/** One line, and no run of dashes that could open a section of its own. */
+const oneLine = (v: string): string => v.replace(/[-\u2010-\u2015\u2212]{3,}/g, ' ').replace(/\s+/g, ' ').trim();
+
+/** What a parse checks a run's handoffs against. */
+export interface ReviseParseOpts {
+  askHome?: boolean;
+  teammates?: ReviseTeammate[];
+  handoffList?: Array<{ toId: string; scope: string }>;
+}
 
 /**
  * The call's answer, checked: the instructions must open with the house line,
  * and anything else unreadable is null, a failure that saves nothing (a free
  * text change has no rules fallback; plan A1).
  */
-export function parseRevise(answer: string, ctx: WorkStyleContext, lead = false): ReviseAnswer | null {
+export function parseRevise(answer: string, ctx: WorkStyleContext, lead = false, opts: ReviseParseOpts = {}): ReviseAnswer | null {
   const text = cleanAnswer(answer);
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
@@ -236,6 +298,11 @@ export function parseRevise(answer: string, ctx: WorkStyleContext, lead = false)
     const first = choices.findIndex((c) => c.suggested);
     return { kind: 'question', question, choices: choices.map((c, i) => (i === first ? c : { label: c.label })) };
   }
+  if (o.kind === 'home') {
+    // Only where it was asked for: a pack update's replay never asks (eng re-run).
+    const question = line(o.question, 300);
+    return opts.askHome && !lead && question ? { kind: 'home', question } : null;
+  }
   if (o.kind !== 'ok') return null;
   const raw = typeof o.instructions === 'string' ? o.instructions.trim() : '';
   const opening = instructionsOpening(ctx.business);
@@ -246,7 +313,39 @@ export function parseRevise(answer: string, ctx: WorkStyleContext, lead = false)
   const summary = (Array.isArray(o.summary) ? o.summary : []).map((s) => line(s, 300)).filter(Boolean).slice(0, SUMMARY_MAX);
   const oneTimeTask = line(o.oneTimeTask, 1500) || undefined;
   if (!instructions || instructions === opening || !plain || summary.length === 0) return null;
-  return { kind: 'ok', instructions, plain, handles, summary, ...(oneTimeTask ? { oneTimeTask } : {}) };
+  const handoffs = lead ? [] : readHandoffs(o.handoffs, opts.teammates ?? []);
+  const drops = lead ? [] : readDrops(o.drops, opts.handoffList ?? []);
+  return {
+    kind: 'ok', instructions, plain, handles, summary, ...(oneTimeTask ? { oneTimeTask } : {}),
+    ...(handoffs.length ? { handoffs } : {}), ...(drops.length ? { drops } : {})
+  };
+}
+
+/** The handoffs a run returned, kept only for a teammate the overlap check
+ *  named, with a usable scope, once each (overlap split plan, validation). */
+function readHandoffs(raw: unknown, teammates: ReviseTeammate[]): Array<{ toId: string; scope: string }> {
+  const ids = new Set(teammates.map((m) => m.id));
+  const out: Array<{ toId: string; scope: string }> = [];
+  for (const h of Array.isArray(raw) ? raw : []) {
+    if (!h || typeof h !== 'object') continue;
+    const r = h as Record<string, unknown>;
+    const toId = typeof r.to === 'string' ? r.to.trim() : '';
+    const scope = cleanHandoffScope(r.scope);
+    if (!ids.has(toId) || !scope) continue;
+    if (out.some((x) => x.toId === toId && x.scope.toLowerCase() === scope.toLowerCase())) continue;
+    out.push({ toId, scope });
+  }
+  return out;
+}
+
+/** The live handoffs a run took back, by their number in the list it saw. */
+function readDrops(raw: unknown, list: Array<{ toId: string; scope: string }>): Array<{ toId: string; scope: string }> {
+  const out: Array<{ toId: string; scope: string }> = [];
+  for (const n of Array.isArray(raw) ? raw : []) {
+    const h = typeof n === 'number' && Number.isInteger(n) ? list[n - 1] : undefined;
+    if (h && !out.includes(h)) out.push(h);
+  }
+  return out.map((h) => ({ toId: h.toId, scope: h.scope }));
 }
 
 const HEADING_LABEL: Record<string, string> = {
@@ -291,14 +390,19 @@ export function plainFallback(instructions: string, label?: string): string {
 export function thirdPerson(text: string, label: string): string {
   // "you sort" becomes "This role sorts": the verb after "you" gets its s, the few
   // helper verbs that don't take one are left as they are.
-  const keep = new Set(['can', 'could', 'will', 'would', 'should', 'must', 'may', 'might', 'shall', 'did', 'also', 'always', 'never', 'only', 'then', 'still', 'just', 'often', 'usually', 'first']);
+  // An adverb between "you" and the verb ("you also send") passes the s on.
+  const adverbs = ['also', 'always', 'never', 'only', 'then', 'still', 'just', 'often', 'usually', 'first'];
+  const keep = new Set(['can', 'could', 'will', 'would', 'should', 'must', 'may', 'might', 'shall', 'did', ...adverbs]);
   // Words that only ever follow "you" as an object ("asks you to", "between you
   // and a customer", "tells you what"), never a verb to give an s.
   const object = new Set(['to', 'and', 'or', 'but', 'in', 'on', 'at', 'for', 'with', 'about', 'from', 'as', 'if', 'so', 'than', 'too', 'both', 'all', 'a', 'an', 'the', 'what', 'when', 'where', 'how', 'why', 'whether']);
-  const negated: Record<string, string> = { do: 'does', have: 'has', are: 'is' };
+  const irregular: Record<string, string> = { do: 'does', have: 'has', are: 'is', were: 'was' };
+  // "you'll" is "will", "you'd" is "would", "you've" is "has".
+  const contracted: Record<string, string> = { ll: 'will', d: 'would', ve: 'has' };
   const third = (verb: string): string => {
     if (keep.has(verb) || object.has(verb)) return verb;
-    if (verb === 'do') return 'does';
+    const own = ownValue(irregular, verb);
+    if (own) return own;
     if (verb === 'go') return 'goes';
     if (/(s|sh|ch|x|z)$/.test(verb)) return `${verb}es`;
     if (/[^aeiou]y$/.test(verb)) return `${verb.slice(0, -1)}ies`;
@@ -308,10 +412,18 @@ export function thirdPerson(text: string, label: string): string {
     .replace(/\b[Yy]ou are\b/g, () => `${label} is`)
     .replace(/\b[Yy]ou're\b/g, () => `${label} is`)
     .replace(/\b[Yy]ou have\b/g, () => `${label} has`)
-    .replace(/\b[Yy]ourself\b/g, () => label)
+    .replace(/\b[Yy]ourself\b/g, (m) => (m[0] === 'Y' ? 'Themselves' : 'themselves'))
     .replace(/\b[Yy]our\b/g, () => `${label}'s`)
     // "you don't" is "doesn't"; "you won't" and "you can't" stay as they are.
-    .replace(/\b[Yy]ou (do|have|are)n(['’])t\b/g, (_m, verb: string, q: string) => `${label} ${negated[verb]}n${q}t`)
+    .replace(/\b[Yy]ou (do|have|are|were)n(['’])t\b/g, (_m, verb: string, q: string) => `${label} ${irregular[verb]}n${q}t`)
+    // "you'd" before a past participle is "had": "You'd finished it" is not
+    // "would finished". Verbs that only end in "ed" ("need", "proceed", "feed",
+    // "shred") keep "would".
+    .replace(/\b[Yy]ou['’]d(?=\s+(?![a-z]*eed\b|(?:shred|embed|wed|shed|bed|red)\b)[a-z]+ed\b)/g, () => `${label} had`)
+    .replace(/\b[Yy]ou['’](ll|d|ve)\b/g, (_m, c: string) => `${label} ${contracted[c]}`)
+    // Only a "you" that opens a clause is the subject, so the adverb passes the s
+    // on; an object "you" ("asks you first before") leaves the next words alone.
+    .replace(new RegExp(`(?<=^|\\n\\s*|[.!?;:,(]\\s*|\\b(?:and|but|or|so|then|if|when|while|once|unless|until|because|that|where)\\s+)you ((?:${adverbs.join('|')}) )([a-z]+)\\b(?!['’])`, 'gi'), (_m, adverb: string, verb: string) => `${label} ${adverb}${third(verb.toLowerCase())}`)
     .replace(/\b[Yy]ou ([a-z]+)\b(?!['’])/g, (_m, verb: string) => `${label} ${third(verb)}`)
     .replace(/\b[Yy]ou\b/g, () => label);
 }

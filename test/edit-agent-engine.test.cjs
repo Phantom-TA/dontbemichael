@@ -65,7 +65,7 @@ test('the engine is one folded line, closed by default, naming the provider and 
   // Value: protects=the job text keeps the space; fails_when=the engine opens by default, loses its toggle, or the folded line stops saying what it runs on; why_new=new fold; seam=none
   assert.match(src, /const \[engineOpen, setEngineOpen\] = useState\(openEngine\);/);
   // Closed by default; only Change engine on a not reporting card opens it (issue #326).
-  assert.match(src, /engineOpen: openEngine = false \}: EditAgentModalProps/);
+  assert.match(src, /engineOpen: openEngine = false, initialChange \}: EditAgentModalProps/);
   assert.match(src, /aria-expanded=\{engineOpen\}\s*aria-controls=\{engineOpen \? 'edit-agent-engine' : undefined\}/, 'never points at a folded, unmounted group');
   assert.match(src, /\{engineOpen && \(\s*<Fields id="engine">/);
   assert.match(src, /\{modelLabel \? `\$\{providerLabel\}, \$\{modelLabel\}` : providerLabel\}/);

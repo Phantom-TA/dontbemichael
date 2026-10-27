@@ -1,10 +1,13 @@
-import type { CSSProperties } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
+import { NOTE_MAX, type JobRun, type RunSuggestion } from '@shared/runCompare';
 import { missionsFor, orderedJobs, type ScheduledMission } from '@shared/missions';
 import { whenParts } from '@shared/scheduleTimes';
 import { RESEARCH_ID } from '@shared/research';
 import { useStore } from '@/store/store';
 import { InfoTip } from './InfoTip';
+import { PixelButton } from './PixelButton';
+import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { fieldLabel, groupName } from './fieldText';
 import { useGodId, useMissions, whenText } from './triggers/ScheduleList';
 
@@ -14,6 +17,10 @@ import { useGodId, useMissions, whenText } from './triggers/ScheduleList';
  * as a duty. Each job shows its name, when it runs and its focus area, read
  * only (schedule-focus-areas.md FA1); the focus reaches the agent only when
  * that job runs (FA2). Jobs are set on the Access tab, one click away.
+ * Under each job, its last finished run with "Went wrong": the owner's mark
+ * starts a comparison with an earlier run that went well (runCompare.ts),
+ * whose suggestion waits in Pulse. Claude members only: their conversations
+ * are the ones the app can read.
  */
 export function useScheduledJobs(agentId: string): ScheduledMission[] {
   const { missions } = useMissions();
@@ -39,6 +46,8 @@ export function ScheduledJobsList({ agentId, name, heading = 'label', onChange, 
   const { status, retry } = useMissions();
   const openSchedules = useStore((s) => s.openSchedules);
   const all = useScheduledJobs(agentId);
+  // Every hook before the Research return: the same list can switch members.
+  const last = useLastRuns(agentId);
   // Research holds no office data, schedules included (research-agent-privacy.md).
   if (agentId === RESEARCH_ID) return null;
   const jobs = orderedJobs(all, Date.now());
@@ -69,7 +78,7 @@ export function ScheduledJobsList({ agentId, name, heading = 'label', onChange, 
         <span style={{ fontSize: 12.5, color: 'var(--cth-ink-3)' }}>{t('scheduledJobs.none')}</span>
       ) : jobs.length > 0 ? (
         <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column' }}>
-          {jobs.map((m, i) => <JobRow key={m.id} job={m} first={i === 0} />)}
+          {jobs.map((m, i) => <JobRow key={m.id} job={m} first={i === 0} agentId={agentId} last={last.byMission.get(m.id) ?? null} reload={last.reload} />)}
         </ul>
       ) : null}
     </div>
@@ -79,7 +88,7 @@ export function ScheduledJobsList({ agentId, name, heading = 'label', onChange, 
 /** One job: the name and when it runs, then its focus (SJ5). The name wraps
  *  whole; the when line wraps only between its parts and drops under the
  *  name when both don't fit (SJ7, R1). */
-function JobRow({ job, first }: { job: ScheduledMission; first: boolean }) {
+function JobRow({ job, first, agentId, last, reload }: { job: ScheduledMission; first: boolean; agentId: string; last: LastRun | null; reload: () => void }) {
   const { t } = useTranslation();
   const off = !job.enabled;
   // The locale's "and" before the last time, read by filling its template.
@@ -102,6 +111,7 @@ function JobRow({ job, first }: { job: ScheduledMission; first: boolean }) {
       ) : (
         <span style={{ fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink-3)' }}>{t('scheduledJobs.noFocus')}</span>
       )}
+      {last && <LastRunLine agentId={agentId} last={last} reload={reload} />}
     </li>
   );
 }
@@ -121,3 +131,101 @@ const pausedPill: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', height: 18, padding: '0 7px', marginInlineStart: 6, verticalAlign: 1,
   borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-3)', fontSize: 10.5, fontWeight: 600
 };
+
+type LastRun = { run: JobRun; suggestion: RunSuggestion | null };
+
+/** Each job's last finished run, read once per list and again after a mark. */
+function useLastRuns(agentId: string): { byMission: Map<string, LastRun>; reload: () => void } {
+  const [rows, setRows] = useState<LastRun[]>([]);
+  const reload = useCallback(() => {
+    if (agentId === RESEARCH_ID) { setRows([]); return; }
+    window.cth.runCompareLastRuns(agentId).then(setRows).catch(() => setRows([]));
+  }, [agentId]);
+  useEffect(() => { reload(); }, [reload]);
+  return { byMission: new Map(rows.map((r) => [r.run.missionId, r])), reload };
+}
+
+/** "Last run Tue 09:00 · Went wrong", the owner's line, and what came of it. */
+function LastRunLine({ agentId, last, reload }: { agentId: string; last: LastRun; reload: () => void }) {
+  const { t, i18n } = useTranslation();
+  const godName = useResolvedGodName();
+  const agent = useStore((s) => s.agents.find((a) => a.id === agentId));
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [working, setWorking] = useState(false);
+  const [result, setResult] = useState<RunSuggestion | null>(last.suggestion);
+  useEffect(() => { setResult(last.suggestion); }, [last.suggestion]);
+  const when = new Date(last.run.start).toLocaleString(i18n.language, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  const claude = (agent?.provider ?? 'claude') === 'claude';
+
+  const send = async (): Promise<void> => {
+    if (!agent || working) return;
+    setWorking(true);
+    setOpen(false);
+    try {
+      const r = await window.cth.runCompareWentWrong({
+        runId: last.run.id, agentId, note: note.trim(),
+        workStyle: agent.goal ?? '',
+        previousWorkStyle: agent.jobPrevious?.goal,
+        changes: agent.jobChanges ?? []
+      });
+      setResult(r ?? { ...(last.suggestion ?? { runId: last.run.id, agentId, missionId: last.run.missionId, at: Date.now(), note: '' }), state: 'failed' });
+    } catch {
+      setResult({ runId: last.run.id, agentId, missionId: last.run.missionId, at: Date.now(), note: '', state: 'failed' });
+    } finally {
+      setWorking(false);
+      reload();
+    }
+  };
+
+  const outcome = working || result?.state === 'working'
+    ? t('runCompare.working', { godName })
+    : result ? outcomeText(result, t, godName) : null;
+  const canMark = claude && !working && (!result || result.state === 'failed');
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 2 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)' }}>
+        <span>{t('runCompare.lastRun', { when })}</span>
+        {canMark && !open && (
+          <button type="button" style={linkStyle} onClick={() => setOpen(true)}>
+            {result?.state === 'failed' ? t('runCompare.tryAgain') : t('runCompare.wentWrong')}
+          </button>
+        )}
+        {!claude && <InfoTip text={t('runCompare.claudeOnly')} label={t('runCompare.wentWrong')} />}
+      </div>
+      {open && (
+        <div role="group" aria-label={t('runCompare.wentWrong')} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input
+            type="text"
+            value={note}
+            maxLength={NOTE_MAX}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }}
+            placeholder={t('runCompare.notePlaceholder')}
+            aria-label={t('runCompare.noteLabel')}
+            dir="auto"
+            autoFocus
+            className="cth-input"
+            style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12.5, padding: '6px 8px', border: 'none', outline: 'none', background: 'var(--cth-card)', color: 'var(--cth-ink)' }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <PixelButton size="sm" onClick={() => { void send(); }}>{t('runCompare.compare', { godName })}</PixelButton>
+            <PixelButton variant="secondary" size="sm" onClick={() => { setOpen(false); setNote(''); }}>{t('runCompare.cancel')}</PixelButton>
+          </div>
+        </div>
+      )}
+      {outcome && <span role="status" style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-2)' }}>{outcome}</span>}
+    </div>
+  );
+}
+
+/** What came of a "Went wrong", in a line. */
+export function outcomeText(s: RunSuggestion, t: (k: string, o?: Record<string, unknown>) => string, godName: string): string {
+  switch (s.state) {
+    case 'working': return t('runCompare.working', { godName });
+    case 'ready': return s.dismissed ? t('runCompare.putOff') : t('runCompare.ready', { godName });
+    case 'held': return t('runCompare.held', { godName });
+    case 'failed': return t('runCompare.failed');
+    default: return t(s.reason === 'no-good-run' ? 'runCompare.noGoodRun' : s.reason === 'no-transcript' ? 'runCompare.noTranscript' : 'runCompare.noDifference');
+  }
+}

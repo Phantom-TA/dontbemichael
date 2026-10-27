@@ -36,7 +36,10 @@ export type TelemetryKind =
   | 'note-added'
   // Company foundations (office-foundations.md, eng finding 4): a question
   // answered, changed or cleared, or work that hit it while empty, by id.
-  | 'foundation';
+  | 'foundation'
+  // How long the office ran (owner, 2026-10-25): open, awake and not
+  // stopped, in ms, with the part you were away in attrs.away.
+  | 'running';
 
 export interface TelemetryEvent {
   agentId: string | null;
@@ -61,6 +64,14 @@ export interface CardLite {
 /** Idle this long and the owner counts as away (D11). */
 export const AWAY_AFTER_SEC = 30 * 60;
 const MAX_BUFFER = 5000;
+/** Running time is saved as one point this often, or sooner at a day's end,
+ *  a sleep, a quit or an office change. A crash loses at most this much. */
+export const RUN_SAVE_MS = 5 * 60_000;
+/** One gap between ticks counts at most this much: it bounds a sleep whose
+ *  suspend event never came. A late timer (a busy machine) still counts. */
+export const RUN_GAP_CAP_MS = 15 * 60_000;
+
+interface RunBuffer { office: string; day: string; ms: number; away: number; since: number; until: number }
 
 export class TelemetryStore {
   private buf: Array<TelemetryEvent & { office: string }> = [];
@@ -69,6 +80,9 @@ export class TelemetryStore {
   private lastCost = new Map<string, string>();
   private lastCards = new Map<string, Map<string, string>>();
   private away: boolean | null = null;
+  /** The last running tick; null before the clock starts and after a sleep. */
+  private lastTick: number | null = null;
+  private run: RunBuffer | null = null;
   private loggedFailure = false;
   /** Told of each point queued, for the health readout (telemetry:health). */
   onRecord?: (office: string) => void;
@@ -82,7 +96,10 @@ export class TelemetryStore {
   /** Queue one data point for the current office. */
   record(ev: TelemetryEvent): void {
     const office = this.office();
-    if (!office) return;
+    if (office) this.push(ev, office);
+  }
+
+  private push(ev: TelemetryEvent, office: string): void {
     this.buf.push({ ...ev, office });
     this.onRecord?.(office);
     if (this.buf.length >= MAX_BUFFER) this.flush();
@@ -178,6 +195,56 @@ export class TelemetryStore {
     if (away === this.away) return;
     this.away = away;
     this.record({ agentId: null, kind: 'presence', ts: away && !asleep ? ts - idleSec * 1000 : ts, value: away ? 1 : 0 });
+  }
+
+  /** Start the running clock: the app is open and the computer awake, from
+   *  launch and again after a resume. A clock already running keeps going
+   *  (an unlock re-arms the beats too, with no sleep in between). */
+  runningStart(ts = this.now()): void {
+    if (this.lastTick === null) this.lastTick = ts;
+  }
+
+  /** Each minute: the time since the last tick ran, unless the computer slept
+   *  in between (the first tick after a pause only starts the clock again and
+   *  counts nothing) or the office is stopped (plan limit, no credit, sign in
+   *  failed: owner D1). Away is the presence state. */
+  running(stopped: boolean, ts = this.now()): void {
+    const last = this.lastTick;
+    this.lastTick = ts;
+    const office = this.office();
+    if (last === null || !office || ts <= last) return;
+    if (!stopped) this.add(office, Math.max(last, ts - RUN_GAP_CAP_MS), ts, this.away === true);
+    if (this.run && ts - this.run.since >= RUN_SAVE_MS) this.runningSave();
+  }
+
+  /** Before a sleep or a quit: count up to now, save, and stop the clock. */
+  runningPause(stopped: boolean, ts = this.now()): void {
+    this.running(stopped, ts);
+    this.runningSave();
+    this.lastTick = null;
+  }
+
+  /** Save the buffered running time as one point for its office and day. */
+  runningSave(): void {
+    const r = this.run;
+    this.run = null;
+    if (r && r.ms > 0) this.push({ agentId: null, kind: 'running', ts: r.until, value: r.ms, attrs: { away: r.away } }, r.office);
+  }
+
+  /** Add a span to the buffer, split at local midnight so a point never spans two days. */
+  private add(office: string, from: number, to: number, away: boolean): void {
+    while (from < to) {
+      const day = dayKey(from);
+      const next = new Date(from);
+      next.setHours(24, 0, 0, 0);
+      const end = Math.min(to, next.getTime());
+      if (this.run && (this.run.office !== office || this.run.day !== day)) this.runningSave();
+      const r = this.run ?? (this.run = { office, day, ms: 0, away: 0, since: from, until: from });
+      r.ms += end - from;
+      if (away) r.away += end - from;
+      r.until = end === next.getTime() ? end - 1 : end;
+      from = end;
+    }
   }
 
   /** Points after a cursor, oldest first, for the processor. */

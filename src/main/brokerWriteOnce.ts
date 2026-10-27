@@ -1,9 +1,10 @@
 /**
  * Send once for a connected app (issue #54, the same rule mail already has).
  *
- * A write the broker forwards (anything other than GET or HEAD) is recorded
- * before it goes upstream. The same agent repeating the same write gets the
- * first answer back, including after a restart. If the app stopped before the
+ * A write the broker forwards (anything other than GET or HEAD, except a POST
+ * a catalog connector only reads with: postReadsFor) is recorded before it
+ * goes upstream. The same agent repeating the same write gets the first
+ * answer back, including after a restart. If the app stopped before the
  * answer came back, the write may already have created an invoice, booking or
  * contact, and this app cannot check the other service, so the repeat is
  * refused and the agent is told to tell Michael. No card is opened: Michael

@@ -341,7 +341,7 @@ test('the owner can still correct a card an agent reopened before the app put it
 });
 
 test('reminders reach the right person, skip times the board cannot show, and the backstop reaches Michael', async (t) => {
-  // Value: protects=a reminder goes to someone who reads it, says whose step it is, and the backstop really arrives; fails_when=an archived or unknown person is reminded, Michael is told to tell himself, a loose time fires, or the backstop is only computed; why_new=review cycle 2; seam=the fleet tick plus the private guard file
+  // Value: protects=a reminder goes to someone who reads it, says whose step it is, and the backstop really arrives; fails_when=a closed or unknown person is reminded, Michael is told to tell himself, a loose time fires, or the backstop is only computed; why_new=review cycle 2; seam=the fleet tick plus the private guard file
   const { dueReminders } = loadTs('src/shared/cardGuards.ts');
   const now = Date.parse('2026-10-12T09:00:00Z');
   assert.deepEqual(dueReminders([card('a', { nextAt: '2026-10-12T08:00:00' }), card('b', { nextAt: '2026-10-12' })], {}, now).due, [], 'no offset, no reminder');
@@ -351,11 +351,11 @@ test('reminders reach the right person, skip times the board cannot show, and th
   const { home, hive } = await officeWith(t, 'md-next-route-');
   await hive.ensureAgent({ id: 'gone', name: 'Gone', provider: 'claude', cwd: home, role: 'Sales' });
   const reg = path.join(hive.root(), 'registry.json');
-  const r = JSON.parse(fs.readFileSync(reg, 'utf8')); r.agents.gone.archived = true; fs.writeFileSync(reg, JSON.stringify(r));
+  const r = JSON.parse(fs.readFileSync(reg, 'utf8')); r.agents.gone.archived = true; r.agents.gone.closedByOwner = true; fs.writeFileSync(reg, JSON.stringify(r));
   const past = '2020-01-06T09:00:00Z';
   hive.writeTasks([card('g', { assignee: 'gone', nextAt: past }), card('u', { assignee: 'ghost', nextAt: past }), card('m', { assignee: 'god', nextAt: past })]);
   hive.refreshOwnerRequests();
-  assert.ok(!fs.readdirSync(path.join(hive.root(), 'agents', 'gone', 'inbox')).some((f) => f.endsWith('.json')), 'not to an archived team member');
+  assert.ok(!fs.readdirSync(path.join(hive.root(), 'agents', 'gone', 'inbox')).some((f) => f.endsWith('.json')), 'not to a team member the owner closed');
   const due = inboxOf(hive, 'god').filter((m) => m.subject.startsWith('Next step due'));
   assert.equal(due.length, 3, 'each to Michael');
   for (const m of due) {
@@ -376,6 +376,37 @@ test('reminders reach the right person, skip times the board cannot show, and th
   assert.match(still[0].body, /but it is still in To do\. Check who should do it, then move the card/);
   later.refreshOwnerRequests();
   assert.equal(inboxOf(hive, 'god').filter((m) => m.subject.startsWith('STILL IN TO DO')).length, 3, 'once');
+});
+
+test('a step that came due while the app was closed reaches its person when the office opens', async (t) => {
+  // Value: protects=a step parked overnight goes to the card's person after a restart (D7), not to Michael as nobody's card; fails_when=a member whose terminal is not back yet counts as off the team, the reminder is lost or sent again once they are back, or the backstop can't name them; why_new=every member is archived at launch until the team is restored, and the first fleet tick runs before that; seam=the fleet tick plus the registry
+  const { home, hive } = await officeWith(t, 'md-next-launch-');
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home, role: 'Office admin' });
+  hive.writeTasks([card('o', { title: 'Send the supplier order', assignee: 'pam', nextAt: '2020-01-06T08:00:00+00:00' }), card('m', { assignee: 'god', nextAt: '2020-01-06T08:00:00+00:00' })]);
+  // The app quit at closing time: each terminal's exit archived its member.
+  hive.setArchived('pam', true);
+  hive.setArchived('god', true);
+  // Opened the next morning: the first fleet tick runs before anyone is back.
+  const opened = new HiveManager(() => home);
+  opened.refreshOwnerRequests();
+  const pam = () => inboxOf(hive, 'pam').filter((m) => m.subject === 'Next step due: Send the supplier order');
+  assert.equal(pam().length, 1, 'waiting in her inbox for when her terminal starts');
+  assert.match(pam()[0].body, /Do it, then tell Michael where the card stands\./);
+  const god = inboxOf(hive, 'god').filter((m) => m.subject.startsWith('Next step due'));
+  assert.deepEqual(god.map((m) => m.conversation), ['card:m'], 'Michael gets only his own card');
+  assert.match(god[0].body, /It is your own card/);
+
+  await opened.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home, role: 'Office admin' });
+  opened.refreshOwnerRequests();
+  assert.equal(pam().length, 1, 'not again once she is back');
+  // Four hours on and still in To do: Michael's backstop names her.
+  const file = path.join(home, 'private', 'card-guard.json');
+  const st = JSON.parse(fs.readFileSync(file, 'utf8'));
+  st.reminders.o.dueSentAt = '2020-01-06T08:00:00.000Z';
+  fs.writeFileSync(file, JSON.stringify(st));
+  new HiveManager(() => home).refreshOwnerRequests();
+  const still = inboxOf(hive, 'god').find((m) => m.subject === 'STILL IN TO DO: card o');
+  assert.match(still.body, /, and Pam was reminded, but it is still in To do\. Check with them/);
 });
 
 

@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const ts = require('typescript');
 const loadTs = require('./load-ts.cjs');
 
 const {
@@ -119,4 +122,91 @@ test('terminal output follows only when already at the bottom', () => {
   assert.equal(shouldFollowTerminalOutput(100, 100), true);
   assert.equal(shouldFollowTerminalOutput(99, 100), true);
   assert.equal(shouldFollowTerminalOutput(80, 100), false);
+});
+
+// The pool can't load under node, so run its keystroke handler on a fake entry.
+function keystrokeHandler() {
+  const src = fs.readFileSync(path.join(__dirname, '../src/renderer/src/components/terminalPool.ts'), 'utf8');
+  const start = src.indexOf('term.onData((raw) => {') + 'term.onData('.length;
+  const end = src.lastIndexOf('});', src.indexOf('pool.set(ptyId, entry);', start)) + 1;
+  const js = ts.transpileModule(`const onData = ${src.slice(start, end)};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 }
+  }).outputText;
+  const prompts = [];
+  const entry = {
+    exited: false, inputLocked: false, lineBuf: '', automationBlocked: false, automationBlockedAt: 0,
+    automationSettleUntil: 0, inputDirty: false, inputDirtyAt: 0, onPrompt: (t) => prompts.push(t)
+  };
+  const window = { cth: { writePty: () => {}, trackMessageSent: async () => {} } };
+  const onData = new Function('entry', 'window', 'watchOnlyData', 'releasePickerBlock', 'opensInteractiveTerminalUi', 'ptyId',
+    `${js}\nreturn onData;`)(entry, window, (d) => d, (e) => { e.automationBlocked = false; }, opensInteractiveTerminalUi, 'pty1');
+  const block = () => terminalAutomationBlock({
+    exited: false, pickerOpen: entry.automationBlocked, inputDirty: entry.inputDirty,
+    inputDirtyAt: entry.inputDirtyAt, settleUntil: 0
+  }, entry.inputDirtyAt);
+  return { onData, entry, prompts, block };
+}
+
+test('a pasted block is a draft, not several sent prompts', () => {
+  const { onData, entry, prompts, block } = keystrokeHandler();
+  // xterm turns pasted newlines into \r and wraps the text in bracketed paste markers.
+  onData('\x1b[200~first line\rsecond line\rthird line\r\x1b[201~');
+  assert.deepEqual(prompts, []);
+  assert.equal(entry.inputDirty, true);
+  assert.equal(block(), 'draft', 'the queue must not type after the pasted text');
+  // The owner's own Enter sends the whole paste as one prompt.
+  onData('\r');
+  assert.deepEqual(prompts, ['first line\nsecond line\nthird line']);
+  assert.equal(block(), null);
+});
+
+test('a typed line and Enter is still a submit', () => {
+  const { onData, entry, prompts, block } = keystrokeHandler();
+  for (const ch of 'fix the build') onData(ch);
+  assert.equal(block(), 'draft');
+  onData('\r');
+  assert.deepEqual(prompts, ['fix the build']);
+  assert.equal(entry.inputDirty, false);
+  assert.equal(block(), null);
+});
+
+test('an Enter after the paste ends, in the same chunk, submits and can open a picker', () => {
+  // Value: protects=a paste and send is a real submit, so a /model picker it opens holds the queue; fails_when=a line break counts as pasted for the whole chunk, so that Enter is kept as draft text and the picker never latches; why_new=review on #548; seam=the real keystroke handler on a fake entry
+  const { onData, entry, prompts } = keystrokeHandler();
+  onData('\x1b[200~/model\x1b[201~\r');
+  assert.deepEqual(prompts, ['/model']);
+  assert.equal(entry.lineBuf, '');
+  assert.equal(entry.automationBlocked, true, 'the picker it opened is latched');
+  // A line break inside the markers is still pasted text, whatever follows.
+  const b = keystrokeHandler();
+  b.onData('\x1b[200~one\rtwo\r\x1b[201~');
+  assert.deepEqual(b.prompts, []);
+  assert.equal(b.entry.lineBuf, 'one\ntwo\n');
+});
+
+// The gate as the pool runs it, with the screen row it reads stubbed.
+function automationGate() {
+  const src = fs.readFileSync(path.join(__dirname, '../src/renderer/src/components/terminalPool.ts'), 'utf8');
+  const part = (from) => { const at = src.indexOf(from); assert.ok(at >= 0, from); return src.slice(at, src.indexOf('\n}\n', at) + 2); };
+  const consts = ['const PROMPT_CHROME', 'const ECHO_GRACE_MS'].map((c) => src.slice(src.indexOf(c), src.indexOf('\n', src.indexOf(c)) + 1)).join('');
+  const js = ts.transpileModule(consts + ['function promptLineHasText(', 'function draftHeld(', 'function automationStateOf('].map(part).join('\n'), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 }
+  }).outputText;
+  return new Function(`${js}\nreturn automationStateOf;`)();
+}
+
+test('the screen never clears a draft that holds a line break', () => {
+  // Value: protects=the queue waits for a pasted block the owner hasn't sent; fails_when=a paste that ends with a line break leaves the cursor on an empty row and the screen check drops the draft, so a queued message is typed after the paste; why_new=review on #548; seam=the real automationStateOf with a stubbed buffer row
+  const automationStateOf = automationGate();
+  const now = 1_000_000;
+  const entry = (lineBuf) => ({
+    opened: true, exited: false, inputDirty: true, inputDirtyAt: now - 5000, lineBuf,
+    automationBlocked: false, automationBlockedAt: 0, automationSettleUntil: 0,
+    term: { buffer: { active: { baseY: 0, cursorY: 0, getLine: () => ({ translateToString: () => '' }) } } }
+  });
+  const pasted = automationStateOf(entry('first line\nsecond line\n'), now);
+  assert.equal(pasted.inputDirty, true);
+  assert.equal(terminalAutomationBlock(pasted, now), 'draft');
+  // A one line draft the screen shows empty is still a phantom, as before.
+  assert.equal(automationStateOf(entry('stale'), now).inputDirty, false);
 });

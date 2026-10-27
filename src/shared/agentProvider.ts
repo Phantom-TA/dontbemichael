@@ -725,6 +725,31 @@ export function argsWithAutoModeFlag(args: string[], autoMode: boolean, provider
   return [...args, ...flag.trim().split(/\s+/)];
 }
 
+/** The owner's turn cap (Settings, `maxTurns`) is the most turns any agent may
+ *  run. A command can already carry `--max-turns`, typed by the owner or brought
+ *  in by a shared hire (hire.ts allows it), so the lowest of them wins: a link
+ *  can tighten the cap but never raise it. With no cap set, args are unchanged. */
+export function argsWithTurnCap(args: string[], cap: number | undefined): string[] {
+  if (typeof cap !== 'number' || !(cap > 0)) return args;
+  let lowest = Math.round(cap);
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    let value: string | undefined;
+    if (a === '--max-turns') {
+      if (args[i + 1] !== undefined && !args[i + 1].startsWith('-')) value = args[++i];
+    } else if (a.startsWith('--max-turns=')) {
+      value = a.slice('--max-turns='.length);
+    } else {
+      out.push(a);
+      continue;
+    }
+    const n = Number(value);
+    if (Number.isInteger(n) && n > 0 && n < lowest) lowest = n;
+  }
+  return [...out, '--max-turns', String(lowest)];
+}
+
 /** True when argv already states a permission posture for this provider: the
  *  auto flag's leading token, or any of the preset's `autoStanceTokens`. Token
  *  match, not substring — copilot's flag starts with `-s`. A flag written with

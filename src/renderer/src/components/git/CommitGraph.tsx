@@ -120,7 +120,9 @@ export function CommitGraph({ commits, currentBranch, onCommitClick }: CommitGra
                 />
               );
             }
-            const x2 = laneX(p.lane);
+            // The parent's own lane, where its dot is: a lane kept for the line
+            // can sit beside it when two branches share the parent.
+            const x2 = laneX(rows[j].lane);
             const y2 = rowY(j);
             const d = x1 === x2
               ? `M ${x1} ${y1} L ${x2} ${y2}`

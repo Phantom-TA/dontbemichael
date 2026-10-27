@@ -1,5 +1,5 @@
 import { RESEARCH_ID } from '../../../shared/research';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { FIRST_TASK_EDITED_MAX } from '@shared/firstTask';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
@@ -21,9 +21,10 @@ import {
 import { BUILD_ENGINES } from '@shared/agentProvider';
 import { splitAgentRole, joinAgentRole } from '@shared/agentRole';
 import { roleLabel, plainFallback } from '@shared/workStyleText';
-import { applyJob, jobBase, jobFingerprint, plainFor, undoJob } from '@shared/jobChange';
-import { JobChangeReview, type ReviseOk, type ReviseRun } from './JobChangeReview';
-import { Field, JobParts, Panel as SoftPanel, fieldLabel, jobPartsFold, readBody } from './fieldText';
+import { addedOverlaps, applyJob, handoffsTo, handoffsWithout, jobBase, jobFingerprint, liveHandoffs, plainFor, undoJob } from '@shared/jobChange';
+import { connectorGranted, connectorOn, type ConnectorConfig } from '@shared/claudeConnectors';
+import { JobChangeReview, type HomeChoice, type ReviseOk, type ReviseRun, type Teammate } from './JobChangeReview';
+import { Field, JobParts, Panel as SoftPanel, fieldLabel, hint, jobPartsFold, readBody } from './fieldText';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { ScheduledJobsList } from './ScheduledJobs';
 import { sendTypedFirstTask } from '@/shell/typedFirstTask';
@@ -45,6 +46,8 @@ export interface EditAgentModalProps {
   docked?: boolean;
   /** Open with the engine unfolded (Change engine on a not reporting card). */
   engineOpen?: boolean;
+  /** Open with "What should change?" filled in (a run comparison from Pulse). */
+  initialChange?: string;
 }
 
 /**
@@ -60,7 +63,7 @@ export interface EditAgentModalProps {
  * lays over the wide panel in two columns, and leaving with unsaved changes,
  * by any way out, asks first.
  */
-export function EditAgentModal({ agent, onClose, docked = true, engineOpen: openEngine = false }: EditAgentModalProps) {
+export function EditAgentModal({ agent, onClose, docked = true, engineOpen: openEngine = false, initialChange }: EditAgentModalProps) {
   const { t, i18n } = useTranslation();
   const researchName = useResearchName();
   const updateAgent = useStore((s) => s.updateAgent);
@@ -160,35 +163,92 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   const preset = providerPreset(provider);
   const business = { name: config?.businessName, city: config?.businessCity };
   const current = () => useStore.getState().agents.find((a) => a.id === agent.id) ?? live;
+  /** The teammates on the floor (never Michael or his assistant). */
+  const teammates = () => useStore.getState().agents.filter((a) => a.id !== agent.id && !a.isGod && !a.isAssistant);
+  /** A teammate's name now; undefined when they are not on the team. */
+  const nameOf = (id: string): string | undefined => teammates().find((a) => a.id === id)?.name;
 
-  /** "What should change?": main rewrites the job from this one change. */
-  const runChange = ({ typed, extras, answer, requestId }: ReviseRun) => {
+  /** "What should change?": main rewrites the job from this one change. With
+   *  an explanation, the teammates the check named and the member's live
+   *  handoffs go too, so the rewrite can write and take back handoffs
+   *  (overlap split plan). */
+  const runChange = ({ typed, extras, answers, explanation, teammates: named, requestId }: ReviseRun) => {
     const cur = current();
     const split = splitAgentRole(cur.description);
+    const handoffList = lead ? [] : liveHandoffs(cur, teammates())
+      .map((h) => ({ toId: h.toId, scope: h.scope, line: h.line, toTitle: splitAgentRole(h.to.description).role || undefined }));
     return window.cth.workStyleRevise({
       requestId,
       ctx: { name: cur.name, title: split.role || undefined, business, manager: godName },
       current: { instructions: effectiveWorkStyle(cur), handles: lead ? '' : split.roleDescription },
       changes: [typed, ...extras],
-      answer,
-      lead
+      answers,
+      lead,
+      ...(explanation && named?.length ? { explanation, teammates: named } : {}),
+      ...(handoffList.length ? { handoffList } : {}),
+      askHome: !lead
     });
   };
-  /** New duties are checked against every teammate's, as a hire is (D6). */
-  const checkOverlap = async (ok: ReviseOk): Promise<{ names: string[]; why: string } | null> => {
+  /** The job as it was, checked once per job: an overlap it already had is
+   *  teamwork the owner set up before, never charged to this change. */
+  const beforeCheck = useRef<{ of: string; names: Promise<string[]> } | null>(null);
+  /** New duties are checked against every teammate's, as a hire is (D6), in
+   *  the check's change mode: work handed on between them is not an overlap.
+   *  Only teammates the change adds are returned, and they never block Apply:
+   *  the preview names them with a way to explain the split (owner, 2026-10-24). */
+  const checkOverlap = async (ok: ReviseOk): Promise<{ names: string[]; why: string; suggestion?: string; teammates: Teammate[] } | null> => {
     const cur = current();
     const mailboxes = config?.mailboxes ?? [];
-    const team = useStore.getState().agents
-      .filter((a) => a.id !== agent.id && !a.isGod && !a.isAssistant)
-      .map((a) => {
-        const split = splitAgentRole(a.description);
-        const email = config?.agentCapabilities?.[a.id]?.email;
-        return { name: a.name, title: split.role, routing: split.roleDescription, workStyle: a.goal, mailbox: email?.enabled ? mailboxes.find((m) => m.id === email.mailboxes[0])?.address : undefined };
-      });
+    const mates = teammates();
+    const team = mates.map((a) => {
+      const split = splitAgentRole(a.description);
+      const email = config?.agentCapabilities?.[a.id]?.email;
+      return { name: a.name, title: split.role, routing: split.roleDescription, workStyle: a.goal, mailbox: email?.enabled ? mailboxes.find((m) => m.id === email.mailboxes[0])?.address : undefined };
+    });
     if (!team.length || !ok.handles) return null;
-    const v = await window.cth.hireCheckDistinct({ name: cur.name, title: splitAgentRole(cur.description).role, routing: ok.handles, workStyle: ok.instructions }, team);
-    return v.overlapsWith.length ? { names: v.overlapsWith, why: v.why } : null;
+    const title = splitAgentRole(cur.description).role;
+    const was = splitAgentRole(cur.description).roleDescription;
+    const of = jobBase(cur);
+    if (beforeCheck.current?.of !== of) {
+      beforeCheck.current = {
+        of,
+        names: was.trim()
+          ? window.cth.hireCheckDistinct({ name: cur.name, title, routing: was, workStyle: cur.goal }, team, undefined, 'change', 'before')
+            .then((v) => v.overlapsWith).catch(() => [])
+          : Promise.resolve([])
+      };
+    }
+    const [v, before] = await Promise.all([
+      window.cth.hireCheckDistinct({ name: cur.name, title, routing: ok.handles, workStyle: ok.instructions }, team, undefined, 'change', 'after'),
+      beforeCheck.current.names
+    ]);
+    const added = addedOverlaps(v.overlapsWith, before);
+    if (!added.length) return null;
+    // Names are unique on the floor (a rename refuses a taken name).
+    const named = added.flatMap((n) => {
+      const a = mates.find((m) => m.name === n);
+      return a ? [{ id: a.id, name: a.name, title: splitAgentRole(a.description).role || undefined }] : [];
+    });
+    return { names: added, why: v.why, suggestion: v.suggestion, teammates: named };
   };
+  /** Where tracked numbers can live (design D5): the member's own folder,
+   *  then every connector on the Claude account; switched off in Settings
+   *  greyed, on but not given to this member flagged in the preview. */
+  const homeChoices = (): HomeChoice[] => {
+    const cfg = (config ?? {}) as ConnectorConfig;
+    const tools = (cfg.claudeConnectors?.list ?? []).map((c): HomeChoice => {
+      const on = connectorOn(cfg, c.key);
+      return { label: c.key, tool: c.key, off: !on, noAccess: on && !connectorGranted(cfg, agent.id, c.key, readsBooks) };
+    });
+    return [{ label: t('jobChange.homeFolder', { name: current().name }) }, ...tools];
+  };
+  // QuickBooks's grant has a role default main knows (as on Access).
+  const [readsBooks, setReadsBooks] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void window.cth.quickbooksRoleDefaults?.().then((ids) => { if (alive) setReadsBooks(ids.includes(agent.id)); }).catch(() => {});
+    return () => { alive = false; };
+  }, [agent.id]);
   /** Apply saves the job at once (DR3): the instructions, the plain words,
    *  "What X handles" and Michael's routing line, the change kept for Undo and
    *  a pack's next default. Refused when the job moved since the run began (A3). */
@@ -214,7 +274,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   /** Undo: the job before the last change, at once, routing line too (DR7). */
   const undoChange = async (): Promise<void> => {
     const cur = current();
-    const patch = undoJob(cur);
+    const patch = undoJob(cur, nameOf);
     if (!patch) return;
     if (patch.description !== cur.description) {
       const r = await window.cth.hivePatchAgentRole(agent.id, patch.description).catch(() => null);
@@ -277,7 +337,16 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       disposeTerminal,
       archiveInRegistry: (id) => window.cth.hiveSetArchived(id, true),
       settleWork: (id) => window.cth.memberDeleted(id),
-      forget: (id) => { st.archiveAgent(id); st.removeArchivedAgent(id); st.removeRestorableAgent(id); }
+      forget: (id) => {
+        st.archiveAgent(id); st.removeArchivedAgent(id); st.removeRestorableAgent(id);
+        // Handoffs to them go too; a released line already went with them.
+        // Undo's copy too, so an Undo never brings back a handoff to nobody.
+        for (const a of useStore.getState().agents) {
+          if (a.handoffs?.some((h) => h.toId === id)) st.updateAgent(a.id, { handoffs: handoffsWithout(a.handoffs, id) });
+          const prev = a.jobPrevious;
+          if (prev?.handoffs?.some((h) => h.toId === id)) st.updateAgent(a.id, { jobPrevious: { ...prev, handoffs: handoffsWithout(prev.handoffs, id) } });
+        }
+      }
     });
     setDeleting(false);
     onClose();
@@ -310,6 +379,17 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
     onClose();
     go();
   };
+  // The access note's link: this member's Access tab, asking first when
+  // something is unsaved (eng re-run D1).
+  const goToAccess = (): void => {
+    const go = (): void => {
+      if (!docked) useStore.getState().setFullscreen(null);
+      useStore.getState().setSidebarTab('capabilities');
+    };
+    if (dirtyRef.current) { afterClose.current = go; setAsking('close'); return; }
+    onClose();
+    go();
+  };
   const keepEditing = (): void => { afterClose.current = null; if (asking === 'leave') answerLeave(false); setAsking(null); };
   const discard = (): void => {
     const leaving = asking === 'leave';
@@ -327,6 +407,13 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   const modelLabel = preset.supportsModel && model ? (modelsForProvider(provider).find((m) => m.id === model)?.label ?? model) : '';
   const busy = saving || deleting;
   const lastChange = live.jobChanges?.[live.jobChanges.length - 1];
+  // Teammates whose own split sends work here, live only (eng D3).
+  // Only who sends this member work, as text: the team list changes with every
+  // terminal update, which would otherwise redraw the whole modal each time.
+  const sendersKey = useStore((s) => (lead ? '' : JSON.stringify(handoffsTo(agent.id, s.agents).map(({ from, scopes }) => [from.id, from.name, scopes]))));
+  const senders = useMemo(() => (sendersKey ? (JSON.parse(sendersKey) as Array<[string, string, string[]]>) : [])
+    .map(([id, name, scopes]) => ({ from: { id, name }, scopes })), [sendersKey]);
+  const listOf = (items: string[]): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(items); } catch { return items.join(', '); } };
 
   const nameRow = (
     // The owner names the Research member (owner, ship 2 D17); whatever its
@@ -363,6 +450,18 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   const handlesRow = !lead && (
     <ReadRow label={t('editAgent.handles', { name: who })} info={t('editAgent.handlesInfo', { manager: godName, name: who })}>
       <div dir="auto" style={readBody(wide)}>{saved.roleDescription || t('jobChange.noWorkStyle', { name: who })}</div>
+      {/* Who sends this member work, read only, in the field style's hint
+          (design D7); set in the sender's job, never here (eng D2). */}
+      {senders.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {senders.map(({ from, scopes }) => (
+            <span key={from.id} style={{ ...hint, display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span><span style={{ fontWeight: 600, color: 'var(--cth-ink-2)' }}>{t('editAgent.getsFrom', { name: from.name })}</span> {listOf(scopes)}</span>
+              <InfoTip text={t('editAgent.getsFromInfo', { from: from.name, name: who })} label={t('editAgent.getsFrom', { name: from.name })} />
+            </span>
+          ))}
+        </div>
+      )}
     </ReadRow>
   );
   const changeRow = (
@@ -372,6 +471,9 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       box={{ label: t('jobChange.whatChange'), info: t('jobChange.whatChangeInfo', { name: who }), placeholder: t('jobChange.whatChangePlaceholder'), button: t('jobChange.see') }}
       run={runChange}
       checkOverlap={lead ? undefined : checkOverlap}
+      nameOf={nameOf}
+      homeChoices={lead ? undefined : homeChoices}
+      onOpenAccess={goToAccess}
       base={() => jobBase(current())}
       apply={applyChange}
       applyLabel={t('jobChange.apply')}
@@ -380,6 +482,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       onDraft={setDraft}
       onBusy={(b) => { setChanging(b); if (b) setStatus(null); }}
       sendsTask={!agent.isGod}
+      initialTyped={initialChange}
     />
   );
   // In its parts, folded to the first (H4), with Undo and the last change

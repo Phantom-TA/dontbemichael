@@ -123,6 +123,16 @@ test('Esc: a field with text is left first, then a wide panel goes back to the s
   assert.match(app, /if \(action === 'collapse'\) \{ useStore\.getState\(\)\.setPanelWide\(false\); return; \}/);
 });
 
+test('Esc in the note box closes the note only, never the panel behind it', () => {
+  // Value: protects=one Esc is one step back; fails_when=the note's Esc is left unmarked, so the column closes or collapses the panel on the same key; why_new=bug found by repro (empty note, Esc closed the panel); seam=source pin (no DOM harness) and pure columnEscAction()
+  const chrome = read('src/renderer/src/shell/PanelChrome.tsx');
+  assert.match(chrome, /if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); setEditing\(false\); \}/);
+  const { columnEscAction } = loadTs('src/renderer/src/shell/rightColumn.ts');
+  const marked = { key: 'Escape', defaultPrevented: true, inColumn: true, fieldHasText: false, locked: false };
+  assert.equal(columnEscAction(marked), 'none', 'side panel stays open');
+  assert.equal(columnEscAction({ ...marked, wide: true }), 'none', 'wide panel stays wide');
+});
+
 test('the wide choice is remembered on this computer, never set by the window, and the board never goes wide', () => {
   // Value: protects=WD6 and WD1; fails_when=the flag is lost on restart, throws without storage, follows the window size, or widens Needs you; why_new=new flag; seam=source pin
   const store = read('src/renderer/src/store/store.ts');
@@ -227,5 +237,5 @@ test('Change engine\'s Edit request waits with the select and is used once', () 
   const store = read('src/renderer/src/store/store.ts');
   assert.match(store, /requestEditAgent: \(agentId, opts\) => \{\n\s*get\(\)\.select\(agentId\);\n(\s*\/\/[^\n]*\n)*\s*afterLeave\(\(\) => set\(\(s\) => \(\{ editAgentRequest: \{ agentId, engine: !!opts\?\.engine/);
   assert.match(store, /clearEditAgentRequest: \(\) => set\(\{ editAgentRequest: null \}\),/);
-  assert.match(read('src/renderer/src/components/AgentDetailPanel.tsx'), /setEditEngine\(editRequest\.engine\); setEditOpen\(true\); clearEditRequest\(\); \}/);
+  assert.match(read('src/renderer/src/components/AgentDetailPanel.tsx'), /setEditEngine\(editRequest\.engine\); setEditChange\(editRequest\.change\); setEditOpen\(true\); clearEditRequest\(\); \}/);
 });
