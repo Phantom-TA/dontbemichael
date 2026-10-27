@@ -83,7 +83,7 @@ test('errors with no success between them still trip the storm', () => {
   for (let i = 0; i < 5; i++) b.recordError('a', 'repl_main_thread');
   const d = beat(b, 'a', null, true, T0);
   assert.equal(d.state.level, 'steering');
-  assert.match(d.state.reason, /error storm: 5 consecutive api errors\/retries$/);
+  assert.match(d.state.reason, /error storm: 5 consecutive api errors$/);
 });
 
 test('a success from another query_source does not end the run of errors', () => {

@@ -368,7 +368,7 @@ export class CircuitBreaker {
     }
     // (b) api_error storm
     if (s.errorCount >= cfg.errorStormLimit) {
-      return { tripping: true, reason: `error storm: ${s.errorCount} consecutive api errors/retries` };
+      return { tripping: true, reason: `error storm: ${s.errorCount} consecutive api errors` };
     }
     // (a) per-agent token limit — this agent's own WORK tokens over its configured
     // cap. Measured without cacheRead (#189): tested against the all-kinds total,
