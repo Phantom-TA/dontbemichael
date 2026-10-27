@@ -1844,7 +1844,8 @@
     "empty": "Empty file",
     "tooLarge": "Too large to show here",
     "unreadable": "Can't show this file here",
-    "rows": "Showing {{shown}} of {{total}} rows"
+    "rows": "Showing {{shown}} of {{total}} rows",
+    "opened": "{{name}} opened"
   },
   "companyProfile": {
     "intro": "Key facts about your business. Every team member, {{godName}} included, works from them. Short answers only: anything longer goes in Memory & Knowledge.",

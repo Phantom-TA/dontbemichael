@@ -1844,7 +1844,8 @@
     "empty": "空文件",
     "tooLarge": "文件太大，无法在此显示",
     "unreadable": "无法在此显示此文件",
-    "rows": "显示 {{total}} 行中的 {{shown}} 行"
+    "rows": "显示 {{total}} 行中的 {{shown}} 行",
+    "opened": "已打开 {{name}}"
   },
   "companyProfile": {
     "intro": "关于您公司的关键信息。每位成员，包括 {{godName}}，都会以此为依据工作。只填简短的答案，较长的内容请放进“记忆与知识”。",

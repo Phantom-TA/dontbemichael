@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File From Wide 1:1</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cth-bg:#F7F7FB;--cth-card:#FFFFFF;--cth-card-2:#FAFAFD;--cth-ink:#1E1B2E;--cth-ink-2:#4A4660;--cth-ink-3:#6C6884;--cth-ink-4:#B4B1C6;
+  --cth-line:#E8E6F2;--cth-line-2:#DAD7EA;--cth-neutral-soft:#F0EFF5;
+  --cth-green:#1FB872;--cth-green-soft:#E3F7EC;--cth-green-text:#157D4D;
+  --cth-indigo:#6C5CE7;--cth-indigo-soft:#EEEBFD;--cth-indigo-text:#4338CA;
+  --cth-r-sm:6px;--cth-r-md:9px;--cth-r-lg:12px;--cth-r-xl:14px;
+  --ui:"Sora",-apple-system,system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --cth-bg:#14131C;--cth-card:#1F1E2B;--cth-card-2:#24233A;--cth-ink:#ECEAF4;--cth-ink-2:#C9C6D9;--cth-ink-3:#A5A2B8;--cth-ink-4:#5E5B73;
+  --cth-line:rgba(255,255,255,.09);--cth-line-2:rgba(255,255,255,.14);--cth-neutral-soft:#2A2938;
+  --cth-green-soft:rgba(31,184,114,.16);--cth-green-text:#5FD49B;--cth-indigo-soft:rgba(157,144,255,.16);--cth-indigo-text:#A99FFF;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cth-bg);color:var(--cth-ink);font-family:var(--ui);padding:24px 16px 56px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:18px;margin:0 0 4px}
+.lead{color:var(--cth-ink-3);font-size:13px;margin:0 0 26px;line-height:19px;max-width:85ch}
+.opt{margin-bottom:40px}
+.opt h2{font-size:15px;margin:0 0 4px}
+.opt .why{font-size:12.5px;color:var(--cth-ink-3);margin:0 0 12px;line-height:18px;max-width:95ch}
+.tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:var(--cth-indigo-soft);color:var(--cth-indigo-text);margin-left:6px;vertical-align:2px}
+/* a small app window */
+.win{border-radius:var(--cth-r-xl);box-shadow:inset 0 0 0 1px var(--cth-line-2),0 4px 18px rgba(30,27,46,.07);background:var(--cth-bg);overflow:hidden;height:430px;display:flex;flex-direction:column}
+.top{height:40px;display:flex;align-items:center;gap:6px;padding:0 12px;background:var(--cth-card);box-shadow:inset 0 -1px 0 var(--cth-line)}
+.t{font-size:12px;color:var(--cth-ink-3);padding:5px 10px;border-radius:var(--cth-r-sm)}
+.t.on{background:var(--cth-neutral-soft);color:var(--cth-ink);font-weight:600}
+.t.file{display:inline-flex;align-items:center;gap:6px}
+.t.file.new{box-shadow:inset 0 0 0 1.5px var(--cth-indigo);background:var(--cth-indigo-soft);color:var(--cth-indigo-text)}
+.sep{width:1px;height:18px;background:var(--cth-line-2);margin:0 4px}
+.main{flex:1;display:flex;min-height:0;position:relative}
+.office{flex:1;padding:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;opacity:.35}
+.office i{background:var(--cth-card);border-radius:var(--cth-r-md);box-shadow:inset 0 0 0 1px var(--cth-line)}
+.file{flex:1;padding:16px 22px;background:var(--cth-card);overflow:hidden}
+.file h3{font-size:15px;margin:0 0 4px}.file .meta{font-size:11px;color:var(--cth-ink-3);margin-bottom:12px;display:flex;gap:8px;align-items:center}
+.file p{font-size:12px;line-height:18px;color:var(--cth-ink-2);margin:0 0 8px}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:var(--cth-r-sm);font-size:11.5px;font-weight:500;background:var(--cth-indigo-soft);color:var(--cth-indigo-text)}
+.btn{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:var(--cth-r-sm);font-size:11.5px;font-weight:600;background:var(--cth-card);box-shadow:inset 0 0 0 1px var(--cth-line-2);color:var(--cth-ink)}
+.btn.pri{background:var(--cth-ink);color:var(--cth-bg);box-shadow:none}
+/* wide 1:1 */
+.wide{position:absolute;inset:14px 14px 14px 14px;background:var(--cth-card);border-radius:var(--cth-r-xl);box-shadow:inset 0 0 0 1px var(--cth-line),0 8px 30px rgba(30,27,46,.12);display:flex;flex-direction:column}
+.wide .hd{display:flex;align-items:center;gap:8px;padding:10px 14px;box-shadow:inset 0 -1px 0 var(--cth-line);font-size:12.5px;font-weight:600}
+.av{width:22px;height:22px;border-radius:50%;background:var(--cth-ink);color:var(--cth-bg);display:grid;place-items:center;font-size:10px;font-weight:700}
+.conv{flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:10px;max-width:520px;margin:0 auto;width:100%}
+.me{align-self:flex-end;background:var(--cth-neutral-soft);border-radius:var(--cth-r-lg);padding:8px 11px;font-size:12px;max-width:80%}
+.mi{font-size:12px;line-height:18px;color:var(--cth-ink)}
+.note{display:flex;align-items:center;gap:8px;margin-top:6px;padding:8px 10px;border-radius:var(--cth-r-md);background:var(--cth-green-soft);color:var(--cth-green-text);font-size:11.5px;font-weight:500}
+.box{margin:0 16px 14px;height:38px;border-radius:var(--cth-r-lg);box-shadow:inset 0 0 0 1px var(--cth-line-2);font-size:12px;color:var(--cth-ink-4);display:flex;align-items:center;padding:0 12px}
+/* side dock */
+.side{width:280px;flex-shrink:0;background:var(--cth-card);box-shadow:inset 1px 0 0 var(--cth-line);display:flex;flex-direction:column}
+.side .hd{display:flex;align-items:center;gap:8px;padding:10px 12px;box-shadow:inset 0 -1px 0 var(--cth-line);font-size:12px;font-weight:600}
+.side .hd .x{margin-left:auto;font-size:11px;color:var(--cth-indigo-text);font-weight:600}
+.side .conv{padding:12px;max-width:none}
+.side .box{margin:0 12px 12px}
+.split{flex:1;display:flex}
+.split .left{width:48%;background:var(--cth-card);box-shadow:inset -1px 0 0 var(--cth-line);display:flex;flex-direction:column}
+.split .left .conv{max-width:none}
+.notes{font-size:11.5px;color:var(--cth-ink-3);margin-top:8px;line-height:17px;max-width:95ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>A file opened from the wide 1:1</h1>
+<p class="lead">Today: the owner clicks Michael's file chip in the wide 1:1, the file opens in a tab behind the conversation, and nothing on screen changes. Three ways the click could behave. The file here is a blog post Michael drafted.</p>
+
+<div class="opt">
+  <h2>A. The file takes the center, the 1:1 moves to the side for now <span class="tag">Recommended</span></h2>
+  <p class="why">Follows the rule the wide 1:1 already has: whatever the owner opened last holds the center (8A). The conversation stays open at the side and the new tab is selected. Closing the file puts the 1:1 back in the center; Open wide does it any time.</p>
+  <div class="win">
+    <div class="top"><span class="t">Office</span><span class="t">Tasks</span><span class="t">Pulse</span><span class="sep"></span><span class="t file on new">📄 Spring menu post ✕</span></div>
+    <div class="main">
+      <div class="file">
+        <h3>Spring menu post</h3>
+        <div class="meta">Drafted by Michael · 2 min ago <span style="flex:1"></span><span class="btn">Copy</span></div>
+        <p>Spring is here, and so is our new menu. From today, the kitchen is serving a lighter lunch built around what the market has this week...</p>
+        <p>Three new dishes lead it: a cold noodle salad with lime and herbs, a pho with spring greens, and a mango sticky rice for after.</p>
+      </div>
+      <div class="side">
+        <div class="hd"><span class="av">M</span>Michael<span class="x">Open wide</span></div>
+        <div class="conv">
+          <div class="me">Can you draft a blog post for the spring menu?</div>
+          <div class="mi">Here it is: <span class="chip">📄 Spring menu post</span></div>
+        </div>
+        <div class="box">Message Michael</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="opt">
+  <h2>B. The file opens beside the conversation</h2>
+  <p class="why">The center splits: the conversation on one side, the file on the other. Good for going back and forth with Michael about the text; a new layout the app does not have today, and tight on a laptop screen.</p>
+  <div class="win">
+    <div class="top"><span class="t">Office</span><span class="t">Tasks</span><span class="t">Pulse</span><span class="sep"></span><span class="t file on new">📄 Spring menu post ✕</span></div>
+    <div class="main">
+      <div class="split">
+        <div class="left">
+          <div class="side" style="width:auto;box-shadow:none;flex:1">
+            <div class="hd"><span class="av">M</span>Michael</div>
+            <div class="conv">
+              <div class="me">Can you draft a blog post for the spring menu?</div>
+              <div class="mi">Here it is: <span class="chip">📄 Spring menu post</span></div>
+            </div>
+            <div class="box">Message Michael</div>
+          </div>
+        </div>
+        <div class="file">
+          <h3>Spring menu post</h3>
+          <div class="meta">Drafted by Michael · 2 min ago <span style="flex:1"></span><span class="btn">Copy</span><span class="btn">✕</span></div>
+          <p>Spring is here, and so is our new menu. From today, the kitchen is serving a lighter lunch...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="opt">
+  <h2>C. The 1:1 stays wide and says where the file went</h2>
+  <p class="why">Nothing moves. Under the chip, a short line says the file opened in a tab, with Show it. The smallest change, but the owner still has to click twice to read what they asked for.</p>
+  <div class="win">
+    <div class="top"><span class="t">Office</span><span class="t">Tasks</span><span class="t">Pulse</span><span class="sep"></span><span class="t file new">📄 Spring menu post ✕</span></div>
+    <div class="main">
+      <div class="office"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="wide">
+        <div class="hd"><span class="av">M</span>Michael<span style="flex:1"></span><span style="font-size:11px;color:var(--cth-indigo-text)">Back to the side</span></div>
+        <div class="conv">
+          <div class="me">Can you draft a blog post for the spring menu?</div>
+          <div class="mi">Here it is: <span class="chip">📄 Spring menu post</span>
+            <div class="note">Opened in a tab at the top. <span class="btn" style="margin-left:auto">Show it</span></div>
+          </div>
+        </div>
+        <div class="box">Message Michael</div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="notes">Emoji stand in for the app's file icon in these sketches. In all three, a screen reader hears "Spring menu post opened" when the file opens.</p>
+</div>
+</body>
+</html>

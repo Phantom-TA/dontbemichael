@@ -24,7 +24,7 @@ import { chooseRosterSource } from './rosterSource';
 import { renamePatches, swapName } from '@shared/hireTemplates';
 import type { Handoff, JobChangeEntry, JobVersion, PlainWords } from '@shared/jobChange';
 import { canOpen } from '../shell/closingFloor';
-import type { CenterClaim } from '../shell/wideCenter';
+import { fileClosedPatch, fileShownPatch, type CenterClaim } from '../shell/wideCenter';
 import { closeTab, openTab, type FileTab, type FixedView } from './fileTabs';
 import { afterLeave, attemptLeave } from './leaveGuard';
 
@@ -290,6 +290,12 @@ interface State {
   /** Esc sent the wide 1:1 back to the side for now (6B); cleared on close. */
   dockSideForNow: boolean;
   setDockSideForNow: (on: boolean) => void;
+  /** A file shown while the 1:1 was wide sent it to the side, so closing the
+   *  file brings it back (open-file-from-wide-dock.md, decision 2). */
+  dockAsideForFile: boolean;
+  /** The file that just took the center from the wide 1:1, for its view to
+   *  focus its title and say it opened (decision 3). */
+  fileOpened: { id: string; seq: number } | null;
   /** Who opened last, the 1:1 or the right column: that one takes the center
    *  (8A, shell/wideCenter.ts). Never remembered. */
   centerClaim: CenterClaim;
@@ -976,6 +982,13 @@ function newQueuedId(): string {
   return `q-${Date.now()}-${queuedSeq}`;
 }
 
+/** The store's part of a file taking the center from the wide 1:1: the 1:1 to
+ *  the side, and the file named so its view focuses and says it opened. */
+function fileTakesCenter(s: { dockOpen: boolean; dockWide: boolean; dockSideForNow: boolean; fileOpened: { seq: number } | null }, id: string): Partial<Pick<State, 'dockSideForNow' | 'dockAsideForFile' | 'fileOpened'>> {
+  const patch = fileShownPatch(s);
+  return patch ? { ...patch, fileOpened: { id, seq: (s.fileOpened?.seq ?? 0) + 1 } } : {};
+}
+
 export const useStore = create<State>((set, get) => ({
   agents: initialAgents,
   archivedAgents: initialArchivedAgents,
@@ -1051,9 +1064,11 @@ export const useStore = create<State>((set, get) => ({
   dockWide: initialDockWide,
   setDockWide: (on) => {
     try { window.localStorage.setItem(LS_DOCK_WIDE, on ? '1' : '0'); } catch { /* noop */ }
-    set(on ? { dockWide: on, dockSideForNow: false, centerClaim: 'dock' } : { dockWide: on, dockSideForNow: false });
+    set(on ? { dockWide: on, dockSideForNow: false, dockAsideForFile: false, centerClaim: 'dock' } : { dockWide: on, dockSideForNow: false, dockAsideForFile: false });
   },
   dockSideForNow: false,
+  dockAsideForFile: false,
+  fileOpened: null,
   setDockSideForNow: (on) => set({ dockSideForNow: on }),
   centerClaim: null,
   sidebarTab: initialSidebarTab,
@@ -1356,7 +1371,7 @@ export const useStore = create<State>((set, get) => ({
   // Opening the 1:1 takes the center (8A); closing ends Esc's "for now" (7A).
   setDock: (open, focus) => set((s) => open
     ? { dockOpen: true, dockFocus: focus, centerClaim: 'dock', dockNavigation: s.dockNavigation + 1 }
-    : { dockOpen: false, dockFocus: undefined, dockSideForNow: false, dockNavigation: s.dockNavigation + 1 }),
+    : { dockOpen: false, dockFocus: undefined, dockSideForNow: false, dockAsideForFile: false, dockNavigation: s.dockNavigation + 1 }),
   enqueueMessage: (agentId, text, meta) =>
     set((s) => {
       const trimmed = text.trim();
@@ -1471,16 +1486,19 @@ export const useStore = create<State>((set, get) => ({
     // fixed view (open-file-tab.md, R4).
     if (view === 'file') { set({ floorView: view }); return; }
     try { window.localStorage.setItem(LS_FLOOR_VIEW, view); } catch { /* per-Mac nicety only */ }
-    set({ floorView: view, lastFixedView: view });
+    // Another view chosen over the file: the 1:1 stays at the side (decision 2).
+    set({ floorView: view, lastFixedView: view, dockAsideForFile: false });
   },
   // A file opened from Task detail would land behind that dialog, so the
   // dialog closes and the owner sees the file.
-  openFileTab: (tab) => set((s) => ({ ...openTab(s, { ...tab, openedAt: Date.now() }), floorView: 'file', taskDetailId: null })),
-  selectFileTab: (id) => set((s) => (s.fileTabs.some((f) => f.id === id) ? { activeFileTab: id, floorView: 'file' } : {})),
+  // A file shown while the 1:1 is wide takes the center, the 1:1 to the side
+  // for now (open-file-from-wide-dock.md, rule 8A for files).
+  openFileTab: (tab) => set((s) => ({ ...openTab(s, { ...tab, openedAt: Date.now() }), floorView: 'file', taskDetailId: null, ...fileTakesCenter(s, tab.id) })),
+  selectFileTab: (id) => set((s) => (s.fileTabs.some((f) => f.id === id) ? { activeFileTab: id, floorView: 'file', ...fileTakesCenter(s, id) } : {})),
   closeFileTab: (id) => set((s) => {
     const r = closeTab(s, id);
     const floorView: FloorView = s.floorView !== 'file' ? s.floorView : r.select ?? s.lastFixedView;
-    return { fileTabs: r.fileTabs, activeFileTab: r.activeFileTab, floorView };
+    return { fileTabs: r.fileTabs, activeFileTab: r.activeFileTab, floorView, ...(fileClosedPatch(s, floorView) ?? {}) };
   }),
   setFullscreen: (id) => {
     // Focus mode is hidden in this build: nothing opens it (buildFeatures.ts).

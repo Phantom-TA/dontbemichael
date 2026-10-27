@@ -34,6 +34,18 @@ function FileTabBody({ tab }: { tab: FileTab }) {
   const seq = useRef(0);
   const blobUrl = useRef<string | null>(null);
   const picture = useRef<HTMLImageElement>(null);
+  // A file that just took the center from the wide 1:1 (open-file-from-wide-dock.md,
+  // decision 3): its title takes the focus and a line says it opened. The next
+  // frame, since the office stops being inert in App's effect, after this one.
+  const title = useRef<HTMLDivElement>(null);
+  const opened = useStore((s) => (s.fileOpened?.id === tab.id ? s.fileOpened.seq : 0));
+  const [said, setSaid] = useState('');
+  useEffect(() => {
+    if (!opened) return;
+    const frame = requestAnimationFrame(() => { title.current?.focus({ preventScroll: true }); setSaid(t('fileTab.opened', { name: tab.title })); });
+    return () => cancelAnimationFrame(frame);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened]);
   const [copy, setCopy] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mounted = useRef(true);
@@ -174,7 +186,7 @@ function FileTabBody({ tab }: { tab: FileTab }) {
         borderBottom: '1px solid var(--cth-line)', background: 'var(--cth-card)'
       }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div dir="auto" style={{ fontSize: 14, fontWeight: 600, color: 'var(--cth-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tab.title}</div>
+          <div ref={title} tabIndex={-1} dir="auto" style={{ fontSize: 14, fontWeight: 600, color: 'var(--cth-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', outline: 'none' }}>{tab.title}</div>
           {where && (
             <div dir="auto" title={`⁨${tab.id}⁩`} style={{ fontSize: 12, color: 'var(--cth-ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{where}</div>
           )}
@@ -189,7 +201,7 @@ function FileTabBody({ tab }: { tab: FileTab }) {
             </span>
           </PixelButton>
         )}
-        <span className="cth-sr-only" aria-live="polite">{copy === 'done' ? t('fileTab.copied') : copy === 'error' ? t('fileTab.copyFailed') : ''}</span>
+        <span className="cth-sr-only" aria-live="polite">{copy === 'done' ? t('fileTab.copied') : copy === 'error' ? t('fileTab.copyFailed') : said}</span>
         {/* A file that is gone has nothing to open or show. */}
         {read.status !== 'not found' && canOpenInApp && <PixelButton variant="secondary" size="sm" onClick={openInApp}>{t('fileTab.openInApp')}</PixelButton>}
         {read.status !== 'not found' && <PixelButton variant="secondary" size="sm" onClick={reveal}>{revealLabel}</PixelButton>}

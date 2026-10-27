@@ -232,6 +232,9 @@ moving, and brings you only the decisions that need you.
 - Hiring asks what the new person will do once; a pack update keeps your earlier changes.
 - Add a file right from a Company foundations card, pictures included: it is checked against the
   question before it joins company knowledge, and nothing of it stays in Claude's history.
+- A file you open while the conversation with Michael is wide now shows in the middle, with the
+  conversation waiting at the side; closing the file brings the conversation back. The file's
+  title takes the keyboard focus and a screen reader hears that it opened.
 - Pulse's Early look shows the four things it watches: schedules finding nothing, schedules with
   more to do, a cheaper model and a stronger model, each lit with what it found or saying it
   waits, with the member closest to a cheaper model. Each card names its rule. Recommendations

@@ -247,7 +247,8 @@ still only ever means "your turn".
   folds (2A), tables are as wide as their columns, 24 px apart (4A). Esc goes back to the side
   for now, a second Esc closes (6B); the next open is wide again. One thing holds the center:
   whichever the owner opened last, the 1:1 or a wide panel, the other back to the side for now
-  (8A); the board never moves it. It is drawn outside the office (a portal into a host beside the column), so the
+  (8A); the board never moves it. A file shown while it is wide takes the center too, the 1:1 to
+  the side for now, and comes back wide when that file closes (open-file-from-wide-dock.md). It is drawn outside the office (a portal into a host beside the column), so the
   draft, files, reply target, opened replies and the reading spot survive the move; caret and
   undo reset (eng R1). Rules in `shell/wideCenter.ts`, tests in `test/wide-dock.test.cjs`.
 
