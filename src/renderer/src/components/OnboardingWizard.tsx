@@ -1666,6 +1666,6 @@ const inputStyle: React.CSSProperties = {
   background: 'var(--cth-card)',
   border: 'none',
   fontFamily: 'var(--cth-font-ui)',
-  fontSize: 13,
+  fontSize: 14,
   color: 'var(--cth-ink)'
 };
