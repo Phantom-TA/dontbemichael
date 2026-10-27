@@ -92,7 +92,8 @@ test('a failure, junk or a refusal saves nothing: there is no rules text for a f
     { ok: true, text: '{"kind":"ok", "instructions": ' }
   ]) {
     stub(reply);
-    assert.deepEqual(await W.reviseWorkStyle(req, d), { kind: 'error', reason: 'failed' }, JSON.stringify(reply));
+    // A reply that came but can't be read says so; a run that failed is failed (test/hire-change-reason.test.cjs).
+    assert.deepEqual(await W.reviseWorkStyle(req, d), { kind: 'error', reason: reply.ok ? 'unreadable' : 'failed' }, JSON.stringify(reply));
   }
   assert.equal(logs.length, 6);
   assert.ok(logs.every((l) => l.kind === 'work-style-revise-failed'));

@@ -28,8 +28,9 @@ test('Capabilities is the tab after Profile, for team members and for Michael', 
 
 test('Claude connectors lead Connections, then Mailboxes; Gmail on the Claude account is a connector row, not a mailbox (E4)', () => {
   const settings = read('src/renderer/src/components/SettingsModal.tsx');
-  assert.ok(settings.indexOf('<ClaudeConnectorsSettings />') < settings.indexOf('<MailboxesSettings />'), 'connectors first (design D2)');
-  assert.ok(settings.indexOf('<MailboxesSettings />') < settings.indexOf('<IntegrationsRegistry />'));
+  // MailboxesSettings takes a focus prop for links in agent text (settings-links-in-replies.md).
+  assert.ok(settings.indexOf('<ClaudeConnectorsSettings />') < settings.indexOf('<MailboxesSettings '), 'connectors first (design D2)');
+  assert.ok(settings.indexOf('<MailboxesSettings ') > 0 && settings.indexOf('<MailboxesSettings ') < settings.indexOf('<IntegrationsRegistry />'));
   const mb = read('src/renderer/src/components/MailboxesSettings.tsx');
   assert.equal((mb.match(/<Toggle /g) || []).length, 0, 'no Claude account switch among the mailboxes');
   assert.doesNotMatch(mb, /email-calendar|claudeAccess/);

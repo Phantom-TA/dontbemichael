@@ -5,7 +5,7 @@
  * No electron or node imports.
  */
 import type { PulseSnapshot } from './teamPerformance';
-import type { Advice } from './teamAdvice';
+import type { Advice, EarlyWatch } from './teamAdvice';
 import type { KeptSafe } from './pulseSafety';
 import type { Learning } from './teamLearning';
 import type { FoundationsPulse } from './foundations';
@@ -32,6 +32,10 @@ export interface PulseView {
    *  at half their evidence, shown as facts with nothing to apply (owner,
    *  2026-10-19). Empty once advice can show. Missing from an older main. */
   early?: Advice[];
+  /** Each rule's count of early patterns and the member closest to a cheaper
+   *  model, so the Early look shows all it watches (owner, 2026-10-26).
+   *  Only while early patterns show; missing from an older main. */
+  earlyWatch?: EarlyWatch;
   /** Company foundations (office-foundations.md): the strip's jobs and each
    *  member's count, from harness.db. Missing from an older main. */
   foundations?: FoundationsPulse;

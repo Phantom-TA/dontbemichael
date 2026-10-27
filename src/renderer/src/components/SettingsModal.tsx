@@ -1,6 +1,7 @@
 import { ResearchPrivacySettings } from './ResearchPrivacySettings';
 import { cleanDataClassOverrides } from '../../../shared/dataClasses';
 import { MailboxesSettings } from './MailboxesSettings';
+import type { PlaceGroup } from '@shared/settingsPlaces';
 import { ClaudeConnectorsSettings } from './ClaudeConnectorsSettings';
 import { useState, useEffect, useRef, type CSSProperties } from 'react';
 import { fieldLabel, groupName, hint, panelStyle } from './fieldText';
@@ -53,7 +54,13 @@ export interface SettingsModalProps {
    *  elsewhere in the UI — "set it now" beside a disabled Talk button lands on
    *  the tab that actually holds the field, rather than making the user hunt. */
   initialSection?: Section;
+  /** A place named in agent text (settings-links-in-replies.md): the section,
+   *  a group to scroll to and highlight, and Mailboxes' Add form. A new seq
+   *  moves an open Settings too. */
+  place?: SettingsPlace;
 }
+
+export interface SettingsPlace { section?: Section; group?: PlaceGroup; add?: boolean; seq: number }
 
 /**
  * The triggers IPC surface. `src/preload/index.ts` is owned by another lane and
@@ -192,7 +199,7 @@ const NAV_SECTION_KEYS: Record<Section, string> = {
   'Memory & Knowledge': 'settings.nav.memoryKnowledge'
 };
 
-export function SettingsModal({ config, onClose, initialSection }: SettingsModalProps) {
+export function SettingsModal({ config, onClose, initialSection, place }: SettingsModalProps) {
   const { t, i18n } = useTranslation();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   // Esc and the focus trap (DESIGN.md 7.23). The close it runs is set below,
@@ -211,6 +218,26 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [memoryErr, setMemoryErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [activeSection, setActiveSection] = useState<Section>(initialSection && VISIBLE_SECTIONS.includes(initialSection) ? initialSection : 'General');
+  // The group a place asked for: switched to, scrolled into view, unfolded
+  // (Mailboxes) and highlighted for 2 s, once per seq.
+  const [groupFocus, setGroupFocus] = useState<{ group: PlaceGroup; add?: boolean; seq: number } | null>(null);
+  useEffect(() => {
+    if (!place) return;
+    if (place.section && VISIBLE_SECTIONS.includes(place.section)) setActiveSection(place.section);
+    setGroupFocus(place.group ? { group: place.group, add: place.add, seq: place.seq } : null);
+  }, [place?.seq]);
+  useEffect(() => {
+    if (!groupFocus) return;
+    const el = dialogRef.current?.querySelector<HTMLElement>(`[data-settings-group="${groupFocus.group}"]`);
+    if (!el) return;
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+    el.classList.remove('cth-place-highlight');
+    void el.offsetWidth;
+    el.classList.add('cth-place-highlight');
+    const done = setTimeout(() => el.classList.remove('cth-place-highlight'), 2000);
+    return () => clearTimeout(done);
+  }, [groupFocus?.seq, activeSection]);
 
   // Change-home flow: null until the user picks a new folder, then the sub-modal
   // confirms move-vs-fresh. Pre-selects 'move' (recommended - keeps the data).
@@ -1116,7 +1143,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                       <button
                         key={section}
                         type="button"
-                        onClick={() => setActiveSection(section)}
+                        onClick={() => { setActiveSection(section); setGroupFocus(null); }}
                         aria-current={active ? 'page' : undefined}
                         style={{
                           display: 'block', width: '100%', textAlign: 'start',
@@ -1731,13 +1758,17 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           design D2): every connector on the owner's Claude account,
                           off until turned on here; who may use one is on each
                           agent's Access tab. QuickBooks and Gmail are rows in it. */}
-                      <ClaudeConnectorsSettings />
+                      <div data-settings-group="claude-connectors" style={{ scrollMarginTop: 8 }}>
+                        <ClaudeConnectorsSettings />
+                      </div>
 
 
                       {/* The mailboxes added here (docs/designs/multi-mailbox.md).
                           Hidden with SHOW_MAILBOXES. */}
                       {SHOW_MAILBOXES && (<>
-                        <MailboxesSettings />
+                        <div data-settings-group="mailboxes" style={{ scrollMarginTop: 8 }}>
+                          <MailboxesSettings focus={groupFocus?.group === 'mailboxes' ? groupFocus : undefined} />
+                        </div>
 
                       </>)}
 

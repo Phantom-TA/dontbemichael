@@ -220,13 +220,10 @@
     "killConfirmSchedulesPlural": "关闭 {{name}}？{{name}} 有 {{count}} 个开启的定时任务，它们会暂停。"
   },
   "settingsHero": {
-    "beta": "测试版",
-    "betaInfo": "这是早期版本。如果有问题，请使用下方的“反馈问题”。",
     "sponsoredBy": "赞助方",
     "visit": "访问",
     "whatsNew": "新功能",
-    "starOnGitHub": "在 GitHub 上标星",
-    "reportProblem": "反馈问题"
+    "starOnGitHub": "在 GitHub 上标星"
   },
   "settings": {
     "title": "设置",
@@ -1841,11 +1838,15 @@
     "close": "关闭 {{name}}",
     "office": "办公室",
     "openInApp": "在应用中打开",
+    "copy": "复制",
+    "copied": "已复制",
+    "copyFailed": "无法复制",
     "reading": "正在读取…",
     "empty": "空文件",
     "tooLarge": "文件太大，无法在此显示",
     "unreadable": "无法在此显示此文件",
-    "rows": "显示 {{total}} 行中的 {{shown}} 行"
+    "rows": "显示 {{total}} 行中的 {{shown}} 行",
+    "opened": "已打开 {{name}}"
   },
   "companyProfile": {
     "intro": "关于您公司的关键信息。每位成员，包括 {{godName}}，都会以此为依据工作。只填简短的答案，较长的内容请放进“记忆与知识”。",
@@ -2002,6 +2003,18 @@
     "openFolderFailed": "无法打开文件夹，它可能已被移动或删除。"
   },
   "mailboxes": {
+    "google": {
+      "step1Title": "开启两步验证",
+      "step1Line": "登录时 Google 会向你的手机发送验证码。已经开启？请直接到第 2 步。",
+      "step1Open": "打开 Google 页面",
+      "step2Title": "创建应用专用密码",
+      "step2Line": "输入一个名称，例如“我的办公室”，然后复制 Google 显示的 16 个字母。",
+      "step2Open": "打开应用专用密码",
+      "step2Admin": "使用 GSuite 时，如果 Google 提示应用专用密码不可用，说明管理员已将其关闭：请让管理员开启。",
+      "step3Title": "粘贴到下方",
+      "step3Line": "第 2 步中 Google 显示的 16 个字母，原样粘贴即可，有空格也没关系。"
+    },
+    "googleTile": "Gmail 或 GSuite",
     "title": "邮箱",
     "intro": "团队可以使用的邮箱。在每位团队成员的“权限”标签中选择谁使用哪个邮箱。",
     "add": "添加邮箱",
@@ -2040,8 +2053,6 @@
     "testing": "正在测试 {{address}}，请稍候。",
     "tryAgain": "重试",
     "help": {
-      "gmail": "Gmail 需要应用专用密码，而不是普通密码。先开启两步验证，然后在 myaccount.google.com/apppasswords 创建。",
-      "google-workspace": "请使用 myaccount.google.com/apppasswords 中的应用专用密码。如果找不到该页面，说明你的 Workspace 管理员关闭了应用专用密码。",
       "icloud": "iCloud 需要应用专用密码。在 account.apple.com 的“登录与安全”中创建。",
       "yahoo": "Yahoo 需要应用专用密码。在“账户安全”中选择“生成应用密码”。",
       "zoho": "Zoho 需要在“安全”中的“应用密码”创建应用专用密码，并在邮件设置中开启 IMAP。",
@@ -2175,7 +2186,9 @@
     "focus": "专注模式",
     "exitFocus": "退出专注模式（Esc）",
     "settings": "设置",
-    "betaInfo": "这是早期版本。如果有问题，请使用“设置”中的“反馈问题”。",
+    "reportProblem": "反馈问题",
+    "reportProblemTip": "在 GitHub 上打开错误报告（需免费账号）。此窗口的截图已保存在“下载”文件夹中，可添加到报告里。报告是公开的：请先检查截图。",
+    "reportProblemFailed": "无法打开",
     "briefPlaceholder": "和 {{godName}} 说点什么…",
     "brief": "和 {{godName}} 说",
     "attach": "附加文件",
@@ -2468,6 +2481,7 @@
     "keyInfo": "由于 Anthropic API 密钥已失效，Claude 停止了整个团队。粘贴新的密钥后，团队会重新启动并继续工作。在此之前，定时任务会留在收件箱中等待。"
   },
   "markdown": {
+    "openPlace": "打开{{place}}",
     "opensInBrowser": "在浏览器中打开",
     "opensInEmail": "打开邮件应用",
     "copyLinkAddress": "复制链接地址",
@@ -2613,7 +2627,27 @@
       "capWork": "目前找到了工作",
       "capKept": "目前原样保留",
       "capReopened": "目前你重新打开的卡片",
-      "more": "随着团队工作，这里会出现更多规律。"
+      "watchLabel": "Pulse 在关注什么",
+      "watch": {
+        "runLess": "常常无事可做的日程",
+        "runLessTip": "大多数运行都没找到事情可做的日程。降低运行频率可以省钱。",
+        "runMore": "事情更多的日程",
+        "runMoreTip": "几乎每次运行都有工作、且每周越来越多的日程。提高运行频率才跟得上。",
+        "cheaper": "更便宜的模型",
+        "cheaperTip": "使用最高档模型、其工作你几乎每次都原样保留、没有卡片被重新打开、并且你已对几封邮件草稿做过决定的成员。从不包括 {{godName}}。",
+        "stronger": "更强的模型",
+        "strongerTip": "其工作你经常修改，或其卡片你会重新打开的成员。",
+        "soFar": "目前 {{count}} 个",
+        "none": "暂无",
+        "fine": "没有需要担心的",
+        "closest": "{{name}}：{{decisions}} 项中有 {{kept}} 项原样保留"
+      },
+      "tag": {
+        "runLess": "无事可做的日程",
+        "runMore": "事情更多的日程",
+        "cheaper": "可换更便宜的模型",
+        "stronger": "可换更强的模型"
+      }
     },
     "nothingToChange": "本周没有需要更改的。",
     "savedByChanges": "你的更改节省了",
@@ -2958,6 +2992,12 @@
       "byWho": "{{name}}：{{where}}",
       "none": "这段时间没有整理邮件。",
       "earlier": "还有 {{count}} 封是在应用开始记录名称之前整理的。"
+    },
+    "recs": {
+      "view": "查看建议",
+      "hide": "收起",
+      "title": "Pulse 有一些关于你团队的建议。",
+      "ready": "{{count}} 条已就绪"
     }
   },
   "foundations": {
@@ -3031,7 +3071,7 @@
       "needs": "需要这个",
       "needsAgo": "需要这个，{{ago}}",
       "yourAnswer": "你的回答",
-      "hint": "几句简单的话，不超过 {{n}} 个字符，或添加一个文件。",
+      "hint": "几句简单的话，不超过 {{n}} 个字符，或添加一个文件或文件夹。",
       "save": "保存回答",
       "draftBy": "让 {{name}} 起草",
       "notNow": "暂不",
@@ -3048,6 +3088,7 @@
       "failedGone": "无法把你的回答加入公司基础信息。请告诉 {{godName}}。",
       "drafted": "草稿，编辑后保存",
       "addFile": "添加文件",
+      "addFolder": "添加文件夹",
       "removeFile": "移除 {{name}}",
       "checking": "正在检查文件",
       "fileMisfit": "{{name}} 看起来不是这个问题的答案：{{reason}}",
@@ -3055,7 +3096,14 @@
       "fileUnchecked": "无法检查这个文件，请重试。",
       "filePictureType": "请将这张图片另存为 PNG 或 JPEG 后再添加。",
       "filePictureEngine": "只有在 Claude 上才能检查图片。请改为添加 PDF 或文档。",
-      "fileMissing": "找不到 {{name}}，请重新添加。"
+      "fileMissing": "找不到 {{name}}，请重新添加。",
+      "folderChip": "{{name}} 文件夹",
+      "folderMissing": "找不到文件夹 {{name}}，请重新添加。",
+      "folderTooWide": "{{name}} 包含的内容太多。请选择存放这些记录的文件夹。",
+      "folderApp": "{{name}} 是应用自己的文件夹。请选择其他文件夹。",
+      "folderMember": "{{name}} 在某位团队成员的文件夹里。请选择其他文件夹。",
+      "folderEmpty": "{{name}} 里没有文件。",
+      "folderTooLong": "{{name}} 所在位置太深，无法在这里写出。请把它移到上层再重新添加。"
     }
   },
   "knowledgeNotice": {
@@ -3106,6 +3154,10 @@
     "errorTitle": "无法整理出这次改动",
     "errorNote": "稍后再试。你写的内容仍在框里。",
     "errorNoteCard": "稍后再试。没有任何改动。",
+    "errorNoName": "请先为其输入名字，然后重试。",
+    "errorNotStarted": "Claude 没有启动。请在设置的“前置条件”中确认 Claude 已登录，然后重试。",
+    "errorSlow": "Claude 回复太慢。请稍后重试。",
+    "errorUnreadable": "无法读取 Claude 的回复。请重试，或换一种说法描述这个改动。",
     "tryAgain": "重试",
     "movedTitle": "{{name}} 的工作在此期间有了变化",
     "movedNote": "你的改动还在。请在新的工作上再运行一次。",

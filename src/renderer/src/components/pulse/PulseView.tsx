@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PulseView as PulseData } from '@shared/pulseView';
-import type { Advice } from '@shared/teamAdvice';
+import type { Advice, AdviceKind, EarlyWatch } from '@shared/teamAdvice';
 import type { LearnedNote } from '@shared/teamLearning';
 import type { OrganizedList, OrganizedRow } from '@shared/organizedRecord';
 import { dayKey, teamAtWork, PERIODS, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
@@ -45,6 +45,8 @@ import { fieldLabel, groupName } from '../fieldText';
 
 const LS_PERIOD = 'cth.pulsePeriod';
 const LS_COMPARE = 'cth.pulseCompare';
+/** Recommendations open: closed until the owner opens them (owner, 2026-10-26). */
+const LS_RECS = 'cth.pulseRecsOpen';
 const KIND_ICON: Record<WorkKind, IconName> = { email: 'mail', sent: 'send', task: 'check', check: 'clock' };
 /** A quiet tile's chip: its short name and icon (pulse-smart-view.md 5A). Spent never folds. */
 const QUIET_ICON: Record<PulseTile, IconName> = { email: 'mail', sent: 'send', task: 'check', check: 'clock', toInternet: 'shield', webAnswers: 'search', held: 'pause', rules: 'lock', learned: 'book', spent: 'ledger', yourTime: 'bell' };
@@ -232,6 +234,10 @@ export function PulseView() {
   });
   // The owner's choice, kept even while a period cannot compare yet (design D4).
   const [compare, setCompare] = useState<boolean>(() => { try { return window.localStorage.getItem(LS_COMPARE) === '1'; } catch { return false; } });
+  // Recommendations start folded to their header (owner, 2026-10-26: open by
+  // default at the top, they overwhelm a new owner); the choice is kept.
+  const [recsOpen, setRecsOpen] = useState<boolean>(() => { try { return window.localStorage.getItem(LS_RECS) === '1'; } catch { return false; } });
+  const toggleRecs = (): void => { const v = !recsOpen; setRecsOpen(v); try { window.localStorage.setItem(LS_RECS, v ? '1' : '0'); } catch { /* per-Mac nicety */ } };
   const [data, setData] = useState<PulseData | null>(null);
   /** Run comparison cards showing in Recommendations (RunSuggestions). */
   const [runCards, setRunCards] = useState(0);
@@ -289,6 +295,11 @@ export function PulseView() {
     return [f.acc, f.m, f.d][nth % 3];
   }, [byId, dark]);
   const fmtShort = (day: string): string => new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, { day: 'numeric', month: 'short' });
+  /** When the running clock began: its time on the period's first day (it
+   *  can start partway into Today), else its day. */
+  const fmtSince = (ms: number, from: string): string => (dayKey(ms) === from
+    ? new Date(ms).toLocaleTimeString(i18n.language, { hour: 'numeric', minute: '2-digit' })
+    : fmtShort(dayKey(ms)));
   const fmtSpan = (from: string, to: string): string => (from === to ? fmtDay(from) : t('pulse.daySpan', { from: fmtShort(from), to: fmtShort(to) }));
   const listNames = (names: string[]): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(names); } catch { return names.join(', '); } };
   const fmtDay = (day: string | number): string => new Date(typeof day === 'number' ? day : `${day}T12:00:00`).toLocaleDateString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short' });
@@ -411,9 +422,14 @@ export function PulseView() {
     const outcomeAria = (o: Outcome): string => `${outcomeLabel(o)}: ${o.by.map((b) => `${nameOf(b.agentId)} ${b.count}`).join(', ')}`;
     // Saved by your changes shows only once a change was applied (owner, 2026-10-15).
     const savedShown = view.saved.state !== 'none';
+    // What the shown suggestions would save a week together, for the folded bar.
+    const adviceSaves = shownAdvice.slice(0, Math.max(0, 3 - applied.length)).reduce((sum, a) => sum + (a.savesPerWeek !== null && a.savesPerWeek > 0 ? a.savesPerWeek : 0), 0);
     const noAdvice = shownAdvice.length === 0 && applied.length === 0;
     // A main process older than this view sends no early lines.
     const early = view.early ?? [];
+    // The Early look shows while advice waits, with what each rule watches
+    // even before it finds a pattern (owner, 2026-10-26).
+    const watch = view.earlyWatch;
     // The Company foundations strip (office-foundations.md); none from an older main.
     const foundationJobs = view.foundations?.jobs ?? [];
     // Which of the 14 days before advice this is, counted from the first live day.
@@ -539,7 +555,7 @@ export function PulseView() {
                   (owner, 2026-10-25, D2): two stats at the foot, as on the left. */}
               <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
                 {([
-                  [s.running?.ms, pv ? pv.running?.ms : undefined, s.running?.since ? t('pulse.officeRanSince', { day: fmtShort(s.running.since) }) : t('pulse.officeRan')],
+                  [s.running?.ms, pv ? pv.running?.ms : undefined, s.running?.since ? t('pulse.officeRanSince', { day: fmtSince(s.running.since, s.from) }) : t('pulse.officeRan')],
                   [s.running?.awayMs, pv ? pv.running?.awayMs : undefined, t('pulse.youAway')]
                 ] as Array<[number | undefined, number | undefined, string]>).map(([ms, before, name]) => (
                   <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -608,7 +624,7 @@ export function PulseView() {
               as insight cards under a lit header (design A): the Early look pill,
               the bold line and the countdown to advice; one card per pattern,
               never anything to apply. */}
-          {noAdvice && early.length > 0 ? (
+          {noAdvice && (early.length > 0 || !!watch) ? (
             <div style={{ ...card, overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 16px', background: 'linear-gradient(90deg, var(--cth-indigo-soft), transparent 70%)' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 22, padding: '0 9px', borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-indigo-soft)', color: 'var(--cth-indigo-text)', fontSize: 11, fontWeight: 600 }}>
@@ -625,19 +641,36 @@ export function PulseView() {
                     {t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) })}
                   </span>
                 )}
+                <RecsToggle open={recsOpen} onToggle={toggleRecs} controls="pulse-recs-early" />
               </div>
+              {recsOpen && <div id="pulse-recs-early">
               {/* Company foundations, under the Early look header while it shows (D3). */}
               {foundationJobs.length > 0 && <div style={{ padding: '6px 16px 4px' }}><FoundationsStrip jobs={foundationJobs} /></div>}
-              <div style={{ ...grid(sugCols), padding: '4px 16px 16px' }}>
-                {early.map((a) => <EarlyCard key={a.id} a={a} name={nameOf(a.agentId)} sub={a.missionId ? jobOf(a.missionId) : (byId.get(a.agentId) ? roleOf(byId.get(a.agentId)!) : '')} text={earlyText(a)} />)}
-                {early.length < sugCols && (
-                  <div style={{ border: '1px dashed var(--cth-line-2)', borderRadius: 'var(--cth-r-lg)', display: 'grid', placeItems: 'center', textAlign: 'center', padding: 14, fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)' }}>{t('pulse.early.more')}</div>
-                )}
-              </div>
+              {/* The four things Pulse watches (owner, 2026-10-26: the cards
+                  alone read as schedules only), each lit with what it found
+                  or saying it waits; the cards below name their rule. */}
+              {watch && <EarlyWatchRow watch={watch} cols={sugCols} closestName={watch.closest ? nameOf(watch.closest.agentId) : ''} />}
+              {early.length > 0 && (
+                <div style={{ ...grid(sugCols), padding: '4px 16px 16px' }}>
+                  {early.map((a) => <EarlyCard key={a.id} a={a} name={nameOf(a.agentId)} sub={a.missionId ? jobOf(a.missionId) : (byId.get(a.agentId) ? roleOf(byId.get(a.agentId)!) : '')} text={earlyText(a)} />)}
+                </div>
+              )}
+              </div>}
             </div>
           ) : foundationJobs.length > 0 && <div style={{ ...card, padding: '12px 16px', marginBottom: 10 }}><FoundationsStrip jobs={foundationJobs} /></div>}
-          {!(noAdvice && early.length > 0) && (view.adviceFrom || runCards === 0) && noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
-          {(!noAdvice || savedShown) && <div style={grid(sugCols)}>
+          {!(noAdvice && (early.length > 0 || !!watch)) && (view.adviceFrom || runCards === 0) && noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
+          {!noAdvice && (
+            <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 16px', marginBottom: recsOpen ? 10 : 0, background: 'linear-gradient(90deg, var(--cth-amber-soft), var(--cth-card) 70%)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 22, padding: '0 9px', borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-card)', color: 'var(--cth-amber-text)', fontSize: 11, fontWeight: 600 }}>
+                <Icon name="sparkle" size={0.75} />{t('pulse.recs.ready', { count: shownAdvice.length + applied.length })}
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--cth-ink)' }}>{t('pulse.recs.title')}</span>
+              <span style={{ flex: 1 }} />
+              {adviceSaves > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--cth-green-text)', background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-pill)', padding: '2px 8px' }}>{t('pulse.savesAbout', { usd: money(adviceSaves) })}</span>}
+              <RecsToggle open={recsOpen} onToggle={toggleRecs} controls="pulse-recs-advice" />
+            </div>
+          )}
+          {((!noAdvice && recsOpen) || (noAdvice && savedShown)) && <div id="pulse-recs-advice" style={grid(sugCols)}>
             {applied.map((x) => (
               <div key={`a-${x.appliedId}`} style={{ background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{t('pulse.applied')} {x.text}</div>
@@ -805,6 +838,66 @@ export function PulseView() {
   );
 }
 
+/** Opens or folds Recommendations under their header (owner, 2026-10-26). */
+function RecsToggle({ open, onToggle, controls }: { open: boolean; onToggle: () => void; controls: string }) {
+  const { t } = useTranslation();
+  return (
+    <PixelButton variant={open ? 'secondary' : 'primary'} size="sm" aria-expanded={open} aria-controls={controls} onClick={onToggle}>
+      {open ? t('pulse.recs.hide') : t('pulse.recs.view')}
+    </PixelButton>
+  );
+}
+
+/** The four advice rules in the Early look, in their order, with each one's
+ *  word key and icon. */
+const WATCH_KEY: Record<AdviceKind, string> = { 'run-less': 'runLess', 'run-more': 'runMore', 'cheaper-model': 'cheaper', 'stronger-model': 'stronger' };
+const WATCH_RULES: Array<{ kind: AdviceKind; icon: IconName }> = [
+  { kind: 'run-less', icon: 'clock' },
+  { kind: 'run-more', icon: 'play' },
+  { kind: 'cheaper-model', icon: 'ledger' },
+  { kind: 'stronger-model', icon: 'flag' }
+];
+
+/** What Pulse watches (design A, owner 2026-10-26): one tile per advice
+ *  rule, lit with how many patterns it found so far, or saying it waits; the
+ *  cheaper model tile names the member closest to one. */
+function EarlyWatchRow({ watch, cols, closestName }: { watch: EarlyWatch; cols: number; closestName: string }) {
+  const { t } = useTranslation();
+  return (
+    <div role="list" aria-label={t('pulse.early.watchLabel')} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols === 1 ? 2 : 4}, minmax(0, 1fr))`, gap: 10, padding: '8px 16px 12px' }}>
+      {WATCH_RULES.map(({ kind, icon }) => {
+        const n = watch.counts[kind];
+        const key = WATCH_KEY[kind];
+        const near = kind === 'cheaper-model' && n === 0 ? watch.closest : null;
+        return (
+          <div key={kind} role="listitem" data-watch={kind} style={{
+            borderRadius: 'var(--cth-r-lg)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0,
+            background: n > 0 ? 'var(--cth-indigo-soft)' : 'var(--cth-card-2)',
+            boxShadow: n > 0 ? 'inset 0 0 0 1px color-mix(in srgb, var(--cth-indigo) 35%, transparent)' : 'inset 0 0 0 1px var(--cth-line)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 600, color: 'var(--cth-ink)', minWidth: 0 }}>
+              <span aria-hidden style={{ width: 22, height: 22, flexShrink: 0, borderRadius: 7, display: 'grid', placeItems: 'center', background: 'var(--cth-card)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', color: 'var(--cth-ink-2)' }}><Icon name={icon} size={0.75} /></span>
+              <span style={{ minWidth: 0 }}>{t(`pulse.early.watch.${key}`)}</span>
+              <InfoTip text={t(`pulse.early.watch.${key}Tip`, { godName: godNameNow() })} />
+            </div>
+            <div style={{ fontSize: 12, color: n > 0 ? 'var(--cth-indigo-text)' : 'var(--cth-ink-2)', fontWeight: n > 0 ? 600 : 400 }}>
+              {n > 0 ? t('pulse.early.watch.soFar', { count: n }) : kind === 'stronger-model' ? t('pulse.early.watch.fine') : t('pulse.early.watch.none')}
+            </div>
+            {near && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--cth-ink-3)', minWidth: 0 }}>
+                <span aria-hidden style={{ flex: '0 0 40px', height: 5, borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-neutral-soft)', overflow: 'hidden' }}>
+                  <i style={{ display: 'block', height: '100%', width: `${near.decisions ? (near.kept / near.decisions) * 100 : 0}%`, background: 'var(--cth-ink-4)', borderRadius: 'var(--cth-r-pill)' }} />
+                </span>
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('pulse.early.watch.closest', { name: closestName, kept: near.kept, decisions: near.decisions })}</span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** One early pattern (design A, owner 2026-10-19): who and which job, the
  *  count large with what it is of, a bar of the two sides, and what it means.
  *  The full sentence is its spoken label; nothing here applies a change. */
@@ -821,6 +914,8 @@ function EarlyCard({ a, name, sub, text }: { a: Advice; name: string; sub: strin
     : { big: e.kept ?? 0, of: t('pulse.early.of', { n: n(e.decisions) }), cap: t('pulse.early.capKept'), split: [e.kept ?? 0, (e.decisions ?? 0) - (e.kept ?? 0)] as const, first: 'var(--cth-green)', second: 'var(--cth-ink-4)' };
   return (
     <div role="group" aria-label={text} style={{ background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+      {/* Which of the four rules found it (owner, 2026-10-26). */}
+      <span aria-hidden style={{ alignSelf: 'flex-start', fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-3)' }}>{t(`pulse.early.tag.${WATCH_KEY[a.kind]}`)}</span>
       <div aria-hidden style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
         <AgentAvatar id={a.agentId} name={name} size={28} />
         <div style={{ minWidth: 0 }}>

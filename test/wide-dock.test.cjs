@@ -60,7 +60,8 @@ test('the 1:1 remembers wide on its own, only its button changes it, and nothing
   assert.match(store, /try \{ window\.localStorage\.setItem\(LS_DOCK_WIDE, on \? '1' : '0'\); \} catch \{ \/\* noop \*\/ \}/);
   assert.equal(store.match(/localStorage\.setItem\(LS_DOCK_WIDE/g).length, 1, 'only setDockWide writes it');
   assert.doesNotMatch(store, /localStorage[^\n]*(centerClaim|SideForNow)/, 'the claim and Esc\'s side are never saved');
-  assert.match(store, /\{ dockOpen: false, dockFocus: undefined, dockSideForNow: false, dockNavigation: s\.dockNavigation \+ 1 \}/, 'closing ends Esc\'s for now');
+  // A file's move ends with it too (open-file-from-wide-dock.md).
+  assert.match(store, /\{ dockOpen: false, dockFocus: undefined, dockSideForNow: false, dockAsideForFile: false, dockNavigation: s\.dockNavigation \+ 1 \}/, 'closing ends Esc\'s for now');
   assert.match(store, /\? \{ dockOpen: true, dockFocus: focus, centerClaim: 'dock', dockNavigation: s\.dockNavigation \+ 1 \}/, 'opening the 1:1 claims the center');
   // Only the header button calls setDockWide.
   const callers = [];
@@ -114,4 +115,37 @@ test('wide reads at 14 / 22 in a 720 px column, with no fold and tables at their
   assert.match(css, /\.cth-dock-wide \.cth-dock-reply \.cth-md-card td\.cth-md-num \{ font-size: 13px; \}/);
   assert.match(css, /\.cth-dock-sheet \.cth-composer:focus-within \{ box-shadow: inset 0 0 0 2px var\(--cth-indigo\); \}/);
   assert.match(read('src/renderer/src/shell/BottomBar.tsx'), /margin: '10px max\(16px, calc\(\(100% - 720px\) \/ 2\)\) 16px'/);
+});
+
+test('a file shown while the 1:1 is wide takes the center, and closing it brings the 1:1 back (open-file-from-wide-dock.md)', () => {
+  // Value: protects=a file opened from the wide 1:1 or a Needs you card is seen, and only the move the file made is undone on close; fails_when=the file opens behind the 1:1, Esc's own side is undone, a closed or narrow 1:1 is moved, or a file still shown brings the 1:1 back; why_new=owner report 2026-10-26 (the file opened unseen); seam=pure fileShownPatch()/fileClosedPatch(); no_claim=layout, focus and VoiceOver on screen (hand checks)
+  const open = { dockOpen: true, dockWide: true, dockSideForNow: false };
+  assert.deepEqual(rule.fileShownPatch(open), { dockSideForNow: true, dockAsideForFile: true });
+  assert.equal(rule.fileShownPatch({ ...open, dockSideForNow: true }), null, 'already at the side (Esc): left there');
+  assert.equal(rule.fileShownPatch({ ...open, dockOpen: false }), null, 'closed');
+  assert.equal(rule.fileShownPatch({ ...open, dockWide: false }), null, 'chosen narrow');
+  // With the patch the 1:1 no longer holds the center.
+  assert.equal(rule.dockCentered({ ...base, ...rule.fileShownPatch(open) }), false);
+  assert.deepEqual(rule.fileClosedPatch({ dockAsideForFile: true }, 'office'), { dockSideForNow: false, dockAsideForFile: false }, 'no file shown: back wide');
+  assert.equal(rule.fileClosedPatch({ dockAsideForFile: true }, 'file'), null, 'another file still shown');
+  assert.equal(rule.fileClosedPatch({ dockAsideForFile: false }, 'office'), null, 'the owner sent it to the side');
+  assert.equal(rule.dockCentered({ ...base, dockSideForNow: true, ...rule.fileClosedPatch({ dockAsideForFile: true }, 'office') }), true);
+
+  // The store applies them where a file tab is shown or closed, and every other way out clears the note.
+  const store = read('src/renderer/src/store/store.ts');
+  assert.match(store, /openFileTab: \(tab\) => set\(\(s\) => \(\{ \.\.\.openTab\(s, \{ \.\.\.tab, openedAt: Date\.now\(\) \}\), floorView: 'file', taskDetailId: null, \.\.\.fileTakesCenter\(s, tab\.id\) \}\)\),/);
+  assert.match(store, /selectFileTab: \(id\) => set\(\(s\) => \(s\.fileTabs\.some\(\(f\) => f\.id === id\) \? \{ activeFileTab: id, floorView: 'file', \.\.\.fileTakesCenter\(s, id\) \} : \{\}\)\),/);
+  assert.match(store, /return \{ fileTabs: r\.fileTabs, activeFileTab: r\.activeFileTab, floorView, \.\.\.\(fileClosedPatch\(s, floorView\) \?\? \{\}\) \};/);
+  assert.match(store, /set\(\{ floorView: view, lastFixedView: view, dockAsideForFile: false \}\);/, 'another view: stays at the side');
+  assert.match(store, /\{ dockOpen: false, dockFocus: undefined, dockSideForNow: false, dockAsideForFile: false,/, 'closing the 1:1 clears it');
+  assert.match(store, /\{ dockWide: on, dockSideForNow: false, dockAsideForFile: false, centerClaim: 'dock' \}/, 'Open wide clears it');
+
+  // The file's title takes the focus on the next frame (the office stops being inert after), and a line says it opened.
+  const view = read('src/renderer/src/components/FileTabView.tsx');
+  assert.match(view, /const opened = useStore\(\(s\) => \(s\.fileOpened\?\.id === tab\.id \? s\.fileOpened\.seq : 0\)\);/);
+  // Once: handled, it is cleared, so going back to that tab later takes no focus and says nothing (review, 2026-10-27).
+  assert.match(view, /requestAnimationFrame\(\(\) => \{ title\.current\?\.focus\(\{ preventScroll: true \}\); setSaid\(t\('fileTab\.opened', \{ name: tab\.title \}\)\); useStore\.getState\(\)\.clearFileOpened\(\); \}\)/);
+  assert.match(store, /clearFileOpened: \(\) => set\(\{ fileOpened: null \}\),/);
+  assert.match(view, /<div ref=\{title\} tabIndex=\{-1\}/);
+  for (const loc of ['en', 'ar', 'zh-CN']) assert.match(JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).fileTab.opened, /\{\{name\}\}/, loc);
 });

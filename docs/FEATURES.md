@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.7). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.8). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -64,8 +64,11 @@ moving, and brings you only the decisions that need you.
   cards to hand on. Michael, his assistant and Pete can't be deleted.
 
 ### 3. A mailbox for every job
-- Connect as many mailboxes as your business runs on: Gmail, Google Workspace, iCloud, Yahoo, Zoho
-  or any IMAP mailbox. Passwords stay encrypted on your computer.
+- Connect as many mailboxes as your business runs on: Gmail or GSuite (one choice, they connect
+  the same way), iCloud, Yahoo, Zoho or any IMAP mailbox. Passwords stay encrypted on your computer.
+- Setting up Gmail or GSuite is three numbered steps, each with a button that opens the right Google
+  page on your account: turn on 2 Step Verification, create an app password, paste it. Typing your
+  normal Google password says so in plain words.
 - A mail server that isn't encrypted from the start must switch to encryption before the app sends
   the password. One that can't is refused, and the mailbox says so in plain words, with the
   encrypted port to use instead.
@@ -189,8 +192,42 @@ moving, and brings you only the decisions that need you.
   or takes an Anthropic API key instead. Skip it, and Ask me keeps a card until Michael can start.
 - If your settings file was damaged, setup says that is why it starts again and where a copy of
   the file was kept.
+- When Michael or a card sends you somewhere in Settings, the words are a button that opens Settings right there, on
+  the right group. If you ask for email work before email is connected, Michael's answer ends with Connect your email,
+  then asks who on the team should read it, and does the job once you give it to them.
+- Report a problem sits in the top bar on every view, hard to miss. One click opens a bug report
+  with the app version and your system filled in, and saves a picture of the window in your
+  Downloads, ready to add. Help, Report a problem does the same. Reports are public, so the hover
+  text says to check the picture first.
+- Copy on every file that opens in a tab: an email draft or a blog post pastes with its headings,
+  bold, lists and links into Gmail, Outlook, Google Docs or WordPress, and as clean words with no
+  Markdown marks into a plain box such as LinkedIn. A spreadsheet pastes as real cells, a picture
+  as a picture, and a part you select pastes as clean as the whole, in light or dark mode.
 
 ## Part 2: Every change, release by release
+
+### 0.2.8 (2026-10-27)
+- Copy on every file that opens in a tab: a draft pastes with its headings, bold, lists and links
+  into Gmail, Outlook, Google Docs or WordPress, and as clean words into a plain box such as
+  LinkedIn; a spreadsheet pastes as real cells and a picture as a picture.
+- Report a problem sits in the top bar on every view, in place of the Beta pill: a prefilled bug
+  report and a picture of the window saved in Downloads.
+- Places in Settings named by Michael or a card are buttons that open Settings on that group. Email
+  work asked for before email is connected ends with Connect your email, then who should read it,
+  and Michael does it once that is set.
+- Add a whole folder from a Company foundations card, picked or dropped: nothing is copied, the
+  answer names the folder, and the team members whose job uses that question can read it, read
+  only.
+- A file you open while the conversation with Michael is wide shows in the middle, with the
+  conversation waiting at the side; closing the file brings the conversation back.
+- Pulse's Early look shows the four things it watches: schedules finding nothing, schedules with
+  more to do, a cheaper model and a stronger model. Recommendations start folded.
+- Gmail and Google Workspace are one choice, Gmail or GSuite, set up in three numbered steps with
+  buttons that open the right Google page.
+- Contributor changes: rules that survive a long run on Codex and Gemini, Max turns per run that
+  really caps a run, more webhook asks held for approval, a safer shared hire, Company profile
+  saving, office pack windows checked, mailbox ports, terminal pastes, the Git graph, links with
+  spaces, Ask me headlines and skill descriptions.
 
 ### 0.2.7 (2026-10-26)
 - Every memory note says what showed it, shown behind an info icon on the Memory tab. Your Ask me

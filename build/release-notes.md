@@ -1,5 +1,5 @@
-- **Memory notes** say what showed them.
-- **Went wrong** compares a job's runs.
-- **Explain how two members split** the work.
-- Pulse shows how long the office ran.
+- **Copy any file** that opens in a tab.
+- **Report a problem** sits in the top bar.
+- **Places in Settings** are buttons.
+- Add a whole folder to a foundations card.
 - Contributor fixes across the app.

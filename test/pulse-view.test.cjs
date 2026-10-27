@@ -262,19 +262,22 @@ test('before advice, Pulse shows what the rules see so far under a bold line, as
   // Value: protects=the owner's bold "not advice yet" ask, eng D1 and D2 on screen; fails_when=the bold line goes, an early line gets Apply or a model name, or an older main without early crashes the view; why_new=new UI; seam=none; no_claim=layout (live look)
   assert.equal(en.pulse.early.title, 'What Pulse sees so far, not advice yet.');
   assert.match(view, /const early = view\.early \?\? \[\];/, 'an older main sends no early lines');
-  assert.match(view, /\{noAdvice && early\.length > 0 \? \(/, 'insight cards replace the bare line (design A, owner 2026-10-19)');
+  // The Early look shows while advice waits, with what the rules watch even before a pattern (owner, 2026-10-26).
+  assert.match(view, /\{noAdvice && \(early\.length > 0 \|\| !!watch\) \? \(/, 'insight cards replace the bare line (design A, owner 2026-10-19)');
   assert.match(view, /<Icon name="sparkle" size=\{0\.75\} \/>\{t\('pulse\.early\.pill'\)\}[\s\S]{0,120}fontWeight: 600[^}]*\}\}>\{t\('pulse\.early\.title'\)\}/, 'the Early look pill and the title (600, DESIGN.md 4.1)');
   assert.match(view, /t\('pulse\.early\.dayOf', \{ n: learnDay, days: ADVICE_DAYS \}\)/, 'the countdown to advice');
   const block = view.slice(view.indexOf('Before advice: what the advice rules see so far'), view.indexOf("noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)'"));
   const cardFn = view.slice(view.indexOf('function EarlyCard('), view.indexOf('/** A Kept safe tile'));
   for (const part of [block, cardFn]) assert.doesNotMatch(part, /PixelButton|pulse\.apply|pulse\.notNow|savesAbout|<button/, 'facts only, nothing to apply');
   assert.match(cardFn, /role="group" aria-label=\{text\}/, 'each card is spoken as its full sentence');
-  const facts = Object.values(en.pulse.early).join(' ');
-  assert.doesNotMatch(facts, /\{\{model\}\}|model/i, 'a model fact names no model');
+  const flat = (o) => Object.values(o).flatMap((v) => (typeof v === 'string' ? [v] : flat(v)));
+  const keys = (o, p = '') => Object.entries(o).flatMap(([k, v]) => (typeof v === 'string' ? [p + k] : keys(v, `${p}${k}.`))).sort();
+  // The tiles say "A cheaper model" (owner, 2026-10-26, design A), but no fact names which one (eng D2).
+  assert.doesNotMatch(flat(en.pulse.early).join(' '), /\{\{model\}\}|opus|sonnet|haiku|fable/i, 'a model fact names no model');
   for (const loc of ['ar', 'zh-CN']) {
     const o = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).pulse.early;
-    assert.deepEqual(Object.keys(o).sort(), Object.keys(en.pulse.early).sort(), loc);
-    assert.doesNotMatch(Object.values(o).join(' '), /[\u2013\u2014]/, `${loc}: no dashes`);
+    assert.deepEqual(keys(o), keys(en.pulse.early), loc);
+    assert.doesNotMatch(flat(o).join(' '), /[\u2013\u2014]/, `${loc}: no dashes`);
   }
 });
 
@@ -299,4 +302,33 @@ test('Questions to you is part of Your time: the count, then two small stats, th
     assert.ok(p.typicalWait && p.per100Requests, l);
     assert.equal(p.quiet.name.questions, undefined, `${l}: no chip name for a tile that is gone`);
   }
+});
+
+test('the Early look shows all four things Pulse watches, lit or waiting, and each card names its rule (owner, 2026-10-26)', () => {
+  // Value: protects=the owner sees the model rules are watched too, not only schedules; fails_when=a rule tile goes, the dashed "more patterns" box returns, cards lose their rule, or the closest member is shown for a lit rule; why_new=owner design A; seam=none; no_claim=layout (live look)
+  const view = read('src/renderer/src/components/pulse/PulseView.tsx');
+  const row = view.slice(view.indexOf('function EarlyWatchRow('), view.indexOf('/** One early pattern'));
+  assert.match(view, /\{ kind: 'run-less', icon: 'clock' \},\n  \{ kind: 'run-more', icon: 'play' \},\n  \{ kind: 'cheaper-model', icon: 'ledger' \},\n  \{ kind: 'stronger-model', icon: 'flag' \}/);
+  assert.match(row, /n > 0 \? t\('pulse\.early\.watch\.soFar', \{ count: n \}\) : kind === 'stronger-model' \? t\('pulse\.early\.watch\.fine'\) : t\('pulse\.early\.watch\.none'\)/);
+  assert.match(row, /const near = kind === 'cheaper-model' && n === 0 \? watch\.closest : null;/, 'the closest member only while the rule waits');
+  assert.doesNotMatch(row, /PixelButton|<button/, 'facts only');
+  assert.match(view, /t\(`pulse\.early\.tag\.\$\{WATCH_KEY\[a\.kind\]\}`\)/, 'each card names its rule');
+  assert.doesNotMatch(view, /pulse\.early\.more/, 'the dashed box is gone');
+  const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse.early;
+  assert.equal(en.more, undefined);
+  for (const k of ['runLess', 'runMore', 'cheaper', 'stronger']) assert.ok(en.watch[k] && en.watch[`${k}Tip`] && en.tag[k], k);
+  assert.match(en.watch.cheaperTip, /\{\{godName\}\}/, 'Michael by his name in this office');
+});
+
+test('Recommendations start folded under their header, with View recommendations to open them, and the choice is kept (owner, 2026-10-26)', () => {
+  // Value: protects=a new owner is not met by the whole Recommendations section open at the top; fails_when=it opens by default, the toggle loses aria-expanded, the Early look body or the advice cards show while folded, or the choice is not kept; why_new=owner ask; seam=none; no_claim=layout (live look)
+  const view = read('src/renderer/src/components/pulse/PulseView.tsx');
+  assert.match(view, /const \[recsOpen, setRecsOpen\] = useState<boolean>\(\(\) => \{ try \{ return window\.localStorage\.getItem\(LS_RECS\) === '1'; \} catch \{ return false; \} \}\);/, 'folded unless the owner opened them');
+  assert.match(view, /window\.localStorage\.setItem\(LS_RECS, v \? '1' : '0'\)/, 'the choice is kept');
+  assert.match(view, /<RecsToggle open=\{recsOpen\} onToggle=\{toggleRecs\} controls="pulse-recs-early" \/>\n\s*<\/div>\n\s*\{recsOpen && <div id="pulse-recs-early">/, 'the Early look header stays, its body only when open');
+  assert.match(view, /\{\(\(!noAdvice && recsOpen\) \|\| \(noAdvice && savedShown\)\) && <div id="pulse-recs-advice"/, 'advice cards only when open');
+  assert.match(view, /aria-expanded=\{open\} aria-controls=\{controls\}/);
+  const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse.recs;
+  assert.equal(en.view, 'View recommendations');
+  for (const loc of ['ar', 'zh-CN']) assert.deepEqual(Object.keys(JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).pulse.recs).sort(), Object.keys(en).sort(), loc);
 });

@@ -1,15 +1,15 @@
-# Don't Be Michael v0.2.7
+# Don't Be Michael v0.2.8
 
 **An AI office for your small business.** Pick your kind of business, pick your team, and Michael, your office manager, runs the floor while you run the business.
 
-## What's new in 0.2.7
+## What's new in 0.2.8
 
-- **Every memory note says what showed it,** and only you make a note "from you": your answers and decisions are kept where no team member can write, and your word wins a disagreement.
-- **Say a scheduled job's run went wrong.** Michael compares it with a run that went well and suggests a change to the work style in Pulse; nothing changes until you Apply.
-- **Explain how two members split the work.** An overlap never blocks a job change, and the app writes the handoff Michael routes by.
-- Pulse shows how long the office ran, and how much of that you were away.
-- Costs use each Claude model's own price, and a mail server must encrypt before it gets the password.
-- About 25 fixes from contributors across Pulse, schedules, voice, mail and Windows.
+- **Copy any file that opens in a tab.** A draft pastes with its headings, bold and links into Gmail, Google Docs or WordPress, and as clean words into a plain box; a spreadsheet pastes as cells.
+- **Report a problem sits in the top bar.** One click opens a bug report with your version and system filled in, and saves a picture of the window in Downloads.
+- **Places in Settings are buttons.** When Michael names one, a click opens it; email work asked for before email is connected waits for Connect your email.
+- Add a whole folder from a Company foundations card; the members who need it read it, read only.
+- Gmail or GSuite is one choice, set up in three steps with buttons.
+- 13 fixes and changes from contributors across agents, mail, Git, the terminal and Settings.
 
 Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvivekkumar/dontbemichael/blob/main/docs/FEATURES.md)
 
@@ -17,15 +17,15 @@ Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvi
 
 | Platform | Download |
 |---|---|
-| Mac (Apple Silicon and Intel) | [`Dont-Be-Michael-0.2.7-mac-universal.dmg`](https://github.com/agentvivekkumar/dontbemichael/releases/latest/download/Dont-Be-Michael-0.2.7-mac-universal.dmg) |
+| Mac (Apple Silicon and Intel) | [`Dont-Be-Michael-0.2.8-mac-universal.dmg`](https://github.com/agentvivekkumar/dontbemichael/releases/latest/download/Dont-Be-Michael-0.2.8-mac-universal.dmg) |
 
 <!-- windows -->
-**Windows 11 (x64):** [`Dont-Be-Michael-0.2.7-win-x64-setup.exe`](https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.2.7/Dont-Be-Michael-0.2.7-win-x64-setup.exe). ARM PCs aren't supported. This build is not yet signed with a Microsoft certificate: when Windows says **Windows protected your PC**, click **More info**, then **Run anyway**.
+**Windows 11 (x64):** [`Dont-Be-Michael-0.2.8-win-x64-setup.exe`](https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.2.8/Dont-Be-Michael-0.2.8-win-x64-setup.exe). ARM PCs aren't supported. This build is not yet signed with a Microsoft certificate: when Windows says **Windows protected your PC**, click **More info**, then **Run anyway**.
 <!-- /windows -->
 
 Linux will follow.
 
-[Source code (zip)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.7.zip) · [Source code (tar.gz)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.7.tar.gz)
+[Source code (zip)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.8.zip) · [Source code (tar.gz)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.8.tar.gz)
 
 ## Installing on your Mac
 

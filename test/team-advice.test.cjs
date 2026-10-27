@@ -145,3 +145,23 @@ test('the early mode runs every rule on the live days so far at half its evidenc
   assert.deepEqual(A.adviceFor({ ...base, members: [back] }), [], 'the 14 day rule needs 3 reopens');
   assert.equal(A.adviceFor({ ...base, members: [back] }, early)[0].kind, 'stronger-model');
 });
+
+test('the Early look counts each rule\'s patterns and names the member closest to a cheaper model (owner, 2026-10-26)', () => {
+  // Value: protects=the four tiles' counts and the closest member line; fails_when=a count misses a kind, the closest member is Michael, a member on a lower tier or another provider, or one with no decisions, or the order ignores kept share; why_new=new summary; seam=none; no_claim=the tile layout
+  const top = ladder.find((m) => m.tier === 'top');
+  const mid = ladder.find((m) => m.tier === 'middle');
+  const m = (agentId, kept, decisions, over = {}) => ({ agentId, provider: 'claude', model: top.id, isGod: false, pieces: 30, mailDecisions: 0, keptShare: null, keptDecisions: decisions, kept, reopens: 0, usdPerWeek: 5, ...over });
+  const found = [{ kind: 'run-less' }, { kind: 'run-less' }, { kind: 'stronger-model' }];
+  const w = A.earlyWatch(found, [
+    m('god', 20, 20, { isGod: true }),
+    m('mid', 9, 9, { model: mid.id }),
+    m('codex', 9, 9, { provider: 'codex' }),
+    m('none', 0, 0),
+    m('pam', 7, 9),
+    m('nick', 10, 10),
+    m('kelly', 3, 3)
+  ], ladder);
+  assert.deepEqual(w.counts, { 'run-less': 2, 'run-more': 0, 'cheaper-model': 0, 'stronger-model': 1 });
+  assert.deepEqual(w.closest, { agentId: 'nick', kept: 10, decisions: 10 }, 'all kept, and more of it than Kelly');
+  assert.equal(A.earlyWatch([], [m('god', 5, 5, { isGod: true }), m('none', 0, 0)], ladder).closest, null);
+});

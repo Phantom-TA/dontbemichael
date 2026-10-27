@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
 import { cutText } from '../shared/cutText';
@@ -22,7 +22,7 @@ import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, namedFolders, readFoldersFor, sectionFor, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -195,6 +195,9 @@ import {
   withCodexRemoteArgs
 } from '../shared/codexRemote';
 import { canRelaunch, restartApp } from './restart';
+import { copyImage, copyRich } from './clipboardCopy';
+import { createReporter } from './reportProblem';
+import { createMailboxNotes, newlyHeld, GRANT_NOTES_FILE, type PendingGrant } from './mailboxNotes';
 import { PromptSubmits, confirmSubmit } from '../shared/submitConfirm';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
@@ -512,7 +515,8 @@ const hookServer = new HookServer(
   (agentId) => booksReadRoleIds().has(agentId),
   memberPresent,
   (signal) => onPlanSignal(signal),
-  (agentId) => foundationsForAgent(agentId)
+  (agentId) => foundationsForAgent(agentId),
+  (agentId) => foundationReadFolders(agentId)
 );
 // Pulse's Kept safe: each step a setting stopped, by gate (proposal 3).
 hookServer.onRefused = (agentId, gate) => pulseTelemetry.record({ agentId: agentId ?? null, kind: 'refused', ts: Date.now(), attrs: { gate } });
@@ -793,8 +797,24 @@ const foundations = new Foundations({
     memory.companyKnowledgeChanged(); // index it for search by meaning
     return r.docId;
   },
-  docTitle: (id) => knowledge.get(id)?.meta.title
+  docTitle: (id) => knowledge.get(id)?.meta.title,
+  // A folder named on a card (eng review 2026-10-26, D3): never the home
+  // folder, the business folder or a team member's.
+  folderBounds: () => {
+    const cfg = readConfig();
+    const team = [...(cfg.businessTeam ?? []).map((m) => m.folder),
+      ...Object.values(hive.registry().agents).filter((a) => !a.isGod && !a.isAssistant && a.cwd).map((a) => a.cwd)];
+    return { userHome: homedir(), business: cfg.businessFolder ? expandTilde(cfg.businessFolder) : undefined, team: team.filter((f): f is string => typeof f === 'string' && !!f).map(expandTilde) };
+  }
 });
+/** The folders the owner named on a Company foundations card that this
+ *  member's job uses (eng review 2026-10-26, D1): read only, even inside the
+ *  business folder. Every other member keeps today's rules (D2). */
+function foundationReadFolders(agentId: string): string[] {
+  const rec = foundations.read();
+  if (!namedFolders(rec).length) return [];
+  return readFoldersFor(rec, foundationsTeam().jobs[agentId] ?? []);
+}
 /** What an agent carries of the foundations: its job's part, or all of it for
  *  Michael. Research is left out by the hook itself. */
 function foundationsForAgent(agentId: string): string | null {
@@ -992,7 +1012,7 @@ function markMailboxStatus(id: string, status: 'connected' | 'needs-attention', 
         dependsOn: [],
         priority: 1,
         createdAt: new Date().toISOString(),
-        humanQA: [{ q: `**${rec.address} stopped working: ${reason ?? 'the mail server refused the password'}**\n\nOpen Settings, Connections, Mailboxes and choose Fix to enter a new app password.`, askedAt: new Date().toISOString(), raisedBy: 'god' }]
+        humanQA: [{ q: `**${rec.address} stopped working: ${reason ?? 'the mail server refused the password'}**\n\nOpen [Settings, Connections, Mailboxes](dbm:settings/connections/mailboxes) and choose Fix to enter a new app password.`, askedAt: new Date().toISOString(), raisedBy: 'god' }]
       };
       if (!hive.addTask(card)) hive.patchTask(cardId, { status: 'blocked', humanQA: card.humanQA });
     } else if (rec.status === 'needs-attention') {
@@ -3759,6 +3779,30 @@ const QUIT_LABEL = 'Close Office';
  *  "Hide Don't Be Michael" read as a double negative (owner, 2026-09-24). */
 const HIDE_LABEL = 'Hide Office';
 
+/** Report a problem (docs/designs/report-problem-top-bar.md): one reporter for
+ *  the top bar button and Help ▸ Report a problem…, so a second click from
+ *  either while a report starts is ignored. */
+const reporter = createReporter<BrowserWindow>({
+  capture: async (win) => {
+    if (!win || win.isDestroyed()) return null;
+    const image = await win.webContents.capturePage();
+    return image.isEmpty() ? null : image.toPNG();
+  },
+  wait: (ms) => new Promise((done) => { setTimeout(done, ms); }),
+  openExternal: (url) => shell.openExternal(url),
+  downloads: () => app.getPath('downloads'),
+  exists: (path) => existsSync(path),
+  // wx: never overwrite, even if a file appeared after the name was chosen.
+  writeFile: (path, bytes) => fsPromises.writeFile(path, bytes, { flag: 'wx' }),
+  showItemInFolder: (path) => shell.showItemInFolder(path),
+  now: () => new Date(),
+  urlInputs: () => ({
+    appVersion: app.getVersion(), platform: process.platform, arch: process.arch,
+    osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : ''
+  }),
+  warn: (step, error) => console.warn(`[report] ${step} failed:`, error)
+});
+
 /** Build + install the application menu: standard role-based items so
  *  copy/paste/quit work per platform, trimmed to what an office owner uses. */
 function installAppMenu(): void {
@@ -3832,7 +3876,17 @@ function installAppMenu(): void {
         { role: 'togglefullscreen' }
       ]
     },
-    { role: 'windowMenu' }
+    { role: 'windowMenu' },
+    // The same report as the top bar button. role help: macOS puts it last and
+    // adds its search field. Windows hides the menu bar with this title bar
+    // style, so there the button is the way in.
+    {
+      role: 'help',
+      submenu: [{
+        label: 'Report a problem…',
+        click: (_item, focused) => { void reporter.report(focused instanceof BrowserWindow ? focused : mainWindow); }
+      }]
+    }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -4198,7 +4252,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         ...Object.values(hive.registry().agents).filter((a) => a.id !== RESEARCH_ID && a.cwd).map((a) => a.cwd)];
       const memberPolicy = (): AgentFolderPolicy | undefined => {
         const base = businessFolder
-          ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd }, businessFolderLayout(businessFolder), process.platform !== 'linux')
+          ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd, readFolders: opts.hive!.isGod ? [] : foundationReadFolders(opts.hive!.id) }, businessFolderLayout(businessFolder), process.platform !== 'linux')
           : privateOnlyFolderPolicy(!!opts.hive!.isGod, opts.cwd);
         if (!base) return undefined;
         const hiveRoot = hive.root();
@@ -4701,6 +4755,16 @@ ipcMain.handle('app:copyToClipboard', (_evt, text: unknown) => {
   if (typeof text !== 'string') return { ok: false, error: 'invalid text' };
   try { clipboard.writeText(text); return { ok: true }; }
   catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+});
+// The file tab's Copy (docs/designs/copy-document.md): formatted and plain in
+// one write, or the picture the tab shows.
+ipcMain.handle('app:copyRich', (_evt, input: unknown) => copyRich(clipboard, input));
+ipcMain.handle('app:copyImage', (_evt, bytes: unknown) => copyImage(clipboard, nativeImage, bytes));
+// The top bar's Report a problem: it answers once the report page opened; the
+// picture keeps saving after (docs/designs/report-problem-top-bar.md).
+ipcMain.handle('app:reportProblem', async (evt) => {
+  const r = await reporter.report(BrowserWindow.fromWebContents(evt.sender));
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
 });
 // The link menu's label in the app language (linkMenu.ts), sent by the renderer.
 let copyLinkLabel = DEFAULT_COPY_LINK_LABEL;
@@ -5375,6 +5439,46 @@ ipcMain.handle('hive:procedure', (_evt, id: unknown, slug: unknown) =>
   (typeof id === 'string' && typeof slug === 'string' ? hive.procedure(id, slug) : null));
 ipcMain.handle('hive:inbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.inbox(id) : []));
 
+// Michael hears when email becomes usable (docs/designs/settings-links-in-replies.md):
+// a new mailbox at once; a member given one once they have started with it.
+const grantNotesFile = (): string | null => {
+  const home = readConfig().harnessHome;
+  return home ? join(privateRoot(home), GRANT_NOTES_FILE) : null;
+};
+const mailboxNotes = createMailboxNotes({
+  readPending: () => {
+    const f = grantNotesFile();
+    if (!f || !existsSync(f)) return [];
+    const parsed: unknown = JSON.parse(readFileSync(f, 'utf8'));
+    return Array.isArray(parsed) ? parsed.filter((g): g is PendingGrant => !!g && typeof g.agentId === 'string' && typeof g.address === 'string' && typeof g.at === 'number') : [];
+  },
+  writePending: (list) => {
+    const f = grantNotesFile();
+    if (!f) throw new Error('no office folder');
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, JSON.stringify(list), { mode: 0o600 });
+  },
+  tell: (subject, body) => {
+    if (!hive.enabled()) return false;
+    hive.send({ to: hive.registry().godId ?? 'god', act: 'inform', subject, body }, 'system');
+    return true;
+  },
+  openQuestions: () => hive.ownerQuestions().map((q) => ({ id: q.id, text: q.text })),
+  isRunning: (agentId) => { const p = ptyForAgent(agentId); return !!p && ptyManager.list().some((s) => s.id === p); },
+  nameOf: (agentId) => hive.registry().agents?.[agentId]?.name ?? agentId,
+  now: () => Date.now(),
+  warn: (what, error) => console.warn(`[mailbox-note] ${what} failed:`, error)
+});
+hookServer.onSessionStart = (agentId) => mailboxNotes.sessionStarted(agentId);
+setInterval(() => mailboxNotes.sweep(), 60_000).unref();
+mailboxNotes.sweep();
+
+/** The mailbox ids a member can read now (email on). */
+const readableMailboxes = (agentId: string): string[] => {
+  const e = readConfig().agentCapabilities?.[agentId]?.email;
+  return e?.enabled ? (e.mailboxes ?? []) : [];
+};
+
 // ─── IPC: mailboxes and Capabilities (docs/designs/multi-mailbox.md) ─────────
 // Records carry no password; the renderer only ever sends one, to save it.
 ipcMain.handle('mail:save', async (_evt, input: unknown) => {
@@ -5386,6 +5490,8 @@ ipcMain.handle('mail:save', async (_evt, input: unknown) => {
   // owner before: a failure during the login test can open the card after
   // `before` was read, and the fix that just worked has to close it too.
   if (res.ok && before) closeMailboxCard(res.record.id, `${res.record.address} is connected again.`);
+  // A new mailbox, not a fix: Michael may have a question waiting on email.
+  if (res.ok && typeof fixId !== 'string') mailboxNotes.mailboxAdded(res.record.address);
   return res;
 });
 ipcMain.handle('mail:remove', (_evt, id: unknown) => {
@@ -5399,7 +5505,17 @@ ipcMain.handle('mail:setCapabilities', (_evt, agentId: unknown, caps: unknown) =
   if (typeof agentId !== 'string' || !caps || typeof caps !== 'object') return { ok: false, restartNeeded: false };
   // Research holds no office data (issue #230): no mailbox, ever.
   if (agentId === RESEARCH_ID) return { ok: false, restartNeeded: false };
-  return setAgentCapabilities(mailAdmin, agentId, caps as Parameters<typeof setAgentCapabilities>[2]);
+  const before = readableMailboxes(agentId);
+  const res = setAgentCapabilities(mailAdmin, agentId, caps as Parameters<typeof setAgentCapabilities>[2]);
+  // Only a mailbox they did not hold before tells Michael; a Sending change
+  // alone does not (settings-links-in-replies.md).
+  if (res.ok) {
+    for (const id of newlyHeld(before, readableMailboxes(agentId))) {
+      const address = (readConfig().mailboxes ?? []).find((m) => m.id === id)?.address;
+      if (address) mailboxNotes.granted(agentId, address, res.restartNeeded);
+    }
+  }
+  return res;
 });
 /** A member's Send only grant (docs/designs/shared-mailboxes.md), or null to remove it. */
 ipcMain.handle('mail:setSendOnly', (_evt, agentId: unknown, grant: unknown) => {
@@ -5531,7 +5647,7 @@ function connectorsUpgradeCard(keys: string[]): void {
       priority: 2,
       createdAt: now,
       humanQA: [{
-        q: `**${keys.join(', ')} ${keys.length === 1 ? 'is' : 'are'} now off for the team.**\n\nAgents used to reach every connector on your Claude account. Now each one is off until you turn it on in Settings, Connections, Claude connectors, and give it to the team members who need it on their Access tab.`,
+        q: `**${keys.join(', ')} ${keys.length === 1 ? 'is' : 'are'} now off for the team.**\n\nAgents used to reach every connector on your Claude account. Now each one is off until you turn it on in [Settings, Connections, Claude connectors](dbm:settings/connections/claude-connectors), and give it to the team members who need it on their Access tab.`,
         askedAt: now,
         raisedBy: 'god'
       }]
@@ -6119,7 +6235,12 @@ const reviseRuns = new Map<string, AbortController>();
 ipcMain.handle('workStyle:convert', async (evt, payload: unknown) => {
   if ((payload as { to?: unknown } | null)?.to === 'revise') {
     const rev = readReviseRequest(payload);
-    if (!rev) return { kind: 'error', reason: 'failed' };
+    if (!rev) {
+      // Logged, and said as what to fix: a request with no name or no change
+      // fails the same way on every try (owner, 2026-10-26).
+      try { hive.appendLog({ kind: 'work-style-revise-failed', reason: 'request unreadable (no name or no change)' }); } catch { /* best-effort */ }
+      return { kind: 'error', reason: 'no-name' };
+    }
     const stop = new AbortController();
     if (rev.requestId) reviseRuns.set(rev.requestId, stop);
     const cfg = readConfig();
@@ -6981,6 +7102,17 @@ ipcMain.handle('foundations:pickFile', async (evt) => {
   return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
 });
 ipcMain.handle('foundations:addFile', (_evt, id: unknown, path: unknown) => foundations.addFile(id, path));
+// A folder from a foundation card (eng review 2026-10-26): picked here or
+// dropped on the card, checked, then named in the answer.
+ipcMain.handle('foundations:pickFolder', async (evt) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  if (!win) return { ok: false as const, error: 'no window' };
+  const res = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: 'Add a folder' });
+  if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
+  return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
+});
+ipcMain.handle('foundations:checkFolder', (_evt, id: unknown, path: unknown) => foundations.checkFolder(id, path));
+ipcMain.handle('foundations:answerFolder', (_evt, id: unknown, path: unknown, words: unknown) => foundations.answerFolder(id, path, words));
 ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown) => foundations.answerFile(id, docId, words));
 ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
 ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));

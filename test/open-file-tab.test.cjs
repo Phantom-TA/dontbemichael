@@ -232,7 +232,7 @@ test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, w
   assert.match(hive, /then the full paths of its files, each in backticks/, 'E4b');
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const f = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).fileTab;
-    for (const k of ['close', 'office', 'openInApp', 'reading', 'empty', 'tooLarge', 'unreadable', 'rows']) assert.ok(f[k], `${loc} ${k}`);
+    for (const k of ['close', 'office', 'openInApp', 'copy', 'copied', 'copyFailed', 'reading', 'empty', 'tooLarge', 'unreadable', 'rows']) assert.ok(f[k], `${loc} ${k}`);
     assert.match(f.close, /\{\{name\}\}/);
     assert.doesNotMatch(JSON.stringify(f), /[–—]/, `${loc}: no dashes`);
   }

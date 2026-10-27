@@ -94,7 +94,7 @@ import { REFUSAL_WEB_TOOL, REFUSAL_WEB_TOOL_OFF, RESEARCH_DESK_DIR, RESEARCH_ID,
 import { folderLayoutFor } from './officeFile';
 import { expandTilde } from './fs';
 import { CONNECTOR_UNDECIDED, connectorAccess, MCP_RESOURCE_TOOLS } from '../shared/claudeConnectors';
-import { accessLine, agentAccessSummary } from '../shared/agentAccess';
+import { accessLine, unheldMailboxesLine, agentAccessSummary } from '../shared/agentAccess';
 import { MAIL_TOOL_OPS, mailAccess } from '../shared/mailboxes';
 import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, webAccess } from '../shared/webAccess';
 import { isQuickBooksConnectorTool, isQuickBooksResourceCall, quickbooksAccess, quickbooksCapability } from '../shared/quickbooks';
@@ -290,7 +290,11 @@ export class HookServer {
     /** Company foundations as this agent reads them (office-foundations.md):
      *  its job's section, the whole document for Michael, or null. Optional
      *  so tests can omit it. */
-    private getFoundations?: (agentId: string) => string | null
+    private getFoundations?: (agentId: string) => string | null,
+    /** The folders the owner named on a Company foundations card that this
+     *  member's job uses, read only (eng review 2026-10-26, D1). Optional so
+     *  tests can omit it. */
+    private readFoldersOf?: (agentId: string) => string[]
   ) {}
 
   start(): void {
@@ -638,6 +642,10 @@ export class HookServer {
     if ((event === 'PostCompact' || event === 'SessionStart') && agentId) {
       this.breaker?.recordCompactEnd(agentId);
     }
+    // A compaction or a clear keeps the same process, so no tools were added.
+    if (event === 'SessionStart' && agentId && p.source !== 'compact' && p.source !== 'clear') {
+      try { this.onSessionStart?.(agentId); } catch (e) { console.warn('[hooks] session start listener:', e); }
+    }
 
     // Gemini PreCompress: Gemini fires PreCompress before compaction but ignores
     // its reply. Mark the agent so the protocol is re-injected on its next
@@ -940,6 +948,10 @@ export class HookServer {
       // mailbox changes the layout key and the full roster goes out again.
       const cfg = this.getConfig();
       const r = this.hive.teamRoster((id) => accessLine(agentAccessSummary(cfg, id, this.roleReadsBooks?.(id) ?? false, this.memberPresent)));
+      // Mailboxes nobody reads yet ride with the roster, and change its layout
+      // key, so Michael knows to name a reader (settings-links-in-replies.md).
+      const unheld = unheldMailboxesLine(cfg, this.memberPresent);
+      if (r && unheld) { r.full = `${r.full}\n${unheld}`; r.layoutKey = `${r.layoutKey}|${unheld}`; }
       const sessionId = p.session_id ?? null;
       const last = this.deliveredRosterByAgent.get(agentId!);
       if (r) {
@@ -1394,7 +1406,7 @@ export class HookServer {
     }
     const layout = folderLayoutFor(cfg.businessFolder, folders, home);
     const godName = resolveGodName(reg.agents[reg.godId ?? 'god']?.name);
-    const agent = { isGod: !!me.isGod, cwd: me.cwd };
+    const agent = { isGod: !!me.isGod, cwd: me.cwd, readFolders: me.isGod ? [] : (this.readFoldersOf?.(agentId) ?? []) };
     // Judge the path as asked and the file it really is: a link inside the
     // agent's own folder can point anywhere (review, 2026-09-25).
     const asked = folderDecision(agent, layout, tool, target, ci, godName);
@@ -1419,6 +1431,9 @@ export class HookServer {
   /** Pulse's Kept safe (proposal 3): each step a setting stopped, by gate.
    *  A question sent on to Michael is routing, so it passes no gate. */
   onRefused?: (agentId: string | undefined, gate: RefusalGate) => void;
+  /** A member's session started (docs/designs/settings-links-in-replies.md:
+   *  a mailbox granted while they ran is usable from here on). */
+  onSessionStart?: (agentId: string) => void;
 
   // A refused call sends no step and is marked blocked, so the sidebar and
   // the office floor show nothing for a call that never ran.

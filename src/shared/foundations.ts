@@ -437,6 +437,46 @@ export function fileAnswerLine(words: string, docId: string, name: string): stri
   return `${w.length > room ? `${w.slice(0, room - 1).trimEnd()}…` : w}. ${ref}`;
 }
 
+/** The ref on an answer naming a folder the owner picked on a card. */
+export const FOLDER_REF = 'folder:';
+const FOLDER_LABEL = 'Kept in the folder ';
+
+/** The answer a folder gives (eng review 2026-10-26, D1): the owner's words,
+ *  then the folder, which is never cut. Null when the folder alone can't fit
+ *  under the cap. */
+export function folderAnswerLine(words: string, path: string): string | null {
+  const ref = `${FOLDER_LABEL}${path}`;
+  if (ref.length > FOUNDATION_CAP) return null;
+  const w = oneLine(words).replace(/[.\s]+$/, '');
+  if (!w) return ref;
+  const room = FOUNDATION_CAP - ref.length - 2;
+  if (room <= 1) return ref;
+  return `${w.length > room ? `${w.slice(0, room - 1).trimEnd()}…` : w}. ${ref}`;
+}
+
+const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/;
+
+/** The folders the owner named on cards, with the question each answers.
+ *  Only the owner's own card answers count: an answer a member or Michael
+ *  sent never names a folder anyone may read. */
+export function namedFolders(rec: Pick<FoundationsRecord, 'answers'>): { id: FoundationId; path: string }[] {
+  const out: { id: FoundationId; path: string }[] = [];
+  for (const [id, a] of Object.entries(rec.answers) as [FoundationId, FoundationAnswer | undefined][]) {
+    if (!a || a.by !== 'owner' || a.source !== 'owner' || !a.ref?.startsWith(FOLDER_REF)) continue;
+    const path = a.ref.slice(FOLDER_REF.length);
+    if (ABSOLUTE.test(path)) out.push({ id, path });
+  }
+  return out;
+}
+
+/** The named folders a member with these jobs reads: those answering one of
+ *  its jobs' questions (D1). Every other member keeps today's rules (D2). */
+export function readFoldersFor(rec: Pick<FoundationsRecord, 'answers'>, jobs: readonly FoundationJob[]): string[] {
+  if (!jobs.length) return [];
+  const asks = questionsFor(jobs);
+  return Array.from(new Set(namedFolders(rec).filter((f) => asks.includes(f.id)).map((f) => f.path)));
+}
+
 /** The fit check's answer, read from its first line (ship review, 2026-10-23:
  *  with a picture the model answers "FITS" and then a sentence on what it
  *  sees, so the standing check's whole answer rule refused every picture).

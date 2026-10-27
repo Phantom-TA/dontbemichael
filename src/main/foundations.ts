@@ -13,12 +13,12 @@
  *     ├─ company profile kept in step (owner wins)
  *     └─ publish soon ─► the Company foundations copy in company knowledge
  */
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
-import { basename, dirname, extname, isAbsolute, join } from 'node:path';
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { privateRoot } from '../shared/agentPrivatePaths';
 import { writeFileAtomic } from './atomicFile';
 import {
-  FIT_PICTURES, FIT_TEXT_MAX, FOUNDATION_CAP, FOUNDATION_FILE_TAG, FOUNDATION_QUESTIONS, FOUNDATIONS_TAG, FOUNDATIONS_TITLE, cleanRecord, emptyRecord, fileAnswerLine, isFoundationId, isFoundationsDoc, oneLine, questionsFor, renderFoundations,
+  FIT_PICTURES, FIT_TEXT_MAX, FOLDER_REF, FOUNDATION_CAP, FOUNDATION_FILE_TAG, FOUNDATION_QUESTIONS, FOUNDATIONS_TAG, FOUNDATIONS_TITLE, cleanRecord, emptyRecord, fileAnswerLine, folderAnswerLine, isFoundationId, isFoundationsDoc, oneLine, questionsFor, renderFoundations,
   type FoundationAnswer, type FoundationId, type FoundationJob, type FoundationSourceKind, type FoundationsRecord, type FoundationsView
 } from '../shared/foundations';
 import { IMAGES, type DocExtraction } from './docText';
@@ -64,10 +64,21 @@ export interface FoundationsDeps {
   addToKnowledge?: (path: string, read: DocExtraction, opts: { title: string; tags: string[] }) => string;
   /** A company knowledge document's title, or undefined when it is gone. */
   docTitle?: (docId: string) => string | undefined;
+  /** The owner's home folder and the office's business and team folders, which
+   *  a folder named on a card may not be or hold (eng review 2026-10-26, D3). */
+  folderBounds?: () => { userHome?: string; business?: string; team: string[] };
+  /** Whether paths compare without case (Mac and Windows). */
+  caseInsensitive?: boolean;
 }
 
 /** Why a file added on a card was not taken; each has its own card line. */
 export type AddFileError = 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'picture-engine' | 'misfit' | 'unchecked';
+
+/** Why a folder named on a card was not taken; each has its own card line. */
+export type FolderError = 'unknown' | 'no-office' | 'no-folder' | 'too-wide' | 'app-folder' | 'member-folder' | 'empty' | 'too-long';
+
+/** How many entries the empty folder probe reads, at most. */
+const FOLDER_PROBE_MAX = 200;
 
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const monthName = (m: number): string => MONTHS[m - 1].charAt(0).toUpperCase() + MONTHS[m - 1].slice(1);
@@ -321,6 +332,58 @@ export class Foundations {
     }
   }
 
+  /** A folder the owner names on a card (eng review 2026-10-26): trusted as
+   *  picked (D3), refusing only plain mistakes. Nothing is written; the card
+   *  answers itself next, then calls answerFolder. The path given back is the
+   *  folder as it really is on disk, which the read grant names. */
+  checkFolder(id: unknown, path: unknown): { ok: true; path: string; name: string } | { ok: false; error: FolderError } {
+    if (!isFoundationId(id)) return { ok: false, error: 'unknown' };
+    const home = this.d.home();
+    if (!home || !this.file()) return { ok: false, error: 'no-office' };
+    if (typeof path !== 'string' || !isAbsolute(path) || /[\u0000-\u001f]/.test(path)) return { ok: false, error: 'no-folder' };
+    let real: string;
+    try {
+      real = realpathSync(path);
+      if (!statSync(real).isDirectory()) return { ok: false, error: 'no-folder' };
+    } catch { return { ok: false, error: 'no-folder' }; }
+    const ci = this.d.caseInsensitive ?? process.platform !== 'linux';
+    const norm = (p: string): string => (ci ? resolve(p).toLowerCase() : resolve(p));
+    const inside = (parent: string, child: string): boolean => {
+      const rel = relative(norm(parent), norm(child));
+      return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+    };
+    const real2 = (p: string): string => { try { return realpathSync(p); } catch { return resolve(p); } };
+    const b = this.d.folderBounds?.() ?? { team: [] };
+    // A drive root, the home folder or anything holding it, or the business folder itself.
+    if (dirname(real) === real) return { ok: false, error: 'too-wide' };
+    if (b.userHome && inside(real, real2(b.userHome))) return { ok: false, error: 'too-wide' };
+    if (b.business && inside(real, real2(b.business))) return { ok: false, error: 'too-wide' };
+    const appHome = real2(home);
+    if (inside(appHome, real) || inside(real, appHome)) return { ok: false, error: 'app-folder' };
+    for (const t of b.team.filter(Boolean).map(real2)) {
+      if (inside(t, real)) return { ok: false, error: 'member-folder' };
+      if (inside(real, t)) return { ok: false, error: 'too-wide' };
+    }
+    if (!holdsAFile(real)) return { ok: false, error: 'empty' };
+    if (folderAnswerLine('', real) === null) return { ok: false, error: 'too-long' };
+    return { ok: true, path: real, name: basename(real) };
+  }
+
+  /** The owner's answer from a folder (D1): their words, then the folder. The
+   *  members whose job uses the question read it from here on
+   *  (readFoldersFor); only the words reach the company profile. */
+  answerFolder(id: unknown, path: unknown, words: unknown): { ok: true; text: string } | { ok: false; error: FolderError } {
+    const checked = this.checkFolder(id, path);
+    if (!checked.ok) return checked;
+    const fid = id as FoundationId;
+    const typed = typeof words === 'string' ? oneLine(words).slice(0, FOUNDATION_CAP) : '';
+    const text = folderAnswerLine(typed, checked.path) as string;
+    this.save(this.withAnswer(this.read(), fid, { text, by: 'owner', source: 'owner', ref: `${FOLDER_REF}${checked.path}`, at: this.iso() }, null));
+    if (typed) this.toProfile(fid, typed, true);
+    this.publishSoon();
+    return { ok: true, text };
+  }
+
   /** The owner's answer from a file (D2, D8): their words, then the document
    *  members read whole; only the words reach the company profile. */
   answerFile(id: unknown, docId: unknown, words: unknown): { ok: true; text: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-doc' } {
@@ -537,4 +600,28 @@ function firstText(path: string): string | undefined {
       return buf.subarray(0, n).toString('utf8').slice(0, FIT_TEXT_MAX);
     } finally { closeSync(fd); }
   } catch { return undefined; }
+}
+
+/** Whether a folder holds at least one file, at its top or one level down,
+ *  reading at most FOLDER_PROBE_MAX entries (never a whole tree). A folder
+ *  with more than that to read is not called empty: "Clients" with hundreds
+ *  of client folders is a real answer (review, 2026-10-27). */
+function holdsAFile(dir: string): boolean {
+  let seen = 0;
+  const subs: string[] = [];
+  try {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (++seen > FOLDER_PROBE_MAX) return true;
+      if (e.name.startsWith('.')) continue;
+      if (e.isFile()) return true;
+      if (e.isDirectory()) subs.push(join(dir, e.name));
+    }
+    for (const s of subs) {
+      for (const e of readdirSync(s, { withFileTypes: true })) {
+        if (++seen > FOLDER_PROBE_MAX) return true;
+        if (!e.name.startsWith('.') && e.isFile()) return true;
+      }
+    }
+  } catch { /* unreadable counts as empty */ }
+  return false;
 }

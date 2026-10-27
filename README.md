@@ -41,10 +41,10 @@ runs on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.2.4: Company foundations, and company knowledge you can open.**
-> One document holds what each job needs to know about your business; when work needs an empty
-> answer, a card asks you once. Settings lists every document your team searches, and you can open
-> and edit one in your own app. In 0.2.3, the office clocks in and Waiting cards come back.
+> **New in 0.2.8: Copy any file, and Report a problem in the top bar.**
+> A draft that opens in a tab pastes with its headings and links into Gmail, Google Docs or
+> WordPress, or as clean words into a plain box. Places in Settings that Michael names are buttons.
+> Add a whole folder from a Company foundations card.
 
 ## Contents
 
