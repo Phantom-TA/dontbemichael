@@ -2625,7 +2625,27 @@
       "capWork": "found work so far",
       "capKept": "kept as is so far",
       "capReopened": "cards you reopened so far",
-      "more": "More patterns show here as your team works."
+      "watchLabel": "What Pulse watches",
+      "watch": {
+        "runLess": "Schedules finding nothing",
+        "runLessTip": "Schedules whose runs mostly find nothing to do. Running them less often costs less.",
+        "runMore": "Schedules with more to do",
+        "runMoreTip": "Schedules that find work nearly every run, with more each week. Running them more often keeps up.",
+        "cheaper": "A cheaper model",
+        "cheaperTip": "Members on the top model whose work you keep as is nearly every time, with no card reopened and a few email drafts you decided on. Never {{godName}}.",
+        "stronger": "A stronger model",
+        "strongerTip": "Members whose work you often change, or whose cards you reopen.",
+        "soFar": "{{count}} so far",
+        "none": "None yet",
+        "fine": "Nothing worrying",
+        "closest": "{{name}}: {{kept}} of {{decisions}} kept as is"
+      },
+      "tag": {
+        "runLess": "Schedule finding nothing",
+        "runMore": "Schedule with more to do",
+        "cheaper": "Toward a cheaper model",
+        "stronger": "Toward a stronger model"
+      }
     },
     "nothingToChange": "Nothing to change this week.",
     "savedByChanges": "Saved by your changes",

@@ -203,10 +203,14 @@ test('before 14 live days Pulse shows what the advice rules see so far, as facts
   assert.equal(v8.early.length, 1);
   assert.equal(v8.early[0].kind, 'run-less');
   assert.deepEqual(v8.early[0].evidence, { runs: 8, nothing: 6 }, 'counted over the 8 live days only');
+  // What each rule watches comes with them, even with no pattern (owner, 2026-10-26).
+  assert.deepEqual(v8.earlyWatch.counts, { 'run-less': 1, 'run-more': 0, 'cheaper-model': 0, 'stronger-model': 0 });
   const few = service(t, { days: 4 });
   assert.deepEqual(few.svc.snapshot('this-week').early, [], '4 runs: under half the 10 run minimum');
+  assert.ok(few.svc.snapshot('this-week').earlyWatch, 'the tiles show before any pattern');
   const ready = service(t).svc.snapshot('this-week');
   assert.deepEqual(ready.early, [], 'no early lines once advice can show');
+  assert.equal(ready.earlyWatch, undefined, 'and no tiles');
   assert.equal(ready.advice[0].kind, 'run-less');
 });
 

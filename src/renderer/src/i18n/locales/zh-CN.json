@@ -2625,7 +2625,27 @@
       "capWork": "目前找到了工作",
       "capKept": "目前原样保留",
       "capReopened": "目前你重新打开的卡片",
-      "more": "随着团队工作，这里会出现更多规律。"
+      "watchLabel": "Pulse 在关注什么",
+      "watch": {
+        "runLess": "常常无事可做的日程",
+        "runLessTip": "大多数运行都没找到事情可做的日程。降低运行频率可以省钱。",
+        "runMore": "事情更多的日程",
+        "runMoreTip": "几乎每次运行都有工作、且每周越来越多的日程。提高运行频率才跟得上。",
+        "cheaper": "更便宜的模型",
+        "cheaperTip": "使用最高档模型、其工作你几乎每次都原样保留、没有卡片被重新打开、并且你已对几封邮件草稿做过决定的成员。从不包括 {{godName}}。",
+        "stronger": "更强的模型",
+        "strongerTip": "其工作你经常修改，或其卡片你会重新打开的成员。",
+        "soFar": "目前 {{count}} 个",
+        "none": "暂无",
+        "fine": "没有需要担心的",
+        "closest": "{{name}}：{{decisions}} 项中有 {{kept}} 项原样保留"
+      },
+      "tag": {
+        "runLess": "无事可做的日程",
+        "runMore": "事情更多的日程",
+        "cheaper": "可换更便宜的模型",
+        "stronger": "可换更强的模型"
+      }
     },
     "nothingToChange": "本周没有需要更改的。",
     "savedByChanges": "你的更改节省了",

@@ -232,6 +232,9 @@ moving, and brings you only the decisions that need you.
 - Hiring asks what the new person will do once; a pack update keeps your earlier changes.
 - Add a file right from a Company foundations card, pictures included: it is checked against the
   question before it joins company knowledge, and nothing of it stays in Claude's history.
+- Pulse's Early look shows the four things it watches: schedules finding nothing, schedules with
+  more to do, a cheaper model and a stronger model, each lit with what it found or saying it
+  waits, with the member closest to a cheaper model. Each card names its rule.
 - Add a whole folder from a Company foundations card, picked or dropped: nothing is copied, the
   answer names the folder, and the team members whose job uses that question can read it, read
   only, even inside the business folder.
