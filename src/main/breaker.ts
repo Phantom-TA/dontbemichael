@@ -114,8 +114,11 @@ interface AgentBreakerState {
   /** Consecutive identical tool calls (same name+input). */
   repeatKey: string | null;
   repeatCount: number;
-  /** Consecutive api_error / retry events with no intervening progress. */
+  /** Consecutive api_error events with no intervening progress. */
   errorCount: number;
+  /** The query_source of the last counted api_error (main loop, compaction, a
+   *  subagent, a side call): only a success from the same source ends the run. */
+  errorSource?: string;
   /** Δoutput-based trips are exempt until this instant (compaction in flight,
    *  set on PreCompact; PostCompact shortens it to a trailing grace). */
   compactingUntil: number;
@@ -195,18 +198,33 @@ export class CircuitBreaker {
     }
   }
 
-  /** An api_error / retry occurred (no forward progress). */
-  recordError(agentId: string): void {
-    this.get(agentId).errorCount += 1;
+  /** An api_error occurred (no forward progress). Claude Code logs one only
+   *  after it gives up on a request. `querySource` is the record's
+   *  query_source, kept so recordApiSuccess can tell which calls were failing. */
+  recordError(agentId: string, querySource?: string): void {
+    const s = this.get(agentId);
+    s.errorCount += 1;
+    s.errorSource = querySource;
   }
 
   /** The errors so far were the account refusing this agent's turn (the office
-   *  stopped on it), not a storm of its own. Also called when a later
-   *  api_request shows the session recovered: Claude Code logs one api_error
-   *  only after it gives up, but a request re-issued after a streaming failure
-   *  starts `attempt` again at 1, so one turn can log several and then succeed. */
+   *  stopped on it), not a storm of its own. */
   clearErrors(agentId: string): void {
-    this.get(agentId).errorCount = 0;
+    const s = this.get(agentId);
+    s.errorCount = 0;
+    s.errorSource = undefined;
+  }
+
+  /** A request got through. A later api_request is how Claude Code's docs tell
+   *  a recovered session from a stalled one (a request re-issued after a
+   *  streaming failure starts `attempt` again at 1, so one turn can log several
+   *  api_errors and then succeed). It ends the run only when it came from the
+   *  same query_source as the errors: compaction, a subagent or a side call can
+   *  succeed while the main loop keeps failing, and that must not hold the
+   *  storm off for good. */
+  recordApiSuccess(agentId: string, querySource?: string): void {
+    const s = this.get(agentId);
+    if (s.errorCount > 0 && s.errorSource === querySource) this.clearErrors(agentId);
   }
 
   /** A human submitted a prompt to this agent (UserPromptSubmit hook). Stamps

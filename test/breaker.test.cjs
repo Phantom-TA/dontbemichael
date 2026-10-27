@@ -78,12 +78,30 @@ test('error storm trips', () => {
 
 test('errors with no success between them still trip the storm', () => {
   const b = makeBreaker();
-  for (let i = 0; i < 3; i++) b.recordError('a');
-  b.clearErrors('a');                      // an api_request: that turn recovered
-  for (let i = 0; i < 5; i++) b.recordError('a');
+  for (let i = 0; i < 3; i++) b.recordError('a', 'repl_main_thread');
+  b.recordApiSuccess('a', 'repl_main_thread'); // that turn recovered
+  for (let i = 0; i < 5; i++) b.recordError('a', 'repl_main_thread');
+  const d = beat(b, 'a', null, true, T0);
+  assert.equal(d.state.level, 'steering');
+  assert.match(d.state.reason, /error storm: 5 consecutive api errors\/retries$/);
+});
+
+test('a success from another query_source does not end the run of errors', () => {
+  // An outage on the main model: each turn a side call gets through, then the
+  // main request gives up. Only a main loop success shows the main loop recovered.
+  const b = makeBreaker();
+  for (let i = 0; i < 5; i++) {
+    b.recordApiSuccess('a', 'compact');
+    b.recordError('a', 'repl_main_thread');
+  }
   const d = beat(b, 'a', null, true, T0);
   assert.equal(d.state.level, 'steering');
   assert.match(d.state.reason, /error storm: 5/);
+  // A success from the main loop itself does end it.
+  const c = makeBreaker();
+  for (let i = 0; i < 5; i++) c.recordError('a', 'repl_main_thread');
+  c.recordApiSuccess('a', 'repl_main_thread');
+  assert.equal(beat(c, 'a', null, true, T0).state.level, 'healthy');
 });
 
 test('token velocity spike trips on the second sample', () => {

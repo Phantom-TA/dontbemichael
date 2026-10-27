@@ -422,14 +422,16 @@ let pulsePresenceTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
 // Not while the office is stopped: a refused turn is the stop, not a storm.
-telemetry.onApiError((agentId) => {
-  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId);
+telemetry.onApiError((agentId, querySource) => {
+  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId, querySource);
 });
 // Claude Code logs one api_error only after it gives up on a request, and a
 // later api_request shows the session recovered. A request re-issued after a
 // streaming failure starts `attempt` again at 1, so one turn can log several
-// errors and then succeed: a request that gets through clears the count.
-telemetry.onApiSuccess((agentId) => breaker.clearErrors(agentId));
+// errors and then succeed. Only a success from the same query_source as the
+// errors clears the count: a side call that gets through says nothing about
+// the main loop that keeps failing.
+telemetry.onApiSuccess((agentId, querySource) => breaker.recordApiSuccess(agentId, querySource));
 // Shared roster on disk — created early so HookServer can re-read standing goals
 // on every UserPromptSubmit (Edit Agent saves land here via persistAgents).
 const roster = new RosterStore(() => readConfig().harnessHome);
