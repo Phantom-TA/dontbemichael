@@ -275,8 +275,12 @@ export class RunCompare {
       } catch { /* an unreadable file adds nothing */ } finally {
         // Closing the reader leaves the file open when reading stopped early
         // (past the run's end); Windows then holds the file (CI, 2026-10-24).
+        // destroy() only starts the close, so wait for it: the file is shut
+        // before the comparison goes on, not a moment later.
+        const closed = input.closed ? Promise.resolve() : new Promise<void>((done) => input.once('close', () => done()));
         rl.close();
         input.destroy();
+        await closed;
       }
     }
     lines.sort((a, b) => a.t - b.t);

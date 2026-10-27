@@ -149,12 +149,20 @@ test('a change that reads like a planted instruction goes to Michael, never to t
 });
 
 test('a session file read only up to the run\'s end is closed after it', async (t) => {
-  // Value: protects=the slicer releases every file it opens; fails_when=reading stops early (past the run's end) and the file stays open, which Windows refuses to delete or rename; why_new=Windows CI 2026-10-24 (ENOTEMPTY on cleanup); seam=fs rename
+  // Value: protects=the slicer releases every file it opens before the comparison goes on; fails_when=reading stops early (past the run's end) and the file is still open, or only closing, when wentWrong returns, which Windows refuses to delete or rename; why_new=Windows CI 2026-10-24 and 2026-10-27 (ENOTEMPTY on cleanup, some runs only); seam=fs.createReadStream
   const f = setup(t);
   twoRuns(f);
+  // Every stream the slicer opens, so this checks the close on every platform,
+  // not only where Windows happens to catch the file still open.
+  const opened = [];
+  const real = fs.createReadStream;
+  fs.createReadStream = (...args) => { const s = real(...args); opened.push(s); return s; };
+  t.after(() => { fs.createReadStream = real; });
   await f.store.wentWrong({ runId: 2, agentId: 'pam', workStyle: 'x' });
+  fs.createReadStream = real;
+  assert.ok(opened.length > 0, 'the slicer read the session files');
+  assert.deepEqual(opened.map((s) => s.closed), opened.map(() => true), 'every file is shut when wentWrong returns');
   const file = path.join(f.projects, '-office-pam', 's-bad.jsonl');
-  await new Promise((r) => setImmediate(r));
   fs.renameSync(file, `${file}.moved`);
   fs.rmSync(path.join(f.projects, '-office-pam'), { recursive: true });
   assert.equal(fs.existsSync(path.join(f.projects, '-office-pam')), false);
