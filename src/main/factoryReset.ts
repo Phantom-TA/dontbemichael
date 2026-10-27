@@ -40,6 +40,8 @@ export const PRIVATE_ENTRIES = [
   'agent-mcp',
   'owner',
   'card-guard.json',
+  // Grant notes waiting for a member's restart (settings-links-in-replies.md).
+  'mailbox-grant-notes.json',
   'house-rules-seen.json',
   'ask-list-since.json',
   'research-stamp.key',

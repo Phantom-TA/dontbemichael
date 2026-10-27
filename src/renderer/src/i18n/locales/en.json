@@ -2469,6 +2469,7 @@
     "keyInfo": "Claude stopped the whole team because the Anthropic API key stopped working. Paste a new key and the team restarts and carries on. Scheduled jobs wait in the inbox until then."
   },
   "markdown": {
+    "openPlace": "Open {{place}}",
     "opensInBrowser": "opens in your browser",
     "opensInEmail": "opens your email app",
     "copyLinkAddress": "Copy link address",

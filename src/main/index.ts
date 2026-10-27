@@ -197,6 +197,7 @@ import {
 import { canRelaunch, restartApp } from './restart';
 import { copyImage, copyRich } from './clipboardCopy';
 import { createReporter } from './reportProblem';
+import { createMailboxNotes, newlyHeld, GRANT_NOTES_FILE, type PendingGrant } from './mailboxNotes';
 import { PromptSubmits, confirmSubmit } from '../shared/submitConfirm';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
@@ -994,7 +995,7 @@ function markMailboxStatus(id: string, status: 'connected' | 'needs-attention', 
         dependsOn: [],
         priority: 1,
         createdAt: new Date().toISOString(),
-        humanQA: [{ q: `**${rec.address} stopped working: ${reason ?? 'the mail server refused the password'}**\n\nOpen Settings, Connections, Mailboxes and choose Fix to enter a new app password.`, askedAt: new Date().toISOString(), raisedBy: 'god' }]
+        humanQA: [{ q: `**${rec.address} stopped working: ${reason ?? 'the mail server refused the password'}**\n\nOpen [Settings, Connections, Mailboxes](dbm:settings/connections/mailboxes) and choose Fix to enter a new app password.`, askedAt: new Date().toISOString(), raisedBy: 'god' }]
       };
       if (!hive.addTask(card)) hive.patchTask(cardId, { status: 'blocked', humanQA: card.humanQA });
     } else if (rec.status === 'needs-attention') {
@@ -5417,6 +5418,46 @@ ipcMain.handle('hive:procedure', (_evt, id: unknown, slug: unknown) =>
   (typeof id === 'string' && typeof slug === 'string' ? hive.procedure(id, slug) : null));
 ipcMain.handle('hive:inbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.inbox(id) : []));
 
+// Michael hears when email becomes usable (docs/designs/settings-links-in-replies.md):
+// a new mailbox at once; a member given one once they have started with it.
+const grantNotesFile = (): string | null => {
+  const home = readConfig().harnessHome;
+  return home ? join(privateRoot(home), GRANT_NOTES_FILE) : null;
+};
+const mailboxNotes = createMailboxNotes({
+  readPending: () => {
+    const f = grantNotesFile();
+    if (!f || !existsSync(f)) return [];
+    const parsed: unknown = JSON.parse(readFileSync(f, 'utf8'));
+    return Array.isArray(parsed) ? parsed.filter((g): g is PendingGrant => !!g && typeof g.agentId === 'string' && typeof g.address === 'string' && typeof g.at === 'number') : [];
+  },
+  writePending: (list) => {
+    const f = grantNotesFile();
+    if (!f) throw new Error('no office folder');
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, JSON.stringify(list), { mode: 0o600 });
+  },
+  tell: (subject, body) => {
+    if (!hive.enabled()) return false;
+    hive.send({ to: hive.registry().godId ?? 'god', act: 'inform', subject, body }, 'system');
+    return true;
+  },
+  openQuestions: () => hive.ownerQuestions().map((q) => ({ id: q.id, text: q.text })),
+  isRunning: (agentId) => { const p = ptyForAgent(agentId); return !!p && ptyManager.list().some((s) => s.id === p); },
+  nameOf: (agentId) => hive.registry().agents?.[agentId]?.name ?? agentId,
+  now: () => Date.now(),
+  warn: (what, error) => console.warn(`[mailbox-note] ${what} failed:`, error)
+});
+hookServer.onSessionStart = (agentId) => mailboxNotes.sessionStarted(agentId);
+setInterval(() => mailboxNotes.sweep(), 60_000).unref();
+mailboxNotes.sweep();
+
+/** The mailbox ids a member can read now (email on). */
+const readableMailboxes = (agentId: string): string[] => {
+  const e = readConfig().agentCapabilities?.[agentId]?.email;
+  return e?.enabled ? (e.mailboxes ?? []) : [];
+};
+
 // ─── IPC: mailboxes and Capabilities (docs/designs/multi-mailbox.md) ─────────
 // Records carry no password; the renderer only ever sends one, to save it.
 ipcMain.handle('mail:save', async (_evt, input: unknown) => {
@@ -5428,6 +5469,8 @@ ipcMain.handle('mail:save', async (_evt, input: unknown) => {
   // owner before: a failure during the login test can open the card after
   // `before` was read, and the fix that just worked has to close it too.
   if (res.ok && before) closeMailboxCard(res.record.id, `${res.record.address} is connected again.`);
+  // A new mailbox, not a fix: Michael may have a question waiting on email.
+  if (res.ok && typeof fixId !== 'string') mailboxNotes.mailboxAdded(res.record.address);
   return res;
 });
 ipcMain.handle('mail:remove', (_evt, id: unknown) => {
@@ -5441,7 +5484,17 @@ ipcMain.handle('mail:setCapabilities', (_evt, agentId: unknown, caps: unknown) =
   if (typeof agentId !== 'string' || !caps || typeof caps !== 'object') return { ok: false, restartNeeded: false };
   // Research holds no office data (issue #230): no mailbox, ever.
   if (agentId === RESEARCH_ID) return { ok: false, restartNeeded: false };
-  return setAgentCapabilities(mailAdmin, agentId, caps as Parameters<typeof setAgentCapabilities>[2]);
+  const before = readableMailboxes(agentId);
+  const res = setAgentCapabilities(mailAdmin, agentId, caps as Parameters<typeof setAgentCapabilities>[2]);
+  // Only a mailbox they did not hold before tells Michael; a Sending change
+  // alone does not (settings-links-in-replies.md).
+  if (res.ok) {
+    for (const id of newlyHeld(before, readableMailboxes(agentId))) {
+      const address = (readConfig().mailboxes ?? []).find((m) => m.id === id)?.address;
+      if (address) mailboxNotes.granted(agentId, address);
+    }
+  }
+  return res;
 });
 /** A member's Send only grant (docs/designs/shared-mailboxes.md), or null to remove it. */
 ipcMain.handle('mail:setSendOnly', (_evt, agentId: unknown, grant: unknown) => {
@@ -5573,7 +5626,7 @@ function connectorsUpgradeCard(keys: string[]): void {
       priority: 2,
       createdAt: now,
       humanQA: [{
-        q: `**${keys.join(', ')} ${keys.length === 1 ? 'is' : 'are'} now off for the team.**\n\nAgents used to reach every connector on your Claude account. Now each one is off until you turn it on in Settings, Connections, Claude connectors, and give it to the team members who need it on their Access tab.`,
+        q: `**${keys.join(', ')} ${keys.length === 1 ? 'is' : 'are'} now off for the team.**\n\nAgents used to reach every connector on your Claude account. Now each one is off until you turn it on in [Settings, Connections, Claude connectors](dbm:settings/connections/claude-connectors), and give it to the team members who need it on their Access tab.`,
         askedAt: now,
         raisedBy: 'god'
       }]

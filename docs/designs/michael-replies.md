@@ -953,3 +953,10 @@ alias items (TODOS.md:947, 948) close with T2 and are struck in T9.
 - **VERDICT:** DESIGN CLEARED. ENG REVIEWED with every finding approved into the plan and 0 unresolved decisions; status issues_open records the mapped work, not open questions. Ready to implement T1 to T9 in the stated lanes.
 
 NO UNRESOLVED DECISIONS
+
+## Later: a request waiting on setup (2026-10-26)
+
+When the owner asks for work that needs email and none is connected, Michael answers with act `query`
+(waiting for you, no late sweep) and a Connect your email button; when the app tells him a mailbox was
+added or given to a member, he answers that same question and closes it with done once the work is done
+(docs/designs/settings-links-in-replies.md).

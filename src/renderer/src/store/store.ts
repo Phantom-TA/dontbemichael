@@ -374,6 +374,11 @@ interface State {
   openAgentMemory: (agentId: string) => void;
   /** Open a team member's Profile tab (their schedules), from Pulse. */
   openAgentProfile: (agentId: string) => void;
+  /** A member link in agent text (settings-links-in-replies.md): the member's
+   *  Access tab opens with Email unfolded and in view, once. */
+  openAgentEmail: (agentId: string) => void;
+  emailRequest: { agentId: string; seq: number } | null;
+  clearEmailRequest: () => void;
   /** The task whose detail overlay is open (rendered app-wide over the office
    *  floor — the card content grows: contracts, deps, the human Q&A trail). */
   taskDetailId: string | null;
@@ -987,6 +992,18 @@ export const useStore = create<State>((set, get) => ({
     persistAgents(s.agents, agentId);
     return { selectedId: agentId, ccTabRequest: { tab: 'profile', seq }, rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView) };
   })); },
+  openAgentEmail: (agentId) => { attemptLeave({ selectedId: agentId, rightColumn: 'person' }, () => set((s) => {
+    const seq = (s.ccTabRequest?.seq ?? 0) + 1;
+    persistAgents(s.agents, agentId);
+    return {
+      selectedId: agentId,
+      ccTabRequest: { tab: 'capabilities', seq },
+      emailRequest: { agentId, seq: (s.emailRequest?.seq ?? 0) + 1 },
+      rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView)
+    };
+  })); },
+  emailRequest: null,
+  clearEmailRequest: () => set({ emailRequest: null }),
   openAgentMemory: (agentId) => { attemptLeave({ selectedId: get().agents.find((a) => a.isGod)?.id ?? get().selectedId, rightColumn: 'person' }, () => set((s) => {
     const god = s.agents.find((a) => a.isGod);
     const seq = (s.ccTabRequest?.seq ?? 0) + 1;

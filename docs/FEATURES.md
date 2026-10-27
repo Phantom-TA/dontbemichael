@@ -189,6 +189,9 @@ moving, and brings you only the decisions that need you.
   or takes an Anthropic API key instead. Skip it, and Ask me keeps a card until Michael can start.
 - If your settings file was damaged, setup says that is why it starts again and where a copy of
   the file was kept.
+- When Michael or a card sends you somewhere in Settings, the words are a button that opens Settings right there, on
+  the right group. If you ask for email work before email is connected, Michael's answer ends with Connect your email,
+  then asks who on the team should read it, and does the job once you give it to them.
 - Report a problem sits in the top bar on every view, hard to miss. One click opens a bug report
   with the app version and your system filled in, and saves a picture of the window in your
   Downloads, ready to add. Help, Report a problem does the same. Reports are public, so the hover

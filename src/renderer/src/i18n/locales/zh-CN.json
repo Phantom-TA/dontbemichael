@@ -2469,6 +2469,7 @@
     "keyInfo": "由于 Anthropic API 密钥已失效，Claude 停止了整个团队。粘贴新的密钥后，团队会重新启动并继续工作。在此之前，定时任务会留在收件箱中等待。"
   },
   "markdown": {
+    "openPlace": "打开{{place}}",
     "opensInBrowser": "在浏览器中打开",
     "opensInEmail": "打开邮件应用",
     "copyLinkAddress": "复制链接地址",

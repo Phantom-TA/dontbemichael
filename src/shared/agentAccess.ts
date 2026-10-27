@@ -45,6 +45,22 @@ export function agentAccessSummary(cfg: MailAccessConfig & ConnectorConfig, agen
  * Can send or Draft only is the member's own Access tab: the connection itself
  * can send (owner, 2026-10-05). Null when the agent has none.
  */
+/**
+ * The mailboxes no member reads yet, for Michael's roster
+ * (docs/designs/settings-links-in-replies.md): added in Settings but not given
+ * to anyone, so he names who should read one instead of asking the owner to
+ * connect it again. Null when every mailbox has a reader.
+ */
+export function unheldMailboxesLine(cfg: {
+  mailboxes?: Array<{ id: string; address: string }>;
+  agentCapabilities?: Record<string, { email?: { enabled?: boolean; mailboxes?: string[] } } | undefined>;
+}): string | null {
+  const held = new Set(Object.values(cfg.agentCapabilities ?? {}).flatMap((c) => (c?.email?.enabled ? c.email.mailboxes ?? [] : [])));
+  const free = (cfg.mailboxes ?? []).filter((m) => !held.has(m.id)).map((m) => m.address);
+  if (!free.length) return null;
+  return `Mailboxes nobody reads yet: ${free.join(', ')}. Only the owner gives one to a member, on their Access tab, Email: link it as [<name>, Access, Email](dbm:member/<id>/access/email).`;
+}
+
 export function accessLine(items: AccessItem[]): string | null {
   const parts: string[] = [];
   for (const i of items) {

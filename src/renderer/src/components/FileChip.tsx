@@ -309,5 +309,5 @@ export function FileText({ source, who, checks: given, variant = 'card' }: {
       onGone={onGone}
     />
   ), [checks, gone, raisedBy, assignee, onGone]);
-  return <MarkdownPreview source={shown} variant={variant} fileChip={paths.length ? fileChip : undefined} />;
+  return <MarkdownPreview source={shown} variant={variant} fileChip={paths.length ? fileChip : undefined} placeLinks />;
 }

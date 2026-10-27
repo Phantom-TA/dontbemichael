@@ -92,7 +92,7 @@ import { REFUSAL_WEB_TOOL, REFUSAL_WEB_TOOL_OFF, RESEARCH_DESK_DIR, RESEARCH_ID,
 import { folderLayoutFor } from './officeFile';
 import { expandTilde } from './fs';
 import { CONNECTOR_UNDECIDED, connectorAccess, MCP_RESOURCE_TOOLS } from '../shared/claudeConnectors';
-import { accessLine, agentAccessSummary } from '../shared/agentAccess';
+import { accessLine, unheldMailboxesLine, agentAccessSummary } from '../shared/agentAccess';
 import { MAIL_TOOL_OPS, mailAccess } from '../shared/mailboxes';
 import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, webAccess } from '../shared/webAccess';
 import { isQuickBooksConnectorTool, isQuickBooksResourceCall, quickbooksAccess, quickbooksCapability } from '../shared/quickbooks';
@@ -626,6 +626,9 @@ export class HookServer {
     if ((event === 'PostCompact' || event === 'SessionStart') && agentId) {
       this.breaker?.recordCompactEnd(agentId);
     }
+    if (event === 'SessionStart' && agentId) {
+      try { this.onSessionStart?.(agentId); } catch (e) { console.warn('[hooks] session start listener:', e); }
+    }
 
     if ((event === 'Stop' || event === 'SubagentStop') && agentId) {
       // Respect any upstream Stop hook that already re-entered this boundary.
@@ -893,6 +896,10 @@ export class HookServer {
       // mailbox changes the layout key and the full roster goes out again.
       const cfg = this.getConfig();
       const r = this.hive.teamRoster((id) => accessLine(agentAccessSummary(cfg, id, this.roleReadsBooks?.(id) ?? false, this.memberPresent)));
+      // Mailboxes nobody reads yet ride with the roster, and change its layout
+      // key, so Michael knows to name a reader (settings-links-in-replies.md).
+      const unheld = unheldMailboxesLine(cfg);
+      if (r && unheld) { r.full = `${r.full}\n${unheld}`; r.layoutKey = `${r.layoutKey}|${unheld}`; }
       const sessionId = p.session_id ?? null;
       const last = this.deliveredRosterByAgent.get(agentId!);
       if (r) {
@@ -1343,6 +1350,9 @@ export class HookServer {
   /** Pulse's Kept safe (proposal 3): each step a setting stopped, by gate.
    *  A question sent on to Michael is routing, so it passes no gate. */
   onRefused?: (agentId: string | undefined, gate: RefusalGate) => void;
+  /** A member's session started (docs/designs/settings-links-in-replies.md:
+   *  a mailbox granted while they ran is usable from here on). */
+  onSessionStart?: (agentId: string) => void;
 
   // A refused call sends no step and is marked blocked, so the sidebar and
   // the office floor show nothing for a call that never ran.

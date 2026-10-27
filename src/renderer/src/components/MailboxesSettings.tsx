@@ -25,7 +25,9 @@ import { groupName, hint, panelStyle } from './fieldText';
  * Gmail on the owner's Claude account is not here: it is a row under Claude
  * connectors, given per agent like any connector (docs/designs/claude-connectors.md, E4).
  */
-export function MailboxesSettings() {
+/** A place in agent text asked for Mailboxes (settings-links-in-replies.md):
+ *  unfold it, and with `add` open the Add a mailbox form, once per seq. */
+export function MailboxesSettings({ focus }: { focus?: { add?: boolean; seq: number } } = {}) {
   const { t } = useTranslation();
   const config = useHarnessConfig();
   const agents = useStore((s) => s.agents);
@@ -42,6 +44,11 @@ export function MailboxesSettings() {
     decided.current = true;
     if ((config.mailboxes ?? []).some((m) => m.status === 'needs-attention')) setOpen(true);
   }, [config]);
+  useEffect(() => {
+    if (!focus) return;
+    setOpen(true);
+    if (focus.add) setDialog({});
+  }, [focus?.seq]);
   // Where keyboard focus goes back to when a confirm or the dialog closes.
   const rootRef = useRef<HTMLDivElement>(null);
   const refocus = (key: string): void => {

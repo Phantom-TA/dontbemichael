@@ -72,6 +72,26 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
   const clearSchedulesRequest = useStore((s) => s.clearSchedulesRequest);
   const schedulesRef = useRef<HTMLDivElement>(null);
   const [scrollToSchedules, setScrollToSchedules] = useState(false);
+  // A member link in agent text opens Email the same way
+  // (settings-links-in-replies.md).
+  const emailRequest = useStore((s) => s.emailRequest);
+  const clearEmailRequest = useStore((s) => s.clearEmailRequest);
+  const emailRef = useRef<HTMLDivElement>(null);
+  const [scrollToEmail, setScrollToEmail] = useState(false);
+  useEffect(() => {
+    if (!emailRequest || emailRequest.agentId !== agent.id) return;
+    clearEmailRequest();
+    setCollapsed((c) => ({ ...c, email: false }));
+    setScrollToEmail(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emailRequest?.seq, agent.id]);
+  useEffect(() => {
+    if (!scrollToEmail || !emailRef.current) return;
+    setScrollToEmail(false);
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    emailRef.current.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+    emailRef.current.querySelector<HTMLElement>('button[aria-expanded]')?.focus({ preventScroll: true });
+  });
   useEffect(() => {
     if (!schedulesRequest || schedulesRequest.agentId !== agent.id) return;
     clearSchedulesRequest();
@@ -251,7 +271,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
 
         <div style={{ height: 8 }} />
         {/* Email: hidden in this build when SHOW_MAILBOXES is off. */}
-        {SHOW_MAILBOXES && <TriggerCard
+        {SHOW_MAILBOXES && <div ref={emailRef} data-email-group style={{ scrollMarginTop: 8 }}><TriggerCard
           title={t('capabilities.email')}
           blurb={t('capabilities.emailBlurb', { name })}
           summary={inUse ? t('capabilities.emailSummary', { count: inUse }) : t('capabilities.emailSummaryNone')}
@@ -388,7 +408,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
               <MiniButton onClick={() => setMoving(null)}>{t('capabilities.keepIt')}</MiniButton>
             </div>
           )}
-        </TriggerCard>}
+        </TriggerCard></div>}
 
         <TriggerCard
           title={t('capabilities.connectors')}
