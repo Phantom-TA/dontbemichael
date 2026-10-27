@@ -62,9 +62,11 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
     setBusy(true); setError(null);
     const server = (host: string, port: string, fallback: MailServer): MailServer =>
       ({ host: host.trim() || fallback.host, port: Number(port) || fallback.port, secure: tls });
+    // The switch is for the incoming server. Outgoing follows its port: 465 is TLS from the first byte, 587 is STARTTLS.
+    const smtp = server(smtpHost, smtpPort, { ...guessed.smtp, port: tls ? SMTPS_PORT : SUBMISSION_PORT });
     const res = await window.cth.mailSave({
       id: fix?.id, provider, address: address.trim(), password,
-      ...(provider === 'other' ? { imap: server(imapHost, imapPort, guessed.imap), smtp: server(smtpHost, smtpPort, { ...guessed.smtp, port: tls ? SMTPS_PORT : SUBMISSION_PORT }) } : {})
+      ...(provider === 'other' ? { imap: server(imapHost, imapPort, guessed.imap), smtp: { ...smtp, secure: smtp.port === SMTPS_PORT } } : {})
     }).catch((e: unknown) => ({ ok: false as const, kind: 'unknown', reason: e instanceof Error ? e.message : String(e) }));
     setBusy(false);
     if (res.ok) onSaved(res.record);
