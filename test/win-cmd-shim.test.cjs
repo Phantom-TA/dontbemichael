@@ -309,6 +309,14 @@ test('single-line args still go through cmd.exe unchanged (fallback preserved)',
   );
 });
 
+test('an empty argument survives the cmd.exe line as ""', () => {
+  // Left bare, the empty value vanishes and the next flag is read as its value.
+  assert.equal(
+    buildCmdCommandLine('C:\\x\\tool.cmd', ['--tools', '', '--next']),
+    '/d /s /c "C:\\x\\tool.cmd --tools "" --next"'
+  );
+});
+
 /**
  * DIRECT-EXECUTABLE shims — the shape that broke OpenCode on Windows.
  *

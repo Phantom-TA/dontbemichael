@@ -142,6 +142,10 @@ export function buildCmdCommandLine(resolved: string, args: string[]): string {
     // an unquoted `&`/`|`/etc. would let one token chain a second command once this
     // string is executed by cmd.exe. Quoting neutralizes them — cmd does not
     // interpret metacharacters inside a double-quoted run.
+    // An empty argument is written as "": left bare it vanishes, and the next
+    // flag becomes its value (`--tools ''` would swallow `--strict-mcp-config`,
+    // #426).
+    if (s === '') return '""';
     const escaped = s.replace(/"/g, '\\"');
     return /[ \t"&|^<>()%!]/.test(s) ? `"${escaped}"` : escaped;
   };

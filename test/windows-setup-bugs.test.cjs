@@ -79,3 +79,10 @@ test('hidden Claude runs a Windows claude.cmd through cmd.exe with preserved quo
   assert.deepEqual(hiddenClaudeLaunch('win32', 'C:\\tools\\claude.exe', args), { file: 'C:\\tools\\claude.exe', args });
   assert.deepEqual(hiddenClaudeLaunch('darwin', '/usr/local/bin/claude', args), { file: '/usr/local/bin/claude', args });
 });
+
+test('hidden Claude keeps the empty --tools value when it goes through cmd.exe', () => {
+  // Value: protects=no tools hidden calls (the trust layer reads web answers) stay without the owner's connectors; fails_when=an empty argument vanishes from the cmd.exe line, so --strict-mcp-config becomes the --tools value and connectors load; why_new=#426 review; seam=none
+  const bin = 'C:\\Users\\Jane Smith\\AppData\\Roaming\\npm\\claude.cmd';
+  const l = hiddenClaudeLaunch('win32', bin, ['--model', 'sonnet', '--tools', '', '--strict-mcp-config'], 'cmd.exe');
+  assert.equal(l.args, `/d /s /c ""${bin}" --model sonnet --tools "" --strict-mcp-config"`);
+});
