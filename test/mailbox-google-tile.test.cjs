@@ -41,8 +41,8 @@ test('the dialog: the tile reads Gmail or GSuite, and Fix opens a Workspace mail
   for (const loc of ['en', 'ar', 'zh-CN']) {
     const m = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).mailboxes;
     assert.ok(m.googleTile.includes('Gmail') && m.googleTile.includes('GSuite'), loc);
-    assert.ok(m.help.gmail.includes('GSuite') && m.help.gmail.includes('myaccount.google.com/apppasswords'), loc);
-    assert.equal(m.help['google-workspace'], undefined, `${loc}: one help text`);
+    // Google's help is now the step cards (test/mailbox-google-steps.test.cjs).
+    assert.equal(m.help['google-workspace'], undefined, `${loc}: no second Google help`);
+    assert.equal(m.help.gmail, undefined, `${loc}: the paragraph gave way to step cards`);
   }
-  assert.match(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).mailboxes.help.gmail, /On GSuite, if that page is missing, your admin has turned app passwords off\./);
 });

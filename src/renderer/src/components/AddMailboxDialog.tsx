@@ -5,8 +5,8 @@ import { Disclosure, Toggle } from './triggers/ui';
 import { useRtl } from '@/i18n/useDirection';
 import { Field, Panel, hint } from './fieldText';
 import {
-  IMAPS_PORT, PROVIDER_ORDER, PROVIDER_PRESETS, SMTPS_PORT, SUBMISSION_PORT, guessServers,
-  type MailProvider, type MailServer, type MailboxRecord
+  GOOGLE_APP_PASSWORDS_URL, GOOGLE_TWO_STEP_URL, IMAPS_PORT, PROVIDER_ORDER, PROVIDER_PRESETS, SMTPS_PORT, SUBMISSION_PORT,
+  googleStepUrl, guessServers, isGoogleProvider, type MailProvider, type MailServer, type MailboxRecord
 } from '@shared/mailboxes';
 
 /**
@@ -138,6 +138,10 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
         <Field label={t('mailboxes.address')}>
           <input type="email" value={address} disabled={!!fix || busy} onChange={(e) => setAddress(e.target.value)} className="cth-input" style={input} autoComplete="off" spellCheck={false} />
         </Field>
+        {/* Google: the two steps on Google's side, each one click away, then
+            the paste (eng review, 2026-10-26: a business owner could not
+            follow the one paragraph). */}
+        {isGoogleProvider(provider) && <GoogleSteps address={address} />}
         <Field label={t('mailboxes.password')}>
           <div style={{ display: 'flex', gap: 6 }}>
             <input
@@ -172,9 +176,11 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
         )}
         </Panel>
 
-        <div style={{ background: 'var(--cth-blue-soft)', borderRadius: 'var(--cth-r-md)', padding: '9px 12px', fontSize: 12.5, lineHeight: '18px', marginTop: 14, color: 'var(--cth-ink)' }}>
-          {t(`mailboxes.help.${provider}`)}
-        </div>
+        {!isGoogleProvider(provider) && (
+          <div style={{ background: 'var(--cth-blue-soft)', borderRadius: 'var(--cth-r-md)', padding: '9px 12px', fontSize: 12.5, lineHeight: '18px', marginTop: 14, color: 'var(--cth-ink)' }}>
+            {t(`mailboxes.help.${provider}`)}
+          </div>
+        )}
 
         <div aria-live="polite" style={{ minHeight: 0 }}>
           {busy && <div style={{ ...hint, marginTop: 10 }}>{t('mailboxes.testing', { address: address.trim() })}</div>}
@@ -191,6 +197,41 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Turn on 2 Step Verification, create an app password, paste it: each Google
+ *  page one click away, opened on the typed account. */
+function GoogleSteps({ address }: { address: string }) {
+  const { t } = useTranslation();
+  const open = (base: string) => () => { void window.cth.openExternal(googleStepUrl(base, address)); };
+  return (
+    <ol style={{ listStyle: 'none', margin: '2px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <Step n={1} title={t('mailboxes.google.step1Title')} line={t('mailboxes.google.step1Line')}>
+        <PixelButton variant="secondary" size="sm" onClick={open(GOOGLE_TWO_STEP_URL)}>{t('mailboxes.google.step1Open')}</PixelButton>
+      </Step>
+      <Step n={2} title={t('mailboxes.google.step2Title')} line={t('mailboxes.google.step2Line')}>
+        <PixelButton variant="secondary" size="sm" onClick={open(GOOGLE_APP_PASSWORDS_URL)}>{t('mailboxes.google.step2Open')}</PixelButton>
+        <div style={{ ...hint, marginTop: 6 }}>{t('mailboxes.google.step2Admin')}</div>
+      </Step>
+      <Step n={3} title={t('mailboxes.google.step3Title')} line={t('mailboxes.google.step3Line')} />
+    </ol>
+  );
+}
+
+function Step({ n, title, line, children }: { n: number; title: string; line: string; children?: React.ReactNode }) {
+  return (
+    <li style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', background: 'var(--cth-card)', borderRadius: 'var(--cth-r-lg)' }}>
+      <span aria-hidden style={{
+        flexShrink: 0, width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center',
+        background: 'var(--cth-indigo)', color: 'var(--cth-on-indigo)', fontSize: 12, fontWeight: 700
+      }}>{n}</span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}><span className="cth-sr-only">{n}. </span>{title}</div>
+        <div style={{ ...hint, marginTop: 2, marginBottom: children ? 8 : 0 }}>{line}</div>
+        {children}
+      </div>
+    </li>
   );
 }
 

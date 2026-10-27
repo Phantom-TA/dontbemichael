@@ -160,6 +160,17 @@ export function isGoogleProvider(p: MailProvider): boolean {
   return p === 'gmail' || p === 'google-workspace';
 }
 
+/** Google's own pages for the two setup steps (docs: the eng review of the
+ *  Google step cards, 2026-10-26). With an address typed, Google opens on that
+ *  account, for an owner signed in to several. */
+export const GOOGLE_TWO_STEP_URL = 'https://myaccount.google.com/signinoptions/twosv';
+export const GOOGLE_APP_PASSWORDS_URL = 'https://myaccount.google.com/apppasswords';
+
+export function googleStepUrl(base: string, address: string): string {
+  const a = address.trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a) ? `${base}?authuser=${encodeURIComponent(a)}` : base;
+}
+
 /** A Google mailbox named by its address: Gmail for gmail.com and
  *  googlemail.com, GSuite (the owner's word for Google Workspace) for a
  *  company domain. */

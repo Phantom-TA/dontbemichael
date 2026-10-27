@@ -83,6 +83,22 @@ Go with it: keep only the owner's own words (the answer, the edit, the note) in 
 
 ## Connections
 
+### Step cards for iCloud, Yahoo and Zoho app passwords
+
+**What:** Give iCloud Mail, Yahoo and Zoho the same numbered step cards Google gets in Add a mailbox (eng review 2026-10-26, D3 B): each step with an Open button to that service's own two step and app password pages, and a plain line on what to copy.
+
+**Why:** Each still shows one paragraph with an address to type; the owner saw a business user struggle with the same paragraph for Google.
+
+**Pros:** One look across Add a mailbox; owners on those services set up without help.
+
+**Cons:** Three more providers' pages to find, link and keep current when they move.
+
+**Context:** The Google cards (AddMailboxDialog.tsx, Google steps) are built to take a per provider list of steps; start from `mailboxes.help.icloud/yahoo/zoho` in the locales and add each provider's steps and page addresses.
+
+**Effort:** human S / CC S
+**Priority:** P3
+**Depends on:** the Google step cards landing.
+
 ### One call at a time per connected app, and a throttle notice
 
 **What:** The broker now backs off per connected app after a 429 or a 503 with `Retry-After` (`src/main/brokerThrottle.ts`, PR #399): a wait of 20 s or less is held, a longer one is answered at once with when to try again. Two parts are left. Send one call at a time per app, so the calls held during a wait don't all go out together when it ends and hit the limit again. And show the owner a throttle that lasts, in plain words, instead of it showing only in agents' answers.

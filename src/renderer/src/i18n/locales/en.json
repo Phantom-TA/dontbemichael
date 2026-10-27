@@ -2001,6 +2001,17 @@
     "openFolderFailed": "Couldn't open the folder. It may have been moved or deleted."
   },
   "mailboxes": {
+    "google": {
+      "step1Title": "Turn on 2 Step Verification",
+      "step1Line": "Google sends a code to your phone when you sign in. Already on? Go to step 2.",
+      "step1Open": "Open Google's page",
+      "step2Title": "Create an app password",
+      "step2Line": "Type a name, such as My office, then copy the 16 letters Google shows.",
+      "step2Open": "Open app passwords",
+      "step2Admin": "On GSuite, if Google says app passwords aren't available, your admin has turned them off: ask them to allow it.",
+      "step3Title": "Paste it below",
+      "step3Line": "The 16 letters from step 2, as Google shows them. Spaces are fine."
+    },
     "googleTile": "Gmail or GSuite",
     "title": "Mailboxes",
     "intro": "Mailboxes your team can work in. You choose who uses which one on each team member's Access tab.",
@@ -2040,7 +2051,6 @@
     "testing": "Testing {{address}}. One sec.",
     "tryAgain": "Try again",
     "help": {
-      "gmail": "Gmail and GSuite need an app password, not your normal one. Turn on 2 Step Verification, then create one at myaccount.google.com/apppasswords. On GSuite, if that page is missing, your admin has turned app passwords off.",
       "icloud": "iCloud needs an app specific password. Create one at account.apple.com under Sign In and Security.",
       "yahoo": "Yahoo needs an app password. Create one in Account Security, then Generate app password.",
       "zoho": "Zoho needs an app specific password from Security, then App Passwords, with IMAP turned on in Mail settings.",

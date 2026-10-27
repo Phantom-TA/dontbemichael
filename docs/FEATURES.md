@@ -66,6 +66,9 @@ moving, and brings you only the decisions that need you.
 ### 3. A mailbox for every job
 - Connect as many mailboxes as your business runs on: Gmail or GSuite (one choice, they connect
   the same way), iCloud, Yahoo, Zoho or any IMAP mailbox. Passwords stay encrypted on your computer.
+- Setting up Gmail or GSuite is three numbered steps, each with a button that opens the right Google
+  page on your account: turn on 2 Step Verification, create an app password, paste it. Typing your
+  normal Google password says so in plain words.
 - A mail server that isn't encrypted from the start must switch to encryption before the app sends
   the password. One that can't is refused, and the mailbox says so in plain words, with the
   encrypted port to use instead.

@@ -310,7 +310,13 @@ export function classifyMailError(e: unknown): MailError {
   if (e instanceof MailError) return e;
   const err = e as { code?: string; authenticationFailed?: boolean; responseText?: string; response?: string; message?: string };
   const text = `${err?.responseText ?? ''} ${err?.response ?? ''} ${err?.message ?? ''}`;
-  if (/application-specific password required|web login required|basic auth(entication)? (is )?(disabled|blocked)|app passwords? (are |is )?(not allowed|disabled)|please log ?in via your web browser/i.test(text)) {
+  // Google says this when the normal password is used with 2 Step Verification
+  // on: it wants an app password, it is not refusing one (eng review of the
+  // Google step cards, 2026-10-26). Worded for the dialog and the card alike.
+  if (/application-specific password required/i.test(text)) {
+    return new MailError('auth', 'That is the normal Google password. Google needs an app password instead: make one on Google\'s App passwords page.');
+  }
+  if (/web login required|basic auth(entication)? (is )?(disabled|blocked)|app passwords? (are |is )?(not allowed|disabled)|please log ?in via your web browser/i.test(text)) {
     return new MailError('provider-blocked', 'This provider no longer accepts the app password for this mailbox.');
   }
   // 535 is the SMTP reply code for a refused login. It counts only as a reply
