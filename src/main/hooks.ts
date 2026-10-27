@@ -282,7 +282,11 @@ export class HookServer {
     /** Company foundations as this agent reads them (office-foundations.md):
      *  its job's section, the whole document for Michael, or null. Optional
      *  so tests can omit it. */
-    private getFoundations?: (agentId: string) => string | null
+    private getFoundations?: (agentId: string) => string | null,
+    /** The folders the owner named on a Company foundations card that this
+     *  member's job uses, read only (eng review 2026-10-26, D1). Optional so
+     *  tests can omit it. */
+    private readFoldersOf?: (agentId: string) => string[]
   ) {}
 
   start(): void {
@@ -1325,7 +1329,7 @@ export class HookServer {
     }
     const layout = folderLayoutFor(cfg.businessFolder, folders, home);
     const godName = resolveGodName(reg.agents[reg.godId ?? 'god']?.name);
-    const agent = { isGod: !!me.isGod, cwd: me.cwd };
+    const agent = { isGod: !!me.isGod, cwd: me.cwd, readFolders: me.isGod ? [] : (this.readFoldersOf?.(agentId) ?? []) };
     // Judge the path as asked and the file it really is: a link inside the
     // agent's own folder can point anywhere (review, 2026-09-25).
     const asked = folderDecision(agent, layout, tool, target, ci, godName);

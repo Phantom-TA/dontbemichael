@@ -232,6 +232,9 @@ moving, and brings you only the decisions that need you.
 - Hiring asks what the new person will do once; a pack update keeps your earlier changes.
 - Add a file right from a Company foundations card, pictures included: it is checked against the
   question before it joins company knowledge, and nothing of it stays in Claude's history.
+- Add a whole folder from a Company foundations card, picked or dropped: nothing is copied, the
+  answer names the folder, and the team members whose job uses that question can read it, read
+  only, even inside the business folder.
 - Settings, Access, the Command Center, the company profile, the schedule editor and Add a mailbox
   share Edit agent's panels and labels. Edit agent shows scheduled jobs as their own group.
 - A mailbox check that times out tries again by itself; a recovered stuck member is reported to

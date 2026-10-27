@@ -3043,7 +3043,7 @@
       "needs": "需要这个",
       "needsAgo": "需要这个，{{ago}}",
       "yourAnswer": "你的回答",
-      "hint": "几句简单的话，不超过 {{n}} 个字符，或添加一个文件。",
+      "hint": "几句简单的话，不超过 {{n}} 个字符，或添加一个文件或文件夹。",
       "save": "保存回答",
       "draftBy": "让 {{name}} 起草",
       "notNow": "暂不",
@@ -3060,6 +3060,7 @@
       "failedGone": "无法把你的回答加入公司基础信息。请告诉 {{godName}}。",
       "drafted": "草稿，编辑后保存",
       "addFile": "添加文件",
+      "addFolder": "添加文件夹",
       "removeFile": "移除 {{name}}",
       "checking": "正在检查文件",
       "fileMisfit": "{{name}} 看起来不是这个问题的答案：{{reason}}",
@@ -3067,7 +3068,14 @@
       "fileUnchecked": "无法检查这个文件，请重试。",
       "filePictureType": "请将这张图片另存为 PNG 或 JPEG 后再添加。",
       "filePictureEngine": "只有在 Claude 上才能检查图片。请改为添加 PDF 或文档。",
-      "fileMissing": "找不到 {{name}}，请重新添加。"
+      "fileMissing": "找不到 {{name}}，请重新添加。",
+      "folderChip": "{{name}} 文件夹",
+      "folderMissing": "找不到文件夹 {{name}}，请重新添加。",
+      "folderTooWide": "{{name}} 包含的内容太多。请选择存放这些记录的文件夹。",
+      "folderApp": "{{name}} 是应用自己的文件夹。请选择其他文件夹。",
+      "folderMember": "{{name}} 在某位团队成员的文件夹里。请选择其他文件夹。",
+      "folderEmpty": "{{name}} 里没有文件。",
+      "folderTooLong": "{{name}} 所在位置太深，无法在这里写出。请把它移到上层再重新添加。"
     }
   },
   "knowledgeNotice": {

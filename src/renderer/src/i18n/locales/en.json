@@ -3043,7 +3043,7 @@
       "needs": "needs this",
       "needsAgo": "needs this, {{ago}}",
       "yourAnswer": "Your answer",
-      "hint": "A few plain sentences, under {{n}} characters, or add a file.",
+      "hint": "A few plain sentences, under {{n}} characters, or add a file or folder.",
       "save": "Save answer",
       "draftBy": "Have {{name}} draft it",
       "notNow": "Not now",
@@ -3060,6 +3060,7 @@
       "failedGone": "Couldn't add your answer to Company foundations. Tell {{godName}}.",
       "drafted": "a draft, edit and save",
       "addFile": "Add a file",
+      "addFolder": "Add a folder",
       "removeFile": "Remove {{name}}",
       "checking": "Checking the file",
       "fileMisfit": "{{name}} doesn't look like the answer: {{reason}}",
@@ -3067,7 +3068,14 @@
       "fileUnchecked": "Couldn't check this file, try again.",
       "filePictureType": "Save this picture as PNG or JPEG and add it again.",
       "filePictureEngine": "Pictures can be checked only on Claude. Add this as a PDF or a document instead.",
-      "fileMissing": "Couldn't find {{name}}, add it again."
+      "fileMissing": "Couldn't find {{name}}, add it again.",
+      "folderChip": "{{name}} folder",
+      "folderMissing": "Couldn't find the folder {{name}}, add it again.",
+      "folderTooWide": "{{name}} holds too much. Pick the folder that has the records.",
+      "folderApp": "{{name}} is one of the app's own folders. Pick another.",
+      "folderMember": "{{name}} is inside a team member's folder. Pick another.",
+      "folderEmpty": "{{name}} has no files.",
+      "folderTooLong": "{{name}} sits too deep to name here. Move it higher and add it again."
     }
   },
   "knowledgeNotice": {

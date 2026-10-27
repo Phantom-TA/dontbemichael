@@ -22,7 +22,7 @@ import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, namedFolders, readFoldersFor, sectionFor, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -515,7 +515,8 @@ const hookServer = new HookServer(
   (agentId) => booksReadRoleIds().has(agentId),
   memberPresent,
   (signal) => onPlanSignal(signal),
-  (agentId) => foundationsForAgent(agentId)
+  (agentId) => foundationsForAgent(agentId),
+  (agentId) => foundationReadFolders(agentId)
 );
 // Pulse's Kept safe: each step a setting stopped, by gate (proposal 3).
 hookServer.onRefused = (agentId, gate) => pulseTelemetry.record({ agentId: agentId ?? null, kind: 'refused', ts: Date.now(), attrs: { gate } });
@@ -796,8 +797,24 @@ const foundations = new Foundations({
     memory.companyKnowledgeChanged(); // index it for search by meaning
     return r.docId;
   },
-  docTitle: (id) => knowledge.get(id)?.meta.title
+  docTitle: (id) => knowledge.get(id)?.meta.title,
+  // A folder named on a card (eng review 2026-10-26, D3): never the home
+  // folder, the business folder or a team member's.
+  folderBounds: () => {
+    const cfg = readConfig();
+    const team = [...(cfg.businessTeam ?? []).map((m) => m.folder),
+      ...Object.values(hive.registry().agents).filter((a) => !a.isGod && !a.isAssistant && a.cwd).map((a) => a.cwd)];
+    return { userHome: homedir(), business: cfg.businessFolder ? expandTilde(cfg.businessFolder) : undefined, team: team.filter((f): f is string => typeof f === 'string' && !!f).map(expandTilde) };
+  }
 });
+/** The folders the owner named on a Company foundations card that this
+ *  member's job uses (eng review 2026-10-26, D1): read only, even inside the
+ *  business folder. Every other member keeps today's rules (D2). */
+function foundationReadFolders(agentId: string): string[] {
+  const rec = foundations.read();
+  if (!namedFolders(rec).length) return [];
+  return readFoldersFor(rec, foundationsTeam().jobs[agentId] ?? []);
+}
 /** What an agent carries of the foundations: its job's part, or all of it for
  *  Michael. Research is left out by the hook itself. */
 function foundationsForAgent(agentId: string): string | null {
@@ -4235,7 +4252,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         ...Object.values(hive.registry().agents).filter((a) => a.id !== RESEARCH_ID && a.cwd).map((a) => a.cwd)];
       const memberPolicy = (): AgentFolderPolicy | undefined => {
         const base = businessFolder
-          ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd }, businessFolderLayout(businessFolder), process.platform !== 'linux')
+          ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd, readFolders: opts.hive!.isGod ? [] : foundationReadFolders(opts.hive!.id) }, businessFolderLayout(businessFolder), process.platform !== 'linux')
           : privateOnlyFolderPolicy(!!opts.hive!.isGod, opts.cwd);
         if (!base) return undefined;
         const hiveRoot = hive.root();
@@ -7076,6 +7093,17 @@ ipcMain.handle('foundations:pickFile', async (evt) => {
   return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
 });
 ipcMain.handle('foundations:addFile', (_evt, id: unknown, path: unknown) => foundations.addFile(id, path));
+// A folder from a foundation card (eng review 2026-10-26): picked here or
+// dropped on the card, checked, then named in the answer.
+ipcMain.handle('foundations:pickFolder', async (evt) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  if (!win) return { ok: false as const, error: 'no window' };
+  const res = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: 'Add a folder' });
+  if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
+  return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
+});
+ipcMain.handle('foundations:checkFolder', (_evt, id: unknown, path: unknown) => foundations.checkFolder(id, path));
+ipcMain.handle('foundations:answerFolder', (_evt, id: unknown, path: unknown, words: unknown) => foundations.answerFolder(id, path, words));
 ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown) => foundations.answerFile(id, docId, words));
 ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
 ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));

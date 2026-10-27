@@ -1475,6 +1475,14 @@ const api = {
   /** The owner's answer from a file added with foundationsAddFile. */
   foundationsAnswerFile: (id: string, docId: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
     ipcRenderer.invoke('foundations:answerFile', id, docId, words),
+  /** One folder for a foundation card, from the OS picker. */
+  foundationsPickFolder: (): Promise<{ ok: true; path: string; name: string } | { ok: false; error: string }> => ipcRenderer.invoke('foundations:pickFolder'),
+  /** Check a card's folder before the card is answered (nothing is written). */
+  foundationsCheckFolder: (id: string, path: string): Promise<{ ok: true; path: string; name: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-folder' | 'too-wide' | 'app-folder' | 'member-folder' | 'empty' | 'too-long' }> =>
+    ipcRenderer.invoke('foundations:checkFolder', id, path),
+  /** The owner's answer naming a folder; the members whose job uses it read it. */
+  foundationsAnswerFolder: (id: string, path: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('foundations:answerFolder', id, path, words),
   /** Have the member draft it: the draft comes back into the card. */
   foundationsDraft: (id: string, memberId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:draft', id, memberId),
   /** Not now: out of Needs you for a week. */

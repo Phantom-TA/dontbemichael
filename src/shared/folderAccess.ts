@@ -71,6 +71,24 @@ export interface FolderAgent {
   isGod: boolean;
   /** The folder the agent works in. */
   cwd: string;
+  /** Folders the owner named on a Company foundations card that this member's
+   *  job uses (shared/foundations.ts readFoldersFor): read only, even inside
+   *  the business folder (eng review 2026-10-26, D1). */
+  readFolders?: string[];
+}
+
+/** The named folders a member may read: never one holding the business
+ *  folder, a team folder or the app's own folders, nor one inside another
+ *  member's folder, whatever the record says. */
+function grantedReads(agent: FolderAgent, layout: FolderLayout, caseInsensitive: boolean): string[] {
+  const inside = insideFn(caseInsensitive);
+  const same = sameFn(caseInsensitive);
+  const team = teamFoldersOf(layout, same).filter((f) => !same(f, agent.cwd));
+  const kept = [layout.business, ...team, layout.appPrivate, ...(layout.appLocked ?? []), layout.engineRecords?.projects, layout.engineRecords?.history]
+    .filter((f): f is string => !!f);
+  return (agent.readFolders ?? []).filter((f) => !!f && isAbsolute(f)
+    && !kept.some((k) => inside(f, k))
+    && !team.some((t) => inside(t, f)));
 }
 
 /** Claude's file tools that only read. */
@@ -124,6 +142,9 @@ export function folderPolicy(agent: FolderAgent, layout: FolderLayout, caseInsen
     policy.sandbox.denyRead.push(f);
     policy.deny.push(rule('Read', f), rule('Edit', f));
   }
+  // A folder the owner named for this member's job: its shell reads it from
+  // this start (allowRead wins over the business folder's denyRead).
+  for (const f of grantedReads(agent, layout, caseInsensitive)) policy.sandbox.allowRead.push(f);
   return policy;
 }
 
@@ -175,6 +196,7 @@ export function folderDecision(
     };
   }
   if (layout.business && inside(layout.business, target)) {
+    if (!writes && grantedReads(agent, layout, caseInsensitive).some((f) => inside(f, target))) return { deny: false };
     return {
       deny: true,
       reason: `That is ${godName}'s folder, and only ${godName} can open it. If you need something from it, ask ${godName}.`
