@@ -35,11 +35,12 @@ test('the router keeps ticking after a throw and reports it', async (t) => {
   const seen = [];
   hive.routeOnce = () => { ticks++; throw new Error('boom'); };
   hive.failureObserver = (kind, e) => seen.push([kind, e.message]);
+  t.mock.timers.enable({ apis: ['setInterval'] });
   hive.startRouter(5);
-  await wait(60);
+  for (let i = 0; i < 3; i++) t.mock.timers.tick(5);
   clearInterval(hive.routerTimer);
-  assert.ok(ticks >= 3, `router kept ticking (${ticks})`);
-  assert.ok(seen.length >= 3 && seen.every(([k, m]) => k === 'router-throw' && m === 'boom'));
+  assert.equal(ticks, 3, 'the router kept ticking after each throw');
+  assert.deepEqual(seen, [['router-throw', 'boom'], ['router-throw', 'boom'], ['router-throw', 'boom']]);
 });
 
 test('a reporter that throws never stops the router', async (t) => {
@@ -49,10 +50,12 @@ test('a reporter that throws never stops the router', async (t) => {
   let ticks = 0;
   hive.routeOnce = () => { ticks++; throw new Error('boom'); };
   hive.failureObserver = () => { throw new Error('reporter broke'); };
+  t.mock.timers.enable({ apis: ['setInterval'] });
   hive.startRouter(5);
-  await wait(40);
+  t.mock.timers.tick(5);
+  t.mock.timers.tick(5);
   clearInterval(hive.routerTimer);
-  assert.ok(ticks >= 2);
+  assert.equal(ticks, 2);
 });
 
 test('a hook handler that throws, a bridge that fails and the lossy cmd fallback all report', () => {
@@ -86,8 +89,10 @@ test('an agent the app stops itself never reaches the exit report', { skip: proc
   mgr.setExitHandler((id, code, info) => exits.push([id, code, info]));
   const res = mgr.spawn({ id: 'p1', cwd: os.tmpdir(), command: '/bin/sh', args: ['-c', 'sleep 30'] });
   assert.equal(res.ok, true, res.error);
+  // gstack-timing-ok: a real child process; the wait lets it start before the kill
   await wait(150);
   assert.equal(mgr.kill('p1').ok, true);
+  // gstack-timing-ok: the contract is that no exit arrives; the wait outlasts a killed sh's exit (tens of ms)
   await wait(400);
   assert.deepEqual(exits, []);
 });

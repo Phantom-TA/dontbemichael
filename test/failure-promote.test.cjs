@@ -157,3 +157,14 @@ test('a main repo key that does not work fails the run', async () => {
   const out = await runPromotion({ gh, schemaFor: async () => schema, state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'bad' });
   assert.deepEqual(out.failures, ['main repo not reachable with MAIN_ISSUES_TOKEN: 401']);
 });
+
+test('the promotion workflow stays inside the free Actions minutes', () => {
+  // Value: protects=hourly runs of at most 2 minutes (1,440 a month) on Node 24, one at a time (eng OV1); fails_when=the timeout, schedule, runtime or concurrency drift; why_new=promote.yml had no test; seam=none; no_claim=GitHub's real minute accounting
+  const yml = require('node:fs').readFileSync(require('node:path').resolve(__dirname, '../tools/failure-reports/promote.yml'), 'utf8');
+  assert.match(yml, /timeout-minutes: 2\b/);
+  assert.match(yml, /cron: '\d+ \* \* \* \*'/, 'hourly');
+  assert.match(yml, /node-version: 24\b/, 'Node 24 strips the schema types');
+  assert.match(yml, /concurrency:\n\s+group: promote\n\s+cancel-in-progress: false/);
+  assert.match(yml, /MAIN_ISSUES_TOKEN: \$\{\{ secrets\.MAIN_ISSUES_TOKEN \}\}/);
+  assert.match(yml, /run: node promote\.cjs/);
+});
