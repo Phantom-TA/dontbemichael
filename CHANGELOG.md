@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [0.3.0] (2026-10-28)
+
+### Added
+- **Claude sign in in Settings.** Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API key, with Change key, Use a Claude account or Use an API key. An office set up before skips setup, so this used to show nowhere.
+
+### Changed
+- Out of credit on an API key, the stop card adds Change sign in, for a new key or your Claude account.
+- A new key, or your Claude account in place of a key, restarts the running team on it at once, picking up where each member left off. A stopped office checks again. Signing in to an account moves the team off its key only once the sign in finished.
+
+### Fixed
+- An update the Mac refuses to install now offers the manual download instead of the same Restart to update again and again.
+
+### Upgrading from 0.2.5 or older on a Mac
+- Those versions can't install signed updates on their own: Restart to update keeps coming back. Download the DMG and install it by hand once; updates work as usual after that.
+
 ## [0.2.9] (2026-10-28)
 
 ### Added

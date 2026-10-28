@@ -31,6 +31,7 @@ import { SettingsHeroCard } from './SettingsHeroCard';
 import { CompanyProfileSettings, type CompanyProfileDraft } from './CompanyProfileSettings';
 import { cityLine, cleanCompanyProfile, mergeEditedProfile } from '@shared/companyProfile';
 import { SetupPanel } from './SetupPanel';
+import { ClaudeSignInSettings } from './ClaudeSignInSettings';
 import { Icon } from './Icon';
 import { McpDefaultsSettings } from './McpDefaultsSettings';
 import { IntegrationsRegistry } from './IntegrationsRegistry';
@@ -1419,6 +1420,8 @@ export function SettingsModal({ config, onClose, initialSection, place }: Settin
                   {/* AGENTS: the model, autonomy, and the limits that stop them. */}
                   {activeSection === 'Agents' && (
                     <>
+                      <ClaudeSignInSettings />
+
                       <div style={group}>
                         <h3 style={groupName}>
                           {t('settings.agentsModels.defaultModel')}

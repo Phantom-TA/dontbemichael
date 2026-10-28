@@ -1927,7 +1927,7 @@ const api = {
   officeRetry: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('office:retry'),
   /** Add credit: main opens the Anthropic billing page (a fixed address). */
   officeAddCredit: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('office:addCredit'),
-  /** A new key replaced one that stopped working: these Claude terminals restart, resumed. */
+  /** The team's Claude sign in changed: these Claude terminals restart, resumed. */
   onOfficeRestartClaude: (cb: (ptyIds: string[]) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, ids: unknown): void => cb(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []);
     ipcRenderer.on('office:restartClaude', listener);

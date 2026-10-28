@@ -1,4 +1,4 @@
-- **Failures report themselves** to the developers, as fixed fields only.
-- Report a problem lists recent reports.
-- Larger setup text on Home and Manager.
-- Windows: hidden checks start when the Claude path has a space.
+- **See and change your Claude sign in** in Settings, Agents.
+- Out of credit on a key? Change sign in from the stop card.
+- A new sign in restarts the team on it at once.
+- A Mac update that will not install offers the download.

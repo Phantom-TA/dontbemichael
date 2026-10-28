@@ -297,6 +297,10 @@
       "arabicTerminalDesc": "用浏览器的文本引擎渲染终端，让阿拉伯语正确连写并从右向左阅读（xterm 自身没有双向文本支持）。关闭则使用 GPU 渲染器：更快，但无法处理从右向左的文本。对已打开和新开的终端同时生效。",
       "arabicTerminalFollowsLanguage": "当前跟随应用语言。在此切换即可覆盖，两个方向都可以，你的选择会保留，即使之后再更改语言。"
     },
+    "claudeSignIn": {
+      "title": "Claude 登录",
+      "tip": "你在 Claude 上的团队如何登录：使用你的 Claude 账户，按你的 Claude 套餐计费；或使用 Anthropic API 密钥，计费到你的 Anthropic 账户。"
+    },
     "agentsModels": {
       "defaultModel": "默认智能体模型",
       "defaultModelDesc": "每个新生成的 Claude 团队成员默认使用此模型，除非为该成员单独选择。{{godName}} 有自己的模型设置。在模型选择器中标记为「· 默认」。",
@@ -2439,6 +2443,8 @@
     "cardAction": "让 {{godName}} 准备就绪",
     "done": "完成",
     "useApiKey": "使用 API 密钥",
+    "changeKey": "更换密钥",
+    "useAccount": "改用 Claude 账户",
     "apiKey": "Anthropic API 密钥",
     "keyInfo": "费用计入你的 Anthropic 账户。在 console.anthropic.com 创建密钥。这台电脑上团队的工具都可以使用它，所以请选择设有支出上限的密钥。",
     "keySave": "保存密钥",
@@ -2475,8 +2481,10 @@
     "tryAgain": "重试",
     "signInAction": "登录",
     "changeKey": "更换密钥",
+    "changeSignIn": "更改登录方式",
     "chip": "办公室已停止",
     "creditInfo": "由于 Anthropic 账户余额已用完，Claude 停止了整个团队。请在 Anthropic 网站充值，然后点击重试。办公室也会每 15 分钟自动检查一次。在此之前，定时任务会留在收件箱中等待。",
+    "creditKeyInfo": "由于你的 API 密钥所属的 Anthropic 账户余额已用完，Claude 停止了整个团队。请在 Anthropic 网站充值，然后点击重试；或点击更改登录方式，换用新的密钥或你的 Claude 账户。办公室也会每 15 分钟自动检查一次。在此之前，定时任务会留在收件箱中等待。",
     "signInInfo": "由于 Claude 登录已过期，Claude 停止了整个团队。重新登录后，团队会从停下的地方继续。在此之前，定时任务会留在收件箱中等待。",
     "keyInfo": "由于 Anthropic API 密钥已失效，Claude 停止了整个团队。粘贴新的密钥后，团队会重新启动并继续工作。在此之前，定时任务会留在收件箱中等待。"
   },

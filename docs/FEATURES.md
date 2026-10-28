@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.9). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.3.0). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -190,6 +190,8 @@ moving, and brings you only the decisions that need you.
   itself.
 - Setup ends on Get Michael ready: it installs Claude Code and signs you in where you can see it,
   or takes an Anthropic API key instead. Skip it, and Ask me keeps a card until Michael can start.
+  Settings, Agents shows how the team signs in to Claude and changes it: a new key, your Claude
+  account in place of a key, or a key in place of the account.
 - If your settings file was damaged, setup says that is why it starts again and where a copy of
   the file was kept.
 - When Michael or a card sends you somewhere in Settings, the words are a button that opens Settings right there, on
@@ -210,6 +212,18 @@ moving, and brings you only the decisions that need you.
   as a picture, and a part you select pastes as clean as the whole, in light or dark mode.
 
 ## Part 2: Every change, release by release
+
+### 0.3.0 (2026-10-28)
+- Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API
+  key, with Change key, Use a Claude account or Use an API key. An office set up before skips
+  setup, so this used to show nowhere.
+- Out of credit on an API key, the stop card adds Change sign in, for a new key or your Claude
+  account.
+- A new sign in restarts the running team on it at once, each member picking up where it left off,
+  and a stopped office checks again. Signing in to an account moves the team off its key only once
+  the sign in finished.
+- An update the Mac refuses to install offers the manual download instead of the same Restart to
+  update again and again. Macs on 0.2.5 or older download the new version by hand once.
 
 ### 0.2.9 (2026-10-28)
 - Failures the developers can fix in code report themselves: a crash, a team member's terminal

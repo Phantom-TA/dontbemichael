@@ -297,6 +297,10 @@
       "arabicTerminalDesc": "Renders terminals with the browser's text engine so Arabic joins and reads right to left (xterm has no bidi of its own). Off is the GPU renderer: faster, but it can't lay out right to left text. Applies to open terminals and new ones alike.",
       "arabicTerminalFollowsLanguage": "Following your app language. Switch it here to override that either way; the choice sticks even if you change language again."
     },
+    "claudeSignIn": {
+      "title": "Claude sign in",
+      "tip": "How your team on Claude signs in: your Claude account, on your Claude plan, or an Anthropic API key, billed to your Anthropic account."
+    },
     "agentsModels": {
       "defaultModel": "Default agent model",
       "defaultModelDesc": "Every newly spawned Claude team member starts on this model unless another is picked for that member. {{godName}} has a separate model setting. Marked \"· default\" in the model pickers.",
@@ -2439,6 +2443,8 @@
     "cardAction": "Get {{godName}} ready",
     "done": "Done",
     "useApiKey": "Use an API key",
+    "changeKey": "Change key",
+    "useAccount": "Use a Claude account",
     "apiKey": "Anthropic API key",
     "keyInfo": "Billed to your Anthropic account. Create a key at console.anthropic.com. Your team's tools on this computer can use it, so pick one with a spending limit.",
     "keySave": "Save key",
@@ -2475,8 +2481,10 @@
     "tryAgain": "Try again",
     "signInAction": "Sign in",
     "changeKey": "Change key",
+    "changeSignIn": "Change sign in",
     "chip": "Office stopped",
     "creditInfo": "Claude stopped the whole team because the Anthropic account has no credit left. Add credit on the Anthropic website, then press Try again. The office also checks again on its own every 15 minutes. Scheduled jobs wait in the inbox until then.",
+    "creditKeyInfo": "Claude stopped the whole team because the Anthropic account behind your API key has no credit left. Add credit on the Anthropic website, then press Try again, or use Change sign in for a new key or your Claude account. The office also checks again on its own every 15 minutes. Scheduled jobs wait in the inbox until then.",
     "signInInfo": "Claude stopped the whole team because the Claude sign in expired. Sign in again and the team carries on where it stopped. Scheduled jobs wait in the inbox until then.",
     "keyInfo": "Claude stopped the whole team because the Anthropic API key stopped working. Paste a new key and the team restarts and carries on. Scheduled jobs wait in the inbox until then."
   },
