@@ -391,7 +391,7 @@ test('the office says the real cause to the owner, Michael and the team, and res
   // key, or a Claude account in place of a key) restarts (B1).
   const check = index.slice(index.indexOf('function sendOfficeCheck('), index.indexOf('function ownerRetryOffice('));
   assert.doesNotMatch(check, /respawn|restart|kill/i);
-  assert.match(index, /function claudeAuthChanged\(\): void \{\s*if \(!stopNeedsOwner\(officeBreak\.view\(\)\)\) return;\s*try \{ liveWebContents\(\)\?\.send\('office:restartClaude', runningClaudePtys\(\)\); \}[^\n]*\n\s*ownerRetryOffice\(\);/);
+  assert.match(index, /function claudeAuthChanged\(\): void \{\s*try \{ liveWebContents\(\)\?\.send\('office:restartClaude', runningClaudePtys\(\)\); \}[^\n]*\n\s*if \(stopNeedsOwner\(officeBreak\.view\(\)\)\) ownerRetryOffice\(\);/);
   assert.match(index, /const retry = !\(signal\.reason === 'signin' && readConfig\(\)\.claudeAuth === 'apiKey'\);/);
   // One sign in card while a sign in stop is on (eng R3).
   const needs = read('src/renderer/src/shell/useNeedsYou.ts');

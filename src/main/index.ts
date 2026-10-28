@@ -6574,15 +6574,16 @@ ipcMain.handle('engineSetup:useApiKey', async (_e, raw: unknown): Promise<{ ok: 
   return { ok: true };
 });
 
-/** The team's Claude sign in changed (a new key, or a Claude account in place
- *  of a key) while the office is stopped on the owner (office-stopped-account.md,
- *  B1): out of credit or a sign in that stopped working. Running Claude
- *  terminals got the old sign in in their environment when they started
- *  (claudeAuthEnv), so they restart, resumed, and the office checks again. */
+/** The team's Claude sign in changed: a new key, a Claude account in place of
+ *  a key, or a key in place of the account. Running Claude terminals got the
+ *  old sign in in their environment when they started (claudeAuthEnv), so they
+ *  restart at once, resumed (owner, 2026-10-28: a change from Settings works
+ *  right away, even mid step). An office stopped on the owner
+ *  (office-stopped-account.md, B1), out of credit or a sign in that stopped
+ *  working, checks again. */
 function claudeAuthChanged(): void {
-  if (!stopNeedsOwner(officeBreak.view())) return;
   try { liveWebContents()?.send('office:restartClaude', runningClaudePtys()); } catch { /* window gone */ }
-  ownerRetryOffice();
+  if (stopNeedsOwner(officeBreak.view())) ownerRetryOffice();
 }
 
 /** The terminals of agents on Claude that are running now. */

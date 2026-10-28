@@ -13,7 +13,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 
 ### Changed
 - Out of credit on an API key, the stop card adds Change sign in, for a new key or your Claude account.
-- A new key, or your Claude account in place of a key, while the office is stopped restarts the team on it and checks again. Signing in to an account moves the team off its key only once the sign in finished.
+- A new key, or your Claude account in place of a key, restarts the running team on it at once, picking up where each member left off. A stopped office checks again. Signing in to an account moves the team off its key only once the sign in finished.
 
 ### Fixed
 - An update the Mac refuses to install now offers the manual download instead of the same Restart to update again and again.

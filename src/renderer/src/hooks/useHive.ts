@@ -1412,8 +1412,9 @@ export function useHive(config: HarnessConfig | null): void {
       }
     };
     window.addEventListener(ENGINE_READY_EVENT, onReady);
-    // A new API key replaced one that stopped working (office-stopped-account.md):
-    // the running Claude terminals restart, resumed, the same way.
+    // The team's Claude sign in changed (a new key, or the account in place of
+    // a key, office-stopped-account.md): the running Claude terminals restart,
+    // resumed, the same way.
     const offKey = window.cth.onOfficeRestartClaude?.((restart) => {
       onReady(new CustomEvent(ENGINE_READY_EVENT, { detail: { restart } }));
     });

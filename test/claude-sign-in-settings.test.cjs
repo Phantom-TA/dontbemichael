@@ -53,12 +53,17 @@ test('out of credit on an API key offers Change sign in; on an account it does n
   assert.match(card, /t\(onKey \? 'officeStop\.creditKeyInfo' : 'officeStop\.creditInfo'\)/);
 });
 
-test('a new sign in during any owner stop restarts the Claude terminals and checks again', () => {
-  // Value: protects=a stopped team picks up a new key or the Claude account at once, instead of keeping the empty key in its environment; fails_when=a credit stop is left out, or the useApiKey handler stops calling the shared step; why_new=only a sign in stop restarted before; seam=none (source pins, main has no IPC harness)
+test('a new sign in restarts the running Claude terminals, and an owner stop checks again', () => {
+  // Value: protects=a stopped team picks up a new key or the Claude account at once, instead of keeping the empty key in its environment; fails_when=a credit stop is left out, a change while the office runs skips the restart, or the useApiKey handler stops calling the shared step; why_new=only a sign in stop restarted before; owner 2026-10-28 chose restart at once on any change; seam=none (source pins, main has no IPC harness)
   const main = read('src/main/index.ts');
   const handler = main.slice(main.indexOf("ipcMain.handle('engineSetup:useApiKey'"), main.indexOf('function claudeAuthChanged('));
   assert.match(handler, /writeConfig\(\{ claudeAuth: 'apiKey' \}\);[\s\S]*accountSignInFromKey = false;\s*claudeAuthChanged\(\);\s*return \{ ok: true \};/);
   assert.doesNotMatch(handler, /reason === 'signin'/, 'a credit stop restarts too');
+  // A change from Settings while the office runs restarts the team too: a
+  // member left on the old key would fail every Try again of a later stop.
+  const changed = main.slice(main.indexOf('function claudeAuthChanged('), main.indexOf('function runningClaudePtys('));
+  assert.match(changed, /\{\s*try \{ liveWebContents\(\)\?\.send\('office:restartClaude', runningClaudePtys\(\)\); \} catch \{ \/\* window gone \*\/ \}\s*if \(stopNeedsOwner\(officeBreak\.view\(\)\)\) ownerRetryOffice\(\);\s*\}/);
+  assert.doesNotMatch(changed, /if \(!stopNeedsOwner/, 'the restart never waits for a stop');
   const { stopNeedsOwner } = require('./load-ts.cjs')('src/shared/officeBreak.ts');
   const view = (reason) => ({ until: null, checking: false, reason, again: false });
   assert.equal(stopNeedsOwner(view('credit')), true);
