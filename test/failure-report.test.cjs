@@ -182,3 +182,24 @@ test('the crash handlers still keep the app alive and log, and now report', () =
     assert.doesNotMatch(body, /throw |process\.exit|app\.(quit|exit)/);
   }
 });
+
+test('a known failure in a new app version is its own pending row and reuses the old issue', () => {
+  // Value: protects=each release reports its own sighting of a known failure, as a comment on the existing issue (E3, one row per fingerprint and version); fails_when=rows fold by fingerprint alone, so a sent row swallows the new version, or issueFor stops spanning versions; why_new=every reporter test used one version; seam=none; no_claim=the real upgrade path (two reporters share one file)
+  const err = () => { const e = new Error('x'); e.stack = 'Error\n    at f (/x/app.asar/out/main/index.js:7:1)'; return e; };
+  const old = make();
+  old.r.reportFailure('router-throw', err());
+  const [row] = old.r.pending();
+  old.r.markSent(row, 41);
+  old.r.flush();
+  const upgraded = make({ files: [...old.files], deps: { appVersion: '0.2.10' } });
+  upgraded.r.reportFailure('router-throw', err());
+  const pending = upgraded.r.pending();
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].appVersion, '0.2.10');
+  assert.equal(pending[0].fingerprint, row.fingerprint, 'the fingerprint ignores the version');
+  assert.equal(pending[0].count, 1);
+  assert.equal(upgraded.r.issueFor(row.fingerprint), 41);
+  upgraded.r.flush();
+  const kept = ledger(upgraded.files);
+  assert.deepEqual(kept.map((x) => [x.appVersion, x.state]).sort(), [['0.2.10', 'pending'], ['0.2.9', 'sent']]);
+});

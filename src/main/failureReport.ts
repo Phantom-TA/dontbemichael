@@ -202,9 +202,11 @@ export function createFailureReporter(deps: FailureReporterDeps) {
 
     flush,
 
-    /** Rows the sender should file, oldest first. */
+    /** Rows the sender should file, oldest first. None while DO_NOT_TRACK is
+     *  set, including rows kept before it was (SR4: nothing is sent). */
     pending(): LedgerRow[] {
       load();
+      if (deps.doNotTrack()) return [];
       return [...rows.values()].filter((r) => r.state === 'pending').sort((a, b) => a.ts - b.ts);
     },
 

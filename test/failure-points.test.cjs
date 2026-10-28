@@ -96,3 +96,17 @@ test('an agent the app stops itself never reaches the exit report', { skip: proc
   await wait(400);
   assert.deepEqual(exits, []);
 });
+
+test('release builds carry the reports key into the app, and only a keyed build sends', () => {
+  // Value: protects=official releases can file reports at all; fails_when=the release Compile step loses FAILURE_REPORT_KEY, the main bundle stops defining __REPORT_KEY__, or the sender starts without the key; why_new=the canary posts with the CI secret directly, so it stays green while a release ships with an empty key; seam=none; no_claim=the secret's value or GitHub Actions runtime
+  const vite = read('electron.vite.config.ts');
+  assert.match(vite, /const defineMain = \{[\s\S]*?__REPORT_KEY__: JSON\.stringify\(process\.env\.FAILURE_REPORT_KEY \?\? ''\)[\s\S]*?\};/);
+  assert.match(vite, /main: \{[\s\S]*?define: defineMain/);
+  const release = read('.github/workflows/release.yml');
+  const compile = release.slice(release.indexOf('run: npm run build'), release.indexOf('\n      - ', release.indexOf('run: npm run build')));
+  assert.ok(compile.length > 0, 'the release Compile step exists');
+  assert.match(compile, /FAILURE_REPORT_KEY: \$\{\{ secrets\.FAILURE_REPORT_KEY \}\}/);
+  const index = read('src/main/index.ts');
+  assert.match(index, /createFailureSender\(\{\n\s+key: __REPORT_KEY__,/);
+  assert.match(index, /if \(AUTO_FAILURE_REPORTS && __REPORT_KEY__\) \{\n\s+setTimeout\(\(\) => \{ void failureSender\.tick\(\); \}, 60_000\)\.unref\(\);\n\s+setInterval\(\(\) => \{ void failureSender\.tick\(\); \}, SEND_EVERY_MS\)\.unref\(\);/);
+});

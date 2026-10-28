@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const loadTs = require('./load-ts.cjs');
 const { createFailureReporter } = loadTs('src/main/failureReport.ts');
-const { createFailureSender, classifyResponse, WRITES_PER_HOUR, SEARCHES_PER_HOUR } = loadTs('src/main/failureSender.ts');
+const { createFailureSender, classifyResponse, WRITES_PER_HOUR, SEARCHES_PER_HOUR, WAIT_DEFAULT_MS } = loadTs('src/main/failureSender.ts');
 const { REPORTS_REPO, parseIssueBody, issueBody } = loadTs('src/shared/failureReport.ts');
 
 const hdrs = (h = {}) => ({ get: (n) => (n in h ? h[n] : null) });
@@ -152,4 +152,77 @@ test('a decoy issue with the fingerprint in its title but junk in its body is no
   await s.sender.tick();
   assert.equal(s.calls[1].url, `https://api.github.com/repos/${REPORTS_REPO}/issues`, 'creates its own issue');
   assert.equal(s.reporter.issueFor(fp), 100);
+});
+
+test('a server error backs off 10 minutes, doubling to at most an hour, and a success resets it', async () => {
+  // Value: protects=a GitHub outage never makes every install hammer the API (eng E-R4); fails_when=a 5xx stops setting a wait, stops doubling, loses the one hour cap, or never resets after a success; why_new=only classifyResponse(502) was tested, not the backoff; seam=injected fetch and clock; no_claim=GitHub's real outage statuses
+  const row = setup().reporter.pending()[0];
+  let now = 1_700_000_000_000;
+  const statuses = [];
+  const sent = [];
+  let calls = 0;
+  const sender = createFailureSender({
+    key: 'k', appVersion: '0.2.9', now: () => now, log: () => {},
+    reporter: { pending: () => [row], issueFor: () => 4, markSent: (_r, n) => sent.push(n), forgetIssue: () => {}, markDropped: () => assert.fail('not dropped'), flush: () => {} },
+    fetch: async () => { calls++; return { status: statuses.shift(), headers: hdrs(), json: async () => ({}) }; }
+  });
+  const MIN = 60_000;
+  const waits = [];
+  for (let i = 0; i < 5; i++) {
+    statuses.push(502);
+    await sender.tick();
+    waits.push((sender.state().waitUntil - now) / MIN);
+    await sender.tick(); // still waiting
+    assert.equal(calls, i + 1, 'no call while waiting');
+    now = sender.state().waitUntil;
+  }
+  assert.deepEqual(waits, [10, 20, 40, 60, 60]);
+  statuses.push(201);
+  await sender.tick();
+  assert.deepEqual(sent, [4]);
+  statuses.push(503);
+  await sender.tick();
+  assert.equal((sender.state().waitUntil - now) / MIN, 10, 'a success starts the backoff over');
+  assert.equal(sender.state().stopped, false, 'a server error never stops sending');
+});
+
+test('a rate limit without retry-after waits the default hour', async () => {
+  // Value: protects=a 429 with no header still pauses sending; fails_when=a missing retry-after becomes a zero or NaN wait; why_new=only the retry-after case was tested; seam=injected fetch and clock; no_claim=GitHub's real headers
+  const { sender } = setup({ responses: [{ status: 429 }] });
+  await sender.tick();
+  assert.equal(sender.state().waitUntil - 1_700_000_000_000, WAIT_DEFAULT_MS);
+});
+
+test('a 404 when filing a new issue stops sending: the reports repo is gone or the key cannot reach it', async () => {
+  // Value: protects=a missing repo or a key without access stops all sending for the version (eng OV10) instead of retrying every row; fails_when=a 404 outside a comment is read as a deleted issue or a dropped row; why_new=only a 404 on a comment was tested; seam=injected fetch; no_claim=GitHub's real 404 bodies
+  const { sender, calls, logs, reporter } = setup({ failures: 2, responses: [{ status: 200, json: { items: [] } }, { status: 404 }] });
+  await sender.tick();
+  await sender.tick();
+  assert.equal(calls.length, 2, 'nothing more after the 404');
+  assert.equal(sender.state().stopped, true);
+  assert.deepEqual(logs, [{ kind: 'failure-report-stopped', status: 404, version: '0.2.9' }]);
+  assert.equal(reporter.pending().length, 2, 'both rows stay owed for the next release');
+});
+
+
+test('DO_NOT_TRACK set after a failure was kept still sends nothing', async () => {
+  // Value: protects=TELEMETRY.md's promise that DO_NOT_TRACK sends nothing (SR4, D15 A); fails_when=rows queued before DO_NOT_TRACK was set are still filed; why_new=only new rows under DO_NOT_TRACK were tested; seam=injected deps; no_claim=the real environment variable
+  let dnt = false;
+  const files = new Map();
+  const reporter = createFailureReporter({
+    enabled: true, ledgerPath: '/ud/failures.jsonl', appVersion: '0.2.9', platform: 'darwin', osVersion: '15.1.0', arch: 'arm64',
+    now: () => 1_700_000_000_000, sha256: (s) => crypto.createHash('sha256').update(s).digest('hex'), engineFor: () => 'claude',
+    officeBreakActive: () => false, doNotTrack: () => dnt, signalName: () => undefined,
+    readFile: (p) => files.get(p) ?? null, writeFile: (p, d) => files.set(p, d), warn: () => {}
+  });
+  reporter.reportFailure('router-throw', new Error('x'));
+  dnt = true;
+  reporter.reportFailure('router-throw', new Error('x'));
+  const calls = [];
+  const sender = createFailureSender({
+    key: 'k', appVersion: '0.2.9', reporter, now: () => 1_700_000_000_000, log: () => {},
+    fetch: async (url) => { calls.push(url); return { status: 200, headers: hdrs(), json: async () => ({ items: [] }) }; }
+  });
+  await sender.tick();
+  assert.deepEqual(calls, []);
 });
