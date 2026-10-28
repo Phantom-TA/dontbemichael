@@ -3863,7 +3863,8 @@ const reporter = createReporter<BrowserWindow>({
   now: () => new Date(),
   urlInputs: () => ({
     appVersion: app.getVersion(), platform: process.platform, arch: process.arch,
-    osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : ''
+    osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : '',
+    fingerprints: failures.recentFingerprints()
   }),
   warn: (step, error) => console.warn(`[report] ${step} failed:`, error)
 });
