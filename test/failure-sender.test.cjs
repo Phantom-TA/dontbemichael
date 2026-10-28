@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const loadTs = require('./load-ts.cjs');
 const { createFailureReporter } = loadTs('src/main/failureReport.ts');
 const { createFailureSender, classifyResponse, WRITES_PER_HOUR, SEARCHES_PER_HOUR } = loadTs('src/main/failureSender.ts');
-const { REPORTS_REPO, parseIssueBody } = loadTs('src/shared/failureReport.ts');
+const { REPORTS_REPO, parseIssueBody, issueBody } = loadTs('src/shared/failureReport.ts');
 
 const hdrs = (h = {}) => ({ get: (n) => (n in h ? h[n] : null) });
 
@@ -71,7 +71,8 @@ test('a new fingerprint is searched, then created in the reports repo with close
 
 test('a search hit gets one seen-on comment, and a later version comments on the known number', async () => {
   const fp = setup().reporter.pending()[0].fingerprint;
-  const s = setup({ responses: [{ status: 200, json: { items: [{ number: 3, title: `[auto] router-throw Error (${fp})` }] } }, { status: 201 }] });
+  const real = setup().reporter.pending()[0];
+  const s = setup({ responses: [{ status: 200, json: { items: [{ number: 3, title: `[auto] router-throw Error (${fp})`, body: issueBody(real) }] } }, { status: 201 }] });
   await s.sender.tick();
   assert.equal(s.calls[1].url, `https://api.github.com/repos/${REPORTS_REPO}/issues/3/comments`);
   assert.match(s.calls[1].body.body, /^seen-on 0\.2\.9 darwin 15\.1\.0 arm64 claude unknown count=1$/);
@@ -143,4 +144,12 @@ test('offline leaves every row pending', async () => {
   const { sender, reporter } = setup({ responses: ['offline'] });
   await sender.tick();
   assert.equal(reporter.pending().length, 1);
+});
+
+test('a decoy issue with the fingerprint in its title but junk in its body is not used', async () => {
+  const fp = setup().reporter.pending()[0].fingerprint;
+  const s = setup({ responses: [{ status: 200, json: { items: [{ number: 99, title: `[auto] x (${fp})`, body: 'visit https://scam.example' }] } }, { status: 201, json: { number: 100 } }] });
+  await s.sender.tick();
+  assert.equal(s.calls[1].url, `https://api.github.com/repos/${REPORTS_REPO}/issues`, 'creates its own issue');
+  assert.equal(s.reporter.issueFor(fp), 100);
 });

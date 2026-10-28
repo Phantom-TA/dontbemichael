@@ -11,7 +11,7 @@
  * (owner AP1) and reaches only REPORTS_REPO; nothing here takes another
  * target. No key (dev builds, tests) means nothing is ever called.
  */
-import { REPORTS_REPO, issueBody, issueTitle, seenOnLine } from '../shared/failureReport';
+import { REPORTS_REPO, issueBody, issueTitle, parseIssueBody, seenOnLine } from '../shared/failureReport';
 import type { FailureReporter, LedgerRow } from './failureReport';
 
 export const SEND_EVERY_MS = 10 * 60_000;
@@ -112,8 +112,12 @@ export function createFailureSender(deps: SenderDeps) {
       const q = encodeURIComponent(`${row.fingerprint} in:title repo:${REPORTS_REPO} type:issue`);
       const { res, verdict } = await call('GET', `/search/issues?q=${q}&per_page=1`);
       if (verdict !== 'ok') return handle(verdict, res.status, res.headers.get('retry-after'), row) ? 'end' : 'next';
-      const found = (await res.json()) as { items?: Array<{ number?: unknown; title?: unknown }> };
-      const hit = found.items?.find((i) => typeof i.number === 'number' && typeof i.title === 'string' && i.title.includes(`(${row.fingerprint})`));
+      const found = (await res.json()) as { items?: Array<{ number?: unknown; title?: unknown; body?: unknown }> };
+      // Only a real report for this fingerprint counts: a decoy issue with
+      // the fingerprint in its title and junk in its body would hide every
+      // later sighting from the Action.
+      const hit = found.items?.find((i) => typeof i.number === 'number' && typeof i.title === 'string' && i.title.endsWith(`(${row.fingerprint})`)
+        && typeof i.body === 'string' && parseIssueBody(i.body)?.fingerprint === row.fingerprint);
       if (hit) issue = hit.number as number;
     }
     if (!canWrite()) return 'end';
