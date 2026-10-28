@@ -119,7 +119,9 @@ export const LOG_KIND_CLASS: Readonly<Record<string, FailureClass>> = {
   'session-restored': 'none', 'silent-auto-restart': 'none', 'spawn': 'none', 'tasks': 'none',
   'terminal-handoff': 'none', 'trust-checked': 'none', 'trust-denied': 'none', 'trust-held': 'none',
   'trust-layer': 'none', 'trust-retry': 'none', 'trust-wait': 'none', 'upkeep-to-research': 'none',
-  'work-style-handoff-written': 'none'
+  'work-style-handoff-written': 'none',
+  // The failure sender's own state changes.
+  'failure-report-stopped': 'none', 'failure-report-waiting': 'none', 'failure-report-dropped': 'none'
 };
 
 const ERROR_CODE = /^([A-Z][A-Z0-9_]{1,23}|none)$/;

@@ -61,6 +61,10 @@ jobs:
           # forks without the secret compile with '' and analytics no-ops.
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # Automatic failure reports (docs/designs/auto-report-failures.md): a
+          # fine grained key that can write issues in the private reports repo
+          # only. Mac and Windows both get it; forks build without it.
+          FAILURE_REPORT_KEY: ${{ secrets.FAILURE_REPORT_KEY }}
 
       # Sign from a keychain this job creates, not from CSC_LINK. electron-builder
       # 25 makes its own keychain from CSC_LINK, then calls set-key-partition-list

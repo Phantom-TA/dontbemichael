@@ -126,6 +126,11 @@ import { CostLedgerStore } from './costLedger';
 import { analytics, dntSet, isRendererMessageSurface } from './analytics';
 import { createFailureReporter, FLUSH_MS } from './failureReport';
 import { breakerArm } from '../shared/failureReport';
+import { createFailureSender, SEND_EVERY_MS } from './failureSender';
+
+/** The failure reports key (docs/designs/auto-report-failures.md): injected by
+ *  release CI from FAILURE_REPORT_KEY, '' in every other build. */
+declare const __REPORT_KEY__: string;
 import { writeFileAtomic } from './atomicFile';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
@@ -964,6 +969,21 @@ const pulse = new PulseService({
 // event also goes to the failure reporter first, which classifies it and
 // never throws (docs/designs/auto-report-failures.md, eng E-R2).
 hive.failureObserver = (kind, e) => failures.reportFailure(kind, e);
+// Files what the reporter keeps into the private reports repo, every 10
+// minutes and a minute after start. Dev builds have no key: nothing is sent.
+const failureSender = createFailureSender({
+  key: __REPORT_KEY__,
+  appVersion: app.getVersion(),
+  reporter: failures,
+  fetch: (url, init) => fetch(url, init),
+  now: () => Date.now(),
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+  timeout: (ms) => AbortSignal.timeout(ms)
+});
+if (AUTO_FAILURE_REPORTS && __REPORT_KEY__) {
+  setTimeout(() => { void failureSender.tick(); }, 60_000).unref();
+  setInterval(() => { void failureSender.tick(); }, SEND_EVERY_MS).unref();
+}
 hive.logObserver = (e) => {
   failures.observe(e);
   const kind = e.kind;
