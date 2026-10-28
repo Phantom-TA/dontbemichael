@@ -301,21 +301,23 @@ test('repeats only count, and reach the file at quit or with the next real chang
   assert.equal(ledger(files).find((x) => x.fingerprint === c.fingerprint).count, 2, 'a new row writes every count');
 });
 
-test('nothing is offered to the sender before the file is read, reads retry once a flush, and give up after ten', () => {
-  // Value: protects=a row sent before the saved copy loads is never sent twice, and a file that stays unreadable neither blocks the ledger for good nor is read on every failure (pass 2 review); fails_when=pending() serves memory rows before load, or reads retry on every record; why_new=pass 2 reviews; seam=readFile throws, fake clock; no_claim=real OS error codes
+test('nothing is offered to the sender before the file is read, reads retry once a flush, and an unread file is never written', () => {
+  // Value: protects=a row sent before the saved copy loads is never sent twice, a file that stays unreadable is never overwritten, and reads are not retried on every failure (pass 2 and 3 reviews, DeepSeek; owner D3: remove the give-up); fails_when=pending() serves memory rows before load, reads retry on every record, or the file is written while unread; why_new=pass 2 reviews and owner D3; seam=readFile throws, fake clock; no_claim=real OS error codes
   let reads = 0;
-  const { r, files, warnings, tick } = make({ deps: { readFile: () => { reads++; throw Object.assign(new Error('no access'), { code: 'EACCES' }); } } });
+  let writes = 0;
+  const { r, warnings, tick } = make({ deps: { readFile: () => { reads++; throw Object.assign(new Error('no access'), { code: 'EACCES' }); }, writeFile: () => { writes++; } } });
   const e = Object.assign(new TypeError('x'), { stack: 'TypeError: x\n    at a (/A/out/main/index.js:1:1)' });
   r.reportFailure('router-throw', e);
   r.reportFailure('hook-server', e);
   assert.deepEqual(r.pending(), []);
   assert.equal(r.issueFor('0123456789ab'), undefined);
   assert.equal(reads, 1, 'one read until the next flush interval');
-  for (let i = 0; i < 9; i++) { tick(30_000); r.flush(); }
-  assert.equal(reads, 10);
-  assert.ok(warnings.some(([w]) => w === 'read-gave-up'));
-  assert.equal(ledger(files).length, 2, 'given up: memory rows are written');
-  assert.equal(r.pending().length, 2);
+  for (let i = 0; i < 30; i++) { tick(30_000); r.flush(); }
+  assert.equal(reads, 31);
+  assert.equal(writes, 0, 'an unread file is never written over');
+  assert.ok(warnings.every(([w]) => w === 'read'));
+  for (let i = 0; i < 60; i++) r.reportFailure('router-throw', Object.assign(new TypeError('x'), { stack: `TypeError: x\n    at f${i} (/A/out/main/index.js:${i + 2}:1)` }));
+  assert.deepEqual(r.pending(), [], 'memory rows are held, capped, not sent');
 });
 
 test('sending waits while the reporter is told to hold', () => {

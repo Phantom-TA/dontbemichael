@@ -22,9 +22,6 @@ export const LEDGER_MAX_BYTES = 1024 * 1024;
 export const FLUSH_MS = 30_000;
 export const PENDING_MAX_AGE_MS = 30 * 24 * 3600_000;
 export const MEMORY_ROWS_ON_WRITE_FAILURE = 50;
-/** Failed reads, at most one per flush interval, before the file is given up
- *  on and written over (what it held could not be read anyway). */
-export const MAX_READ_FAILURES = 10;
 const RECENT_MS = 7 * 24 * 3600_000;
 
 export type RowState = 'pending' | 'sent' | 'local' | 'dropped';
@@ -73,7 +70,6 @@ export function createFailureReporter(deps: FailureReporterDeps) {
   let busy = false;
   let writeFailed = false;
   let loaded = false;
-  let readFailures = 0;
   let lastReadFailure = 0;
   const key = (fp: string, version: string) => `${fp}@${version}`;
   const os = (['darwin', 'win32', 'linux'].includes(deps.platform) ? deps.platform : 'linux') as FailureReport['os'];
@@ -84,13 +80,12 @@ export function createFailureReporter(deps: FailureReporterDeps) {
   function load(): void {
     if (loaded) return;
     // Retried at most once a flush interval, never on every failure noticed.
-    if (readFailures > 0 && deps.now() - lastReadFailure < FLUSH_MS) return;
+    if (lastReadFailure > 0 && deps.now() - lastReadFailure < FLUSH_MS) return;
     let text: string | null;
     try { text = deps.readFile(deps.ledgerPath); } catch (e) {
+      // Never given up on: new rows wait in memory (at most 50) until it reads.
       deps.warn('read', e);
-      readFailures++;
       lastReadFailure = deps.now();
-      if (readFailures >= MAX_READ_FAILURES) { loaded = true; deps.warn('read-gave-up'); }
       return;
     }
     loaded = true;
