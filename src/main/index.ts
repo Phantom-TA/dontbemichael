@@ -14,7 +14,7 @@ import {
 import { promises as fsPromises } from 'node:fs';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { join, resolve, sep, basename, dirname, isAbsolute } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, tmpdir, constants as osConstants } from 'node:os';
 import { request as httpsRequest } from 'node:https';
 import { PtyManager, type ProcessLaunch, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath } from './shellEnv';
@@ -123,7 +123,9 @@ import { CostLedgerTotals } from './costLifetime';
 import { RUN_COMPARE_MODEL, RUN_COMPARE_TIMEOUT_MS, RunCompare } from './runCompare';
 import { runHiddenModel } from './hiddenModel';
 import { CostLedgerStore } from './costLedger';
-import { analytics, isRendererMessageSurface } from './analytics';
+import { analytics, dntSet, isRendererMessageSurface } from './analytics';
+import { createFailureReporter, FLUSH_MS } from './failureReport';
+import { writeFileAtomic } from './atomicFile';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
 import * as integrations from './integrations';
@@ -173,7 +175,7 @@ import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalS
 import { loadHero } from './hero';
 import { loadModelCatalog } from './modelCatalog';
 import { claudeCliVersion } from './claudeCliVersion';
-import { ALLOW_TEMP_WORKERS } from '../shared/buildFeatures';
+import { ALLOW_TEMP_WORKERS, AUTO_FAILURE_REPORTS } from '../shared/buildFeatures';
 import { APP_NAME, APP_DATA_DIR, APP_URL_SCHEME } from '../shared/appName';
 import { copyOfficeData, homeFolderStatus, homeReadyAtLaunch } from './homeFolder';
 import { backfillOfficeRecord, findOffice, folderLayoutFor, isUsableTeamFolder, syncOfficeRecord } from './officeFile';
@@ -208,17 +210,48 @@ const isDev = !!process.env.ELECTRON_RENDERER_URL;
 app.setPath('userData', join(app.getPath('appData'), APP_DATA_DIR));
 app.setName(APP_NAME);
 
+// Automatic failure reports: notices what used to fail silently and keeps it
+// in userData/failures.jsonl, the queue failureSender files from. Created
+// before the crash handlers so they can use it; `hive` and `officeBreak` are
+// read late, inside try, since they are made further down.
+const failures = createFailureReporter({
+  enabled: AUTO_FAILURE_REPORTS,
+  ledgerPath: join(app.getPath('userData'), 'failures.jsonl'),
+  appVersion: app.getVersion(),
+  platform: process.platform,
+  osVersion: process.getSystemVersion(),
+  arch: process.arch,
+  now: () => Date.now(),
+  sha256: (s) => createHash('sha256').update(s).digest('hex'),
+  engineFor: (agentId) => {
+    try {
+      if (agentId) return hive.registry().agents[agentId]?.provider ?? 'claude';
+      return readConfig().godProvider ?? 'claude';
+    } catch { return 'none'; }
+  },
+  officeBreakActive: () => { try { return officeBreak.current() !== null; } catch { return false; } },
+  doNotTrack: dntSet,
+  signalName: (n) => Object.entries(osConstants.signals).find(([, v]) => v === n)?.[0],
+  readFile: (p) => { try { return readFileSync(p, 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; } },
+  writeFile: (p, data) => writeFileAtomic(p, data),
+  warn: (what, e) => console.warn(`[failure-report] ${what}:`, e)
+});
+setInterval(() => failures.flush(), FLUSH_MS).unref();
+
 // Keep the main process alive on an unexpected throw/rejection. The harness is a
 // multi-agent supervisor — a single stray throw (e.g. node-pty's ConPTY console
 // helper choking when a fast-exiting agent CLI's console is already gone) must
 // NOT take the whole app and every running agent down with it. Log and continue
 // rather than letting the default handler exit the process.
 // (Restored during the #71 merge — the PR's rebase dropped these handlers.)
+// Each one is also an automatic failure report (docs/designs/auto-report-failures.md).
 process.on('uncaughtException', (err) => {
   console.error('[main] uncaughtException (kept alive):', err);
+  failures.reportFailure('main-uncaught', err);
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[main] unhandledRejection (kept alive):', reason);
+  failures.reportFailure('main-rejection', reason);
 });
 
 const ptyManager = new PtyManager();
@@ -925,8 +958,11 @@ const pulse = new PulseService({
     return fsPromises.readFile(join(privateRoot(home), ORGANIZED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
   }
 });
-// The office log kinds Pulse counts, and the board each tick reads.
+// The office log kinds Pulse counts, and the board each tick reads. Every
+// event also goes to the failure reporter first, which classifies it and
+// never throws (docs/designs/auto-report-failures.md, eng E-R2).
 hive.logObserver = (e) => {
+  failures.observe(e);
   const kind = e.kind;
   if (kind === 'message') {
     const from = typeof e.from === 'string' ? e.from : '';
@@ -8831,6 +8867,7 @@ app.whenReady().then(() => {
 // before-quit covers Cmd-Q / dock-quit; the per-window close handler covers
 // the red close button. Both routes hit the same warning UX.
 app.on('before-quit', (e) => {
+  failures.flush();
   if (allowQuit) return;
   const count = ptyManager.list().length;
   if (count === 0) return;

@@ -157,7 +157,7 @@ export interface AnalyticsInitOptions {
   enabled: boolean;
 }
 
-function dntSet(): boolean {
+export function dntSet(): boolean {
   const v = process.env.DO_NOT_TRACK;
   return v !== undefined && v !== '' && v !== '0';
 }
