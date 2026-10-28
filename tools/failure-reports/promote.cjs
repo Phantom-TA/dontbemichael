@@ -39,7 +39,7 @@ function newer(a, b) {
 }
 
 function emptyState() {
-  return { lastRun: null, counted: {}, queued: [], day: '', newIssues: 0, reopens: 0, counts: {}, seenComment: {}, mainIssue: {}, reopened: {}, linked: {}, canary: {} };
+  return { firstRun: null, lastRun: null, counted: {}, queued: [], day: '', newIssues: 0, reopens: 0, counts: {}, seenComment: {}, mainIssue: {}, reopened: {}, linked: {}, canary: {} };
 }
 
 function seenOnBody(fp, counts) {
@@ -61,6 +61,8 @@ async function runPromotion({ gh, schemaFor, state: given, now, reportsRepo, rep
   const at = now();
   const day = new Date(at).toISOString().slice(0, 10);
   if (state.day !== day) { state.day = day; state.newIssues = 0; state.reopens = 0; }
+  // Releases from before the first run never had a canary to send.
+  if (!state.firstRun) state.firstRun = new Date(at).toISOString();
   const capHit = new Set();
 
   const rel = await gh(mainToken, 'GET', `/repos/${MAIN_REPO}/releases?per_page=100`);
@@ -165,7 +167,7 @@ async function runPromotion({ gh, schemaFor, state: given, now, reportsRepo, rep
 
   // The newest release's canary must have arrived within 3 hours.
   const newest = releases.slice().sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at))[0];
-  if (newest) {
+  if (newest && Date.parse(newest.published_at) > Date.parse(state.firstRun)) {
     const ver = String(newest.tag_name).replace(/^v/, '');
     if (at - Date.parse(newest.published_at) > CANARY_GRACE_MS && !state.canary[ver]) failures.push(`no canary for ${ver}`);
   }

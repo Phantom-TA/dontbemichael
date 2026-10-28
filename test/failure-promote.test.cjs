@@ -111,9 +111,11 @@ test('the canary is checked, never promoted; a missing canary fails the run', as
   const ok = await run(f, null, T0 + 4 * HOUR);
   assert.equal(f.mainIssues.length, 0);
   assert.deepEqual(ok.failures, []);
-  const missing = await run(fakeGitHub({ priv: [] }), null, T0 + 4 * HOUR);
+  const missing = await run(fakeGitHub({ priv: [] }), { firstRun: new Date(T0 - 2 * HOUR).toISOString() }, T0 + 4 * HOUR);
   assert.deepEqual(missing.failures, ['no canary for 0.2.9']);
-  const early = await run(fakeGitHub({ priv: [] }), null, T0);
+  const before = await run(fakeGitHub({ priv: [] }), null, T0 + 4 * HOUR);
+  assert.deepEqual(before.failures, [], 'a release from before the first run is never checked');
+  const early = await run(fakeGitHub({ priv: [] }), { firstRun: new Date(T0 - 2 * HOUR).toISOString() }, T0);
   assert.deepEqual(early.failures, [], 'within 3 hours of the release it is not yet missing');
 });
 
