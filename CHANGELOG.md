@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
-## [Unreleased]
+## [0.3.0] (2026-10-28)
 
 ### Added
 - **Claude sign in in Settings.** Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API key, with Change key, Use a Claude account or Use an API key. An office set up before skips setup, so this used to show nowhere.

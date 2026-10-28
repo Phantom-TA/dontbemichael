@@ -41,10 +41,10 @@ runs on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.2.9: Failures report themselves.**
-> When something breaks that the developers can fix in code, the app files a report on its own, as
-> fixed fields only, with no names, messages or files. Anything you can fix yourself is never sent,
-> and setting DO_NOT_TRACK stops it. In 0.2.8, copy any file that opens in a tab.
+> **New in 0.3.0: See and change your Claude sign in.**
+> Settings, Agents shows whether the team works on your Claude account or an Anthropic API key, and
+> moves it from one to the other. Out of credit on a key, the stop card offers Change sign in, and
+> the team restarts on the new sign in at once. In 0.2.9, failures report themselves.
 
 ## Contents
 
