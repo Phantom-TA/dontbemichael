@@ -74,16 +74,18 @@ function OfficeStopCard({ view }: { view: OfficeBreakView }) {
   const { t } = useTranslation();
   const godName = useResolvedGodName();
   const { engineSetup } = useNeedsYou();
-  const [fix, setFix] = useState<'signin' | 'key' | null>(null);
+  // 'manage': out of credit on an API key, the owner may sign in another way.
+  const [fix, setFix] = useState<'signin' | 'key' | 'manage' | null>(null);
   const [ready, setReady] = useState(false);
   const credit = view.reason === 'credit';
   // How the office signs in decides the words and the fix (design D3).
-  const key = !credit && engineSetup?.method === 'apiKey';
+  const onKey = engineSetup?.method === 'apiKey';
+  const key = !credit && onKey;
   const title = t('officeStop.title');
   const line = view.checking ? null
     : credit ? (view.again ? t('officeStop.creditAgain') : t('officeStop.credit'))
     : key ? t('officeStop.keyStopped') : t('officeStop.signIn');
-  const info = credit ? t('officeStop.creditInfo') : key ? t('officeStop.keyInfo') : t('officeStop.signInInfo');
+  const info = credit ? t(onKey ? 'officeStop.creditKeyInfo' : 'officeStop.creditInfo') : key ? t('officeStop.keyInfo') : t('officeStop.signInInfo');
   const closeFix = (): void => {
     // A finished sign in moves the stop to checking; a saved key does so in
     // main, with the terminals' restart (owner, B1).
@@ -110,6 +112,7 @@ function OfficeStopCard({ view }: { view: OfficeBreakView }) {
                 <span className="cth-sr-only"> {t('markdown.opensInBrowser')}</span>
               </PixelButton>
               <PixelButton variant="secondary" size="sm" onClick={() => { void window.cth.officeRetry?.(); }}>{t('officeStop.tryAgain')}</PixelButton>
+              {onKey && <PixelButton variant="secondary" size="sm" onClick={() => { setReady(false); setFix('manage'); }}>{t('officeStop.changeSignIn')}</PixelButton>}
             </>
           ) : (
             <PixelButton variant="primary" size="sm" onClick={() => { setReady(false); setFix(key ? 'key' : 'signin'); }}>
@@ -124,7 +127,7 @@ function OfficeStopCard({ view }: { view: OfficeBreakView }) {
           onClose={closeFix}
           footer={<PixelButton variant="primary" size="md" onClick={closeFix}>{ready ? t('engineSetup.done') : t('common.close')}</PixelButton>}
         >
-          <GetMichaelReady fix={fix} onReadyChange={setReady} />
+          <GetMichaelReady fix={fix === 'manage' ? undefined : fix} manage onReadyChange={setReady} />
         </Dialog>
       )}
     </section>

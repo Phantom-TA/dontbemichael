@@ -17,15 +17,20 @@ const SIGNIN_POLL_MS = 2000;
  * computer, and the owner's Claude account, as two rows. A missing Claude
  * installs on its own with Claude's standalone installer; sign in opens the
  * browser and the step notices when it is done. The terminals stay behind
- * Show details. Used as setup's last step and in the Ask me card's dialog.
+ * Show details. Used as setup's last step, in the Ask me card's dialog, in
+ * Settings and from a stop card.
  */
-export function GetMichaelReady({ provider, onReadyChange, fix }: {
+export function GetMichaelReady({ provider, onReadyChange, fix, manage }: {
   provider?: AgentProvider;
   onReadyChange?: (ready: boolean) => void;
   /** Opened from a stop card (office-stopped-account.md): `key` starts on the
    *  key form, `signin` offers a fresh sign in even when Claude still reads
    *  as signed in. */
   fix?: 'signin' | 'key';
+  /** Settings and a stop card: a ready sign in offers the other way in (a new
+   *  key or a Claude account in place of a key, an API key in place of an
+   *  account), so the owner can always see and change how the team signs in. */
+  manage?: boolean;
 }) {
   const { t } = useTranslation();
   const godName = useResolvedGodName();
@@ -43,6 +48,8 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
   const [keyForm, setKeyForm] = useState(fix === 'key');
   // A stop card's sign in finished in the browser (fix 'signin').
   const [signedInAgain, setSignedInAgain] = useState(false);
+  // The team uses a key and the owner chose a Claude account instead (manage).
+  const [switching, setSwitching] = useState(false);
   const [keyDraft, setKeyDraft] = useState('');
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyError, setKeyError] = useState<string | undefined>();
@@ -100,15 +107,16 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
   }, [keyDraft, keyBusy, read, t]);
 
   // First look, then install at once when Claude is missing: the owner already
-  // pressed Next to get here, so there is nothing to ask.
+  // pressed Next to get here, so there is nothing to ask. Settings (manage)
+  // never installs on its own.
   useEffect(() => {
     void read().then((s) => {
-      if (s && s.applies && !s.installed && !autoInstalled.current) {
+      if (s && s.applies && !s.installed && !autoInstalled.current && !manage) {
         autoInstalled.current = true;
         void install();
       }
     });
-  }, [read, install]);
+  }, [read, install, manage]);
 
   // A setup terminal ended: read again. An install that ended without Claude
   // found failed; a sign in that ended still signed out did not finish.
@@ -121,13 +129,16 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
       }
       // The sign in ended: stop waiting on the browser whatever it says, and
       // say it did not finish only when Claude still reads signed out.
+      // A sign in from a key office that ended still on the key did not
+      // finish either: main moves the team only once it is signed in.
       if (e.id === ENGINE_SIGNIN_PTY) {
         setBrowser(false);
-        setSignInStuck(s.signedIn === false);
-        if (s.signedIn !== false) setSignedInAgain(true);
+        const stuck = s.signedIn === false || (switching && s.method === 'apiKey');
+        setSignInStuck(stuck);
+        if (!stuck) { setSignedInAgain(true); setSwitching(false); }
       }
     });
-  }), [read]);
+  }), [read, switching]);
 
   // While the owner signs in in the browser, look every 2 s, one look at a
   // time: each starts `claude auth status`, which can be slow to answer.
@@ -144,17 +155,20 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
   const phase = engineSetupPhase(status, { installing, installFailed, browser, statusFailed });
   // From a stop card, ready means the fix is done too: a new key saved, or a
   // fresh sign in finished.
-  const fixPending = (fix === 'key' && keyForm) || (fix === 'signin' && status?.method !== 'apiKey' && !signedInAgain);
+  const signInPending = !signedInAgain && ((fix === 'signin' && status?.method !== 'apiKey') || switching);
+  const fixPending = (fix === 'key' && keyForm) || signInPending;
   const ready = engineSetupPhaseOpensOffice(phase) && !fixPending;
   useEffect(() => { onReadyChange?.(ready); }, [ready, onReadyChange]);
   // A finished step has nothing to show behind Show details.
   useEffect(() => { if (ready) setDetails(false); }, [ready]);
 
+  // A fresh sign in over a ready row (fix or switch) is in the browser too.
+  const inBrowser = phase === 'browser' || (browser && signInPending);
   const detailsPty = phase === 'installing' || phase === 'installFailed' ? ENGINE_INSTALL_PTY
-    : phase === 'browser' ? ENGINE_SIGNIN_PTY : null;
+    : inBrowser ? ENGINE_SIGNIN_PTY : null;
   const detailsToggle = detailsPty && (
     <button type="button" onClick={() => setDetails((d) => !d)} style={linkBtn}>
-      {details ? t('engineSetup.hideDetails') : (phase === 'browser' ? t('engineSetup.showClaude') : t('engineSetup.showDetails'))}
+      {details ? t('engineSetup.hideDetails') : (inBrowser ? t('engineSetup.showClaude') : t('engineSetup.showDetails'))}
     </button>
   );
   const terminal = details && detailsPty && (
@@ -213,6 +227,16 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
     </Row>
   );
 
+  const browserRow = (
+    <Row glyph={<Spinner />} tone="wait" label={t('engineSetup.account')} status={t('engineSetup.inBrowser')}>
+      <div style={actions}>
+        <PixelButton variant="secondary" size="sm" onClick={() => void signIn()}>{t('engineSetup.openBrowserAgain')}</PixelButton>
+        {detailsToggle}
+      </div>
+      {terminal}
+    </Row>
+  );
+
   const accountRow = (() => {
     switch (phase) {
       case 'checking':
@@ -228,15 +252,7 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
           </div>
         </Row>
       );
-      case 'browser': return (
-        <Row glyph={<Spinner />} tone="wait" label={t('engineSetup.account')} status={t('engineSetup.inBrowser')}>
-          <div style={actions}>
-            <PixelButton variant="secondary" size="sm" onClick={() => void signIn()}>{t('engineSetup.openBrowserAgain')}</PixelButton>
-            {detailsToggle}
-          </div>
-          {terminal}
-        </Row>
-      );
+      case 'browser': return browserRow;
       // Sign in could not be read: Michael may still start, but no green check.
       case 'unknown': return keyForm ? keyFormRow : (
         <Row icon="help" tone="idle" label={t('engineSetup.account')} status={t('engineSetup.signInUnknown')}>
@@ -246,20 +262,35 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
           </div>
         </Row>
       );
-      // A stop card's fix: the key form, or a fresh sign in, over the ready row.
+      // A stop card's fix or a change from Settings: the key form, or a fresh
+      // sign in, over the ready row.
       default: if (keyForm) return keyFormRow;
-        if (fix === 'signin' && status?.method !== 'apiKey' && !signedInAgain) return (
+        if (signInPending) return browser ? browserRow : (
           <Row icon="arrow-right" tone="idle" label={t('engineSetup.account')} status={signInStuck ? t('engineSetup.signInStuck') : t('engineSetup.signInWhy', { godName })} bad={signInStuck}>
             <div style={actions}>
               <PixelButton variant="primary" size="sm" onClick={() => void signIn()}>{t('engineSetup.signIn')}</PixelButton>
+              {switching && <PixelButton variant="ghost" size="sm" onClick={() => { setSwitching(false); setSignInStuck(false); }}>{t('common.cancel')}</PixelButton>}
             </div>
           </Row>
         );
         return status?.method === 'apiKey' ? (
-        <Row icon="check" tone="ok" label={t('engineSetup.apiKey')} status={t('engineSetup.usingApiKey')} />
+        <Row icon="check" tone="ok" label={t('engineSetup.apiKey')} status={t('engineSetup.usingApiKey')}>
+          {manage && (
+            <div style={actions}>
+              <PixelButton variant="secondary" size="sm" onClick={() => setKeyForm(true)}>{t('engineSetup.changeKey')}</PixelButton>
+              <PixelButton variant="secondary" size="sm" onClick={() => { setSignedInAgain(false); setSwitching(true); void signIn(); }}>{t('engineSetup.useAccount')}</PixelButton>
+            </div>
+          )}
+        </Row>
       ) : (
         <Row icon="check" tone="ok" label={t('engineSetup.account')}
-          status={status?.email ? t('engineSetup.signedInAs', { email: status.email }) : t('engineSetup.signedIn')} />
+          status={status?.email ? t('engineSetup.signedInAs', { email: status.email }) : t('engineSetup.signedIn')}>
+          {manage && (
+            <div style={actions}>
+              <PixelButton variant="secondary" size="sm" onClick={() => setKeyForm(true)}>{t('engineSetup.useApiKey')}</PixelButton>
+            </div>
+          )}
+        </Row>
       );
     }
   })();

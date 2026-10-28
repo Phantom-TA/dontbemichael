@@ -173,7 +173,7 @@ test('Claude turning ready restarts only the members that could not start, and a
   assert.match(feed, /if \(wasNeeded && merged\.engineSetup\?\.applies && !merged\.engineSetup\.needed && restart\.length/, 'no edge for another engine or with nobody to restart');
   assert.match(feed, /new CustomEvent\(ENGINE_READY_EVENT, \{ detail: \{ restart \} \}\)/);
   const ready = read('src/renderer/src/components/GetMichaelReady.tsx');
-  assert.match(ready, /if \(e\.id === ENGINE_SIGNIN_PTY\) \{\s*setBrowser\(false\);\s*setSignInStuck\(s\.signedIn === false\);/, 'a finished sign in never leaves the step waiting on the browser');
+  assert.match(ready, /if \(e\.id === ENGINE_SIGNIN_PTY\) \{\s*setBrowser\(false\);\s*const stuck = s\.signedIn === false \|\| \(switching && s\.method === 'apiKey'\);\s*setSignInStuck\(stuck\);/, 'a finished sign in never leaves the step waiting on the browser');
   const pty = read('src/main/pty.ts');
   assert.match(pty, /const resolved = typeof opts\.shellScript === 'string' \? opts\.command : this\.resolveCommand\(opts\.command\)\.path;/, 'a script spawn never looks its command up');
 });

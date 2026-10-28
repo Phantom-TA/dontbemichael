@@ -69,7 +69,7 @@ import { linkWorktreeDeps, unlinkWorktreeDeps } from './worktreeDeps';
 import { HiveManager, type AgentMeta, type HiveMessage, type HiveTask } from './hive';
 import { HookServer, type PlanSignal } from './hooks';
 import { OfficeBreak, type OfficeBreakState } from './officeBreak';
-import { countsTowardErrorStorm, heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
+import { countsTowardErrorStorm, heldByBreak, stopNeedsOwner, type OfficeStopReason } from '../shared/officeBreak';
 import { loadBundledPacks, packsResourceDir } from './packs';
 import { businessFolderRoot, ensureFolder, safeFolderName } from './agentFolders';
 import { CircuitBreaker, breakerMessages, type BreakerInput } from './breaker';
@@ -1600,7 +1600,21 @@ ptyManager.setExitHandler((id, exitCode, info) => {
     if (id === ENGINE_INSTALL_PTY) {
       analytics.track('agent_install_finished', { provider: 'claude', rung: 'native', outcome: claudePathFast() ? 'agent_launched' : 'install_failed' });
     }
-    try { liveWebContents()?.send('engineSetup:changed', { id, exitCode: exitCode ?? null }); } catch { /* window gone */ }
+    const changed = (): void => {
+      try { liveWebContents()?.send('engineSetup:changed', { id, exitCode: exitCode ?? null }); } catch { /* window gone */ }
+    };
+    // A sign in started on an API key office: the team moves to the account
+    // only once it is signed in, so a sign in left half done keeps the key.
+    const path = id === ENGINE_SIGNIN_PTY && accountSignInFromKey ? claudePathFast() : null;
+    if (!path) { changed(); return; }
+    void claudeAuth.read(path).catch(() => null).then((s) => {
+      if (s?.signedIn && readConfig().claudeAuth === 'apiKey') {
+        accountSignInFromKey = false;
+        writeConfig({ claudeAuth: 'account' });
+        claudeAuthChanged();
+      }
+      changed();
+    });
     return;
   }
   // Record an ABNORMAL death before teardown — teardownPty drops the
@@ -6484,6 +6498,8 @@ setHiddenClaudeAuthEnv(() => {
 /** `claude auth status`, one at a time, never joining a read that started
  *  before a sign in ended, keeping the last known state on a failed read
  *  (engineSetup.makeClaudeAuthReader). */
+/** A Get Michael ready sign in started while the team used an API key. */
+let accountSignInFromKey = false;
 const claudeAuth = makeClaudeAuthReader((path, done) => {
   const env = buildPtyEnv(process.env, process.platform === 'win32' ? (process.env.PATH || '') : userShellPath());
   const cmd = claudeAuthStatusCommand(process.platform, path, process.env.ComSpec);
@@ -6525,8 +6541,9 @@ ipcMain.handle('engineSetup:install', (e): { ok: boolean; error?: string } => {
 ipcMain.handle('engineSetup:signIn', (e): { ok: boolean; error?: string } => {
   const claude = claudePathFast();
   if (!claude) return { ok: false, error: 'not installed' };
-  // Signing in with an account means the team uses it, not a key.
-  if (readConfig().claudeAuth === 'apiKey') writeConfig({ claudeAuth: 'account' });
+  // Signing in with an account means the team uses it, not a key: the switch
+  // waits for the sign in to finish (the terminal's exit handler).
+  accountSignInFromKey = readConfig().claudeAuth === 'apiKey';
   if (ptyManager.list().some((x) => x.id === ENGINE_SIGNIN_PTY)) ptyManager.kill(ENGINE_SIGNIN_PTY);
   return ptyManager.spawn({ id: ENGINE_SIGNIN_PTY, cwd: homedir(), command: claude, args: ['auth', 'login'], cols: 100, rows: 12 }, e.sender);
 });
@@ -6552,15 +6569,21 @@ ipcMain.handle('engineSetup:useApiKey', async (_e, raw: unknown): Promise<{ ok: 
   if (!saved.ok) return { ok: false, error: 'store' };
   writeConfig({ claudeAuth: 'apiKey' });
   try { liveWebContents()?.send('engineSetup:changed', { id: 'api-key', exitCode: null }); } catch { /* window gone */ }
-  // A key that stopped working was replaced (office-stopped-account.md, B1).
-  // Running Claude terminals got the old key in their environment when they
-  // started (claudeAuthEnv), so they restart, resumed; the office checks again.
-  if (officeBreak.view()?.reason === 'signin') {
-    try { liveWebContents()?.send('office:restartClaude', runningClaudePtys()); } catch { /* window gone */ }
-    ownerRetryOffice();
-  }
+  accountSignInFromKey = false;
+  claudeAuthChanged();
   return { ok: true };
 });
+
+/** The team's Claude sign in changed (a new key, or a Claude account in place
+ *  of a key) while the office is stopped on the owner (office-stopped-account.md,
+ *  B1): out of credit or a sign in that stopped working. Running Claude
+ *  terminals got the old sign in in their environment when they started
+ *  (claudeAuthEnv), so they restart, resumed, and the office checks again. */
+function claudeAuthChanged(): void {
+  if (!stopNeedsOwner(officeBreak.view())) return;
+  try { liveWebContents()?.send('office:restartClaude', runningClaudePtys()); } catch { /* window gone */ }
+  ownerRetryOffice();
+}
 
 /** The terminals of agents on Claude that are running now. */
 function runningClaudePtys(): string[] {
