@@ -342,6 +342,9 @@ export function parseNpmCmdShim(shimPath: string, content: string): NpmShimTarge
 export class PtyManager {
   private sessions = new Map<string, PtySession>();
   private webContents: WebContents | null = null;
+  /** A spawn that will silently lose something (the lossy cmd.exe fallback),
+   *  for the failure reporter (docs/designs/auto-report-failures.md). */
+  onFailure?: (kind: 'cmd-fallback', detail: 'multiline') => void;
   /** Fired when a PTY exits on its OWN (child finished/crashed/killed
    *  externally), so the main process can run the SAME lifecycle teardown
    *  (archive, worktree removal, map cleanup) that the explicit kill() path
@@ -657,6 +660,8 @@ export class PtyManager {
         // argument is actually at risk in THIS spawn.
         if (needsCmd) {
           const multiline = (opts.args ?? []).some((a) => a.includes('\n'));
+          // The lossy case is a failure report too (docs/designs/auto-report-failures.md).
+          if (multiline) { try { this.onFailure?.('cmd-fallback', 'multiline'); } catch { /* never block a spawn */ } }
           console.warn(
             `[pty] Windows: "${resolved}" could not be decoded as an npm shim — falling back to cmd.exe.` +
             (multiline

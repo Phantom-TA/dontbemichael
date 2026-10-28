@@ -189,6 +189,18 @@ export function classifyLogEvent(
   return null;
 }
 
+/** The breaker arm a trip reason names, for `loop-agent`; null for the
+ *  owner's own caps (token limit, cost cap, token cap), which are not bugs.
+ *  The reason words are breaker.ts's (plainBreakerReason reads the same). */
+export function breakerArm(reason: unknown): 'repeat' | 'error-storm' | 'velocity' | 'no-progress' | null {
+  if (typeof reason !== 'string') return null;
+  if (reason.startsWith('looping:')) return 'repeat';
+  if (reason.startsWith('error storm:')) return 'error-storm';
+  if (reason.startsWith('token velocity')) return 'velocity';
+  if (reason.startsWith('no-progress:')) return 'no-progress';
+  return null;
+}
+
 /* ── Stack frames ─────────────────────────────────────────────────────────── */
 
 export const MAX_FRAMES = 8;

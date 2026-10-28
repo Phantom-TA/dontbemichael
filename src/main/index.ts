@@ -125,6 +125,7 @@ import { runHiddenModel } from './hiddenModel';
 import { CostLedgerStore } from './costLedger';
 import { analytics, dntSet, isRendererMessageSurface } from './analytics';
 import { createFailureReporter, FLUSH_MS } from './failureReport';
+import { breakerArm } from '../shared/failureReport';
 import { writeFileAtomic } from './atomicFile';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
@@ -255,6 +256,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const ptyManager = new PtyManager();
+ptyManager.onFailure = (kind, detail) => failures.reportFailure(kind, undefined, { detail });
 
 function runCodexDaemonCommand(
   executable: string,
@@ -961,6 +963,7 @@ const pulse = new PulseService({
 // The office log kinds Pulse counts, and the board each tick reads. Every
 // event also goes to the failure reporter first, which classifies it and
 // never throws (docs/designs/auto-report-failures.md, eng E-R2).
+hive.failureObserver = (kind, e) => failures.reportFailure(kind, e);
 hive.logObserver = (e) => {
   failures.observe(e);
   const kind = e.kind;
@@ -2521,6 +2524,12 @@ function runBreakerBeat(progressWindowMs: number): void {
     if (d.action === 'none') continue;
     const name = reg.agents[d.state.agentId]?.name ?? d.state.agentId;
     const reason = d.state.reason;
+    // A member stuck in a loop is a failure report; a spending or token cap is
+    // the owner's setting and is not (docs/designs/auto-report-failures.md).
+    const arm = breakerArm(reason);
+    if (arm && (d.action === 'constrain' || d.action === 'stop')) {
+      failures.reportFailure('loop-agent', undefined, { detail: `${arm}:${d.action === 'stop' ? 'stopped' : 'constrained'}`, agentId: d.state.agentId });
+    }
     if (d.action === 'steer' || d.action === 'constrain') {
       // The member hears it; on a constrain Michael does too (breakerMessages).
       // No toast: a constrain is a soft pause Michael handles (only Michael
@@ -4798,6 +4807,8 @@ ipcMain.handle('app:copyRich', (_evt, input: unknown) => copyRich(clipboard, inp
 ipcMain.handle('app:copyImage', (_evt, bytes: unknown) => copyImage(clipboard, nativeImage, bytes));
 // The top bar's Report a problem: it answers once the report page opened; the
 // picture keeps saving after (docs/designs/report-problem-top-bar.md).
+ipcMain.on('failure:report', (_evt, f: unknown) => { failures.reportRenderer(f); });
+
 ipcMain.handle('app:reportProblem', async (evt) => {
   const r = await reporter.report(BrowserWindow.fromWebContents(evt.sender));
   return r.ok ? { ok: true } : { ok: false, error: r.error };

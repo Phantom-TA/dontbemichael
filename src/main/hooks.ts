@@ -350,7 +350,8 @@ export class HookServer {
         // A gate that throws allows a built-in tool as before, but never an MCP
         // call (connectors fail closed, D8) and never a web tool for anyone
         // but Research (issue #230).
-        try { res = this.handle(payload); } catch {
+        try { res = this.handle(payload); } catch (e) {
+          try { this.hive.failureObserver?.('hook-server', e); } catch { /* the verdict below still goes out */ }
           const pre = payload.hook_event_name === 'PreToolUse';
           res = pre && isMcpCall(payload.tool_name) ? mcpDeny(CONNECTOR_UNDECIDED)
             : pre && WEB_TOOLS.has(payload.tool_name ?? '') && payload.agent_id !== RESEARCH_ID ? mcpDeny(WEB_SETTINGS_UNREADABLE)

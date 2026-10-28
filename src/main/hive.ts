@@ -1559,7 +1559,10 @@ export class HiveManager {
               this.emit?.('hive:degraded', { agentId: meta.id, name: meta.name, reason: 'proxy-bind', message: degraded });
             }
           }
-        } catch (e) { console.error(`[hive] install ${desc.kind} bridge failed:`, e); }
+        } catch (e) {
+          console.error(`[hive] install ${desc.kind} bridge failed:`, e);
+          try { this.failureObserver?.('bridge-install', e); } catch { /* reporting never breaks a spawn */ }
+        }
       }
       // Inject the protocol text whichever way the CLI accepts it.
       // type-into-tui (Crush): the bare TUI reads a positional as a Cobra subcommand
@@ -3641,7 +3644,8 @@ export class HiveManager {
   startRouter(intervalMs = 1500): void {
     if (this.routerTimer || !this.enabled()) return;
     this.routerTimer = setInterval(() => {
-      try { this.routeOnce(); } catch { /* keep the loop alive */ }
+      // Keep the loop alive; the throw is reported, once per distinct stack.
+      try { this.routeOnce(); } catch (e) { try { this.failureObserver?.('router-throw', e); } catch { /* never stop the router */ } }
     }, intervalMs);
   }
   stopRouter(): void {
@@ -6028,6 +6032,11 @@ export class HiveManager {
 
   /** Called with every office log event after it is written (Pulse telemetry). */
   logObserver?: (event: Record<string, unknown> & { ts: number }) => void;
+
+  /** A thrown failure the office log cannot carry (a stack): the router's own
+   *  tick, a provider bridge that would not install, a hook handler. Set by
+   *  index.ts to the failure reporter (docs/designs/auto-report-failures.md). */
+  failureObserver?: (kind: 'router-throw' | 'bridge-install' | 'hook-server', err: unknown) => void;
   /** Called with the board each 8 s tick reads (Pulse telemetry's card diff). */
   tasksObserver?: (tasks: CardLike[]) => void;
   /** Takes each cost row once harness.db holds this office's ledger (D17);
