@@ -110,3 +110,78 @@ test('release builds carry the reports key into the app, and only a keyed build 
   assert.match(index, /createFailureSender\(\{\n\s+key: __REPORT_KEY__,/);
   assert.match(index, /if \(AUTO_FAILURE_REPORTS && __REPORT_KEY__\) \{\n\s+setTimeout\(\(\) => \{ void failureSender\.tick\(\); \}, 60_000\)\.unref\(\);\n\s+setInterval\(\(\) => \{ void failureSender\.tick\(\); \}, SEND_EVERY_MS\)\.unref\(\);/);
 });
+
+test('the breaker beat reports a loop on constrain and stop, as a valid report, and never a steer or an owner cap', () => {
+  // Value: protects=a member stuck in a loop reaches the ledger as loop-agent, and the owner's own spending or token caps never do (D11); fails_when=the detail wording drifts from the schema (validateReport refuses it and the report is silently dropped), a steer starts reporting, or a cap reason is reported; why_new=only breakerArm was tested, not runBreakerBeat's guard and detail; seam=none (the real breaker decides; loopAgentDetail is what runBreakerBeat calls); no_claim=the beat's timing and its other actions
+  const crypto = require('node:crypto');
+  const { CircuitBreaker } = loadTs('src/main/breaker.ts');
+  const { createFailureReporter } = loadTs('src/main/failureReport.ts');
+  const { loopAgentDetail } = loadTs('src/shared/failureReport.ts');
+  // runBreakerBeat reports exactly what loopAgentDetail returns.
+  assert.match(read('src/main/index.ts'), /const loop = loopAgentDetail\(d\.action, reason\);\n\s+if \(loop\) failures\.reportFailure\('loop-agent', undefined, \{ detail: loop, agentId: d\.state\.agentId \}\);/);
+
+  const warnings = [];
+  const reporter = createFailureReporter({
+    enabled: true, ledgerPath: '/ud/failures.jsonl', appVersion: '0.2.9', platform: 'darwin', osVersion: '15.1.0', arch: 'arm64',
+    now: () => 1_700_000_000_000, sha256: (s) => crypto.createHash('sha256').update(s).digest('hex'),
+    engineFor: () => 'claude', officeBreakActive: () => false, doNotTrack: () => false, signalName: () => undefined,
+    readFile: () => null, writeFile: () => {}, warn: (w, e) => warnings.push([w, e])
+  });
+  const feed = (d) => {
+    const detail = loopAgentDetail(d.action, d.state.reason);
+    if (detail) reporter.reportFailure('loop-agent', undefined, { detail, agentId: d.state.agentId });
+  };
+
+  // The real breaker, with hard stop on, climbs steer -> constrain -> stop on a loop and on an error storm.
+  const T0 = 1_000_000_000_000;
+  const actions = [];
+  for (const [id, trip] of [['loopy', (b, now) => { for (let i = 0; i < 8; i++) b.recordToolUse('loopy', 'Bash', { command: 'ls' }, now); }],
+    ['stormy', (b) => { for (let i = 0; i < 5; i++) b.recordError('stormy'); }]]) {
+    const b = new CircuitBreaker(() => ({ enabled: true, hardStop: true, repeatedToolLimit: 8, errorStormLimit: 5, tokenVelocityPerMin: 60000 }));
+    trip(b, T0);
+    for (let i = 0; i < 3; i++) {
+      const [d] = b.tick([{ agentId: id, sample: null, progressing: true }], T0 + i * 30_000);
+      actions.push(`${id}:${d.action}`);
+      feed(d);
+    }
+  }
+  assert.deepEqual(actions, ['loopy:steer', 'loopy:constrain', 'loopy:stop', 'stormy:steer', 'stormy:constrain', 'stormy:stop']);
+  // Velocity and no-progress need usage samples over time; their reasons are the breaker's own words (checked above).
+  for (const reason of ['token velocity 90000/min > 60000/min', 'no-progress: generating tokens without coordinating (stale log/files)']) {
+    for (const action of ['steer', 'constrain', 'stop']) feed({ state: { agentId: 'm', reason }, action });
+  }
+  // The owner's caps, from the real breaker's cost cap and in its words for the others.
+  const capped = new CircuitBreaker(() => ({ enabled: true, hardStop: true, costCapUsd: 1, repeatedToolLimit: 8, errorStormLimit: 5, tokenVelocityPerMin: 60000 }));
+  const sample = { agentId: 'spender', sessionId: 's', ts: T0, input: 1, output: 1, cacheRead: 0, cacheCreation: 0, model: 'm', usd: 5 };
+  for (let i = 0; i < 3; i++) {
+    const [d] = capped.tick([{ agentId: 'spender', sample: { ...sample, ts: T0 + i * 30_000 }, progressing: true }], T0 + i * 30_000);
+    assert.match(d.state.reason, /^cost cap: /);
+    feed(d);
+  }
+  for (const reason of ['token limit: 1,000 work tokens over the agent cap of 900 (1,000 total incl. cache reads)', 'token cap: floor total over 100 tokens (top spender 50)']) {
+    for (const action of ['constrain', 'stop']) feed({ state: { agentId: 'm', reason }, action });
+  }
+
+  assert.deepEqual(warnings, [], 'every detail the beat builds passes the schema');
+  const details = reporter.pending().map((r) => `${r.kind} ${r.detail}`).sort();
+  assert.deepEqual(details, [
+    'loop-agent error-storm:constrained', 'loop-agent error-storm:stopped',
+    'loop-agent no-progress:constrained', 'loop-agent no-progress:stopped',
+    'loop-agent repeat:constrained', 'loop-agent repeat:stopped',
+    'loop-agent velocity:constrained', 'loop-agent velocity:stopped'
+  ]);
+});
+
+test('kept failures reach the file every 30 seconds and at quit', () => {
+  // Value: protects=failures noticed in the last moments before a quit are not lost, and the file is written at most every 30 s (E3); fails_when=the flush timer or the before-quit flush is removed, the timer keeps the app from quitting, or the quit flush moves behind an early return; why_new=index.ts flush wiring had no test; seam=none; no_claim=Electron's real quit sequence
+  const { FLUSH_MS } = loadTs('src/main/failureReport.ts');
+  assert.equal(FLUSH_MS, 30_000);
+  const index = read('src/main/index.ts');
+  const made = index.indexOf('const failures = createFailureReporter({');
+  const timer = index.indexOf('setInterval(() => failures.flush(), FLUSH_MS).unref();');
+  assert.ok(made > 0 && timer > made, 'the timer starts once the reporter exists, and is unref\'d');
+  assert.equal(index.split('failures.flush(), FLUSH_MS').length, 2, 'one timer only');
+  const quit = index.indexOf("app.on('before-quit', (e) => {");
+  assert.ok(quit > 0);
+  assert.match(index.slice(quit), /^app\.on\('before-quit', \(e\) => \{\n  failures\.flush\(\);\n  if \(allowQuit\) return;/, 'the flush runs before any early return');
+});

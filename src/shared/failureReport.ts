@@ -203,6 +203,14 @@ export function breakerArm(reason: unknown): 'repeat' | 'error-storm' | 'velocit
   return null;
 }
 
+/** The `loop-agent` detail for one breaker decision, or null: a steer is
+ *  only a nudge, and the owner's own caps are not bugs. */
+export function loopAgentDetail(action: string, reason: unknown): string | null {
+  const arm = breakerArm(reason);
+  if (!arm || (action !== 'constrain' && action !== 'stop')) return null;
+  return `${arm}:${action === 'stop' ? 'stopped' : 'constrained'}`;
+}
+
 /* ── Stack frames ─────────────────────────────────────────────────────────── */
 
 export const MAX_FRAMES = 8;

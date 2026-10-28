@@ -150,3 +150,16 @@ test('office log events classify into reported kinds, or nothing', () => {
   assert.equal(S.KIND_CLASS.canary, 'none');
   assert.equal(S.KIND_CLASS['main-uncaught'], 'repo');
 });
+
+test('an agent exit with no usable signal or code is reported as other, and still validates', () => {
+  // Value: protects=an exit node-pty gives no signal or usable code for is still one valid report, never a dropped one or free text; fails_when=a zero, missing or out of range code, or a junk signal name, reaches detail as is; why_new=only a signal and code 1 were tested; seam=none; no_claim=real node-pty exit values
+  const other = { kind: 'agent-exit', detail: 'other' };
+  assert.deepEqual(S.classifyLogEvent({ kind: 'agent-exit' }), other);
+  assert.deepEqual(S.classifyLogEvent({ kind: 'agent-exit', exitCode: 0, signal: 0 }), other);
+  assert.deepEqual(S.classifyLogEvent({ kind: 'agent-exit', exitCode: 300 }), other);
+  assert.deepEqual(S.classifyLogEvent({ kind: 'agent-exit', exitCode: 1.5 }), other);
+  assert.deepEqual(S.classifyLogEvent({ kind: 'agent-exit', signal: 9 }, () => 'kill -9 /Users/jane'), other, 'a junk signal name is never used');
+  assert.deepEqual(S.classifyLogEvent({ kind: 'agent-exit', signal: 9, exitCode: 255 }, () => undefined), { kind: 'agent-exit', detail: 'code-255' });
+  assert.equal(S.validateReport(goodReport({ kind: 'agent-exit', detail: 'other' })), null);
+  assert.equal(S.validateReport(goodReport({ kind: 'agent-exit', detail: 'code-256' })), 'detail');
+});

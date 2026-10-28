@@ -125,7 +125,7 @@ import { runHiddenModel } from './hiddenModel';
 import { CostLedgerStore } from './costLedger';
 import { analytics, dntSet, isRendererMessageSurface } from './analytics';
 import { createFailureReporter, FLUSH_MS } from './failureReport';
-import { breakerArm } from '../shared/failureReport';
+import { loopAgentDetail } from '../shared/failureReport';
 import { createFailureSender, SEND_EVERY_MS } from './failureSender';
 
 /** The failure reports key (docs/designs/auto-report-failures.md): injected by
@@ -2546,10 +2546,8 @@ function runBreakerBeat(progressWindowMs: number): void {
     const reason = d.state.reason;
     // A member stuck in a loop is a failure report; a spending or token cap is
     // the owner's setting and is not (docs/designs/auto-report-failures.md).
-    const arm = breakerArm(reason);
-    if (arm && (d.action === 'constrain' || d.action === 'stop')) {
-      failures.reportFailure('loop-agent', undefined, { detail: `${arm}:${d.action === 'stop' ? 'stopped' : 'constrained'}`, agentId: d.state.agentId });
-    }
+    const loop = loopAgentDetail(d.action, reason);
+    if (loop) failures.reportFailure('loop-agent', undefined, { detail: loop, agentId: d.state.agentId });
     if (d.action === 'steer' || d.action === 'constrain') {
       // The member hears it; on a constrain Michael does too (breakerMessages).
       // No toast: a constrain is a soft pause Michael handles (only Michael

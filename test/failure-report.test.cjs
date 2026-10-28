@@ -203,3 +203,26 @@ test('a known failure in a new app version is its own pending row and reuses the
   const kept = ledger(upgraded.files);
   assert.deepEqual(kept.map((x) => [x.appVersion, x.state]).sort(), [['0.2.10', 'pending'], ['0.2.9', 'sent']]);
 });
+
+test('the recent fingerprints are at most 5, the newest sent first', () => {
+  // Value: protects=Report a problem names this office's latest automatic reports, not old ones (E7); fails_when=the cap moves, rows come oldest first, or a fingerprint sent in two versions is listed twice; why_new=only a single sent row was tested; seam=none; no_claim=GitHub prefilling the field
+  const { r, tick } = make();
+  const sent = [];
+  for (let i = 0; i < 7; i++) {
+    const e = new Error('x');
+    e.stack = `Error\n    at g${i} (/x/app.asar/out/main/index.js:${i + 1}:1)`;
+    r.reportFailure('router-throw', e);
+  }
+  for (const row of r.pending()) { tick(60_000); r.markSent(row, 100 + sent.length); sent.push(row.fingerprint); }
+  assert.equal(sent.length, 7);
+  assert.deepEqual(r.recentFingerprints(), sent.slice(2).reverse());
+  const old = make();
+  old.r.reportFailure('router-throw', new Error('x'));
+  const [row] = old.r.pending();
+  old.r.markSent(row, 1);
+  old.r.flush();
+  const both = make({ files: [...old.files], deps: { appVersion: '0.2.10' } });
+  both.r.reportFailure('router-throw', new Error('x'));
+  both.r.markSent(both.r.pending()[0], 1);
+  assert.deepEqual(both.r.recentFingerprints(), [row.fingerprint], 'one fingerprint once, across versions');
+});

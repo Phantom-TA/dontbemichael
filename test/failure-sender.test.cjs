@@ -226,3 +226,27 @@ test('DO_NOT_TRACK set after a failure was kept still sends nothing', async () =
   await sender.tick();
   assert.deepEqual(calls, []);
 });
+
+test('an install writes at most 20 times a day, then waits for the day to pass', async () => {
+  // Value: protects=one broken install can never flood the reports repo (eng E-R4, 20 writes a day); fails_when=the daily cap is dropped or counts a shorter window; why_new=only the hourly caps were tested; seam=injected fetch and clock; no_claim=GitHub's own limits
+  const { reporter } = setup({ failures: 30 });
+  let now = 1_700_000_000_000;
+  let number = 0;
+  const calls = [];
+  const sender = createFailureSender({
+    key: 'k', appVersion: '0.2.9', reporter, now: () => now, log: () => {},
+    fetch: async (url, init) => {
+      calls.push(init.method);
+      return init.method === 'GET'
+        ? { status: 200, headers: hdrs(), json: async () => ({ items: [] }) }
+        : { status: 201, headers: hdrs(), json: async () => ({ number: ++number }) };
+    }
+  });
+  const HOUR = 3600_000;
+  for (let h = 0; h < 6; h++) { await sender.tick(); now += HOUR + 1; }
+  assert.equal(calls.filter((m) => m === 'POST').length, 20, 'five an hour, twenty a day');
+  assert.equal(reporter.pending().length, 10);
+  now = 1_700_000_000_000 + 24 * HOUR + 1;
+  await sender.tick();
+  assert.equal(calls.filter((m) => m === 'POST').length, 25, 'the next day it goes on');
+});
