@@ -140,7 +140,11 @@ function hasCard(run: string): boolean {
   return false;
 }
 
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/;
+// The part before the @ is at most 64 characters (the email standard's limit).
+// Unbounded, a long run with no @ in it (digits, a key, a pasted blob) was
+// scanned to its end from every character: 60,000 of them took 1.5 s on the
+// main thread. Bounded, an address hidden at the end of a long run still matches.
+const EMAIL = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/;
 // A phone number: an optional +country code, then 9 to 15 digits in groups.
 const PHONE = /(?:^|[^\w])(\+?\d[\d\s().-]{7,}\d)(?![\w])/g;
 // Digit groups joined by one space or hyphen: "4111 1111 1111 1111 12/27".

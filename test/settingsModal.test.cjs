@@ -38,6 +38,8 @@ test('activeSection useState uses VISIBLE_SECTIONS.includes, not a bare ?? fallb
 
 // -- 3. App keeps no list of its own; the modal decides -----------------------
 test('App.tsx passes the section through untouched, with no tab list of its own', () => {
-  assert.match(APP, /setSettingsSection\(section\);/, 'App.tsx passes the section on as it came');
+  // A deep link may also name a group (settings-links-in-replies.md); the section
+  // still goes on as it came, for the modal to check.
+  assert.match(APP, /setSettingsPlace\(\(p\) => \(\{ section: d\?\.section,/, 'App.tsx passes the section on as it came');
   assert.doesNotMatch(APP, /section === 'Company profile'/, 'no second list of tab names in App.tsx');
 });

@@ -187,6 +187,11 @@ export interface PulseSnapshot {
   members: MemberMeasures[];
   yourTime: { asks: number; medianWaitMs: number | null };
   awayShare: number | null;
+  /** How long the office ran in the period: open, awake and not stopped, and
+   *  the part you were away (owner, 2026-10-25). `since` is when recording
+   *  began, in ms, when the period starts before it: the time, so a clock
+   *  that began this afternoon says so on Today too. Null with no record. */
+  running: { ms: number; awayMs: number; since: number | null } | null;
   /** Days in the period with records that could not be saved (D15). */
   gapDays: string[];
   /** Michael's own tile (D7): requests routed, questions to you, cards opened. */
@@ -257,6 +262,8 @@ export function pulseSnapshot(input: {
   gapDays?: string[];
   /** Michael's id and what he did in the period (counted by the processor). */
   michael?: { agentId: string; routed: number; cardsOpened: number };
+  /** Running time points, and when the office's recording began (ms). */
+  running?: { points: Array<{ ts: number; ms: number; awayMs: number }>; since: number | null };
 }): PulseSnapshot {
   const { from, to, fromMs, toMs } = input.range ?? periodRange(input.period, input.now);
   const inRange = (t: number | undefined): boolean => t !== undefined && t >= fromMs && t <= toMs;
@@ -319,6 +326,8 @@ export function pulseSnapshot(input: {
   };
   const allAsks = input.asks.filter((a) => inRange(a.askedAt));
   const allPieces = days.reduce((s, d) => s + piecesOf(d), 0);
+  const ran = (input.running?.points ?? []).filter((p) => inRange(p.ts));
+  const since = input.running?.since ?? null;
   return {
     period: input.period,
     from,
@@ -333,6 +342,11 @@ export function pulseSnapshot(input: {
     members: members.sort((a, b) => b.usd - a.usd),
     yourTime: { asks: allAsks.length, medianWaitMs: median(allAsks.filter((a) => a.answeredAt !== undefined).map((a) => a.answeredAt! - a.askedAt)) },
     awayShare: allPieces > 0 ? days.reduce((s, d) => s + d.awayPieces, 0) / allPieces : null,
+    running: ran.length ? {
+      ms: ran.reduce((s, p) => s + p.ms, 0),
+      awayMs: ran.reduce((s, p) => s + p.awayMs, 0),
+      since: since !== null && since > fromMs ? since : null
+    } : null,
     gapDays: (input.gapDays ?? []).filter((d) => d >= from && d <= to),
     michael: input.michael ? {
       agentId: input.michael.agentId,

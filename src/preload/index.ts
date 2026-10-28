@@ -1,4 +1,5 @@
 import type { Period } from '../shared/teamPerformance';
+import type { JobRun, RunSuggestion } from '../shared/runCompare';
 import type { HeldRow } from '../shared/heldRecord';
 import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
@@ -678,28 +679,15 @@ const api = {
   hireCheckDistinct: (
     job: { name: string; title: string; routing: string; workStyle?: string; mailbox?: string },
     team: Array<{ name: string; title: string; routing: string; workStyle?: string; mailbox?: string }>,
-    requestId?: string
+    requestId?: string,
+    /** 'change' from Edit agent: handoffs between them are not an overlap. */
+    mode?: 'hire' | 'change',
+    /** For a change: which job this reads, the one before it or after (logged). */
+    phase?: 'before' | 'after'
   ): Promise<{ distinct: boolean; overlapsWith: string[]; why: string; suggestion?: string; source: 'ai' | 'rules' }> =>
-    ipcRenderer.invoke('hire:checkDistinct', { job, team, requestId }),
+    ipcRenderer.invoke('hire:checkDistinct', { job, team, requestId, mode, phase }),
   /** Stop a check the owner moved past (another job picked, or back a step). */
   hireCheckStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('hire:checkStop', requestId),
-  /** "Suggest me": a first work style for the owner to edit; empty when it can't
-   *  run. With a `requestId`, the draft streams to onWorkStyleSuggestText. */
-  workStyleSuggest: (req: {
-    requestId?: string;
-    ctx: { name: string; title?: string; business?: { name?: string; city?: string }; manager?: string };
-    handles: string;
-    businessType?: string;
-    team: Array<{ name: string; title?: string; handles?: string }>;
-  }): Promise<{ text: string; cancelled?: boolean }> => ipcRenderer.invoke('workStyle:suggest', req),
-  /** The draft as it is written, for the run with this request id. */
-  onWorkStyleSuggestText: (cb: (e: { requestId: string; text: string }) => void): (() => void) => {
-    const listener = (_e: unknown, payload: { requestId: string; text: string }) => cb(payload);
-    ipcRenderer.on('workStyle:suggestText', listener);
-    return () => ipcRenderer.removeListener('workStyle:suggestText', listener);
-  },
-  /** Stop a suggestion that is still being written. */
-  workStyleSuggestStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('workStyle:suggestStop', requestId),
   /** Rewrite a work style: the agent's instructions as the owner's plain
    *  description, or the owner's description as instructions. */
   workStyleConvert: (req: {
@@ -708,6 +696,49 @@ const api = {
     ctx: { name: string; title?: string; business?: { name?: string; city?: string }; manager?: string };
     previous?: string;
   }): Promise<{ text: string; source: 'ai' | 'rules' }> => ipcRenderer.invoke('workStyle:convert', req),
+  /** "What should change?": the owner's change requests applied to a job (or
+   *  a new job written from one description): the new instructions, plain
+   *  words and "What X handles" (null when the duties didn't change), or one
+   *  question for the owner. Rides the convert channel; stop it with
+   *  workStyleConvertStop and the same request id. */
+  workStyleRevise: (req: {
+    requestId?: string;
+    ctx: { name: string; title?: string; business?: { name?: string; city?: string }; manager?: string };
+    current: { instructions: string; handles: string };
+    changes: string[];
+    answer?: { question: string; answer: string };
+    /** Every answer the owner gave this change, oldest first (a clash and
+     *  where tracked numbers live). */
+    answers?: Array<{ question: string; answer: string }>;
+    lead?: boolean;
+    /** How the owner says the work splits with the teammates the overlap
+     *  check named (`teammates`), and the member's live handoffs that a change
+     *  may take back (overlap split plan). */
+    explanation?: string;
+    teammates?: Array<{ id: string; name: string; title?: string }>;
+    handoffList?: Array<{ toId: string; scope: string; line: string; toTitle?: string }>;
+    /** Edit agent only: ask where tracked numbers live when the job doesn't say. */
+    askHome?: boolean;
+  }): Promise<
+    | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string;
+      handoffs?: Array<{ toId: string; scope: string }>; drops?: Array<{ toId: string; scope: string }> }
+    | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> }
+    | { kind: 'home'; question: string }
+    | { kind: 'error'; reason: 'no-name' | 'not-started' | 'slow' | 'unreadable' | 'failed' | 'cancelled' }
+  > => ipcRenderer.invoke('workStyle:convert', { ...req, to: 'revise' }),
+  /** Where a rewrite is (starting, reading, writing) and what it has written
+   *  so far, by its request id. Returns the unsubscribe. */
+  onWorkStyleProgress: (
+    requestId: string,
+    cb: (p: { stage: 'starting' | 'reading' | 'writing'; preview?: { summary: string[]; plain: string; question: string } }) => void
+  ): (() => void) => {
+    const channel = `workStyle:progress:${requestId}`;
+    const listener = (_e: IpcRendererEvent, p: Parameters<typeof cb>[0]) => cb(p);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
+  },
+  /** Stop a rewrite still running (the dialog closed, or Stop). */
+  workStyleConvertStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('workStyle:convertStop', requestId),
   /** Check a job's focus area against the Work style and the agent's other
    *  jobs (schedule-focus-areas.md, FA3). `checked: false` when it couldn't run. */
   workStyleCheckFocus: (req: {
@@ -782,6 +813,16 @@ const api = {
   // ─── Clipboard ─────────────────────────────────────────────────────────────
   copyToClipboard: (text: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('app:copyToClipboard', text),
+  /** The file tab's Copy: text, and HTML when given, in one clipboard write. */
+  copyRich: (data: { text: string; html?: string }): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:copyRich', data),
+  /** The file tab's Copy for a picture: PNG bytes drawn from the shown picture. */
+  copyImage: (png: Uint8Array): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:copyImage', png),
+  /** Report a problem: a picture of the window, the prefilled bug report, then
+   *  the picture shown in Downloads. Answers once the report page opened. */
+  reportProblem: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:reportProblem'),
   /** The right-click "Copy link address" label, in the app language. */
   setCopyLinkLabel: (label: string): void =>
     ipcRenderer.send('app:setCopyLinkLabel', label),
@@ -973,8 +1014,8 @@ const api = {
     ipcRenderer.invoke('hive:clearedState', id),
   /** Undo a clear: restart the agent into its earlier conversation. */
   restoreConversation: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('agent:restoreConversation', id),
-  /** Add the owner's Ask me answer to the raising agent's memory notes. */
-  hiveRememberOwnerAnswer: (p: { agentId: string; task: string; q: string; a: string }): Promise<{ ok: boolean }> =>
+  /** Keep the owner's Ask me answer as an owner note for the raising agent's memory. */
+  hiveRememberOwnerAnswer: (p: { agentId: string; task: string; taskId: string; q: string; a: string }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('hive:rememberOwnerAnswer', p),
   hiveMemory: (id: string): Promise<string> => ipcRenderer.invoke('hive:memory', id),
   hiveMemoryDetail: (id: string): Promise<{ index: string; waiting: number }> => ipcRenderer.invoke('hive:memoryDetail', id),
@@ -1425,6 +1466,23 @@ const api = {
   foundationsGet: (): Promise<FoundationsView> => ipcRenderer.invoke('foundations:get'),
   /** The owner's answer from a foundation card; it always wins. */
   foundationsAnswer: (id: string, text: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('foundations:answer', id, text),
+  /** One file for a foundation card, from the OS picker. */
+  foundationsPickFile: (): Promise<{ ok: true; path: string; name: string } | { ok: false; error: string }> => ipcRenderer.invoke('foundations:pickFile'),
+  /** Read, check and add a card's file to company knowledge (nothing is added
+   *  unless the check says it fits). */
+  foundationsAddFile: (id: string, path: string): Promise<{ ok: true; docId: string; name: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'picture-engine' | 'misfit' | 'unchecked'; reason?: string }> =>
+    ipcRenderer.invoke('foundations:addFile', id, path),
+  /** The owner's answer from a file added with foundationsAddFile. */
+  foundationsAnswerFile: (id: string, docId: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('foundations:answerFile', id, docId, words),
+  /** One folder for a foundation card, from the OS picker. */
+  foundationsPickFolder: (): Promise<{ ok: true; path: string; name: string } | { ok: false; error: string }> => ipcRenderer.invoke('foundations:pickFolder'),
+  /** Check a card's folder before the card is answered (nothing is written). */
+  foundationsCheckFolder: (id: string, path: string): Promise<{ ok: true; path: string; name: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-folder' | 'too-wide' | 'app-folder' | 'member-folder' | 'empty' | 'too-long' }> =>
+    ipcRenderer.invoke('foundations:checkFolder', id, path),
+  /** The owner's answer naming a folder; the members whose job uses it read it. */
+  foundationsAnswerFolder: (id: string, path: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('foundations:answerFolder', id, path, words),
   /** Have the member draft it: the draft comes back into the card. */
   foundationsDraft: (id: string, memberId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:draft', id, memberId),
   /** Not now: out of Needs you for a week. */
@@ -1455,6 +1513,16 @@ const api = {
   pulseUndo: (appliedId: number): Promise<{ ok: true; kind: 'schedule' } | { ok: true; kind: 'model'; agentId: string; to: string | null } | { ok: false; error: 'stale' | 'unavailable' }> =>
     ipcRenderer.invoke('pulse:undo', appliedId),
   pulseDismiss: (id: string): Promise<boolean> => ipcRenderer.invoke('pulse:dismiss', id),
+  /** Each of a member's jobs with its last finished run and any "Went wrong" on it (shared/runCompare.ts). */
+  runCompareLastRuns: (agentId: string): Promise<Array<{ run: JobRun; suggestion: RunSuggestion | null }>> =>
+    ipcRenderer.invoke('runCompare:lastRuns', agentId),
+  /** The owner's "Went wrong": compares the run with an earlier good one; resolves when done. */
+  runCompareWentWrong: (p: { runId: number; agentId: string; note?: string; workStyle: string; previousWorkStyle?: string; changes?: Array<{ text: string; at: string }> }): Promise<RunSuggestion | null> =>
+    ipcRenderer.invoke('runCompare:wentWrong', p),
+  /** Suggestions ready for Pulse. */
+  runCompareSuggestions: (): Promise<RunSuggestion[]> => ipcRenderer.invoke('runCompare:suggestions'),
+  /** Not now on a suggestion. */
+  runCompareDismiss: (runId: number): Promise<boolean> => ipcRenderer.invoke('runCompare:dismiss', runId),
   /** Whether Pulse's points are flowing: the last batch, failed writes, refused hook frames. */
   telemetryHealth: (): Promise<PulseHealthView> => ipcRenderer.invoke('telemetry:health'),
   /** Fires when new telemetry was folded, so an open Pulse view refreshes. */

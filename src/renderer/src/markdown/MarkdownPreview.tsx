@@ -7,7 +7,9 @@
  * SECURITY: agent-generated markdown is untrusted. react-markdown WITHOUT
  * rehype-raw renders to React elements only — no HTML sink exists, raw HTML in
  * the source is shown as text, and the default urlTransform already drops
- * javascript: URIs. Keep it that way: never add rehype-raw here.
+ * javascript: URIs. Keep it that way: never add rehype-raw here. The one scheme
+ * let through besides the default's is `dbm:`, the app's own places
+ * (settings-links-in-replies.md), which render as a button and never navigate.
  *
  * Links never navigate the window: http(s)/mailto go through the main-process
  * opener; relative *.md links surface through onOpenMarkdownLink so the host
@@ -23,10 +25,14 @@ import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkspaceImage } from '@/hooks/useWorkspaceImage';
-import { isBareLink, isExternal, isRelativeMd, labelMismatch, linkName, resolveLocalImageRel, resolveRel } from './mdLinks';
+import { isBareLink, isExternal, labelMismatch, linkName, resolveLocalImageRel, resolveMdLinkRel } from './mdLinks';
 import { Icon } from '@/components/Icon';
 import { remarkSoftBreaks } from './remarkSoftBreaks';
 import { remarkFileChips } from './remarkFileChips';
+import { remarkSettingsLinks } from './remarkSettingsLinks';
+import { PlaceChip } from './PlaceChip';
+import { PLACE_SCHEME, parsePlace } from '@shared/settingsPlaces';
+import { placeUrlTransform } from './placeUrl';
 import { rehypeAutoDir } from './rehypeAutoDir';
 import { useRtl } from '@/i18n/useDirection';
 
@@ -45,6 +51,13 @@ const CARD_PLUGINS = [remarkGfm, remarkSoftBreaks];
 // split text nodes have no source position.
 const DOC_FILE_PLUGINS = [remarkGfm, remarkFileChips];
 const CARD_FILE_PLUGINS = [remarkGfm, remarkFileChips, remarkSoftBreaks];
+// Agent text also gets its Settings places as buttons
+// (settings-links-in-replies.md); before the soft breaks, like file chips.
+const DOC_PLACE_PLUGINS = [remarkGfm, remarkSettingsLinks];
+const CARD_PLACE_PLUGINS = [remarkGfm, remarkSettingsLinks, remarkSoftBreaks];
+const DOC_FILE_PLACE_PLUGINS = [remarkGfm, remarkFileChips, remarkSettingsLinks];
+const CARD_FILE_PLACE_PLUGINS = [remarkGfm, remarkFileChips, remarkSettingsLinks, remarkSoftBreaks];
+
 
 /** Per-block `dir="auto"`, for an RTL app language only — see the note at the
  *  `useRtl()` call site below. Frozen module constants so the prop identity is
@@ -67,10 +80,14 @@ export interface MarkdownPreviewProps {
   /** Draw each file the text names as this chip, in place of its path
    *  (open-file-tab.md, R2). Keep its identity stable: it is a memo input. */
   fileChip?: (path: string) => ReactNode;
+  /** Agent text: turn "Settings, Connections, Mailboxes" words into the same
+   *  button a `dbm:` link gets (settings-links-in-replies.md). Off for
+   *  documents, whose words stay words. */
+  placeLinks?: boolean;
 }
 
 export const MarkdownPreview = memo(function MarkdownPreview({
-  source, baseRel, root, onOpenMarkdownLink, variant = 'document', fileChip
+  source, baseRel, root, onOpenMarkdownLink, variant = 'document', fileChip, placeLinks = false
 }: MarkdownPreviewProps) {
   const card = variant === 'card';
   // Per-block direction, gated on the APP LANGUAGE rather than on the text.
@@ -86,7 +103,10 @@ export const MarkdownPreview = memo(function MarkdownPreview({
   return (
     <div className={card ? 'cth-md-preview cth-md-card' : 'cth-md-preview'}>
       <ReactMarkdown
-        remarkPlugins={fileChip ? (card ? CARD_FILE_PLUGINS : DOC_FILE_PLUGINS) : (card ? CARD_PLUGINS : DOC_PLUGINS)}
+        remarkPlugins={placeLinks
+          ? (fileChip ? (card ? CARD_FILE_PLACE_PLUGINS : DOC_FILE_PLACE_PLUGINS) : (card ? CARD_PLACE_PLUGINS : DOC_PLACE_PLUGINS))
+          : (fileChip ? (card ? CARD_FILE_PLUGINS : DOC_FILE_PLUGINS) : (card ? CARD_PLUGINS : DOC_PLUGINS))}
+        urlTransform={placeUrlTransform}
         rehypePlugins={rtl ? AUTO_DIR_PLUGINS : NO_PLUGINS}
         components={{
           ...(fileChip ? {
@@ -94,15 +114,22 @@ export const MarkdownPreview = memo(function MarkdownPreview({
           } as Components : {}),
           a: ({ href, children, node }) => {
             const h = href ?? '';
+            // An app place first, before the web and named link branches: a
+            // button, never a navigation. A dbm: link that names no known
+            // place is just its words.
+            if (h.slice(0, PLACE_SCHEME.length).toLowerCase() === PLACE_SCHEME) {
+              const place = parsePlace(h);
+              return place ? <PlaceChip place={place} words={hastText(node)}>{children}</PlaceChip> : <>{children}</>;
+            }
+            // The .md file a link opens, judged on its cleaned path (resolveMdLinkRel).
+            const mdTarget = onOpenMarkdownLink && !isExternal(h) ? resolveMdLinkRel(baseRel, h) : null;
             const onClick = (e: React.MouseEvent) => {
               e.preventDefault();
               if (isExternal(h)) { void window.cth.openExternal?.(h); return; }
-              if (isRelativeMd(h) && onOpenMarkdownLink) {
-                onOpenMarkdownLink(resolveRel(baseRel, h.replace(/#.*$/, '')));
-              }
+              if (mdTarget !== null) onOpenMarkdownLink?.(mdTarget);
               // anything else (file:, anchors into self, unknown schemes): inert
             };
-            const clickable = isExternal(h) || (isRelativeMd(h) && !!onOpenMarkdownLink);
+            const clickable = isExternal(h) || mdTarget !== null;
             if (card && isExternal(h)) {
               const text = hastText(node);
               const bare = isBareLink(text, h);
@@ -183,8 +210,10 @@ function hastText(node: unknown): string {
 /** Fallback for anything we won't (or can't) load: remote URLs, non-images,
  *  and local files that turned out to be missing or undecodable. */
 function ImageChip({ alt, src, note }: { alt?: string; src?: string; note?: string }) {
+  // data-alt is the author's words for the picture: the file tab's Copy reads
+  // it, never the chip's visible words (docs/designs/copy-document.md).
   return (
-    <span className="cth-md-img" title={src}>
+    <span className="cth-md-img" title={src} data-alt={alt ?? ''}>
       🖼 {alt || 'image'}{note ? ` (${note})` : ''}
     </span>
   );
@@ -204,6 +233,7 @@ function MdImage({ root, rel, alt, src }: { root: string; rel: string; alt?: str
       className="cth-md-image"
       src={img.url}
       alt={alt || rel}
+      data-alt={alt ?? ''}
       title={src}
       onError={() => setDecodeFailed(true)}
     />

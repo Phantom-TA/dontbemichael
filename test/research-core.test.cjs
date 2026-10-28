@@ -205,7 +205,8 @@ test('the trust layer\'s checks keep no transcript of Research\'s text, and Rese
   assert.match(idx, /const dir = isResearch \? ownResearchDir\(opts\.cwd, RESEARCH_TMP_DIR\) :/, 'its scratch folder only as a real folder');
   assert.match(layer, /sweepOldCheckTranscripts\(\);/, 'old check transcripts are swept');
   assert.match(idx, /for \(const folder of CHECK_FOLDERS\)/, 'and those a stopped check left in its own folder');
-  assert.deepEqual([...loadTs('src/main/factoryReset.ts').CHECK_FOLDERS], ['standing-check', 'trust-check']);
+  // Run comparison has its own empty folder too (ship review: never the office folder).
+  assert.deepEqual([...loadTs('src/main/factoryReset.ts').CHECK_FOLDERS], ['standing-check', 'trust-check', 'run-compare']);
   assert.doesNotMatch(idx, /setMineKey|setNotesFilter/, 'no copy of its notes is made for anyone (owner, 2026-10-16)');
   assert.match(idx, /claudeProjectsRoot\(\), \.\.\.teamFolders,/, 'its shell is walled from the projects folder wherever it is');
   // The guard itself: a link left in place of the scratch folder is replaced,

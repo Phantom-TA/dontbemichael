@@ -14,6 +14,7 @@ import {
   distinctPrompt,
   parseDistinctAnswer,
   overlapsByRules,
+  type DistinctMode,
   type DistinctVerdict,
   type JobProfile
 } from '../shared/hireTemplates';
@@ -29,6 +30,22 @@ export interface HireCheckDeps extends HiddenModelEngine {
   log?: (event: Record<string, unknown>) => void;
   /** Stops the check when the owner moves on to another job (ship review). */
   signal?: AbortSignal;
+  /** 'change' from Edit agent: handoffs between the two are not an overlap.
+   *  The hire wizard's check is unchanged. */
+  mode?: DistinctMode;
+}
+
+/** Which job a change's check read: the one before the change or after it
+ *  (only overlaps the change adds are shown); a hire has neither. */
+export type CheckPhase = 'before' | 'after' | 'hire';
+
+export function readCheckPhase(v: unknown): CheckPhase {
+  return v === 'before' || v === 'after' ? v : 'hire';
+}
+
+/** The renderer's mode, 'hire' unless it says 'change'. */
+export function readDistinctMode(v: unknown): DistinctMode {
+  return v === 'change' ? 'change' : 'hire';
 }
 
 const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '');
@@ -57,7 +74,7 @@ export async function checkDistinct(job: JobProfile, teamIn: JobProfile[], deps:
   const team = teamIn.slice(0, MAX_TEAM);
   if (team.length === 0) return { distinct: true, overlapsWith: [], why: '', source: 'rules' };
   try {
-    const result = await runHiddenModel(distinctPrompt(job, team), {
+    const result = await runHiddenModel(distinctPrompt(job, team, deps.mode ?? 'hire'), {
       engine: deps.engine,
       engineModel: deps.engineModel,
       model: CHECK_MODEL,

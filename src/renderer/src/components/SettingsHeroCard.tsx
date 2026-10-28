@@ -19,12 +19,11 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { InfoTip } from './InfoTip';
-import { BetaPill } from './BetaPill';
 import { useWhatsNew, WhatsNewPopover } from './WhatsNewPopover';
 import { useUpdates, UpdateButtons, UpdateDetails, UpdateStatusLine } from './UpdatesSection';
 import { DEFAULT_HERO, type HeroPayload } from '@shared/heroPayload';
 import { REPO_URL } from '@shared/updateState';
-import { reportProblemUrl } from '@shared/reportProblem';
+import { groupName, hint, panelStyle } from './fieldText';
 
 declare const __APP_VERSION__: string;
 
@@ -57,16 +56,16 @@ export function SettingsHeroCard() {
     // It sits in Settings' scrolling flex column: never shrink. With overflow
     // hidden a flex item may shrink below its content, and the column crushed
     // the whole card to 1px (owner, 2026-10-01). Nothing here needs clipping.
-    <div style={{ flexShrink: 0, background: 'var(--cth-card)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line)' }}>
+    // On the shared soft panel like every Settings group (app-style-rollout.md AS2).
+    <div style={{ flexShrink: 0, background: panelStyle.background, borderRadius: panelStyle.borderRadius }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 220 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink)' }}>
+              <h3 style={groupName}>
                 Don&apos;t Be Michael
-              </span>
+              </h3>
               <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 13, fontWeight: 600, color: 'var(--cth-ink-2)' }}>v{__APP_VERSION__}</span>
-              <BetaPill info={t('settingsHero.betaInfo')} />
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4, borderRadius: 'var(--cth-r-pill)', padding: '1px 8px',
                 fontSize: 10, lineHeight: '14px', fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase',
@@ -92,9 +91,9 @@ export function SettingsHeroCard() {
         {hero.sponsor && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 10px',
-            background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)'
+            background: 'var(--cth-card)', borderRadius: 'var(--cth-r-lg)'
           }}>
-            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--cth-ink-3)', flexShrink: 0 }}>
+            <span style={{ ...hint, flexShrink: 0 }}>
               {t('settingsHero.sponsoredBy')}
             </span>
             <span style={{ fontSize: 13, color: 'var(--cth-ink)', flexShrink: 0 }}>{hero.sponsor.name}</span>
@@ -105,11 +104,12 @@ export function SettingsHeroCard() {
       </div>
 
       {/* App level links, quiet (DESIGN.md 7.7). What's new opens the notes in
-          the app, with the full changelog one link inside (owner, 2026-10-02). */}
+          the app, with the full changelog one link inside (owner, 2026-10-02).
+          Report a problem moved to the top bar (owner, 2026-10-26;
+          docs/designs/report-problem-top-bar.md). */}
       <div style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', gap: 18, padding: '9px 16px', borderTop: '1px solid var(--cth-line)' }}>
         <button type="button" ref={whatsNewRef} style={footLink} onClick={toggleNotes} aria-expanded={notesOpen} aria-haspopup="dialog">{t('settingsHero.whatsNew')}</button>
         <button type="button" style={footLink} onClick={open(GITHUB_REPO_URL)}>{t('settingsHero.starOnGitHub')}</button>
-        <button type="button" style={footLink} onClick={open(reportProblemUrl({ appVersion: __APP_VERSION__, platform: window.cth.platform, arch: window.cth.arch, osVersion: window.cth.osVersion }))}>{t('settingsHero.reportProblem')}</button>
         {notesOpen && <WhatsNewPopover notes={whatsNew.notes} loading={whatsNew.loading} anchor={whatsNewRef} onClose={() => setNotesOpen(false)} />}
       </div>
     </div>

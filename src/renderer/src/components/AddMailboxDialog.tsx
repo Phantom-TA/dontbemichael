@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { Disclosure, Toggle } from './triggers/ui';
 import { useRtl } from '@/i18n/useDirection';
+import { Field, Panel, hint } from './fieldText';
 import {
-  IMAPS_PORT, PROVIDER_ORDER, PROVIDER_PRESETS, SMTPS_PORT, SUBMISSION_PORT, guessServers,
-  type MailProvider, type MailServer, type MailboxRecord
+  GOOGLE_APP_PASSWORDS_URL, GOOGLE_TWO_STEP_URL, IMAPS_PORT, PROVIDER_ORDER, PROVIDER_PRESETS, SMTPS_PORT, SUBMISSION_PORT,
+  googleStepUrl, guessServers, isGoogleProvider, type MailProvider, type MailServer, type MailboxRecord
 } from '@shared/mailboxes';
 
 /**
@@ -26,7 +27,9 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
   onSaved: (rec: MailboxRecord) => void;
 }) {
   const { t } = useTranslation();
-  const [provider, setProvider] = useState<MailProvider>(fix?.provider ?? 'gmail');
+  // A mailbox saved as Google Workspace opens on the one Google tile, and
+  // saves as gmail: the same servers (owner, 2026-10-26).
+  const [provider, setProvider] = useState<MailProvider>(fix?.provider === 'google-workspace' ? 'gmail' : (fix?.provider ?? 'gmail'));
   const [address, setAddress] = useState(fix?.address ?? '');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -61,16 +64,18 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
     setBusy(true); setError(null);
     const server = (host: string, port: string, fallback: MailServer): MailServer =>
       ({ host: host.trim() || fallback.host, port: Number(port) || fallback.port, secure: tls });
+    // The switch is for the incoming server. Outgoing follows its port: 465 is TLS from the first byte, 587 is STARTTLS.
+    const smtp = server(smtpHost, smtpPort, { ...guessed.smtp, port: tls ? SMTPS_PORT : SUBMISSION_PORT });
     const res = await window.cth.mailSave({
       id: fix?.id, provider, address: address.trim(), password,
-      ...(provider === 'other' ? { imap: server(imapHost, imapPort, guessed.imap), smtp: server(smtpHost, smtpPort, { ...guessed.smtp, port: tls ? SMTPS_PORT : SUBMISSION_PORT }) } : {})
+      ...(provider === 'other' ? { imap: server(imapHost, imapPort, guessed.imap), smtp: { ...smtp, secure: smtp.port === SMTPS_PORT } } : {})
     }).catch((e: unknown) => ({ ok: false as const, kind: 'unknown', reason: e instanceof Error ? e.message : String(e) }));
     setBusy(false);
     if (res.ok) onSaved(res.record);
     else setError(res.reason);
   };
 
-  const label = (p: MailProvider): string => (p === 'other' ? t('mailboxes.other') : PROVIDER_PRESETS[p].label);
+  const label = (p: MailProvider): string => (p === 'other' ? t('mailboxes.other') : p === 'gmail' ? t('mailboxes.googleTile') : PROVIDER_PRESETS[p].label);
 
   // Arrow keys move and choose within the service tiles (DESIGN.md 7.10a);
   // left and right follow reading direction.
@@ -130,9 +135,15 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
           </>
         )}
 
+        {/* The login on one soft panel (app-style-rollout.md AS2). */}
+        <Panel style={{ marginTop: 12 }}>
         <Field label={t('mailboxes.address')}>
           <input type="email" value={address} disabled={!!fix || busy} onChange={(e) => setAddress(e.target.value)} className="cth-input" style={input} autoComplete="off" spellCheck={false} />
         </Field>
+        {/* Google: the two steps on Google's side, each one click away, then
+            the paste (eng review, 2026-10-26: a business owner could not
+            follow the one paragraph). */}
+        {isGoogleProvider(provider) && <GoogleSteps address={address} />}
         <Field label={t('mailboxes.password')}>
           <div style={{ display: 'flex', gap: 6 }}>
             <input
@@ -152,7 +163,7 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
             <Field label={t('mailboxes.outgoing')}>
               <input value={smtpHost} placeholder={guessed.smtp.host} disabled={busy} onChange={(e) => setSmtpHost(e.target.value)} className="cth-input" style={input} spellCheck={false} />
             </Field>
-            <button type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{ ...linkButton, display: 'inline-flex', alignItems: 'center', gap: 4 }}><Disclosure open={more} />{t('mailboxes.moreSettings')}</button>
+            <button type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{ ...linkButton, marginTop: 0, alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Disclosure open={more} />{t('mailboxes.moreSettings')}</button>
             {more && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Field label={t('mailboxes.incomingPort')}><input inputMode="numeric" value={imapPort} onChange={(e) => setImapPort(e.target.value.replace(/\D/g, ''))} className="cth-input" style={{ ...input, width: 100 }} /></Field>
@@ -165,10 +176,13 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
             )}
           </>
         )}
+        </Panel>
 
-        <div style={{ background: 'var(--cth-blue-soft)', borderRadius: 'var(--cth-r-md)', padding: '9px 12px', fontSize: 12.5, lineHeight: '18px', marginTop: 14, color: 'var(--cth-ink)' }}>
-          {t(`mailboxes.help.${provider}`)}
-        </div>
+        {!isGoogleProvider(provider) && (
+          <div style={{ background: 'var(--cth-blue-soft)', borderRadius: 'var(--cth-r-md)', padding: '9px 12px', fontSize: 12.5, lineHeight: '18px', marginTop: 14, color: 'var(--cth-ink)' }}>
+            {t(`mailboxes.help.${provider}`)}
+          </div>
+        )}
 
         <div aria-live="polite" style={{ minHeight: 0 }}>
           {busy && <div style={{ ...hint, marginTop: 10 }}>{t('mailboxes.testing', { address: address.trim() })}</div>}
@@ -188,7 +202,41 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
   );
 }
 
-const hint: CSSProperties = { fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink-3)' };
+/** Turn on 2 Step Verification, create an app password, paste it: each Google
+ *  page one click away, opened on the typed account. */
+function GoogleSteps({ address }: { address: string }) {
+  const { t } = useTranslation();
+  const open = (base: string) => () => { void window.cth.openExternal(googleStepUrl(base, address)); };
+  return (
+    <ol style={{ listStyle: 'none', margin: '2px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <Step n={1} title={t('mailboxes.google.step1Title')} line={t('mailboxes.google.step1Line')}>
+        <PixelButton variant="secondary" size="sm" onClick={open(GOOGLE_TWO_STEP_URL)}>{t('mailboxes.google.step1Open')}</PixelButton>
+      </Step>
+      <Step n={2} title={t('mailboxes.google.step2Title')} line={t('mailboxes.google.step2Line')}>
+        <PixelButton variant="secondary" size="sm" onClick={open(GOOGLE_APP_PASSWORDS_URL)}>{t('mailboxes.google.step2Open')}</PixelButton>
+        <div style={{ ...hint, marginTop: 6 }}>{t('mailboxes.google.step2Admin')}</div>
+      </Step>
+      <Step n={3} title={t('mailboxes.google.step3Title')} line={t('mailboxes.google.step3Line')} />
+    </ol>
+  );
+}
+
+function Step({ n, title, line, children }: { n: number; title: string; line: string; children?: React.ReactNode }) {
+  return (
+    <li style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', background: 'var(--cth-card)', borderRadius: 'var(--cth-r-lg)' }}>
+      <span aria-hidden style={{
+        flexShrink: 0, width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center',
+        background: 'var(--cth-indigo)', color: 'var(--cth-on-indigo)', fontSize: 12, fontWeight: 700
+      }}>{n}</span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}><span className="cth-sr-only">{n}. </span>{title}</div>
+        <div style={{ ...hint, marginTop: 2, marginBottom: children ? 8 : 0 }}>{line}</div>
+        {children}
+      </div>
+    </li>
+  );
+}
+
 const input: CSSProperties = {
   height: 34, border: 'none', background: 'var(--cth-card)', outline: 'none',
   padding: '0 10px', fontFamily: 'var(--cth-font-ui)', fontSize: 13, color: 'var(--cth-ink)', minWidth: 0
@@ -197,12 +245,3 @@ const linkButton: CSSProperties = {
   border: 'none', background: 'transparent', padding: 0, marginTop: 10, cursor: 'pointer', textDecoration: 'underline',
   fontFamily: 'var(--cth-font-ui)', fontSize: 12.5, color: 'var(--cth-indigo-text)'
 };
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 12 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}</span>
-      {children}
-    </label>
-  );
-}

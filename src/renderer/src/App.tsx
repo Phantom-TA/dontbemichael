@@ -24,7 +24,8 @@ import { ClosingTimeBar, type ClosingTimeState } from '@/components/ClosingTimeB
 import { CompletionToast } from '@/realtime/CompletionToast';
 import { UpdateToast } from '@/components/UpdateToast';
 import { CliUpdateToast } from '@/components/CliUpdateNotice';
-import { SettingsModal, type Section as SettingsSection } from '@/components/SettingsModal';
+import { SettingsModal, type Section as SettingsSection, type SettingsPlace } from '@/components/SettingsModal';
+import type { PlaceGroup } from '@shared/settingsPlaces';
 import { PixelButton } from '@/components/PixelButton';
 import { SidebarSplitter } from '@/components/SidebarSplitter';
 import { acquireTerminal } from '@/components/terminalPool';
@@ -89,7 +90,10 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Which tab Settings opens on. Set by a `cth:open-settings` deep link, reset
    *  to undefined (→ General) whenever the modal is opened the normal way. */
-  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
+  // A deep link can also name a group in the section and ask for its Add form
+  // (docs/designs/settings-links-in-replies.md); seq lets the same place be
+  // asked for twice.
+  const [settingsPlace, setSettingsPlace] = useState<SettingsPlace | undefined>(undefined);
   // Closing time on the floor (ClosingTimeBar): shown from the quit request
   // until the office closes or the owner goes back to work.
   const [closingOpen, setClosingOpen] = useState(false);
@@ -105,8 +109,8 @@ export function App() {
   // between, matching the existing `cth:` CustomEvent convention.
   useEffect(() => {
     const onOpenSettings = (e: Event): void => {
-      const section = (e as CustomEvent<{ section?: SettingsSection }>).detail?.section;
-      setSettingsSection(section);
+      const d = (e as CustomEvent<{ section?: SettingsSection; group?: PlaceGroup; add?: boolean }>).detail;
+      setSettingsPlace((p) => ({ section: d?.section, group: d?.group, add: d?.add, seq: (p?.seq ?? 0) + 1 }));
       setSettingsOpen(true);
     };
     window.addEventListener('cth:open-settings', onOpenSettings);
@@ -511,7 +515,7 @@ export function App() {
       {/* Design v2 shell (branding/DESIGN.md 5.2): top bar, the stage with the
           bottom bar floating over it, and the right column. No agent strip and
           no permanent Command Center: people live on the stage. */}
-      <TopBar onOpenSettings={() => { setSettingsSection(undefined); setSettingsOpen(true); }} />
+      <TopBar onOpenSettings={() => { setSettingsPlace(undefined); setSettingsOpen(true); }} />
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
         <div ref={stageRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', background: 'var(--cth-bg)' }}>
@@ -652,8 +656,9 @@ export function App() {
       {settingsOpen && (
         <SettingsModal
           config={config}
-          initialSection={settingsSection}
-          onClose={() => { setSettingsOpen(false); setSettingsSection(undefined); }}
+          initialSection={settingsPlace?.section}
+          place={settingsPlace}
+          onClose={() => { setSettingsOpen(false); setSettingsPlace(undefined); }}
         />
       )}
 

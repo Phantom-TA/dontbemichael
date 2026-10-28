@@ -44,27 +44,29 @@ test('the instructions prompt carries the house prompting rules and the previous
   assert.equal(W.cleanAnswer('```\nhello\n```'), 'hello');
 });
 
-test('the wizard shows the plain description and writes instructions only when it changed', () => {
+test('the wizard shows a picked job in plain words and hires with the instructions as written', () => {
+  // Value: protects=the hire gets exactly the job the owner saw, with no second rewrite at Hire (work-style-change-request.md, D2); fails_when=Hire converts again or the picked job is not shown in plain words; why_new=the job became read only; seam=source pin
   const modal = read('src/renderer/src/components/AddAgentModal.tsx');
   assert.match(modal, /setInstructions\(copy\.workStyle, name\.trim\(\), copy\.title\);/);
-  assert.match(modal, /if \(!goal \|\| workStyle\.trim\(\) !== plainOfBase\.trim\(\)\) \{/);
-  assert.match(modal, /workStyleConvert\(\{ to: 'instructions', text: workStyle, ctx: styleCtx\(\), previous: baseInstructions \|\| undefined \}\)/);
-  const start = modal.indexOf('const submit = async');
+  assert.doesNotMatch(modal, /to: 'instructions'/);
+  const start = modal.indexOf('const submitHire = async');
   const flow = modal.slice(start, modal.indexOf('\n  return (', start));
-  assert.ok(flow.indexOf("to: 'instructions'") < flow.indexOf('spawnPty'), 'written before the spawn');
+  assert.match(flow, /const goal = instructions\.trim\(\);/);
+  assert.match(flow, /goalPlain: plainSaved && plain\.trim\(\) \? \{ text: plain\.trim\(\), of: jobFingerprint\(goal\) \} : undefined,/, 'the words the owner read are saved with the job (D5)');
   const main = read('src/main/workStyleConvert.ts');
   assert.match(main, /const INSTRUCTIONS_MODEL = 'claude-sonnet-5';/);
   assert.match(main, /noTools: true,/);
 });
 
-test('Edit Agent shows the plain description and rewrites instructions only when it changed', () => {
+test('Edit Agent shows the saved plain words, writes stale ones once, and never rewrites the job on Save', () => {
+  // Value: protects=the owner reads the words saved with the job, Michael his default (F6), and words another writer left stale are written again once (D5, OV3); fails_when=every open paraphrases again, stale words are saved over newer instructions, or Save touches the goal; why_new=the job became read only; seam=source pin
   const edit = read('src/renderer/src/components/EditAgentModal.tsx');
-  assert.match(edit, /describe\(effectiveWorkStyle\(agent\)\);/, 'opens on the plain description, Michael on his default (F6)');
-  assert.match(edit, /let trimmedGoal = \(agent\.goal \?\? ''\)\.trim\(\);/, 'unchanged keeps the instructions as they are');
-  assert.match(edit, /else if \(goal\.trim\(\) !== plainOfGoal\.trim\(\)\) \{/);
-  assert.match(edit, /to: 'instructions',[\s\S]{0,300}previous: effectiveWorkStyle\(agent\) \|\| undefined/);
-  const save = edit.slice(edit.indexOf('const save = async'));
-  assert.ok(save.indexOf("to: 'instructions'") < save.indexOf('renameAgent('), 'written before anything is saved');
+  assert.match(edit, /const instructions = effectiveWorkStyle\(live\);\s*const savedPlain = plainFor\(live, instructions\);/);
+  assert.match(edit, /if \(savedPlain \|\| !instructions\.trim\(\)\) return;/, 'saved words are shown as they are');
+  assert.match(edit, /if \(now && jobFingerprint\(effectiveWorkStyle\(now\)\) === of\) updateAgent\(agent\.id, \{ goalPlain: \{ text: res\.text, of \} \}\);/, 'only while they still describe the job');
+  assert.match(edit, /if \(gone \|\| res\.source !== 'ai' \|\| !res\.text\) return;/, 'a rules rewrite is shown, never saved');
+  const save = edit.slice(edit.indexOf('const save = async'), edit.indexOf('const remove = async'));
+  assert.doesNotMatch(save, /goal|workStyleConvert|workStyleRevise/);
   assert.doesNotMatch(edit, /Check every number twice/, 'no prompt-style placeholder');
 });
 
@@ -100,6 +102,42 @@ test('the quick rewrite gives an s only to a verb: "you" as an object, and "don\
   const michael = W.plainFallback(MICHAEL_WORK_STYLE, W.roleLabel('Office Manager'));
   assert.match(michael, /the owner asks Office Manager in their conversation/);
   assert.doesNotMatch(michael, /\b\w+s't\b| ins | tos | ands | fors /);
+});
+
+test('the quick rewrite reads right for were, you\'ll, you\'ve, an adverb before the verb, and yourself', () => {
+  // Value: protects=the plain description in Edit Agent reads as English; fails_when="were" gets an s, a contraction keeps its tail on the role, the verb after "also" or "never" keeps no s, or "yourself" becomes the role; why_new=bug found by repro ("Support weres hired"); seam=pure thirdPerson()
+  const s = (text) => W.thirdPerson(text, 'Support');
+  assert.equal(s('You were hired to sort mail.'), 'Support was hired to sort mail.');
+  assert.equal(s('You weren\'t told.'), 'Support wasn\'t told.');
+  assert.equal(s('You\'ll send the summary at five.'), 'Support will send the summary at five.');
+  assert.equal(s('You’d reply first.'), 'Support would reply first.');
+  assert.equal(s('You\'ve got the inbox.'), 'Support has got the inbox.');
+  assert.equal(s('You also send a summary to Michael.'), 'Support also sends a summary to Michael.');
+  assert.equal(s('You always reply within a day.'), 'Support always replies within a day.');
+  assert.equal(s('You first check the inbox, then reply.'), 'Support first checks the inbox, then reply.');
+  assert.equal(s('You still have the keys.'), 'Support still has the keys.');
+  assert.equal(s('You never send refunds yourself.'), 'Support never sends refunds themselves.');
+  assert.equal(s('You also can refund.'), 'Support also can refund.', 'a helper verb after the adverb stays');
+});
+
+test('an object you leaves the words after it alone; only a you that opens a clause passes the s on', () => {
+  // Value: protects=owner written lines still read right in Edit Agent; fails_when=the adverb rule runs after an object "you", so "asks you first before" reads "first befores", or "If you also send" loses its s; why_new=review on #572; seam=pure thirdPerson()
+  const s = (text) => W.thirdPerson(text, 'Support');
+  assert.equal(s('The owner asks you first before anything is sent.'), 'The owner asks Support first before anything is sent.');
+  assert.equal(s('Michael tells you only once a day.'), 'Michael tells Support only once a day.');
+  assert.equal(s('It reaches you just before noon.'), 'It reaches Support just before noon.');
+  assert.equal(s('Check with you first thing each morning.'), 'Check with Support first thing each morning.');
+  assert.equal(s('If you also send a quote, copy Michael.'), 'If Support also sends a quote, copy Michael.');
+  assert.equal(s('Sort the inbox, then you always log it.'), 'Sort the inbox, then Support always logs it.');
+  assert.equal(s('Done.\nYou never send refunds.'), 'Done.\nSupport never sends refunds.');
+  assert.equal(s("You'd finished the invoice already."), 'Support had finished the invoice already.');
+  assert.equal(s('You’d reply first.'), 'Support would reply first.', 'not before a past participle');
+  assert.equal(s("You'd checked it twice."), 'Support had checked it twice.');
+  // A verb that only ends in "ed" is not a past participle.
+  assert.equal(s("You'd need to check the inbox first."), 'Support would need to check the inbox first.');
+  assert.equal(s("you'd proceed only after Michael agrees."), 'Support would proceed only after Michael agrees.');
+  assert.equal(s("You'd feed the summary to Michael."), 'Support would feed the summary to Michael.');
+  assert.equal(s("You'd shred old drafts."), 'Support would shred old drafts.');
 });
 
 test('the Add and Edit agent views read a work style by role, never by the agent\'s name', () => {

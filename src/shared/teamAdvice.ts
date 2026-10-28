@@ -60,6 +60,8 @@ export interface MemberModelFact {
   keptShare: number | null;
   /** Kept as is decisions counted (drafts plus cards). */
   keptDecisions: number;
+  /** Of those, kept as is. */
+  kept?: number;
   reopens: number;
   usdPerWeek: number;
 }
@@ -144,7 +146,8 @@ export function adviceFor(input: {
       });
       continue;
     }
-    if (didWork / mine.length >= 0.9 && !m.timed && m.intervalMs / 2 >= MIN_INTERVAL_MS) {
+    // A timed schedule has no clean halving, so it opens the editor; the 15 minute floor is for intervals.
+    if (didWork / mine.length >= 0.9 && (m.timed || m.intervalMs / 2 >= MIN_INTERVAL_MS)) {
       const mid = since + (input.now - since) / 2;
       const median = (xs: number[]): number => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
       const last = median(mine.filter((r) => r.start >= mid).map((r) => r.workCount));
@@ -153,7 +156,7 @@ export function adviceFor(input: {
         out.push({
           id: `run-more:${m.to}:${m.id}`, kind: 'run-more', agentId: m.to, missionId: m.id,
           evidence: { runs: mine.length, didWork },
-          change: { kind: 'interval', fromMs: m.intervalMs, toMs: Math.max(MIN_INTERVAL_MS, m.intervalMs / 2) },
+          change: m.timed ? { kind: 'editor', direction: 'more' } : { kind: 'interval', fromMs: m.intervalMs, toMs: Math.max(MIN_INTERVAL_MS, m.intervalMs / 2) },
           savesPerWeek: null,
           band: didWork
         });
@@ -164,7 +167,9 @@ export function adviceFor(input: {
   for (const p of input.members) {
     // Claude only for now (memory 2026-10-10: never across providers).
     if (p.provider !== 'claude' || !p.model) continue;
-    const down = !p.isGod && p.pieces >= min(20) && p.mailDecisions >= min(10) && p.keptShare !== null && p.keptShare >= 0.9 && p.reopens === 0
+    // A cheaper model only from the top tier (design table): a middle tier member doing well stays put.
+    const top = input.ladder.find((m) => m.provider === p.provider && m.id === p.model)?.tier === 'top';
+    const down = top && !p.isGod && p.pieces >= min(20) && p.mailDecisions >= min(10) && p.keptShare !== null && p.keptShare >= 0.9 && p.reopens === 0
       ? nextTier(input.ladder, p.provider, p.model, -1) : null;
     if (down) {
       const a = input.priceOf(p.model), b = input.priceOf(down.id);
@@ -190,6 +195,26 @@ export function adviceFor(input: {
     }
   }
   return out;
+}
+
+/** What the Early look watches (owner, 2026-10-26: it read as schedules
+ *  only): how many patterns each rule found, and the member closest to a
+ *  cheaper model, so a rule that found nothing yet still shows it is looking. */
+export interface EarlyWatch {
+  counts: Record<AdviceKind, number>;
+  /** The member the cheaper model rule could reach, with the most work kept
+   *  as is: top tier Claude, never Michael. Null when none has a decision. */
+  closest: { agentId: string; kept: number; decisions: number } | null;
+}
+
+export function earlyWatch(found: Advice[], members: MemberModelFact[], ladder: LadderModel[]): EarlyWatch {
+  const counts: Record<AdviceKind, number> = { 'run-less': 0, 'run-more': 0, 'cheaper-model': 0, 'stronger-model': 0 };
+  for (const a of found) counts[a.kind]++;
+  const reachable = members.filter((p) => p.provider === 'claude' && !p.isGod && !!p.model && p.keptDecisions > 0
+    && ladder.find((m) => m.provider === p.provider && m.id === p.model)?.tier === 'top');
+  const share = (p: MemberModelFact): number => (p.kept ?? 0) / p.keptDecisions;
+  const best = [...reachable].sort((a, b) => share(b) - share(a) || b.keptDecisions - a.keptDecisions)[0];
+  return { counts, closest: best ? { agentId: best.agentId, kept: best.kept ?? 0, decisions: best.keptDecisions } : null };
 }
 
 /** D13: a dismissed suggestion stays hidden until its band rises or 14 days pass. */

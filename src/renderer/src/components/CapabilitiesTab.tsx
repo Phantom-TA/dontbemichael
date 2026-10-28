@@ -1,5 +1,5 @@
 import { RESEARCH_ID } from '../../../shared/research';
-import { useEffect, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, Toggle, TriggerCard, MiniButton } from './triggers/ui';
 import { AgentSchedules, useGodId, useMissions } from './triggers/ScheduleList';
@@ -16,6 +16,7 @@ import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { InfoTip } from './InfoTip';
 import { SHOW_MAILBOXES } from '@shared/buildFeatures';
 import { useResearchName } from '@/shell/research';
+import { fieldLabel } from './fieldText';
 
 type SectionKey = 'email' | 'connectors' | 'schedules';
 
@@ -65,6 +66,39 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
   const mine = missionsFor(missions, agent.id, godId);
   const schedulesOn = mine.filter((m) => m.enabled).length;
   const [collapsed, setCollapsed] = useState<Record<SectionKey, boolean>>({ email: true, connectors: true, schedules: true });
+  // "Change on Access" from Edit agent or the Profile tab: On a schedule
+  // opens unfolded and in view, once (edit-agent-scheduled-jobs.md, SJ3).
+  const schedulesRequest = useStore((s) => s.schedulesRequest);
+  const clearSchedulesRequest = useStore((s) => s.clearSchedulesRequest);
+  const schedulesRef = useRef<HTMLDivElement>(null);
+  const [scrollToSchedules, setScrollToSchedules] = useState(false);
+  // A member link in agent text opens Email the same way
+  // (settings-links-in-replies.md).
+  const emailRequest = useStore((s) => s.emailRequest);
+  const clearEmailRequest = useStore((s) => s.clearEmailRequest);
+  const emailRef = useRef<HTMLDivElement>(null);
+  const [scrollToEmail, setScrollToEmail] = useState(false);
+  useEffect(() => {
+    if (!emailRequest || emailRequest.agentId !== agent.id) return;
+    clearEmailRequest();
+    setCollapsed((c) => ({ ...c, email: false }));
+    setScrollToEmail(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emailRequest?.seq, agent.id]);
+  useEffect(() => {
+    if (!scrollToEmail || !emailRef.current) return;
+    setScrollToEmail(false);
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    emailRef.current.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+    emailRef.current.querySelector<HTMLElement>('button[aria-expanded]')?.focus({ preventScroll: true });
+  });
+  useEffect(() => {
+    if (!schedulesRequest || schedulesRequest.agentId !== agent.id) return;
+    clearSchedulesRequest();
+    setCollapsed((c) => ({ ...c, schedules: false }));
+    setScrollToSchedules(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedulesRequest?.seq, agent.id]);
   // Unknown until main answers for this agent (the card stays hidden), so
   // Oscar's switch never shows off while the hook treats him as on, and
   // another agent's answer never shows.
@@ -77,6 +111,16 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
   const booksDefault = booksAnswer?.id === agent.id ? booksAnswer.on : undefined;
   const setFold = (key: SectionKey, open: boolean): void => setCollapsed({ ...collapsed, [key]: !open });
 
+  // The group exists only once the config has loaded.
+  useEffect(() => {
+    if (!scrollToSchedules || !schedulesRef.current) return;
+    setScrollToSchedules(false);
+    // Instant under reduced motion; focus lands on the group the owner asked
+    // to see, so a keyboard user is there too (ship review, 2026-10-23).
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    schedulesRef.current.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+    schedulesRef.current.querySelector<HTMLElement>('button[aria-expanded]')?.focus({ preventScroll: true });
+  });
   if (!config) return null;
   const mailboxes = config.mailboxes ?? [];
   const email: EmailCapability = config.agentCapabilities?.[agent.id]?.email ?? { enabled: false, mailboxes: [], send: false, sending: 'draft' };
@@ -227,7 +271,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
 
         <div style={{ height: 8 }} />
         {/* Email: hidden in this build when SHOW_MAILBOXES is off. */}
-        {SHOW_MAILBOXES && <TriggerCard
+        {SHOW_MAILBOXES && <div ref={emailRef} data-email-group style={{ scrollMarginTop: 8 }}><TriggerCard
           title={t('capabilities.email')}
           blurb={t('capabilities.emailBlurb', { name })}
           summary={inUse ? t('capabilities.emailSummary', { count: inUse }) : t('capabilities.emailSummaryNone')}
@@ -364,7 +408,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
               <MiniButton onClick={() => setMoving(null)}>{t('capabilities.keepIt')}</MiniButton>
             </div>
           )}
-        </TriggerCard>}
+        </TriggerCard></div>}
 
         <TriggerCard
           title={t('capabilities.connectors')}
@@ -408,6 +452,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
           )}
         </TriggerCard>
 
+        <div ref={schedulesRef} data-schedules-group style={{ scrollMarginTop: 8 }}>
         <TriggerCard
           title={t('capabilities.schedules')}
           blurb={t('capabilities.schedulesBlurb', { name })}
@@ -417,6 +462,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
         >
           <AgentSchedules key={agent.id} agentId={agent.id} agentName={name} businessType={config.businessType} sourceCard={agent.sourceCard} />
         </TriggerCard>
+        </div>
 
         {/* Outside the sections, so a closed Email section still shows them. */}
         <div aria-live="polite">
@@ -528,14 +574,14 @@ export function RadioRows({ label, value, options, onChange, inline = false }: {
 }
 
 const hint: CSSProperties = { fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)' };
-const h13: CSSProperties = { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--cth-ink-3)', margin: '14px 0 6px' };
+const h13: CSSProperties = { ...fieldLabel, margin: '14px 0 6px' };
 const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: '1px solid var(--cth-line)' };
 const notice: CSSProperties = { padding: '8px 10px', borderRadius: 'var(--cth-r-md)', fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink)', marginTop: 8 };
 const mailboxRow: CSSProperties = { padding: '10px 0', borderTop: '1px solid var(--cth-line)' };
 const mailboxTop: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 };
 const address: CSSProperties = { flex: 1, minWidth: 0, fontFamily: 'var(--cth-font-mono)', fontSize: 12.5, fontWeight: 500, overflowWrap: 'anywhere' };
 const facts: CSSProperties = { display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '6px 12px', alignItems: 'center', marginTop: 8, fontSize: 12.5 };
-const factKey: CSSProperties = { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--cth-ink-3)' };
+const factKey: CSSProperties = hint;
 const factValue: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--cth-ink)' };
 const addPanel: CSSProperties = { marginTop: 10, padding: 10, border: '1px solid var(--cth-line)', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card-2)' };
 

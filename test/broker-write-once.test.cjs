@@ -26,6 +26,7 @@ const {
   withQuickBooksRequestId,
   writeOnceIdentity
 } = loadTs('src/main/brokerWriteOnce.ts');
+const { postReadsFor, isPostRead, graphqlReadsOnly } = loadTs('src/shared/integrations.ts');
 
 const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
 const DASH = /[\u002D\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/;
@@ -426,4 +427,130 @@ test('a write answer cut partway drops the connection and is not sent again', as
   assert.equal(retry.status, 409);
   assert.match(retry.text, /already went through/);
   assert.equal(calls, 1);
+});
+
+// Reads sent as POST (review on #382): a search, a database query or a GraphQL
+// query is asked again freely; only writes go through the journal.
+
+test('a Linear query asked twice reaches Linear twice, and the second answer is fresh', async (t) => {
+  // Value: protects=a repeated search returns today's data, not a ten minute old copy; fails_when=a GraphQL query is recorded and replayed, or gets an Idempotency-Key; why_new=main records every POST, and Linear reads only with POST; seam=fetchImpl
+  const { dir, file } = journalFile();
+  const titles = ['Fix login'];
+  const seen = [];
+  const broker = await startBroker(t, {
+    dir,
+    journalPath: file,
+    getRecord: () => record('linear', 'https://api.linear.app/graphql'),
+    fetchImpl: async (url, init) => {
+      seen.push({ url: String(url), key: init.headers['idempotency-key'] });
+      return jsonResponse(JSON.stringify({ data: { issues: { nodes: titles.map((title) => ({ title })) } } }), 200);
+    }
+  });
+  const token = broker.grant('pty-dwight', ['linear'], 'dwight');
+  const query = JSON.stringify({ query: '{ issues { nodes { title } } }' });
+  const first = await request(broker.url(), token, 'POST', '/i/linear/', query);
+  titles.push('Ship invoices');
+  const again = await request(broker.url(), token, 'POST', '/i/linear/', query);
+  assert.deepEqual(JSON.parse(first.text).data.issues.nodes.map((n) => n.title), ['Fix login']);
+  assert.deepEqual(JSON.parse(again.text).data.issues.nodes.map((n) => n.title), ['Fix login', 'Ship invoices']);
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0].url, 'https://api.linear.app/graphql/');
+  assert.equal(seen[0].key, undefined, 'a read carries no Idempotency-Key');
+  assert.equal(fs.existsSync(file) ? Object.keys(JSON.parse(fs.readFileSync(file, 'utf8'))).length : 0, 0, 'nothing recorded');
+});
+
+test('a Linear mutation asked twice reaches Linear once', async (t) => {
+  // Value: protects=a GraphQL write still goes out once; fails_when=a mutation is taken for a read; why_new=new read rule; seam=fetchImpl
+  const { dir, file } = journalFile();
+  let calls = 0;
+  const broker = await startBroker(t, {
+    dir,
+    journalPath: file,
+    getRecord: () => record('linear', 'https://api.linear.app/graphql'),
+    fetchImpl: async () => { calls += 1; return jsonResponse('{"data":{"issueCreate":{"success":true}}}', 200); }
+  });
+  const token = broker.grant('pty-dwight', ['linear'], 'dwight');
+  const mutation = JSON.stringify({ query: 'mutation { issueCreate(input: { title: "Ship invoices" }) { success } }' });
+  const first = await request(broker.url(), token, 'POST', '/i/linear/', mutation);
+  const again = await request(broker.url(), token, 'POST', '/i/linear/', mutation);
+  assert.equal(again.text, first.text);
+  assert.equal(calls, 1);
+});
+
+test('a Notion query whose answer was lost can be asked again', async (t) => {
+  // Value: protects=a read cut off on the way back can simply be asked again; fails_when=the lost read is refused as a change that may have gone out, with a "tell Michael" for a day; why_new=main treats every POST as a write; seam=fetchImpl
+  const { dir, file } = journalFile();
+  let calls = 0;
+  const broker = await startBroker(t, {
+    dir,
+    journalPath: file,
+    getRecord: () => record('notion', 'https://api.notion.com/v1'),
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        const err = new TypeError('fetch failed');
+        err.cause = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+        throw err;
+      }
+      return jsonResponse('{"results":[]}', 200);
+    }
+  });
+  const token = broker.grant('pty-pam', ['notion'], 'pam');
+  const body = JSON.stringify({ filter: { property: 'Status', status: { equals: 'Open' } } });
+  assert.equal((await request(broker.url(), token, 'POST', '/i/notion/databases/abc123/query', body)).status, 502);
+  const again = await request(broker.url(), token, 'POST', '/i/notion/databases/abc123/query', body);
+  assert.equal(again.status, 200);
+  assert.doesNotMatch(again.text, /Tell Michael/);
+  assert.equal(calls, 2);
+});
+
+test('a custom REST POST is still sent once, whatever its path', async (t) => {
+  // Value: protects=an API the catalog doesn't know keeps every POST a write; fails_when=a path that looks like a search is taken for a read on an unknown host; why_new=new read rule; seam=fetchImpl
+  const { dir, file } = journalFile();
+  let calls = 0;
+  const broker = await startBroker(t, {
+    dir,
+    journalPath: file,
+    getRecord: () => record('books', 'https://api.example.com/'),
+    fetchImpl: async () => { calls += 1; return jsonResponse('{"id":"inv_1"}'); }
+  });
+  const token = broker.grant('pty-oscar', ['books'], 'oscar');
+  await request(broker.url(), token, 'POST', '/i/books/v1/search', '{"customer":"Acme"}');
+  await request(broker.url(), token, 'POST', '/i/books/v1/search', '{"customer":"Acme"}');
+  assert.equal(calls, 1);
+});
+
+test('the catalog says which POSTs only read, by the connector\'s host', () => {
+  // Value: protects=only the searches and queries each catalog API documents are reads; fails_when=a create or update path, or another host, counts as a read; why_new=new read rule; seam=none
+  const u = (s) => new URL(s);
+  assert.equal(postReadsFor('https://api.linear.app/graphql').length, 1);
+  assert.equal(postReadsFor('https://api.example.com').length, 0, 'a custom REST API has none');
+  assert.equal(postReadsFor('not a url').length, 0);
+  const notion = postReadsFor('https://api.notion.com/v1');
+  assert.ok(isPostRead(notion, u('https://api.notion.com/v1/search'), '{}'));
+  assert.ok(isPostRead(notion, u('https://api.notion.com/v1/databases/abc123/query'), '{}'));
+  assert.ok(!isPostRead(notion, u('https://api.notion.com/v1/pages'), '{}'), 'creating a page is a write');
+  const hubspot = postReadsFor('https://api.hubapi.com');
+  assert.ok(isPostRead(hubspot, u('https://api.hubapi.com/crm/v3/objects/contacts/search'), '{}'));
+  assert.ok(!isPostRead(hubspot, u('https://api.hubapi.com/crm/v3/objects/contacts'), '{}'));
+  const jira = postReadsFor('https://acme.atlassian.net/rest/api/3');
+  assert.ok(isPostRead(jira, u('https://acme.atlassian.net/rest/api/3/search/jql'), '{}'));
+  assert.ok(!isPostRead(jira, u('https://acme.atlassian.net/rest/api/3/issue'), '{}'));
+  assert.equal(postReadsFor('https://atlassian.net.example.com').length, 0, 'only a real Atlassian site');
+});
+
+test('a GraphQL body reads only when every operation it runs is a query', () => {
+  // Value: protects=a mutation hidden in a batch, a named operation or a comment is never replayed as a read; fails_when=any mutation or unclear body counts as a read; why_new=new read rule; seam=none
+  const q = (query, operationName) => JSON.stringify(operationName ? { query, operationName } : { query });
+  assert.ok(graphqlReadsOnly(q('{ viewer { id } }')));
+  assert.ok(graphqlReadsOnly(q('query Issues($first: Int = 5) { issues(first: $first) { nodes { id } } }')));
+  assert.ok(graphqlReadsOnly(q('# mutation { gone }\nquery { viewer { name } }')), 'a comment is not a mutation');
+  assert.ok(graphqlReadsOnly(q('{ issues(filter: { title: { eq: "mutation" } }) { nodes { id } } }')), 'nor is a string');
+  assert.ok(!graphqlReadsOnly(q('mutation { issueCreate(input: {}) { success } }')));
+  assert.ok(!graphqlReadsOnly(JSON.stringify([{ query: '{ viewer { id } }' }, { query: 'mutation { a }' }])), 'a batch with a mutation is a write');
+  assert.ok(graphqlReadsOnly(q('query A { a } mutation B { b }', 'A')));
+  assert.ok(!graphqlReadsOnly(q('query A { a } mutation B { b }', 'B')));
+  assert.ok(!graphqlReadsOnly(q('query A { a } mutation B { b }')), 'two operations and no name: unclear, so a write');
+  assert.ok(!graphqlReadsOnly('not json'));
+  assert.ok(!graphqlReadsOnly(q('subscription { issueUpdated { id } }')));
 });

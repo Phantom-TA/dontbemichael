@@ -668,6 +668,12 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-dock-sheet .cth-composer { box-shadow: inset 0 0 0 1px var(--cth-line-2); }
 .cth-dock-sheet .cth-composer:focus-within { box-shadow: inset 0 0 0 2px var(--cth-indigo); }
 
+/* The program mark on the studio platform's side (StudioStage): quiet at rest,
+   full and underlined under the pointer or keyboard focus. */
+.cth-st-mark { text-decoration: none; cursor: pointer; opacity: var(--mark-op, 0.9); }
+.cth-st-mark:hover, .cth-st-mark:focus-visible { opacity: 1; text-decoration: underline; }
+.cth-st-mark:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 2px; border-radius: 2px; }
+
 /* Michael's conversation dock (docs/designs/michael-replies.md, 21A): slides
    180 ms up from the composer's top edge; reduced motion snaps. */
 .cth-dock { animation: cth-dock-in 180ms ease-out; }
@@ -722,3 +728,12 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-file-action:focus-visible { outline: 2px solid var(--cth-indigo); }
 .cth-file-action[aria-disabled="true"] { cursor: default; color: var(--cth-ink-3); }
 .cth-file-tab-close:hover { background: var(--cth-neutral-soft) !important; color: var(--cth-ink) !important; opacity: 1 !important; }
+
+/* A Settings group a place in agent text asked for (settings-links-in-replies.md):
+   a ring that fades over 2 s, so the eye lands on it. */
+.cth-place-highlight { animation: cth-place-glow 2s ease-out; border-radius: var(--cth-r-lg); }
+@keyframes cth-place-glow {
+  0%, 40% { box-shadow: 0 0 0 3px var(--cth-indigo); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .cth-place-highlight { animation: none; box-shadow: 0 0 0 3px var(--cth-indigo); } }

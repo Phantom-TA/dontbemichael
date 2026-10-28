@@ -6,8 +6,9 @@ import { InfoTip } from './InfoTip';
 import { AddMailboxDialog } from './AddMailboxDialog';
 import { useHarnessConfig } from '@/hooks/useHarnessConfig';
 import { useStore } from '@/store/store';
-import { PROVIDER_PRESETS, sendersFrom, type MailboxRecord } from '@shared/mailboxes';
+import { PROVIDER_PRESETS, googleLabel, isGoogleProvider, sendersFrom, type MailboxRecord } from '@shared/mailboxes';
 import { SENDING_LABEL_KEY } from './sendingLabels';
+import { groupName, hint, panelStyle } from './fieldText';
 
 /**
  * Settings > Connections > Mailboxes (docs/designs/multi-mailbox.md, design
@@ -24,7 +25,9 @@ import { SENDING_LABEL_KEY } from './sendingLabels';
  * Gmail on the owner's Claude account is not here: it is a row under Claude
  * connectors, given per agent like any connector (docs/designs/claude-connectors.md, E4).
  */
-export function MailboxesSettings() {
+/** A place in agent text asked for Mailboxes (settings-links-in-replies.md):
+ *  unfold it, and with `add` open the Add a mailbox form, once per seq. */
+export function MailboxesSettings({ focus }: { focus?: { add?: boolean; seq: number } } = {}) {
   const { t } = useTranslation();
   const config = useHarnessConfig();
   const agents = useStore((s) => s.agents);
@@ -41,6 +44,11 @@ export function MailboxesSettings() {
     decided.current = true;
     if ((config.mailboxes ?? []).some((m) => m.status === 'needs-attention')) setOpen(true);
   }, [config]);
+  useEffect(() => {
+    if (!focus) return;
+    setOpen(true);
+    if (focus.add) setDialog({});
+  }, [focus?.seq]);
   // Where keyboard focus goes back to when a confirm or the dialog closes.
   const rootRef = useRef<HTMLDivElement>(null);
   const refocus = (key: string): void => {
@@ -79,13 +87,13 @@ export function MailboxesSettings() {
   };
 
   return (
-    <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div ref={rootRef} style={{ ...panelStyle, gap: 10 }}>
       {/* One header line: the fold, its count, the intro behind an info icon
           and Add a mailbox, which works while the list is closed. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" aria-expanded={open} aria-controls={listId} onClick={() => setOpen((o) => !o)} style={foldButton}>
           <Disclosure open={open} />
-          <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px', color: 'var(--cth-ink-500)', textTransform: 'uppercase' }}>
+          <span style={groupName}>
             {t('mailboxes.title')}
           </span>
           <span style={hint}>
@@ -125,7 +133,8 @@ export function MailboxesSettings() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 600, wordBreak: 'break-all' }}>{m.address}</div>
                         <div style={hint}>
-                          {m.provider === 'other' ? t('mailboxes.other') : PROVIDER_PRESETS[m.provider].label}
+                          {/* One Google tile: the row says Gmail or GSuite by the address. */}
+                          {m.provider === 'other' ? t('mailboxes.other') : isGoogleProvider(m.provider) ? googleLabel(m.address) : PROVIDER_PRESETS[m.provider].label}
                           {' · '}
                           {users.length ? t('mailboxes.usedBy', { names: list(users) }) : t('mailboxes.usedByNobody')}
                         </div>
@@ -173,7 +182,6 @@ function Dot({ color }: { color: string }) {
   return <span aria-hidden="true" style={{ width: 8, height: 8, background: color, display: 'inline-block' }} />;
 }
 
-const hint: CSSProperties = { fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-500)' };
 const foldButton: CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', border: 'none', background: 'transparent',
   cursor: 'pointer', textAlign: 'start', fontFamily: 'var(--cth-font-ui)', color: 'var(--cth-ink-900)'

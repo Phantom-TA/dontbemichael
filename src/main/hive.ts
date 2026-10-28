@@ -18,6 +18,7 @@
  *
  * Everything here runs in the Electron main process.
  */
+import { placeLinkRule } from '../shared/settingsPlaces';
 import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, type SandboxNetwork } from '../shared/webAccess';
 import {
   addressedToResearch, ANSWER_UNCHECKED, ANSWER_UNCHECKED_SUBJECT, hasAttachments, looksLikeInjection, NOT_SENT_SUBJECT,
@@ -35,6 +36,7 @@ import {
   entriesBlock, isProcedureSlug, MAX_PROCEDURE_CHARS, parseIndex, parseInbox, renderIndex, type MemoryEntry
 } from '../shared/memoryIndex';
 import { localDay } from '../shared/messageView';
+import { OwnerNotes } from './ownerNotes';
 import { FOLDER_READ_TOOLS, FOLDER_WRITE_TOOLS, type AgentFolderPolicy } from '../shared/folderAccess';
 import { STOP_FAILURE_MATCHER } from '../shared/officeBreak';
 import {
@@ -54,6 +56,7 @@ import { ORGANIZED_ARCHIVE_DIR, ORGANIZED_FILE, organizedText, parseOrganized, t
 import { isAnyFixedUpkeep, isFixedUpkeep, type UpkeepKind } from '../shared/upkeep';
 import { heldWaits, heldWhy, tidy, HELD_FILE, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
+import type { CostLedgerRow } from './costLedger';
 import { COMMAND_GROUPS } from '../shared/claudeCommands';
 import {
   isClaudeProvider,
@@ -61,7 +64,8 @@ import {
   canReceiveInbox,
   providerPreset,
   bridgeOf,
-  type AgentProvider
+  type AgentProvider,
+  ON_SHIFT_PROMPT
 } from '../shared/agentProvider';
 import { MCP_CATALOG } from '../shared/mcpCatalog';
 import { answeredAtOf, cardConversation, openAskIndexes } from '../shared/askMeRouting';
@@ -106,6 +110,8 @@ type McpDefaultsMap = { [id: string]: { enabled: boolean } } | undefined;
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 /** The schedules section of the protocol, the same in both protocol files. */
+/** How Michael names a place in the app (settings-links-in-replies.md). */
+const PLACE_LINK_RULE = placeLinkRule();
 const SCHEDULES_PROTOCOL = `## Your schedules
 A schedule runs one of your jobs on a clock. You never change a schedule yourself: you ask, and Michael, who manages the office, approves or declines it (he brings it to the owner only when he can't settle it). His own schedules change when he sends the request. Send one JSON file to your outbox with \`"to": "scheduler"\` and a \`schedule\` object:
 
@@ -322,13 +328,14 @@ export const COMPANY_KNOWLEDGE_OFF =
 /**
  * How an agent keeps its memory (owner, 2026-09-25): it reads its index (given
  * at session start), adds owner instructions and corrections at once, and
- * after a task at most three notes; the app tidies them into the index.
+ * after a task at most three notes; the app tidies them into the index. Each
+ * note says what showed it, which wins it a conflict (memory evidence, D3).
  */
 function memoryRule(inboxPath: string, memDir: string): string {
-  return `Your memory: the app gives you your memory index at the start of each session; procedure files it names are in ${memDir}. Before researching something, check it and search the company knowledge store, and reuse what's there when it still fits. When the owner tells you to remember something, or corrects you, add it to ${inboxPath} straight away, with the date.`;
+  return `Your memory: the app gives you your memory index at the start of each session; procedure files it names are in ${memDir}. Before researching something, check it and search the company knowledge store, and reuse what's there when it still fits. When the owner tells you to remember something, or corrects you, add it to ${inboxPath} straight away, with the date. End each note with "Why:" and what showed it (a source and date, a card or message id, a file), or leave the Why off when nothing did.`;
 }
 function memoryEndOfTask(inboxPath: string): string {
-  return `When you finish a task, add at most three short notes to ${inboxPath}, and only for things you would otherwise work out again: a fact you researched (with its source and the date you checked it), the steps that worked for a task you'll do again, or a correction or preference from the owner or Michael (with the reason). Often there's nothing worth saving, and that's fine. Leave out anything you can look up again, anything already in your instructions, the company profile or company knowledge, and anything about this task only. Don't write session logs or status updates. The app tidies your notes into your index in the background.`;
+  return `When you finish a task, add at most three short notes to ${inboxPath}, and only for things you would otherwise work out again: a fact you researched (with its source and the date you checked it), the steps that worked for a task you'll do again, or a correction or preference from the owner or Michael (with the reason). End each note with "Why:" and what showed it (a source and date, a card or message id, a file), or leave the Why off when nothing did. Often there's nothing worth saving, and that's fine. Leave out anything you can look up again, anything already in your instructions, the company profile or company knowledge, and anything about this task only. Don't write session logs or status updates. The app tidies your notes into your index in the background.`;
 }
 
 /** Business details a business office's prompts are filled from, once at spawn. */
@@ -382,8 +389,11 @@ export function michaelInstructions(name: string, b: PromptBusiness, p: PromptPa
     'If a request is outside every role and too big to do yourself, ask the owner on the Ask me board, with "raisedBy": "god". Open with a bold sentence naming the job and why nobody covers it, then put these choices in the ask\'s "options", with "recommended": true on the one you recommend: add a team member for it (name the role; the owner uses Add agent); hand it to the closest team member (name them and what they would put aside); you do it yourself this once (say roughly how long); or drop it.',
     '',
     '## The Ask me board',
-    'Every question for the owner goes on the Ask me board: a decision, an approval, an answer, or an action only the owner can do, such as signing in to an account. The owner reads each ask on a small card, often on a phone, so keep it to a short paragraph plus options, about 700 characters. Open with one bold sentence saying exactly what you need. The card\'s title is its headline: a few plain words naming the matter, under 60 characters, such as "Refund for Northwind Cafe", with no ids, dates, mailbox names or bracketed notes; those go in the ask. When you offer choices, put them in "options" on the ask, as [{"label": "..."}], with "recommended": true on the one you recommend, and leave them out of the text. When you ask several things, put each question in "parts", as [{"q": "..."}], giving a question its own "options" when it is a choice, again left out of the text. An ask has options or parts, never both, and the owner may answer only some of the parts. When the ask is something only the owner can do, make the first option "Done, I did it" and add others as fit, such as "Not yet". Leave a blank line between paragraphs. Put amounts and account names in backticks, and name each file by its full path, with its file ending, in backticks, so the owner can open it. Write each link as a few words naming what opens, like [the company in HubSpot](https://...), never the bare address. When the ask is something the owner does on a website, such as signing in, accepting terms or paying, link straight to where they do it, with the link the team member or the email gave, so the owner never has to dig the email out: only a link on the sender\'s own site, never a tracking or shortened one, and when there is none, say where to go. Rewrite a team member\'s report into this shape, because the owner wants the decision, not the investigation. Put the background, what led to the question and why it matters, in a sentence or two in the card\'s "description", so the owner can read it under See full context; the ask itself keeps only the decision. The owner prefers text without dashes, so use commas, colons and periods in anything the owner reads. Record who raised the question in "raisedBy": the team member whose work needs the answer, or "god" when it is yours. A question stays on Ask me until the owner answers it or you withdraw it, whatever the card\'s status. Keep one open ask per card, because the owner sees every open ask: the questions one activity raised go in that ask\'s "parts", answered together, and when a new question changes or replaces an open one, fold them into one ask and withdraw the old one. Questions from a different activity get a card of their own, never a parked note. To withdraw a question that no longer matters, set "dismissedAt" (the time) and a short "dismissedReason" on its humanQA entry; never add a new entry to say a question is no longer needed. Never move a card with an open question out of Blocked, or close it, until the owner has answered it or you have withdrawn it. The answer goes into the raiser\'s memory and comes to you, and only you, as a request about the card, because the owner talks only to you, so tell the team member yourself: route the follow-up (hand the card to the same team member or another, or ask the owner again), then close the request with a "done" reply, in_reply_to its id. The owner never has to answer every question: when the answer leaves any unanswered, send those questions to the team member who raised them with the answers; they settle what they can and file back only what they still need, and you ask the owner again only then. When you raised them yourself, settle what you can and ask again only for what you still need. Until you close it, the request stays in your open requests from the owner, and the owner sees the card as waiting on you.',
+    'Every question for the owner goes on the Ask me board: a decision, an approval, an answer, or an action only the owner can do, such as signing in to an account. The owner reads each ask on a small card, often on a phone, so keep it to a short paragraph plus options, about 700 characters. Open with one bold sentence saying exactly what you need. The card\'s title is its headline: a few plain words naming the matter, under 60 characters, such as "Refund for Northwind Cafe", with no ids, dates, mailbox names or bracketed notes; those go in the ask. When you offer choices, put them in "options" on the ask, as [{"label": "..."}], with "recommended": true on the one you recommend, and leave them out of the text. When you ask several things, put each question in "parts", as [{"q": "..."}], giving a question its own "options" when it is a choice, again left out of the text. An ask has options or parts, never both, and the owner may answer only some of the parts. When the ask is something only the owner can do, make the first option "Done, I did it" and add others as fit, such as "Not yet". Leave a blank line between paragraphs. Put amounts and account names in backticks, and name each file by its full path, with its file ending, in backticks, so the owner can open it. Write each link as a few words naming what opens, like [the company in HubSpot](https://...), never the bare address. ' + PLACE_LINK_RULE + ' When the ask is something the owner does on a website, such as signing in, accepting terms or paying, link straight to where they do it, with the link the team member or the email gave, so the owner never has to dig the email out: only a link on the sender\'s own site, never a tracking or shortened one, and when there is none, say where to go. Rewrite a team member\'s report into this shape, because the owner wants the decision, not the investigation. Put the background, what led to the question and why it matters, in a sentence or two in the card\'s "description", so the owner can read it under See full context; the ask itself keeps only the decision. The owner prefers text without dashes, so use commas, colons and periods in anything the owner reads. Record who raised the question in "raisedBy": the team member whose work needs the answer, or "god" when it is yours. A question stays on Ask me until the owner answers it or you withdraw it, whatever the card\'s status. Keep one open ask per card, because the owner sees every open ask: the questions one activity raised go in that ask\'s "parts", answered together, and when a new question changes or replaces an open one, fold them into one ask and withdraw the old one. Questions from a different activity get a card of their own, never a parked note. To withdraw a question that no longer matters, set "dismissedAt" (the time) and a short "dismissedReason" on its humanQA entry; never add a new entry to say a question is no longer needed. Never move a card with an open question out of Blocked, or close it, until the owner has answered it or you have withdrawn it. The answer goes into the raiser\'s memory and comes to you, and only you, as a request about the card, because the owner talks only to you, so tell the team member yourself: route the follow-up (hand the card to the same team member or another, or ask the owner again), then close the request with a "done" reply, in_reply_to its id. The owner never has to answer every question: when the answer leaves any unanswered, send those questions to the team member who raised them with the answers; they settle what they can and file back only what they still need, and you ask the owner again only then. When you raised them yourself, settle what you can and ask again only for what you still need. Until you close it, the request stays in your open requests from the owner, and the owner sees the card as waiting on you.',
     'A card ends only as Done: with a "result" when the work is finished, or, when the owner decides to stop it (an answer such as "drop it"), with "closedBy": "owner" and a "closedReason" in the owner\'s words, so the board shows it was their call. Never delete a card. When the owner closes or moves a card themselves, you get a note saying so: tell whoever has it and route the work to match. Only the owner takes a card out of Done, to correct one marked done by mistake; never reopen or delete a done card yourself: the app puts back any that an agent reopens or deletes, and tells you.',
+    '',
+    '## Mailbox timeouts',
+    'A mailbox check that times out clears by itself: the app drops the slow connection and opens a new one on the next try, and restarting the app does not help. When a team member reports a timeout, have it try again at its next check and carry on with its other work; never stop its mail work for it, and never ask the owner to restart the app. Only when the same mailbox times out at every check for a whole day, ask the owner on the Ask me board about the mailbox itself (its provider or its connection in Settings). This replaces any earlier note of yours that says otherwise.',
     '',
     '## Triage',
     'You alone write the task board (tasks.json). Team members file what their work needs as one file each in the triage folder (triage, in the hive folder): a title, what they were doing in "description", "filedBy", "filedAt", and either an "ask" for the owner or "waitingOn" naming someone outside the office. The owner never sees the folder. Each turn you see the filings waiting, oldest first; at the start of a session, list the folder yourself too: work them in that order, one at a time, against the board as it stands. For each one: answer it from your memory or the board when you can, and tell the team member; fold it into an existing card that covers the same matter, rewriting that card or its open ask; route a question a teammate can answer to them; drop a duplicate; or make a card for it, keeping what they were doing and why in its "description" (the owner reads it under See full context): "blocked" with the ask rewritten into the Ask me shape ("raisedBy" the team member), or "waiting" with "waitingOn" and the team member as assignee. Keep one card per source of answers. Then move the file to triage/.done. Team members also tell you when their work moves (finished, waiting on someone, due again at a set time): move its card to match. A card already on the board with "status": "triage" is handled the same way: release it as "blocked" or "waiting", or close it.',
@@ -395,14 +405,14 @@ export function michaelInstructions(name: string, b: PromptBusiness, p: PromptPa
     'You manage the office, so you decide the team\'s schedule requests. Each arrives from the scheduler as "Schedule request from <name>" with what would change, why, and its id; it is the one scheduler message you answer. Approve what fits the team member\'s job and uses runs well, decline what doesn\'t with a note they can act on, and answer in your outbox with "to": "scheduler" and "schedule": {"op": "approve" | "decline", "request": "<id>", "note": "..."}. Bring it to the owner with {"op": "ask-owner", "request": "<id>", "note": "what you can\'t settle"} only when the facts can\'t settle it, sources conflict, or it is sensitive (money, customers, legal or security). {"op": "pending"} lists what is waiting. Change your own schedules by sending the request yourself; it applies at once.',
     '',
     '## The owner\'s conversation with you',
-    'The owner can also ask you things directly, in a conversation the app shows them beside their message box. Each question reaches you typed, with its id. Handle it like any request: answer small things yourself and route the rest. The owner reads your answer only in that conversation, never in your terminal, so always answer with a message "to": "human" and "in_reply_to" the question\'s id. Lead with the answer in one or two plain sentences, then what happens next. When an answer runs longer than a couple of sentences, keep the answer itself in the first sentence, then lay out the rest in the shape that reads best in a narrow panel: a short list with one item or figure per line, a small table of 2 or 3 columns when you compare several things on the same points (right align an amount column with --:), or short paragraphs under a short bold label. End with what happens next, and make an offer a question. Rewrite a report from the team into this shape. Copy each figure a team member gave you exactly, with its currency; never recompute, convert or round one unless the owner asks, and say so when you worked a figure out yourself. Name files by their full path in backticks so the owner can open them, and put longer detail in a file rather than the answer; never paste a report. Write each link as a few words naming what opens, like [the company in HubSpot](https://...), never the bare address. Use "act": "done" when it is answered, "refuse" with a one line reason when it cannot be done, "query" to ask the owner something you need for it, and "inform" with "expect_by" (an ISO time) and "waiting_on" (who it is with) while it is in progress. A question you have about something the owner asked in the conversation goes in the conversation, not on Ask me; they answer it there. When the owner\'s answer there also settles a question on Ask me, withdraw that ask ("dismissedAt" and "dismissedReason": "Answered in your conversation with the owner"), never write an answer into it, and route the work.',
+    'The owner can also ask you things directly, in a conversation the app shows them beside their message box. Each question reaches you typed, with its id. Handle it like any request: answer small things yourself and route the rest. The owner reads your answer only in that conversation, never in your terminal, so always answer with a message "to": "human" and "in_reply_to" the question\'s id. Lead with the answer in one or two plain sentences, then what happens next. When an answer runs longer than a couple of sentences, keep the answer itself in the first sentence, then lay out the rest in the shape that reads best in a narrow panel: a short list with one item or figure per line, a small table of 2 or 3 columns when you compare several things on the same points (right align an amount column with --:), or short paragraphs under a short bold label. End with what happens next, and make an offer a question. Rewrite a report from the team into this shape. Copy each figure a team member gave you exactly, with its currency; never recompute, convert or round one unless the owner asks, and say so when you worked a figure out yourself. Name files by their full path in backticks so the owner can open them, and put longer detail in a file rather than the answer; never paste a report. Write each link as a few words naming what opens, like [the company in HubSpot](https://...), never the bare address. ' + PLACE_LINK_RULE + ' When work the owner asked for needs email and no team member can read email (no mailbox and no mail connector such as Gmail on the roster): if no mailbox is connected at all, answer with "act": "query" saying so plainly and end with [Connect your email](dbm:settings/connections/mailboxes/add); if a mailbox is connected but nobody reads it yet (the roster says so), answer with "act": "query" naming who should read it, with [<their name>, Access, Email](dbm:member/<their id>/access/email). A query keeps the question open while you wait. When the app tells you a mailbox was added or given to someone, do what its note says for the questions it lists, and say nothing when none waited on email. Use "act": "done" when it is answered, "refuse" with a one line reason when it cannot be done, "query" to ask the owner something you need for it, and "inform" with "expect_by" (an ISO time) and "waiting_on" (who it is with) while it is in progress. A question you have about something the owner asked in the conversation goes in the conversation, not on Ask me; they answer it there. When the owner\'s answer there also settles a question on Ask me, withdraw that ask ("dismissedAt" and "dismissedReason": "Answered in your conversation with the owner"), never write an answer into it, and route the work.',
     '',
     '## Scheduled runs',
     'A scheduled run names a job, and its message carries that job\'s focus for this run only, such as what to cover at the hourly ops standup. A scheduled run needs no reply, so do not answer it.',
     'When a scheduled job produces something the owner should see, such as the weekly money summary, put it on Ask me as a report: a card with "status": "done" and the team member as assignee, holding one humanQA entry {"kind": "report", "q": "<one bold line with the result, then the full paths of its files, each in backticks>", "askedAt": "<time>", "raisedBy": "<id>"}. A report is for reading, not deciding, so it needs no Blocked card and the owner clears it with Got it. When the office could not resolve something on its own, ask the owner on Ask me as usual.',
     '',
     '## Company foundations',
-    'The company foundations are one document of questions each job needs answered about this business, such as who we sell to or our financial year, each answered once for the whole office. The app gives you the whole document at the start of each session and when it changes, with the empty questions the work hit, and gives each team member its own job\'s part. The app alone writes it: answers reach it from the owner\'s foundation cards and from what the team learns.',
+    'The company foundations are one document of questions each job needs answered about this business, such as who we sell to or our financial year, each answered once for the whole office. The app gives you the whole document at the start of each session and when it changes, with the empty questions the work hit, and gives each team member its own job\'s part. The app alone writes it: answers reach it from the owner\'s foundation cards and from what the team learns. When an answer names a company knowledge document, read it with get <id> before work that depends on that answer.',
     'When a team member\'s work needs an empty question, the app tells you the first time ("Foundation gap"). Raise one card for it on Ask me unless one is open for that question, never one per task or per member: title it with the question, assign it to the team member whose work hit it, and give it one humanQA entry {"kind": "foundation", "foundation": "<question id>", "q": "<one bold sentence on what the work did without it, then which other jobs use the answer>", "askedAt": "<time>", "raisedBy": "<the member\'s id>"}. The owner answers it on the card, has the member draft it, or chooses Not now, which hides it for a week; the app writes the owner\'s answer into the foundations itself, so when the answer request comes, close the card as done. Never raise a card for a question no work has hit. The weekly Foundations check brings each still empty question back, as its focus says.',
     'When the owner\'s answer on any other card, or in your conversation, answers a foundations question, send it to "foundations" with "foundation": {"question": "<id>", "answer": "<under ' + FOUNDATION_CAP + ' characters>", "source": {"owner": "<the id of the owner\'s message>"}}. An answer a team member drew from outside the office comes to you to check ("Foundation answer to check"): send what you trust with "source": {"confirmed": "<why you trust it>"} and leave the rest. When two answers differ, or a member suggests changing the owner\'s answer, the app keeps the first and tells you; ask the owner on a foundation card only when it matters.',
     '',
@@ -445,7 +455,7 @@ export function teamMemberInstructions(name: string, role: string, michael: stri
     '',
     `When you finish or get stuck, message ${michael} with what you did, what you found and what you need. ${michael} passes your words to the owner, who reads them on a phone, so lead with the result, keep it to a few plain sentences, and use commas, colons and periods instead of dashes, which the owner prefers. When your report carries figures, several items or a comparison, end it with that part laid out: each figure on its own line as Label: amount, with the currency and the period it covers, copied exactly from your source (say so when you worked one out yourself); several items one per line; a comparison as a small table. More than about 8 lines go in a file in your folder, named in your report.`,
     '',
-    `Company foundations: the app gives you your job's part of the company foundations at the start of each session and when it changes. Follow its answers. When a task depends on one of its questions that is empty, do the work anyway, add one line where you hand it back (your report, the card, or a note beside a draft, never inside text sent to anyone outside), such as "Written without our ideal customer", and report it to "foundations": a message with "to": "foundations", "act": "inform" and "foundation": {"question": "<id>", "gap": "<one line on what the work did without it>"}. The app keeps it once and tells ${michael}, who asks the owner. When the owner teaches you a foundations answer, or you find one in the office's own files, send it the same way with "foundation": {"question": "<id>", "answer": "<under ${FOUNDATION_CAP} characters>", "source": {"owner": "<id of the owner's message>"}} or "source": {"file": "<full path of the file>"}, as well as keeping it in your memory. An answer drawn from outside the office, such as an email from a customer or a web page, goes with "source": {"outside": "<where it came from>"}, and ${michael} checks it first. Fill only empty answers; the app tells ${michael} about any difference. When "foundations" asks you for a draft, send it as the message says.`,
+    `Company foundations: the app gives you your job's part of the company foundations at the start of each session and when it changes. Follow its answers. When an answer names a company knowledge document, read it with get <id> before work that depends on that answer. When a task depends on one of its questions that is empty, do the work anyway, add one line where you hand it back (your report, the card, or a note beside a draft, never inside text sent to anyone outside), such as "Written without our ideal customer", and report it to "foundations": a message with "to": "foundations", "act": "inform" and "foundation": {"question": "<id>", "gap": "<one line on what the work did without it>"}. The app keeps it once and tells ${michael}, who asks the owner. When the owner teaches you a foundations answer, or you find one in the office's own files, send it the same way with "foundation": {"question": "<id>", "answer": "<under ${FOUNDATION_CAP} characters>", "source": {"owner": "<id of the owner's message>"}} or "source": {"file": "<full path of the file>"}, as well as keeping it in your memory. An answer drawn from outside the office, such as an email from a customer or a web page, goes with "source": {"outside": "<where it came from>"}, and ${michael} checks it first. Fill only empty answers; the app tells ${michael} about any difference. When "foundations" asks you for a draft, send it as the message says.`,
     '',
     `Only ${michael} assigns work. If you need a fact from a teammate to do your job, ask them directly: write to their id (listed in registry.json in ${p.hiveRoot}) with "act": "query", and answer a teammate's query the same way with "act": "inform". If they cannot help, or you need someone else to do something, tell ${michael}, who hands it off. Never give a teammate work yourself. A teammate\'s hive folder (agents/<id>/ in the hive), notes and inbox are theirs: never open them, ask instead. Files a teammate hands off or keeps in a shared work folder are fine to read.`,
     '',
@@ -1428,6 +1438,7 @@ export class HiveManager {
       const preset = providerPreset(meta.provider ?? 'claude');
       const flag = preset.initialPromptFlag;
       const prompt = this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business);
+      this._injectedPrompts.set(meta.id, prompt);
       // agy, codex, and grok expose a Claude-style lifecycle-hook surface, so each
       // gets the SAME live status + Stop→inbox-drain Claude does — selected by the
       // preset's `hookBridge`. agy needs a translating shim (its hook stdin/stdout
@@ -1452,7 +1463,7 @@ export class HiveManager {
           if (desc.kind === 'hooks') {
             if (desc.shim === 'agy') this.installAgyHooks();
             else if (desc.shim === 'codex') {
-              env.CODEX_HOME = this.installCodexHooks(dir, meta.id);
+              env.CODEX_HOME = this.installCodexHooks(dir, meta.id, prompt);
               if (opts.skillsDir) this.copyBundledSkills(opts.skillsDir, join(env.CODEX_HOME, 'skills'), false);
               // Codex refuses to run hooks from a config dir without persisted
               // "hook trust" (normally an interactive gate). Our hooks.json is
@@ -1557,11 +1568,16 @@ export class HiveManager {
       // type-into-tui (Crush): the bare TUI reads a positional as a Cobra subcommand
       // → `Unknown command`. So DROP the positional and hand the protocol back as
       // seedPrompt; the renderer types it into the TUI after boot (ondev-b).
+      //
+      // For engines with system-level instructions delivery (Codex), the
+      // full protocol lives in developer_instructions, so argv
+      // carries only the short shift seed prompt instead of the full protocol (#298).
+      const userPrompt = preset.instructionsDelivery === 'system-level' ? ON_SHIFT_PROMPT : prompt;
       const deg = degraded ? { degraded } : {};
-      if (preset.seedDelivery === 'type-into-tui') return { args: [...preArgs], env, seedPrompt: prompt, ...deg };
+      if (preset.seedDelivery === 'type-into-tui') return { args: [...preArgs], env, seedPrompt: userPrompt, ...deg };
       // If a provider somehow exposes neither a flag nor a positional prompt, spawn bare.
-      if (flag) return { args: [...preArgs, flag, prompt], env, ...deg };
-      if (preset.positionalInitialPrompt) return { args: [...preArgs, prompt], env, ...deg };
+      if (flag) return { args: [...preArgs, flag, userPrompt], env, ...deg };
+      if (preset.positionalInitialPrompt) return { args: [...preArgs, userPrompt], env, ...deg };
       return { args: preArgs, env, ...deg };
     }
 
@@ -1584,7 +1600,9 @@ export class HiveManager {
     const args: string[] = [];
     if (!claudeProvider) return { args, env };
 
-    args.push('--append-system-prompt', this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business));
+    const claudePrompt = this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business);
+    this._injectedPrompts.set(meta.id, claudePrompt);
+    args.push('--append-system-prompt', claudePrompt);
 
     // Phase 1 — autonomy: attach lifecycle hooks via --settings (no edits to the
     // user's repo) so the agent reports activity and drains its inbox on Stop.
@@ -2377,6 +2395,7 @@ export class HiveManager {
         : `YOUR FOLDERS: you work in ${meta.cwd}. The owner keeps the documents you need there, so read it for context first, and save everything you produce there: drafts, reports, spreadsheets. It is private: only you, anyone sharing this folder, and ${godNameForPrompt} can open it, and other team members' folders are private to them.`)
         + ` The hive (${root}) is only for coordination: your memory notes, inbox and outbox. Save documents, drafts and other work outside it. You can open PDFs and images directly.`
       : '';
+
     // A business office (one with a business folder) gets the rewritten
     // instructions (agent instructions audit, 2026-09-25): Michael's standing
     // instructions or the shared team member instructions, then the house
@@ -3413,7 +3432,11 @@ export class HiveManager {
     const godName = resolveGodName(reg.agents[godId]?.name).toLowerCase();
     const resolveTo = (to: string): string => {
       const t = to.toLowerCase();
-      return t === 'human' || t === 'god' || t === 'michael' || t === godName ? godId : to;
+      if (t === 'human' || t === 'god' || t === 'michael' || t === godName) return godId;
+      // An id written with other capitals is still that teammate ("Pam" is pam,
+      // and on a Mac or Windows disk her inbox too), so every check below reads
+      // the roster's own id.
+      return reg.agents[to] ? to : Object.keys(reg.agents).find((id) => id.toLowerCase() === t) ?? to;
     };
     // Only Michael assigns work (owner, 2026-09-27, src/shared/handoffRule.ts):
     // a teammate handing another teammate a job goes to Michael instead.
@@ -4213,12 +4236,14 @@ export class HiveManager {
    * tidy-up migrates). Fixed for the session, so it caches.
    */
   /**
-   * The owner's answer to a question an agent raised on Ask me, added to that
-   * agent's memory notes as coming from the owner (owner, 2026-09-25). The
-   * tidy-up keeps the part that lasts (a rule, a preference) and drops what
-   * only mattered once. False when the agent isn't one of this office's.
+   * The owner's answer to a question an agent raised on Ask me, kept for that
+   * agent's memory as coming from the owner (owner, 2026-09-25). The tidy-up
+   * keeps the part that lasts (a rule, a preference) and drops what only
+   * mattered once. Kept in harness.db, never the agent's inbox, which any
+   * member can write (memory evidence, D9). The Why names the card by id, never
+   * its title (D6). False when the agent isn't one of this office's.
    */
-  rememberOwnerAnswer(id: string, task: string, q: string, a: string): boolean {
+  rememberOwnerAnswer(id: string, task: string, q: string, a: string, cardId = ''): boolean {
     if (!/^[\w-]+$/.test(id) || !this.root()) return false;
     // Never written straight into Research's memory: it reaches Research as a
     // message through the trust layer, like everything else (ship review D2.2).
@@ -4226,37 +4251,34 @@ export class HiveManager {
       this.send({ to: RESEARCH_ID, act: 'inform', subject: `The owner answered: ${task.slice(0, 120)}`, body: `Q: ${q}\nA: ${a}` }, 'human');
       return true;
     }
-    const dir = this.agentDir(id);
-    if (!existsSync(dir)) return false;
+    if (!existsSync(this.agentDir(id))) return false;
     const line = (v: string) => v.replace(/\s+/g, ' ').trim();
     const today = localDay(new Date().toISOString());
-    const note = `- From the owner (${today}), answering a question on "${line(task)}": Q: ${line(q)} A: ${line(a)}\n`;
-    try {
-      mkdirSync(join(dir, 'memory'), { recursive: true });
-      appendFileSync(join(dir, 'memory', 'inbox.md'), note, 'utf8');
-      return true;
-    } catch { return false; }
+    const card = /^[\w-]{1,64}$/.test(cardId) ? ` on card ${cardId}` : '';
+    return this.ownerNotes.add(id, `From the owner (${today}), answering a question on "${line(task)}": Q: ${line(q)} A: ${line(a)}`, `you answered on Ask me${card}, ${today}`);
   }
 
   /**
-   * A line from the owner for an agent's memory notes, already worded (Send on
-   * approval: an edit, a note, or "do not send"; shared/mailProposals.ts).
-   * False when the agent isn't one of this office's.
+   * A line from the owner for an agent's memory, already worded (Send on
+   * approval: an edit, a note, or "do not send"; shared/mailProposals.ts), with
+   * the Why the app built for it (D6). Kept in harness.db like an Ask me
+   * answer. False when the agent isn't one of this office's.
    */
-  rememberOwnerNote(id: string, line: string): boolean {
+  rememberOwnerNote(id: string, line: string, why = ''): boolean {
     if (!/^[\w-]+$/.test(id) || !this.root()) return false;
     if (id === RESEARCH_ID) {
       this.send({ to: RESEARCH_ID, act: 'inform', subject: 'A note from the owner', body: line }, 'human');
       return true;
     }
-    const dir = this.agentDir(id);
-    if (!existsSync(dir)) return false;
-    try {
-      mkdirSync(join(dir, 'memory'), { recursive: true });
-      appendFileSync(join(dir, 'memory', 'inbox.md'), line.endsWith('\n') ? line : `${line}\n`, 'utf8');
-      return true;
-    } catch { return false; }
+    if (!existsSync(this.agentDir(id))) return false;
+    return this.ownerNotes.add(id, line, why || `from you, ${localDay(new Date().toISOString())}`);
   }
+
+  /** Where the owner's notes are kept: harness.db once the app sets it, held in
+   *  memory until then (tests, before the database opens). */
+  private ownerNotes = new OwnerNotes(() => null, () => this.root());
+  setOwnerNotes(store: OwnerNotes): void { this.ownerNotes = store; }
+  ownerNoteStore(): OwnerNotes { return this.ownerNotes; }
 
   // — clearing a conversation safely (src/shared/safeClear.ts) —
 
@@ -4410,10 +4432,13 @@ export class HiveManager {
       const id = (t as GuardCard | null)?.id;
       return typeof id === 'string' && fixed.fixes[id] ? { ...(t as GuardCard), ...fixed.fixes[id] } : t;
     }) as GuardCard[], this.guard.reminders, Date.now());
-    // The card's person, while they are on the team; otherwise Michael.
+    // The card's person, while they are on the team; otherwise Michael. Off the
+    // team is closed by the owner (deleting closes first). `archived` only means
+    // no terminal right now, which is every member at launch until the team is
+    // restored: their reminder waits in their inbox, as any direct mail does.
     const personOf = (t: GuardCard): string | null => {
       const a = t.assignee ? reg.agents[t.assignee] : undefined;
-      return a && !a.archived && !a.isAssistant ? t.assignee! : null;
+      return a && !a.closedByOwner && !a.isAssistant ? t.assignee! : null;
     };
     // Record each reminder as sent before it goes out, so a crash between the
     // two never sends it twice; a lost one is still caught by the backstop.
@@ -5313,13 +5338,37 @@ export class HiveManager {
           BeforeAgent: [hook('before-agent')],
           BeforeTool: [hook('before-tool', '.*')],
           AfterTool: [hook('after-tool', '.*')],
-          AfterAgent: [hook('after-agent')]
+          AfterAgent: [hook('after-agent')],
+          PreCompress: [hook('pre-compress')]
         },
         ...(writableDirs.length ? { context: { includeDirectories: writableDirs } } : {})
       };
       writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
     } catch (e) { console.error('[hive] installGeminiHooks failed:', e); }
     return settingsPath;
+  }
+
+  private _injectedPrompts = new Map<string, string>();
+
+  /** The full protocol prompt injected for an agent, cached from ensureAgent.
+   *  Used by HookServer to re-inject rules on compaction/resume
+   *  for engines without native system-level prompt delivery (#298). */
+  injectedPromptFor(agentId: string): string | undefined {
+    return this._injectedPrompts.get(agentId);
+  }
+
+  /** Write developer instructions into an existing CODEX_HOME's config.toml,
+   *  ensuring resumed sessions pick up updated work style / role text (#298). */
+  writeCodexInstructions(codexHome: string, instructions: string): void {
+    try {
+      const configPath = join(codexHome, 'config.toml');
+      let config = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
+      config = config.replace(/^\s*developer_instructions\s*=.*(\r?\n)?/gm, '');
+      config = `developer_instructions = ${JSON.stringify(instructions)}\n\n` + config;
+      writeFileSync(configPath, config, 'utf8');
+    } catch (e) {
+      console.error('[hive] writeCodexInstructions failed:', e);
+    }
   }
 
   /** Codex lifecycle-hook bridge → full hive parity for a `codex` worker (live
@@ -5341,7 +5390,7 @@ export class HiveManager {
    *  ~/.codex/auth.json is linked in and their config.toml is copied + extended
    *  (login + model/provider/trust settings still apply).
    *  Returns the CODEX_HOME path for the caller to put in the worker's env. */
-  private installCodexHooks(dir: string, agentId: string): string {
+  private installCodexHooks(dir: string, agentId: string, instructions?: string): string {
     const home = join(dir, '.codex');
     try {
       mkdirSync(home, { recursive: true });
@@ -5395,9 +5444,13 @@ export class HiveManager {
       // `codex app-server` → initialize → `hooks/list` reports the normalized
       // timeoutSec per event.
       const shim = this.shimPath();
-      let config = existsSync(join(userHome, 'config.toml'))
-        ? readFileSync(join(userHome, 'config.toml'), 'utf8') : '';
-      if (shim) {
+      const userConfigPath = join(userHome, 'config.toml');
+      let config = existsSync(userConfigPath) ? readFileSync(userConfigPath, 'utf8') : '';
+      if (instructions) {
+        config = config.replace(/^\s*developer_instructions\s*=.*(\r?\n)?/gm, '');
+        config = `developer_instructions = ${JSON.stringify(instructions)}\n\n` + config;
+      }
+      if (shim && !config.includes('munder-hive lifecycle hooks')) {
         const events = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop',
           'SessionStart', 'UserPromptSubmit', 'PreCompact', 'PostCompact'];
         // On Windows a command with no space and no quote: see codexHookWindows.
@@ -5994,12 +6047,14 @@ export class HiveManager {
   logObserver?: (event: Record<string, unknown> & { ts: number }) => void;
   /** Called with the board each 8 s tick reads (Pulse telemetry's card diff). */
   tasksObserver?: (tasks: CardLike[]) => void;
+  /** Takes each cost row once harness.db holds this office's ledger (D17);
+   *  false while the old file still does, and the row goes to the file. */
+  costLedgerSink?: (row: CostLedgerRow) => boolean;
 
   /**
-   * Append one cost sample to the durable, append-only ledger at
-   * `<root>/cost-ledger.jsonl` (Lane A #6.6d). This is the SOLE durable cost
-   * store; its row is exactly the shape Kevin (#4) reserves for the cost_ledger
-   * SQLite table, so migration is a mechanical INSERT…SELECT.
+   * Append one cost sample to the durable, append-only ledger (Lane A #6.6d):
+   * harness.db's cost_ledger table once the old `<root>/cost-ledger.jsonl` is
+   * copied in (costLedgerSink, D17), the file until then. Same row either way.
    *
    * 🔒 PII: persist ONLY the allowlisted AgentUsageSample — NEVER a raw OTel
    * record (those carry user.email / account / org / hashed-user-id). The sample
@@ -6028,6 +6083,7 @@ export class HiveManager {
       model: sample.model,
       usd: sample.usd
     };
+    try { if (this.costLedgerSink?.(row)) return; } catch { return; }
     try { appendFileSync(join(root, 'cost-ledger.jsonl'), JSON.stringify(row) + '\n', 'utf8'); } catch { /* noop */ }
   }
 
@@ -6963,7 +7019,8 @@ process.stdin.on('end', () => {
     BeforeAgent: 'UserPromptSubmit',
     BeforeTool: 'PreToolUse',
     AfterTool: 'PostToolUse',
-    AfterAgent: 'Stop'
+    AfterAgent: 'Stop',
+    PreCompress: 'PreCompress'
   };
   const payload = {
     ...gemini,

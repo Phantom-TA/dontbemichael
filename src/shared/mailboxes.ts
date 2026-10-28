@@ -148,8 +148,35 @@ export const PROVIDER_PRESETS: Record<Exclude<MailProvider, 'other'>, { label: s
   }
 };
 
-/** The service list the Add dialog shows, in order (design review 9B: no Outlook). */
-export const PROVIDER_ORDER: MailProvider[] = ['gmail', 'google-workspace', 'icloud', 'yahoo', 'zoho', 'other'];
+/** The service list the Add dialog shows, in order (design review 9B: no Outlook).
+ *  Gmail and Google Workspace connect the same way, so they share the one
+ *  "Gmail or GSuite" tile (owner, 2026-10-26). `google-workspace` stays a valid
+ *  stored provider, with its preset, for mailboxes saved before: they read,
+ *  send and save exactly as before, and nothing rewrites them. */
+export const PROVIDER_ORDER: MailProvider[] = ['gmail', 'icloud', 'yahoo', 'zoho', 'other'];
+
+/** Google's two products share one set of servers. */
+export function isGoogleProvider(p: MailProvider): boolean {
+  return p === 'gmail' || p === 'google-workspace';
+}
+
+/** Google's own pages for the two setup steps (docs: the eng review of the
+ *  Google step cards, 2026-10-26). With an address typed, Google opens on that
+ *  account, for an owner signed in to several. */
+export const GOOGLE_TWO_STEP_URL = 'https://myaccount.google.com/signinoptions/twosv';
+export const GOOGLE_APP_PASSWORDS_URL = 'https://myaccount.google.com/apppasswords';
+
+export function googleStepUrl(base: string, address: string): string {
+  const a = address.trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a) ? `${base}?authuser=${encodeURIComponent(a)}` : base;
+}
+
+/** A Google mailbox named by its address: Gmail for gmail.com and
+ *  googlemail.com, GSuite (the owner's word for Google Workspace) for a
+ *  company domain. */
+export function googleLabel(address: string): 'Gmail' | 'GSuite' {
+  return /@(gmail|googlemail)\.com$/i.test(address.trim()) ? 'Gmail' : 'GSuite';
+}
 
 /** Outlook and Microsoft 365 stopped accepting app passwords for IMAP; phase 1
  *  cannot connect them (design review 9B: the test fails with this reason). */

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
 import { cutText } from '../shared/cutText';
@@ -22,7 +22,7 @@ import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, namedFolders, readFoldersFor, sectionFor, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -30,6 +30,7 @@ import {
   shouldStartInstall, type EngineSetupStatus, type KeyCheckFetch
 } from './engineSetup';
 import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
+import { sweepIsolatedLeftovers } from './isolatedSweep';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
 import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_WORK_STYLE } from '../shared/research';
@@ -68,7 +69,7 @@ import { linkWorktreeDeps, unlinkWorktreeDeps } from './worktreeDeps';
 import { HiveManager, type AgentMeta, type HiveMessage, type HiveTask } from './hive';
 import { HookServer, type PlanSignal } from './hooks';
 import { OfficeBreak, type OfficeBreakState } from './officeBreak';
-import { heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
+import { countsTowardErrorStorm, heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
 import { loadBundledPacks, packsResourceDir } from './packs';
 import { businessFolderRoot, ensureFolder, safeFolderName } from './agentFolders';
 import { CircuitBreaker, breakerMessages, type BreakerInput } from './breaker';
@@ -76,11 +77,13 @@ import type { UsageProvider } from './usage';
 import { MemoryManager } from './memory';
 import { KnowledgeManager } from './knowledge';
 import { MemoryTidy } from './memoryTidy';
-import { checkDistinct, readJobProfile } from './hireCheck';
-import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readSuggestRequest, suggestWorkStyle } from './workStyleConvert';
+import { checkDistinct, readCheckPhase, readDistinctMode, readJobProfile } from './hireCheck';
+import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readReviseRequest, reviseWorkStyle } from './workStyleConvert';
 import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
 import { TelemetryStore } from './telemetryStore';
+import { OwnerNotes } from './ownerNotes';
+import { localDay } from '../shared/messageView';
 import { TelemetryProcessor } from './telemetryProcessor';
 import { PulseHealth } from '../shared/pulseHealth';
 import { PulseService } from './pulse';
@@ -117,6 +120,9 @@ import { initCompletionWatcher } from './realtimeCompletionWatcher';
 import type { TaskCard, InboxMessage } from './realtimeCompletionWatcher';
 import { TelemetryCollector } from './telemetry';
 import { CostLedgerTotals } from './costLifetime';
+import { RUN_COMPARE_MODEL, RUN_COMPARE_TIMEOUT_MS, RunCompare } from './runCompare';
+import { runHiddenModel } from './hiddenModel';
+import { CostLedgerStore } from './costLedger';
 import { analytics, isRendererMessageSurface } from './analytics';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
@@ -124,6 +130,7 @@ import * as integrations from './integrations';
 import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, type AddMailboxInput } from './mail';
 import { MailApprovals } from './mailApprovals';
 import { standingFitCheck } from './standingCheck';
+import { fileFitCheck } from './fileFitCheck';
 import { terminalOverflowEvent } from '../shared/terminalOverflow';
 import { PROVIDER_PRESETS, grantPaused, hasMailTools, mailAccess, mailboxAddress, secretRefForMailbox, sendOnlyGrant, sendingFor, sendingMode, sendingWords, type SendingMode } from '../shared/mailboxes';
 import { levelFor } from '../shared/agentDefinition';
@@ -134,7 +141,7 @@ import { emailCalendarAllowed } from '../shared/mcpCatalog';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
 import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
-import { CHECK_FOLDERS, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
+import { CHECK_FOLDERS, RUN_COMPARE_DIR, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
 import { autoMemoryFolders, eraseMemoryTargets, foldersFromRoster, gitTopOf, idsFromCostRows, idsFromRecord, memberIdsIn, memoryResetTargets } from './memoryReset';
 import { groupMembers, hardKillTree, isAlive, KILL_GRACE_MS, snapshotRemains } from './procKill';
 import { buildWorkerLaunch } from './workerLaunch';
@@ -150,6 +157,7 @@ import { SilentWatch, type WatchMember } from './silentWatch';
 import { mailFor, noticeForOpened, type SilentEpisode } from '../shared/silentEngine';
 import {
   argsWithAutoModeFlag,
+  argsWithTurnCap,
   bridgeOf,
   inferAgentProvider,
   isClaudeProvider,
@@ -187,6 +195,9 @@ import {
   withCodexRemoteArgs
 } from '../shared/codexRemote';
 import { canRelaunch, restartApp } from './restart';
+import { copyImage, copyRich } from './clipboardCopy';
+import { createReporter } from './reportProblem';
+import { createMailboxNotes, newlyHeld, GRANT_NOTES_FILE, type PendingGrant } from './mailboxNotes';
 import { PromptSubmits, confirmSubmit } from '../shared/submitConfirm';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
@@ -413,7 +424,10 @@ let pulseTickTimer: ReturnType<typeof setInterval> | null = null;
 let pulsePresenceTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
-telemetry.onApiError((agentId) => breaker.recordError(agentId));
+// Not while the office is stopped: a refused turn is the stop, not a storm.
+telemetry.onApiError((agentId) => {
+  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId);
+});
 // Shared roster on disk — created early so HookServer can re-read standing goals
 // on every UserPromptSubmit (Edit Agent saves land here via persistAgents).
 const roster = new RosterStore(() => readConfig().harnessHome);
@@ -501,7 +515,8 @@ const hookServer = new HookServer(
   (agentId) => booksReadRoleIds().has(agentId),
   memberPresent,
   (signal) => onPlanSignal(signal),
-  (agentId) => foundationsForAgent(agentId)
+  (agentId) => foundationsForAgent(agentId),
+  (agentId) => foundationReadFolders(agentId)
 );
 // Pulse's Kept safe: each step a setting stopped, by gate (proposal 3).
 hookServer.onRefused = (agentId, gate) => pulseTelemetry.record({ agentId: agentId ?? null, kind: 'refused', ts: Date.now(), attrs: { gate } });
@@ -582,7 +597,9 @@ const memoryTidy = new MemoryTidy(
     return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
   },
   // Learning counts notes from the app's own record (owner, 2026-10-18).
-  (agentId, added) => { const ts = Date.now(); for (const n of added) pulseTelemetry.record({ agentId, kind: 'note-added', ts, attrs: { id: n.id, source: n.source } }); }
+  (agentId, added) => { const ts = Date.now(); for (const n of added) pulseTelemetry.record({ agentId, kind: 'note-added', ts, attrs: { id: n.id, source: n.source } }); },
+  // The owner's notes, the only ones a pass reads as the owner's (memory evidence, D9).
+  () => ownerNotes
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
@@ -722,6 +739,10 @@ ipcMain.handle('silent:checkAgain', (_evt, id: unknown) => { if (typeof id === '
 const pulseOffice = (): string | null => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; };
 const pulseTelemetry = new TelemetryStore(() => persist.database(), pulseOffice);
 const pulseProcessor = new TelemetryProcessor(() => persist.database(), pulseTelemetry);
+// The owner's notes for members' memory, kept beside Pulse in harness.db where
+// no member can write (memory evidence, D9).
+const ownerNotes = new OwnerNotes(() => persist.database(), pulseOffice);
+hive.setOwnerNotes(ownerNotes);
 
 /** The team as Company foundations reads it, from one read of the registry
  *  and the roster (the hook asks on every prompt): each member's job (read
@@ -767,8 +788,33 @@ const foundations = new Foundations({
     return [cfg.businessFolder, cfg.officeFolder, cwd].some((root) => typeof root === 'string' && !!root && isSameOrInside(expandTilde(root), path));
   },
   tell: (to, subject, body) => { if (hive.enabled()) hive.send({ to, act: 'inform', subject, body }, 'foundations'); },
-  changed: () => { try { liveWebContents()?.send('foundations:changed'); } catch { /* window gone */ } }
+  changed: () => { try { liveWebContents()?.send('foundations:changed'); } catch { /* window gone */ } },
+  // A file added on a foundation card (docs/designs/foundation-card-upload.md).
+  readFile: (path) => knowledge.readDocument(path),
+  fitFile: (f) => fileFit(f),
+  addToKnowledge: (path, read, opts) => {
+    const r = knowledge.ingestRead(path, read, opts);
+    memory.companyKnowledgeChanged(); // index it for search by meaning
+    return r.docId;
+  },
+  docTitle: (id) => knowledge.get(id)?.meta.title,
+  // A folder named on a card (eng review 2026-10-26, D3): never the home
+  // folder, the business folder or a team member's.
+  folderBounds: () => {
+    const cfg = readConfig();
+    const team = [...(cfg.businessTeam ?? []).map((m) => m.folder),
+      ...Object.values(hive.registry().agents).filter((a) => !a.isGod && !a.isAssistant && a.cwd).map((a) => a.cwd)];
+    return { userHome: homedir(), business: cfg.businessFolder ? expandTilde(cfg.businessFolder) : undefined, team: team.filter((f): f is string => typeof f === 'string' && !!f).map(expandTilde) };
+  }
 });
+/** The folders the owner named on a Company foundations card that this
+ *  member's job uses (eng review 2026-10-26, D1): read only, even inside the
+ *  business folder. Every other member keeps today's rules (D2). */
+function foundationReadFolders(agentId: string): string[] {
+  const rec = foundations.read();
+  if (!namedFolders(rec).length) return [];
+  return readFoldersFor(rec, foundationsTeam().jobs[agentId] ?? []);
+}
 /** What an agent carries of the foundations: its job's part, or all of it for
  *  Michael. Research is left out by the hook itself. */
 function foundationsForAgent(agentId: string): string | null {
@@ -790,7 +836,8 @@ function pulseTick(office: string): number {
 }
 /** Pulse's backfill (proposal 3): once per office, the weeks before Pulse began,
  *  read in the background from the office log, members' sessions and the cost
- *  ledger. The view refreshes when it lands. */
+ *  ledger. The view refreshes when it lands, with one tick's batch folded;
+ *  the 30 s tick folds the rest a batch at a time (TICK_BATCH). */
 let pulseBackfilling: string | null = null;
 function pulseBackfillOnce(office: string): void {
   const db = persist.database();
@@ -965,7 +1012,7 @@ function markMailboxStatus(id: string, status: 'connected' | 'needs-attention', 
         dependsOn: [],
         priority: 1,
         createdAt: new Date().toISOString(),
-        humanQA: [{ q: `**${rec.address} stopped working: ${reason ?? 'the mail server refused the password'}**\n\nOpen Settings, Connections, Mailboxes and choose Fix to enter a new app password.`, askedAt: new Date().toISOString(), raisedBy: 'god' }]
+        humanQA: [{ q: `**${rec.address} stopped working: ${reason ?? 'the mail server refused the password'}**\n\nOpen [Settings, Connections, Mailboxes](dbm:settings/connections/mailboxes) and choose Fix to enter a new app password.`, askedAt: new Date().toISOString(), raisedBy: 'god' }]
       };
       if (!hive.addTask(card)) hive.patchTask(cardId, { status: 'blocked', humanQA: card.humanQA });
     } else if (rec.status === 'needs-attention') {
@@ -990,7 +1037,7 @@ function closeMailboxCard(id: string, result: string): void {
 const mailApprovals = new MailApprovals({
   path: join(app.getPath('userData'), 'mail-proposals.json'),
   send: (msg) => { if (!hive.enabled()) return false; hive.send(msg, 'mail'); return true; },
-  remember: (agentId, line) => { hive.rememberOwnerNote(agentId, line); },
+  remember: (agentId, line, why) => { hive.rememberOwnerNote(agentId, line, why); },
   // Only Michael notifies the owner (docs/designs/michael-only-notifications.md).
   toast: (body) => ownerToast(michaelName(), body),
   agentName: (id) => { try { return hive.registry().agents[id]?.name?.trim() || id; } catch { return id; } },
@@ -1011,6 +1058,24 @@ const standingFit = standingFitCheck({
     mkdirSync(dir, { recursive: true });
     // Trusted up front, as agent folders are at spawn, so the check never
     // stops on Claude Code's "trust this folder" question.
+    try { ensureClaudePermissionsAccepted(dir); } catch { /* the check fails closed */ }
+    return dir;
+  },
+  command: () => readConfig().defaultCommand ?? 'claude',
+  modelEngine: () => {
+    const cfg = readConfig();
+    return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
+  },
+  env: () => memory.env(),
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+});
+
+/** The fit check for a file added on a foundation card: the standing check's
+ *  folder, command and engine (D3, D10). */
+const fileFit = fileFitCheck({
+  cwd: () => {
+    const dir = join(app.getPath('userData'), STANDING_CHECK_DIR);
+    mkdirSync(dir, { recursive: true });
     try { ensureClaudePermissionsAccepted(dir); } catch { /* the check fails closed */ }
     return dir;
   },
@@ -2261,6 +2326,9 @@ function onPlanSignal(signal: PlanSignal): void {
   // owner's new key, with no automatic recheck (eng R2).
   const retry = !(signal.reason === 'signin' && readConfig().claudeAuth === 'apiKey');
   const step = officeBreak.limitReached(signal.agentId, signal.reason, retry);
+  // The engine's errors while it tried this turn, its retries included, were
+  // the account refusing it, so they don't count toward a storm either.
+  breaker.clearErrors(signal.agentId);
   const view = officeBreak.view();
   try { hive.appendLog({ kind: 'office-break', step, agentId: signal.agentId, reason: view?.reason ?? signal.reason, until: view?.until ?? null }); } catch { /* best-effort */ }
   if (step === 'started' && view) ownerToast(michaelName(), stopWords(view.reason, view.until).start);
@@ -2431,10 +2499,14 @@ function runBreakerBeat(progressWindowMs: number): void {
   }
 }
 
-/** Lifetime spend, folded from cost-ledger.jsonl. `telemetry`'s usd counter is
+/** Lifetime spend, folded from the cost ledger. `telemetry`'s usd counter is
  *  cumulative-since-process-start and restarts at ~0 on every app restart, so
  *  it cannot answer "what has this agent cost us". See costLifetime.ts. */
 const costTotals = new CostLedgerTotals();
+/** The cost ledger in harness.db (D17): it takes the hive's rows once the old
+ *  cost-ledger.jsonl is copied in. See costLedger.ts. */
+const costLedger = new CostLedgerStore(() => persist.database());
+hive.costLedgerSink = (row) => { const office = pulseOffice(); return !!office && costLedger.append(office, row); };
 
 /** Build + write the live fleet snapshot Michael reads (`<hive>/fleet.json`).
  *  Always-on (independent of the heartbeat) since `claude agents` can't see the
@@ -2447,8 +2519,16 @@ function writeFleetSnapshot(): void {
     const usageById = new Map(snap.usage.map((u) => [u.agentId, u]));
     const now = Date.now();
     // Async + incremental; returns immediately and never throws into the timer.
+    // harness.db's ledger once the old file is copied in (D17); until then the
+    // file, while the copy runs.
     const hiveRoot = hive.root();
-    if (hiveRoot) void costTotals.refresh(join(hiveRoot, 'cost-ledger.jsonl'));
+    const office = pulseOffice();
+    if (hiveRoot && office && costLedger.imported(office)) void costTotals.refreshFromStore(costLedger, office);
+    else if (hiveRoot) {
+      const file = join(hiveRoot, 'cost-ledger.jsonl');
+      void costTotals.refresh(file);
+      if (office) void costLedger.importFile(office, file);
+    }
     const agents = Object.entries(reg.agents)
       .filter(([, a]) => !a.archived)
       .map(([id, a]) => {
@@ -3699,6 +3779,30 @@ const QUIT_LABEL = 'Close Office';
  *  "Hide Don't Be Michael" read as a double negative (owner, 2026-09-24). */
 const HIDE_LABEL = 'Hide Office';
 
+/** Report a problem (docs/designs/report-problem-top-bar.md): one reporter for
+ *  the top bar button and Help ▸ Report a problem…, so a second click from
+ *  either while a report starts is ignored. */
+const reporter = createReporter<BrowserWindow>({
+  capture: async (win) => {
+    if (!win || win.isDestroyed()) return null;
+    const image = await win.webContents.capturePage();
+    return image.isEmpty() ? null : image.toPNG();
+  },
+  wait: (ms) => new Promise((done) => { setTimeout(done, ms); }),
+  openExternal: (url) => shell.openExternal(url),
+  downloads: () => app.getPath('downloads'),
+  exists: (path) => existsSync(path),
+  // wx: never overwrite, even if a file appeared after the name was chosen.
+  writeFile: (path, bytes) => fsPromises.writeFile(path, bytes, { flag: 'wx' }),
+  showItemInFolder: (path) => shell.showItemInFolder(path),
+  now: () => new Date(),
+  urlInputs: () => ({
+    appVersion: app.getVersion(), platform: process.platform, arch: process.arch,
+    osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : ''
+  }),
+  warn: (step, error) => console.warn(`[report] ${step} failed:`, error)
+});
+
 /** Build + install the application menu: standard role-based items so
  *  copy/paste/quit work per platform, trimmed to what an office owner uses. */
 function installAppMenu(): void {
@@ -3772,7 +3876,17 @@ function installAppMenu(): void {
         { role: 'togglefullscreen' }
       ]
     },
-    { role: 'windowMenu' }
+    { role: 'windowMenu' },
+    // The same report as the top bar button. role help: macOS puts it last and
+    // adds its search field. Windows hides the menu bar with this title bar
+    // style, so there the button is the way in.
+    {
+      role: 'help',
+      submenu: [{
+        label: 'Report a problem…',
+        click: (_item, focused) => { void reporter.report(focused instanceof BrowserWindow ? focused : mainWindow); }
+      }]
+    }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -4138,7 +4252,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         ...Object.values(hive.registry().agents).filter((a) => a.id !== RESEARCH_ID && a.cwd).map((a) => a.cwd)];
       const memberPolicy = (): AgentFolderPolicy | undefined => {
         const base = businessFolder
-          ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd }, businessFolderLayout(businessFolder), process.platform !== 'linux')
+          ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd, readFolders: opts.hive!.isGod ? [] : foundationReadFolders(opts.hive!.id) }, businessFolderLayout(businessFolder), process.platform !== 'linux')
           : privateOnlyFolderPolicy(!!opts.hive!.isGod, opts.cwd);
         if (!base) return undefined;
         const hiveRoot = hive.root();
@@ -4324,10 +4438,11 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         .trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
       if (label) args.push('--remote-control-session-name-prefix', label);
     }
-    // Coarse runaway cap.
-    if (typeof cfg.maxTurns === 'number' && cfg.maxTurns > 0 && !args.includes('--max-turns')) {
-      args.push('--max-turns', String(cfg.maxTurns));
-    }
+    // Max turns per run is counted by the hook server (turnCap.ts), because
+    // Claude Code honours --max-turns in print mode only. The flag is still
+    // passed: it costs nothing, and a --max-turns already in the command (the
+    // owner's, or one a shared hire brought in) can only lower it, never raise it.
+    args.splice(0, args.length, ...argsWithTurnCap(args, cfg.maxTurns));
     // Resume: an explicit session id (Add Agent "resume session" field, #2) wins,
     // else this agent's last recorded session (#1 restore-on-restart / #6.6a).
     // Seed the transcript into the target cwd's Claude project dir first — Claude
@@ -4394,9 +4509,11 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         if (typedSid) resumeNotFound = true;
       } else {
         if (ownerHome !== myHome) opts.env = { ...(opts.env ?? {}), CODEX_HOME: ownerHome };
+        const prompt = opts.hive ? hive.injectedPromptFor(opts.hive.id) : undefined;
+        if (prompt) hive.writeCodexInstructions(ownerHome, prompt);
         const args = opts.args ?? [];
         // Positional order matters: `codex resume [OPTIONS] [SESSION_ID] [PROMPT]`.
-        // The hive identity prompt rides in `args` as a POSITIONAL (codex has no
+        // The seed prompt rides in `args` as a POSITIONAL (codex has no
         // prompt flag), so the id must come BEFORE it — appending the id last made
         // codex read the prompt as SESSION_ID ("No saved session found with ID
         // You are \"Dev2\"…") and the id as the prompt.
@@ -4638,6 +4755,16 @@ ipcMain.handle('app:copyToClipboard', (_evt, text: unknown) => {
   if (typeof text !== 'string') return { ok: false, error: 'invalid text' };
   try { clipboard.writeText(text); return { ok: true }; }
   catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+});
+// The file tab's Copy (docs/designs/copy-document.md): formatted and plain in
+// one write, or the picture the tab shows.
+ipcMain.handle('app:copyRich', (_evt, input: unknown) => copyRich(clipboard, input));
+ipcMain.handle('app:copyImage', (_evt, bytes: unknown) => copyImage(clipboard, nativeImage, bytes));
+// The top bar's Report a problem: it answers once the report page opened; the
+// picture keeps saving after (docs/designs/report-problem-top-bar.md).
+ipcMain.handle('app:reportProblem', async (evt) => {
+  const r = await reporter.report(BrowserWindow.fromWebContents(evt.sender));
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
 });
 // The link menu's label in the app language (linkMenu.ts), sent by the renderer.
 let copyLinkLabel = DEFAULT_COPY_LINK_LABEL;
@@ -4917,6 +5044,8 @@ ipcMain.handle('config:changeHome', async (_evt, payload: unknown) => {
   // Repoint config and relaunch so every service re-bootstraps against newHome.
   // (Identical recovery path to resetAll — relaunch is the clean re-bind.)
   allowQuit = true;
+  // The old office's running time and buffered points land before the switch.
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[changeHome] pulse flush:', e); }
   writeConfig({ harnessHome: newHome });
   try { ptyManager.killAll(); } catch (e) { console.error('[changeHome] killAll:', e); }
   restartApp(app);
@@ -4949,6 +5078,7 @@ ipcMain.handle('config:startOverHere', () => {
   // bring the owner straight back to the "can't find your office" screen.
   try { hive.ensureHive(); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
   allowQuit = true;
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[startOverHere] pulse flush:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[startOverHere] killAll:', e); }
   restartApp(app);
   return { ok: true as const }; // unreachable (process exits)
@@ -5309,6 +5439,46 @@ ipcMain.handle('hive:procedure', (_evt, id: unknown, slug: unknown) =>
   (typeof id === 'string' && typeof slug === 'string' ? hive.procedure(id, slug) : null));
 ipcMain.handle('hive:inbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.inbox(id) : []));
 
+// Michael hears when email becomes usable (docs/designs/settings-links-in-replies.md):
+// a new mailbox at once; a member given one once they have started with it.
+const grantNotesFile = (): string | null => {
+  const home = readConfig().harnessHome;
+  return home ? join(privateRoot(home), GRANT_NOTES_FILE) : null;
+};
+const mailboxNotes = createMailboxNotes({
+  readPending: () => {
+    const f = grantNotesFile();
+    if (!f || !existsSync(f)) return [];
+    const parsed: unknown = JSON.parse(readFileSync(f, 'utf8'));
+    return Array.isArray(parsed) ? parsed.filter((g): g is PendingGrant => !!g && typeof g.agentId === 'string' && typeof g.address === 'string' && typeof g.at === 'number') : [];
+  },
+  writePending: (list) => {
+    const f = grantNotesFile();
+    if (!f) throw new Error('no office folder');
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, JSON.stringify(list), { mode: 0o600 });
+  },
+  tell: (subject, body) => {
+    if (!hive.enabled()) return false;
+    hive.send({ to: hive.registry().godId ?? 'god', act: 'inform', subject, body }, 'system');
+    return true;
+  },
+  openQuestions: () => hive.ownerQuestions().map((q) => ({ id: q.id, text: q.text })),
+  isRunning: (agentId) => { const p = ptyForAgent(agentId); return !!p && ptyManager.list().some((s) => s.id === p); },
+  nameOf: (agentId) => hive.registry().agents?.[agentId]?.name ?? agentId,
+  now: () => Date.now(),
+  warn: (what, error) => console.warn(`[mailbox-note] ${what} failed:`, error)
+});
+hookServer.onSessionStart = (agentId) => mailboxNotes.sessionStarted(agentId);
+setInterval(() => mailboxNotes.sweep(), 60_000).unref();
+mailboxNotes.sweep();
+
+/** The mailbox ids a member can read now (email on). */
+const readableMailboxes = (agentId: string): string[] => {
+  const e = readConfig().agentCapabilities?.[agentId]?.email;
+  return e?.enabled ? (e.mailboxes ?? []) : [];
+};
+
 // ─── IPC: mailboxes and Capabilities (docs/designs/multi-mailbox.md) ─────────
 // Records carry no password; the renderer only ever sends one, to save it.
 ipcMain.handle('mail:save', async (_evt, input: unknown) => {
@@ -5320,6 +5490,8 @@ ipcMain.handle('mail:save', async (_evt, input: unknown) => {
   // owner before: a failure during the login test can open the card after
   // `before` was read, and the fix that just worked has to close it too.
   if (res.ok && before) closeMailboxCard(res.record.id, `${res.record.address} is connected again.`);
+  // A new mailbox, not a fix: Michael may have a question waiting on email.
+  if (res.ok && typeof fixId !== 'string') mailboxNotes.mailboxAdded(res.record.address);
   return res;
 });
 ipcMain.handle('mail:remove', (_evt, id: unknown) => {
@@ -5333,7 +5505,17 @@ ipcMain.handle('mail:setCapabilities', (_evt, agentId: unknown, caps: unknown) =
   if (typeof agentId !== 'string' || !caps || typeof caps !== 'object') return { ok: false, restartNeeded: false };
   // Research holds no office data (issue #230): no mailbox, ever.
   if (agentId === RESEARCH_ID) return { ok: false, restartNeeded: false };
-  return setAgentCapabilities(mailAdmin, agentId, caps as Parameters<typeof setAgentCapabilities>[2]);
+  const before = readableMailboxes(agentId);
+  const res = setAgentCapabilities(mailAdmin, agentId, caps as Parameters<typeof setAgentCapabilities>[2]);
+  // Only a mailbox they did not hold before tells Michael; a Sending change
+  // alone does not (settings-links-in-replies.md).
+  if (res.ok) {
+    for (const id of newlyHeld(before, readableMailboxes(agentId))) {
+      const address = (readConfig().mailboxes ?? []).find((m) => m.id === id)?.address;
+      if (address) mailboxNotes.granted(agentId, address, res.restartNeeded);
+    }
+  }
+  return res;
 });
 /** A member's Send only grant (docs/designs/shared-mailboxes.md), or null to remove it. */
 ipcMain.handle('mail:setSendOnly', (_evt, agentId: unknown, grant: unknown) => {
@@ -5465,7 +5647,7 @@ function connectorsUpgradeCard(keys: string[]): void {
       priority: 2,
       createdAt: now,
       humanQA: [{
-        q: `**${keys.join(', ')} ${keys.length === 1 ? 'is' : 'are'} now off for the team.**\n\nAgents used to reach every connector on your Claude account. Now each one is off until you turn it on in Settings, Connections, Claude connectors, and give it to the team members who need it on their Access tab.`,
+        q: `**${keys.join(', ')} ${keys.length === 1 ? 'is' : 'are'} now off for the team.**\n\nAgents used to reach every connector on your Claude account. Now each one is off until you turn it on in [Settings, Connections, Claude connectors](dbm:settings/connections/claude-connectors), and give it to the team members who need it on their Access tab.`,
         askedAt: now,
         raisedBy: 'god'
       }]
@@ -5645,11 +5827,11 @@ ipcMain.handle('agent:restoreConversation', (_evt, id: unknown) => {
   try { liveWebContents()?.send('power:resume', { reason: 'restore-conversation', awayMs: 0, dead: [ptyId], total: 1 }); } catch { /* window gone */ }
   return { ok: true };
 });
-/** The owner's Ask me answer, added to the raising agent's memory notes. */
+/** The owner's Ask me answer, kept as an owner note for the raising agent's memory (ownerNotes.ts). */
 ipcMain.handle('hive:rememberOwnerAnswer', (_evt, p: unknown) => {
-  const o = (p ?? {}) as { agentId?: unknown; task?: unknown; q?: unknown; a?: unknown };
+  const o = (p ?? {}) as { agentId?: unknown; task?: unknown; taskId?: unknown; q?: unknown; a?: unknown };
   if (typeof o.agentId !== 'string' || typeof o.q !== 'string' || typeof o.a !== 'string') return { ok: false };
-  return { ok: hive.rememberOwnerAnswer(o.agentId, typeof o.task === 'string' ? o.task : '', o.q, o.a) };
+  return { ok: hive.rememberOwnerAnswer(o.agentId, typeof o.task === 'string' ? o.task : '', o.q, o.a, typeof o.taskId === 'string' ? o.taskId : '') };
 });
 ipcMain.handle('hive:send', (_evt, partial: Partial<HiveMessage>, from: unknown) => {
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
@@ -5851,6 +6033,9 @@ ipcMain.handle('owner:ask', (_evt, p: unknown) => {
   // A question whose genuine mark can't be saved would vanish after a restart:
   // it is withdrawn and the owner told it didn't send.
   if (!addOwnerDockKey(dockKey(msg))) { hive.ownerWithdraw(msg.id); return { ok: false }; }
+  // What the owner tells Michael is also his note from the owner, so a rule
+  // given in passing lasts past the conversation (memory evidence, D11).
+  hive.rememberOwnerNote(hiveGodId(), msg.body, `you told Michael in the dock, ${localDay(new Date().toISOString())}`);
   return { ok: true, id: msg.id, workOrder: ownerWorkOrder(msg.id, msg.body) };
 });
 ipcMain.handle('owner:conversation', () => hive.ownerConversationView(Date.now(), isOwnerDockMessage));
@@ -6001,7 +6186,7 @@ const checkRuns = new Map<string, AbortController>();
 /** The hire wizard's distinct job check (design D6): a hidden Haiku call that
  *  compares the new job with every teammate's, the instant rules when it can't. */
 ipcMain.handle('hire:checkDistinct', async (_evt, payload: unknown) => {
-  const p = (payload ?? {}) as { job?: unknown; team?: unknown; requestId?: unknown };
+  const p = (payload ?? {}) as { job?: unknown; team?: unknown; requestId?: unknown; mode?: unknown; phase?: unknown };
   const job = readJobProfile(p.job);
   if (!job) return { distinct: false, overlapsWith: [], why: '', source: 'rules' };
   const team = Array.isArray(p.team) ? p.team.map(readJobProfile).filter((m): m is NonNullable<typeof m> => !!m) : [];
@@ -6009,16 +6194,29 @@ ipcMain.handle('hire:checkDistinct', async (_evt, payload: unknown) => {
   const requestId = typeof p.requestId === 'string' ? p.requestId.slice(0, 80) : '';
   const stop = new AbortController();
   if (requestId) checkRuns.set(requestId, stop);
+  const mode = readDistinctMode(p.mode);
   try {
-    return await checkDistinct(job, team, {
+    const verdict = await checkDistinct(job, team, {
       engine: cfg.godProvider ?? 'claude',
       engineModel: cfg.godModel,
       cwd: cfg.harnessHome ?? app.getPath('home'),
       command: cfg.defaultCommand ?? 'claude',
       env: memory.env(),
       log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+      mode,
       signal: stop.signal
     });
+    // Every verdict, so a check that stops (or passes) a job can be read back
+    // later: a model check can answer differently for the same job
+    // (owner's Kelly change, 2026-10-24).
+    try {
+      hive.appendLog({
+        kind: 'distinct-check', mode, phase: readCheckPhase(p.phase), member: job.name,
+        distinct: verdict.distinct, overlapsWith: verdict.overlapsWith, source: verdict.source,
+        why: verdict.why.slice(0, 400), ...(verdict.suggestion ? { suggestion: verdict.suggestion.slice(0, 300) } : {})
+      });
+    } catch { /* best-effort */ }
+    return verdict;
   } finally {
     if (requestId) checkRuns.delete(requestId);
   }
@@ -6028,41 +6226,45 @@ ipcMain.handle('hire:checkStop', (_evt, requestId: unknown) => {
   return { ok: true };
 });
 
-/** "Suggest me" on the hire wizard: a first work style for the owner to edit.
- *  The draft streams to the window as `workStyle:suggestText` while it is
- *  written, and `workStyle:suggestStop` ends it (owner, 2026-10-03). */
-const suggestRuns = new Map<string, AbortController>();
-ipcMain.handle('workStyle:suggest', async (evt, payload: unknown) => {
-  const req = readSuggestRequest(payload);
-  if (!req) return { text: '' };
-  const raw = (payload ?? {}) as { requestId?: unknown };
-  const requestId = typeof raw.requestId === 'string' ? raw.requestId.slice(0, 80) : '';
-  const stop = new AbortController();
-  if (requestId) suggestRuns.set(requestId, stop);
-  const cfg = readConfig();
-  try {
-    return await suggestWorkStyle(req, {
-      engine: cfg.godProvider ?? 'claude',
-      engineModel: cfg.godModel,
-      cwd: cfg.harnessHome ?? app.getPath('home'),
-      command: cfg.defaultCommand ?? 'claude',
-      env: memory.env(),
-      log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
-    }, {
-      signal: stop.signal,
-      onText: requestId ? (text) => { if (!evt.sender.isDestroyed()) evt.sender.send('workStyle:suggestText', { requestId, text }); } : undefined
-    });
-  } finally {
-    if (requestId) suggestRuns.delete(requestId);
-  }
-});
-ipcMain.handle('workStyle:suggestStop', (_evt, requestId: unknown) => {
-  if (typeof requestId === 'string') suggestRuns.get(requestId)?.abort();
-  return { ok: true };
-});
 /** A work style between the owner's plain description and the agent's
- *  instructions (owner, 2026-09-27). Falls back to a plain-text rewrite. */
-ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
+ *  instructions (owner, 2026-09-27). Falls back to a plain-text rewrite.
+ *  `to: 'revise'` applies the owner's "What should change?" to a job, or
+ *  writes a new one, and `workStyle:convertStop` ends it
+ *  (work-style-change-request.md, D4 and D9). */
+const reviseRuns = new Map<string, AbortController>();
+ipcMain.handle('workStyle:convert', async (evt, payload: unknown) => {
+  if ((payload as { to?: unknown } | null)?.to === 'revise') {
+    const rev = readReviseRequest(payload);
+    if (!rev) {
+      // Logged, and said as what to fix: a request with no name or no change
+      // fails the same way on every try (owner, 2026-10-26).
+      try { hive.appendLog({ kind: 'work-style-revise-failed', reason: 'request unreadable (no name or no change)' }); } catch { /* best-effort */ }
+      return { kind: 'error', reason: 'no-name' };
+    }
+    const stop = new AbortController();
+    if (rev.requestId) reviseRuns.set(rev.requestId, stop);
+    const cfg = readConfig();
+    try {
+      return await reviseWorkStyle(rev, {
+        engine: cfg.godProvider ?? 'claude',
+        engineModel: cfg.godModel,
+        cwd: cfg.harnessHome ?? app.getPath('home'),
+        command: cfg.defaultCommand ?? 'claude',
+        env: memory.env(),
+        log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+        // The box's steps and the words as they are written (owner, 2026-10-23).
+        onProgress: (p) => {
+          if (!rev.requestId || evt.sender.isDestroyed()) return;
+          evt.sender.send(`workStyle:progress:${rev.requestId}`, p);
+        },
+        // Checked against, never copied into the job (eng D3).
+        foundations: () => Object.entries(foundations.read().answers).flatMap(([id, a]) =>
+          isFoundationId(id) && a?.text ? [`${FOUNDATION_QUESTIONS[id].text}: ${a.text}`] : [])
+      }, stop.signal);
+    } finally {
+      if (rev.requestId) reviseRuns.delete(rev.requestId);
+    }
+  }
   const req = readConvertRequest(payload);
   if (!req) return { text: '', source: 'rules' };
   const cfg = readConfig();
@@ -6074,6 +6276,11 @@ ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
     env: memory.env(),
     log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
   });
+});
+
+ipcMain.handle('workStyle:convertStop', (_evt, requestId: unknown) => {
+  if (typeof requestId === 'string') reviseRuns.get(requestId)?.abort();
+  return { ok: true };
 });
 
 /** A job's focus area checked against the agent's Work style and its other
@@ -6465,7 +6672,7 @@ function teardownAndQuit(): void {
   try { stopWebhookServer(); } catch (e) { console.error('[quit] webhook.stop:', e); }
   try { memory.stop(); } catch (e) { console.error('[quit] memory.stop:', e); }
   try { memoryTidy.stop(); } catch (e) { console.error('[quit] memoryTidy.stop:', e); }
-  try { pulseTelemetry.flush(); } catch (e) { console.error('[quit] pulse flush:', e); }
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[quit] pulse flush:', e); }
   try { persist.close(); } catch (e) { console.error('[quit] persist.close:', e); }
   try { hive.stopAllProxyBridges(); } catch (e) { console.error('[quit] stopAllProxyBridges:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[quit] killAll:', e); }
@@ -6620,7 +6827,7 @@ ipcMain.handle('app:resetMemory', async () => {
   // A tidy pass waiting on its model writes nothing when it returns.
   try { memoryTidy.halt(); } catch (e) { console.error('[memory reset] memoryTidy.halt:', e); }
   // Buffered cost samples reach the store before their ids are read.
-  try { pulseTelemetry.flush(); } catch (e) { console.error('[memory reset] pulse flush:', e); }
+  try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.flush(); } catch (e) { console.error('[memory reset] pulse flush:', e); }
   // killAll forgets each terminal as it signals it, so the wait watches the
   // processes themselves, snapshotted first (Codex adversarial, ship).
   const trees = ptyManager.list().map((s) => ({ id: s.id, pid: s.pid, before: process.platform === 'win32' ? null : groupMembers(s.pid) }));
@@ -6648,6 +6855,8 @@ ipcMain.handle('app:resetMemory', async () => {
       ).all(office) as Array<{ agent_id: unknown; s: unknown }>, sessions);
     }
   } catch (e) { console.error('[memory reset] reading session ids:', e); }
+  // The owner's notes not yet filed go with the memory they were for.
+  try { const office = pulseOffice(); if (office) ownerNotes.clearOffice(office); } catch (e) { console.error('[memory reset] owner notes:', e); }
   try { persist.close(); } catch (e) { console.error('[memory reset] persist.close:', e); }
 
   const memberIds = memberIdsIn(hiveRoot);
@@ -6884,6 +7093,27 @@ ipcMain.handle('pulse:organized', (_evt, fromMs: unknown, toMs: unknown, agentId
 // record and writes the owner's answer, a draft request or Not now.
 ipcMain.handle('foundations:get', () => foundations.view());
 ipcMain.handle('foundations:answer', (_evt, id: unknown, text: unknown) => foundations.ownerAnswer(id, text));
+// A file from a foundation card: one picked here, or dropped on the card.
+ipcMain.handle('foundations:pickFile', async (evt) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  if (!win) return { ok: false as const, error: 'no window' };
+  const res = await dialog.showOpenDialog(win, { properties: ['openFile'], title: 'Add a file' });
+  if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
+  return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
+});
+ipcMain.handle('foundations:addFile', (_evt, id: unknown, path: unknown) => foundations.addFile(id, path));
+// A folder from a foundation card (eng review 2026-10-26): picked here or
+// dropped on the card, checked, then named in the answer.
+ipcMain.handle('foundations:pickFolder', async (evt) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  if (!win) return { ok: false as const, error: 'no window' };
+  const res = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: 'Add a folder' });
+  if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
+  return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
+});
+ipcMain.handle('foundations:checkFolder', (_evt, id: unknown, path: unknown) => foundations.checkFolder(id, path));
+ipcMain.handle('foundations:answerFolder', (_evt, id: unknown, path: unknown, words: unknown) => foundations.answerFolder(id, path, words));
+ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown) => foundations.answerFile(id, docId, words));
 ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
 ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
@@ -6904,6 +7134,64 @@ ipcMain.handle('pulse:modelApplied', (_evt, id: unknown, agentId: unknown, from:
   typeof id === 'string' && typeof agentId === 'string' && typeof to === 'string' ? pulse.modelApplied(id, agentId, typeof from === 'string' ? from : null, to) : 0);
 ipcMain.handle('pulse:undo', (_evt, appliedId: unknown) => (typeof appliedId === 'number' ? pulse.undo(appliedId) : { ok: false, error: 'stale' }));
 ipcMain.handle('pulse:dismiss', (_evt, id: unknown) => (typeof id === 'string' ? pulse.dismiss(id) : false));
+
+// Compare runs we already have (eng review 2026-10-24, src/shared/runCompare.ts):
+// the owner's "Went wrong" on a job's last run, one isolated hidden call on
+// Michael's engine, a suggestion Pulse shows and Edit agent applies.
+const runCompare = new RunCompare({
+  db: () => persist.database(),
+  office: pulseOffice,
+  getKv: (key) => persist.getKv(key),
+  setKv: (key, value) => persist.setKv(key, value),
+  // The private record only: hive/log.jsonl is writable by members' shells.
+  sessionsOf: (agentId) => [...(idsFromRecord(hive.privateSessionsText()).get(agentId) ?? [])],
+  projectsRoot: claudeProjectsRoot,
+  runModel: (prompt) => {
+    const cfg = readConfig();
+    // An empty folder only the app writes, never the office folder: no
+    // CLAUDE.md a member left there can steer the suggestion (as standingFit).
+    const cwd = join(app.getPath('userData'), RUN_COMPARE_DIR);
+    try { mkdirSync(cwd, { recursive: true }); ensureClaudePermissionsAccepted(cwd); } catch { /* the call fails and the owner can try again */ }
+    return runHiddenModel(prompt, {
+      engine: cfg.godProvider ?? 'claude',
+      engineModel: cfg.godModel,
+      model: RUN_COMPARE_MODEL,
+      cwd,
+      command: cfg.defaultCommand ?? 'claude',
+      noTools: true,
+      // The runs hold customers' text: only the owner's user settings, no
+      // hooks, no transcript, and nothing in Claude Code's history (D4).
+      settingSources: 'user',
+      settingsJson: JSON.stringify({ disableAllHooks: true }),
+      dropTranscript: true,
+      isolateConfig: true,
+      thinking: false,
+      env: memory.env(),
+      timeoutMs: RUN_COMPARE_TIMEOUT_MS
+    });
+  },
+  memberName: (agentId) => { try { return hive.registry().agents[agentId]?.name?.trim() || agentId; } catch { return agentId; } },
+  mission: (missionId) => { const m = (readConfig().missions ?? []).find((x) => x.id === missionId); return m ? { label: m.label, focus: m.focus } : null; },
+  tellMichael: (subject, body) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body }, 'system'); },
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+});
+ipcMain.handle('runCompare:lastRuns', (_evt, agentId: unknown) => (typeof agentId === 'string' ? runCompare.lastRuns(agentId) : []));
+ipcMain.handle('runCompare:wentWrong', async (_evt, p: unknown) => {
+  const o = (p ?? {}) as { runId?: unknown; agentId?: unknown; note?: unknown; workStyle?: unknown; previousWorkStyle?: unknown; changes?: unknown };
+  if (typeof o.runId !== 'number' || typeof o.agentId !== 'string') return null;
+  const changes = Array.isArray(o.changes)
+    ? o.changes.flatMap((c) => (c && typeof c === 'object' && typeof (c as { text?: unknown }).text === 'string' && typeof (c as { at?: unknown }).at === 'string'
+      ? [{ text: String((c as { text: string }).text).slice(0, 1500), at: String((c as { at: string }).at).slice(0, 40) }] : [])).slice(0, 40)
+    : [];
+  return runCompare.wentWrong({
+    runId: o.runId, agentId: o.agentId, note: o.note,
+    workStyle: typeof o.workStyle === 'string' ? o.workStyle.slice(0, 20_000) : '',
+    previousWorkStyle: typeof o.previousWorkStyle === 'string' ? o.previousWorkStyle.slice(0, 20_000) : undefined,
+    changes
+  });
+});
+ipcMain.handle('runCompare:suggestions', () => runCompare.suggestions());
+ipcMain.handle('runCompare:dismiss', (_evt, runId: unknown) => (typeof runId === 'number' ? runCompare.dismiss(runId) : false));
 ipcMain.handle('missions:delete', (_evt, id: unknown): MissionOpResult =>
   typeof id === 'string' ? applyMissions((list) => deleteMission(list, id)) : { ok: false, error: 'invalid id' });
 ipcMain.handle('missions:setEnabled', (_evt, id: unknown, on: unknown): MissionOpResult =>
@@ -8294,6 +8582,20 @@ function runWorkerWakeBeat(): void {
   }
 }
 
+/** The office is stopped (plan limit, no credit, sign in failed) until a
+ *  check starts: that time is not running time (owner D1, 2026-10-25). */
+function officeStopped(): boolean {
+  const v = officeBreak.view();
+  return !!v && !v.checking;
+}
+
+function pulsePresenceBeat(): void {
+  try {
+    pulseTelemetry.presence(powerMonitor.getSystemIdleTime(), false);
+    pulseTelemetry.running(officeStopped());
+  } catch { /* presence is best-effort */ }
+}
+
 /** (Re)arm the always-on beats (decoupled from the optional heartbeat): the live
  *  fleet snapshot Michael reads (~8s) + the breaker/cost-ledger beat (~30s).
  *  Guarded (clear-then-set) so a re-bootstrap (changeHome recovery) OR a
@@ -8333,8 +8635,12 @@ function armAlwaysOnBeats(): void {
     const stalled = pulseHealth.stallWarning(office);
     if (stalled) console.warn(stalled);
   }, 30_000);
+  // Each minute also counts how long the office ran (owner, 2026-10-25). A
+  // first beat now, so a launch never keeps the last session's presence.
   if (pulsePresenceTimer) clearInterval(pulsePresenceTimer);
-  pulsePresenceTimer = setInterval(() => { try { pulseTelemetry.presence(powerMonitor.getSystemIdleTime(), false); } catch { /* presence is best-effort */ } }, 60_000);
+  pulseTelemetry.runningStart();
+  pulsePresenceBeat();
+  pulsePresenceTimer = setInterval(pulsePresenceBeat, 60_000);
   runWorkerWakeBeat(); // catch-up on arm — power-resume re-arms and drains the backlog
   // A break's timer freezes in system sleep like the beats above.
   armOfficeBreak();
@@ -8430,6 +8736,10 @@ app.whenReady().then(() => {
   // setMicGate(true)); macOS TCC stays a second gate regardless.
   if (readConfig().realtimeVoiceEnabled) writeConfig({ realtimeVoiceEnabled: false });
 
+  // A file check cut short by a quit or crash leaves its settings folder, with
+  // the checked text, in the temp folder (hiddenClaude.ts isolateConfig).
+  sweepIsolatedLeftovers();
+
   // Anonymous product analytics (PostHog) — the full contract lives in
   // TELEMETRY.md. Off entirely while COLLECT_USAGE_STATS (buildFeatures.ts) is
   // false. Otherwise a no-op unless a build-time key was injected (official
@@ -8487,7 +8797,7 @@ app.whenReady().then(() => {
   // every window, so there is nothing to tear down on quit.
   powerMonitor.on('resume', () => { try { pulseTelemetry.presence(0, false); } catch { /* best-effort */ } onSystemResume('resume'); });
   powerMonitor.on('unlock-screen', () => onSystemResume('unlock-screen'));
-  powerMonitor.on('suspend', () => { lastSuspendAt = Date.now(); console.log('[power] suspend — system sleeping'); try { pulseTelemetry.presence(0, true); } catch { /* best-effort */ } });
+  powerMonitor.on('suspend', () => { lastSuspendAt = Date.now(); console.log('[power] suspend — system sleeping'); try { pulseTelemetry.runningPause(officeStopped()); pulseTelemetry.presence(0, true); } catch { /* best-effort */ } });
   powerMonitor.on('lock-screen', () => { lastSuspendAt = Date.now(); console.log('[power] lock-screen'); });
   // The app's own menu, always: Electron's default carries Reload and the
   // developer tools, which are not for an office owner (owner, 2026-10-03).

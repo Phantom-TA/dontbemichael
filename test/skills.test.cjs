@@ -86,6 +86,13 @@ test('SKILL.md frontmatter reads a multi-line block description whole', () => {
   assert.match(fm.description, /scan the cwd and return a prioritised report/);
 });
 
+test('a byte order mark or a blank line in the description does not lose the frontmatter', () => {
+  // Value: protects=a skill saved on Windows or with a paragraph in its description shows its own name and whole description; fails_when=the leading mark hides the frontmatter or a blank line ends the block; why_new=the Skills tab showed the folder name or a cut description; seam=none
+  const md = '---\nname: invoice-helper\ndescription: |\n  Drafts invoices.\n\n  Checks totals before sending.\n---\n# body';
+  assert.deepEqual(parseSkillFrontmatter('\uFEFF' + md), { name: 'invoice-helper', description: 'Drafts invoices. Checks totals before sending.' });
+  assert.deepEqual(parseSkillFrontmatter(md.replace(/\n/g, '\r\n')), { name: 'invoice-helper', description: 'Drafts invoices. Checks totals before sending.' });
+});
+
 test('inline frontmatter description and absent frontmatter both behave', () => {
   assert.equal(parseSkillFrontmatter('---\nname: x\ndescription: one liner\n---').description, 'one liner');
   assert.deepEqual(parseSkillFrontmatter('# no frontmatter'), {});

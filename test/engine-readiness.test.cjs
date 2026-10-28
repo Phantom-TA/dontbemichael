@@ -37,7 +37,12 @@ const BAR = {
   'can run unattended': (p) => (p.autoModeFlag ? '' : 'no autoModeFlag'),
   'takes a model': (p) =>
     !p.supportsModel ? 'supportsModel is false' : p.modelFlag ? '' : 'supportsModel without a modelFlag',
-  'can be installed when missing': (p) => (p.installCommand ? '' : 'no installCommand')
+  'can be installed when missing': (p) => (p.installCommand ? '' : 'no installCommand'),
+  'survives compaction and resume': (p) =>
+    p.instructionsDelivery === 'system-level' ||
+    p.instructionsDelivery === 're-injected on compact'
+      ? ''
+      : 'no instructionsDelivery of system-level or re-injected on compact'
 };
 
 function gaps(id) {
@@ -71,3 +76,12 @@ test('the model check names why it failed', () => {
   assert.equal(BAR['takes a model']({ ...codex, supportsModel: false }), 'supportsModel is false');
   assert.equal(BAR['takes a model']({ ...codex, modelFlag: undefined }), 'supportsModel without a modelFlag');
 });
+
+test('the readiness bar rejects a preset with no instructionsDelivery', () => {
+  const codex = ap.providerPreset('codex');
+  assert.equal(
+    BAR['survives compaction and resume']({ ...codex, instructionsDelivery: undefined }),
+    'no instructionsDelivery of system-level or re-injected on compact'
+  );
+});
+

@@ -28,8 +28,9 @@ test('Capabilities is the tab after Profile, for team members and for Michael', 
 
 test('Claude connectors lead Connections, then Mailboxes; Gmail on the Claude account is a connector row, not a mailbox (E4)', () => {
   const settings = read('src/renderer/src/components/SettingsModal.tsx');
-  assert.ok(settings.indexOf('<ClaudeConnectorsSettings />') < settings.indexOf('<MailboxesSettings />'), 'connectors first (design D2)');
-  assert.ok(settings.indexOf('<MailboxesSettings />') < settings.indexOf('<IntegrationsRegistry />'));
+  // MailboxesSettings takes a focus prop for links in agent text (settings-links-in-replies.md).
+  assert.ok(settings.indexOf('<ClaudeConnectorsSettings />') < settings.indexOf('<MailboxesSettings '), 'connectors first (design D2)');
+  assert.ok(settings.indexOf('<MailboxesSettings ') > 0 && settings.indexOf('<MailboxesSettings ') < settings.indexOf('<IntegrationsRegistry />'));
   const mb = read('src/renderer/src/components/MailboxesSettings.tsx');
   assert.equal((mb.match(/<Toggle /g) || []).length, 0, 'no Claude account switch among the mailboxes');
   assert.doesNotMatch(mb, /email-calendar|claudeAccess/);
@@ -172,6 +173,19 @@ test('fixing a mailbox, or removing one that needed the owner, closes its Ask me
   const dialog = read('src/renderer/src/components/AddMailboxDialog.tsx');
   assert.match(dialog, /button:not\(\[disabled\]\):not\(\[tabindex="-1"\]\)/, 'the Tab trap ends on the chosen service, not a skipped tile');
   assert.match(read('src/renderer/src/components/MailboxesSettings.tsx'), /refocus\(ok \? 'add' : `remove-\$\{id\}`\);/);
+});
+
+test('an outgoing server on 587 is saved as STARTTLS and one on 465 as TLS, whatever the switch (mailboxes.ts MailServer)', () => {
+  const dlg = read('src/renderer/src/components/AddMailboxDialog.tsx');
+  // The TLS switch is for the incoming server; the outgoing one follows the port it ends up on.
+  const m = dlg.match(/imap: server\(imapHost, imapPort, guessed\.imap\), smtp: \{ \.\.\.smtp, secure: ([^}]+?) \}/);
+  assert.ok(m, 'the outgoing server sets its own secure');
+  const { SMTPS_PORT, SUBMISSION_PORT } = require('./load-ts.cjs')('src/shared/mailboxes.ts');
+  const secure = new Function('smtp', 'tls', 'SMTPS_PORT', `return ${m[1]};`);
+  for (const tls of [true, false]) {
+    assert.equal(secure({ port: SUBMISSION_PORT }, tls, SMTPS_PORT), false, `587 is STARTTLS, switch ${tls ? 'on' : 'off'}`);
+    assert.equal(secure({ port: SMTPS_PORT }, tls, SMTPS_PORT), true, `465 is TLS, switch ${tls ? 'on' : 'off'}`);
+  }
 });
 
 test('the schedule picker offers 4h between 2h and 6h (owner, 2026-09-27)', () => {

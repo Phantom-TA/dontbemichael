@@ -34,7 +34,8 @@ export interface MailProposal {
   replyTo?: ProposalRef;
   forward?: ProposalRef;
   attachFrom?: ProposalRef[];
-  /** A reply under a Send only grant, from the member's own send record. */
+  /** A reply's thread headers: from the member's own send record under a Send
+   *  only grant, or read from the email it answers when it was proposed. */
   thread?: ThreadHeaders;
   createdAt: number;
   state: ProposalState;

@@ -1,5 +1,5 @@
-- **Reset memory** gives the team a first day.
-- **Pulse** shows which emails were organized.
-- **Tasks board** search and filters.
-- **Every file chip** opens.
+- **Copy any file** that opens in a tab.
+- **Report a problem** sits in the top bar.
+- **Places in Settings** are buttons.
+- Add a whole folder to a foundations card.
 - Contributor fixes across the app.

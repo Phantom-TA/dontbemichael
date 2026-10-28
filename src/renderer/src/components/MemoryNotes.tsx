@@ -5,11 +5,14 @@ import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useRtl } from '@/i18n/useDirection';
 import { expiryState, procedurePointer, type MemoryEntry, type MemoryView } from '@shared/memoryIndex';
 import { localDay } from '@shared/messageView';
+import { groupName } from './fieldText';
+import { InfoTip } from './InfoTip';
 
 /**
  * An agent's memory as notes, not the raw index (docs/designs/memory-tab-readable.md).
  * Grouped by kind, each entry a sentence with where it came from and when under
- * it; procedures open to their steps; a passed "check again" date is flagged.
+ * it, and what showed it behind an info icon (memory evidence, D1); procedures
+ * open to their steps; a passed "check again" date is flagged.
  * The ids, kind words and pipes of the file are never shown here: the Memory
  * tab's "Show the file" is where the raw text lives.
  */
@@ -73,10 +76,7 @@ export function memorySummary(t: (k: string, o?: Record<string, unknown>) => str
 function Group({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return (
     <section style={{ marginTop: 16 }}>
-      <h3 style={{
-        margin: '0 0 4px', fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '18px', fontWeight: 600,
-        color: 'var(--cth-ink-700)', display: 'flex', gap: 6
-      }}>
+      <h3 style={{ ...groupName, margin: '0 0 4px', display: 'flex', gap: 6 }}>
         {title}<span style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>{count}</span>
       </h3>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>{children}</ul>
@@ -111,6 +111,7 @@ function EntryRow({ agentId, entry }: { agentId: string; entry: MemoryEntry }) {
       {proc ? <Procedure agentId={agentId} name={proc.name} slug={proc.slug} /> : <EntryText>{entry.text}</EntryText>}
       <div style={{ fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-500)', marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
         <span>{t('memoryNotes.sourceLine', { source, date: shortDate(entry.date, lang) })}</span>
+        {entry.evidence && <InfoTip label={t('memoryNotes.evidence')} text={entry.evidence} />}
         {expiry !== 'none' && entry.expires && (
           <span style={{
             borderRadius: 'var(--cth-r-md)',

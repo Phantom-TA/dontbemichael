@@ -64,6 +64,19 @@ test('run more often: 90% did work and work per run up 30%, never below 15 minut
   assert.equal(A.adviceFor({ ...base, missions: [mission], runs: rs.map((r) => ({ ...r, workCount: 2 })) }).length, 0, 'no growth, no advice');
 });
 
+test('run more often on a timed schedule opens the schedule editor', () => {
+  // Value: protects=the times or weekly case of the run-more rule; fails_when=a timed schedule never gets run more, or gets an interval change; why_new=timed schedules were left out; seam=none; no_claim=none beyond protects
+  // The same busy fortnight: a run a day, work per run doubled this week.
+  const rs = runs(14, 0).map((r, i) => {
+    const start = NOW - (i + 0.5) * 86_400_000;
+    return { ...r, start, day: new Date(start).toISOString().slice(0, 10), workCount: start >= NOW - 7 * 86_400_000 ? 4 : 2 };
+  });
+  const [a] = A.adviceFor({ ...base, missions: [{ ...mission, timed: true }], runs: rs });
+  assert.equal(a.kind, 'run-more');
+  assert.deepEqual(a.change, { kind: 'editor', direction: 'more' });
+  assert.equal(A.adviceFor({ ...base, missions: [{ ...mission, timed: true, intervalMs: 20 * 60_000 }], runs: rs }).length, 1, 'the 15 minute floor is for intervals');
+});
+
 test('a cheaper model needs 10 mail decisions, 90% kept and no reopens; never for Michael, never off the ladder', () => {
   // Value: protects=cheaper-model rule and owner rules; fails_when=Michael gets it, a card only member gets it, or Fable is moved; why_new=CEO D14 rules; seam=none; no_claim=prices beyond the table
   const a = A.adviceFor({ ...base, members: [member({})] });
@@ -76,6 +89,20 @@ test('a cheaper model needs 10 mail decisions, 90% kept and no reopens; never fo
   assert.equal(A.adviceFor({ ...base, members: [member({ model: 'claude-fable-5-1' })] }).length, 0, 'no tier, no advice');
   assert.equal(A.adviceFor({ ...base, members: [member({ provider: 'codex', model: 'gpt-5' })] }).length, 0, 'Claude only');
   assert.equal(A.adviceFor({ ...base, members: [member({ model: 'claude-haiku-4-5' })] }).length, 0, 'nothing below small');
+});
+
+test('a cheaper model is only suggested to a member on the top tier', () => {
+  // Value: protects=the design table's top tier condition; fails_when=a middle tier member with good numbers is told to move down; why_new=one Apply downgraded a middle tier member; seam=none; no_claim=none beyond protects
+  const { provider } = member({});
+  const tiers = [
+    { provider, id: 'model-top', label: 'Model Top', tier: 'top' },
+    { provider, id: 'model-mid', label: 'Model Mid', tier: 'middle' },
+    { provider, id: 'model-small', label: 'Model Small', tier: 'small' }
+  ];
+  assert.equal(A.adviceFor({ ...base, ladder: tiers, members: [member({ model: 'model-mid' })] }).length, 0, 'a middle tier member stays put');
+  const [a] = A.adviceFor({ ...base, ladder: tiers, members: [member({ model: 'model-top' })] });
+  assert.equal(a.kind, 'cheaper-model');
+  assert.deepEqual(a.change, { kind: 'model', from: 'model-top', to: 'model-mid', toLabel: 'Model Mid' });
 });
 
 test('a stronger model when work keeps coming back, Michael included', () => {
@@ -117,4 +144,24 @@ test('the early mode runs every rule on the live days so far at half its evidenc
   const back = member({ model: 'claude-sonnet-5', pieces: 3, mailDecisions: 1, keptDecisions: 3, keptShare: null, reopens: 2 });
   assert.deepEqual(A.adviceFor({ ...base, members: [back] }), [], 'the 14 day rule needs 3 reopens');
   assert.equal(A.adviceFor({ ...base, members: [back] }, early)[0].kind, 'stronger-model');
+});
+
+test('the Early look counts each rule\'s patterns and names the member closest to a cheaper model (owner, 2026-10-26)', () => {
+  // Value: protects=the four tiles' counts and the closest member line; fails_when=a count misses a kind, the closest member is Michael, a member on a lower tier or another provider, or one with no decisions, or the order ignores kept share; why_new=new summary; seam=none; no_claim=the tile layout
+  const top = ladder.find((m) => m.tier === 'top');
+  const mid = ladder.find((m) => m.tier === 'middle');
+  const m = (agentId, kept, decisions, over = {}) => ({ agentId, provider: 'claude', model: top.id, isGod: false, pieces: 30, mailDecisions: 0, keptShare: null, keptDecisions: decisions, kept, reopens: 0, usdPerWeek: 5, ...over });
+  const found = [{ kind: 'run-less' }, { kind: 'run-less' }, { kind: 'stronger-model' }];
+  const w = A.earlyWatch(found, [
+    m('god', 20, 20, { isGod: true }),
+    m('mid', 9, 9, { model: mid.id }),
+    m('codex', 9, 9, { provider: 'codex' }),
+    m('none', 0, 0),
+    m('pam', 7, 9),
+    m('nick', 10, 10),
+    m('kelly', 3, 3)
+  ], ladder);
+  assert.deepEqual(w.counts, { 'run-less': 2, 'run-more': 0, 'cheaper-model': 0, 'stronger-model': 1 });
+  assert.deepEqual(w.closest, { agentId: 'nick', kept: 10, decisions: 10 }, 'all kept, and more of it than Kelly');
+  assert.equal(A.earlyWatch([], [m('god', 5, 5, { isGod: true }), m('none', 0, 0)], ladder).closest, null);
 });
