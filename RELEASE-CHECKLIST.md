@@ -33,6 +33,19 @@ successful release never touches.
   from `RELEASE.md` at the tag (`tools/release-assets.cjs`), so re-running that tag's release
   workflow puts the tag's text back. Edit both, and do not re-run an old tag's workflow after.
 
+## Automatic failure reports (every release)
+
+See `tools/failure-reports/README.md` and `docs/designs/auto-report-failures.md`.
+
+- [ ] **The `FAILURE_REPORT_KEY` secret is set and not near expiry.** It is the bot's fine
+  grained token (Issues on the private reports repo only). Fine grained tokens expire: put the
+  next rotation in the calendar and ship a new key in a release before the old one lapses.
+- [ ] **Within 3 hours of publishing, the reports repo's "Promote reports" run is green** and its
+  summary shows the canary for this version. A failed run (GitHub emails you) means the key, the
+  repo or the Action is broken: check the run's summary first.
+- [ ] **To stop all sending at once:** revoke the bot's token. To also stop detection and the
+  local file, ship a release with `AUTO_FAILURE_REPORTS = false`.
+
 ## The proving hop (rehearse on prereleases, before the real release)
 
 `N` is delivered by `N-1`'s updater, so `N` arriving proves the OLD

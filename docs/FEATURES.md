@@ -198,7 +198,12 @@ moving, and brings you only the decisions that need you.
 - Report a problem sits in the top bar on every view, hard to miss. One click opens a bug report
   with the app version and your system filled in, and saves a picture of the window in your
   Downloads, ready to add. Help, Report a problem does the same. Reports are public, so the hover
-  text says to check the picture first.
+  text says to check the picture first. It also lists your office's recent automatic reports, so
+  your words can be matched to them.
+- Failures the developers can fix in code are reported automatically: a crash, a team member stuck
+  in a loop, a message that could not be delivered because of a bug. Each report is fixed fields
+  only, with no names, messages or files, and anything you can fix yourself is never sent. Setting
+  DO_NOT_TRACK stops it.
 - Copy on every file that opens in a tab: an email draft or a blog post pastes with its headings,
   bold, lists and links into Gmail, Outlook, Google Docs or WordPress, and as clean words with no
   Markdown marks into a plain box such as LinkedIn. A spreadsheet pastes as real cells, a picture

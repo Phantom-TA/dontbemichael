@@ -1,8 +1,12 @@
 # Telemetry
 
-> **Currently off.** This build sends nothing. The code described below is switched off by
-> `COLLECT_USAGE_STATS` in `src/shared/buildFeatures.ts`, and the app does not show the choice in
-> onboarding or Settings. This file describes what would be sent if it were switched back on.
+> **Usage stats are currently off.** This build sends no usage events. The code described below is
+> switched off by `COLLECT_USAGE_STATS` in `src/shared/buildFeatures.ts`, and the app does not show
+> the choice in onboarding or Settings. This file describes what would be sent if it were switched
+> back on.
+>
+> **Automatic failure reports are on**, and are a separate thing: see
+> [Automatic failure reports](#automatic-failure-reports) below.
 
 Don't Be Michael collects a small set of **anonymous** usage events so we can
 understand adoption (how many people launch the app, whether they get a first
@@ -96,7 +100,8 @@ identifiers, or API keys. Nothing free-form — the property allowlist in
 
 ## Opting out
 
-Any one of these fully disables telemetry:
+Any one of these fully disables usage stats (not failure reports, which have
+their own section below):
 
 1. **Settings → General → Anonymous usage stats → off** (or uncheck "Share
    anonymous usage stats" during onboarding). Takes effect immediately.
@@ -105,6 +110,47 @@ Any one of these fully disables telemetry:
 3. **Build from source.** The PostHog key is injected only in official release
    CI; a local or forked build compiles without one and the analytics module
    is a no-op — forks never send events anywhere.
+
+## Automatic failure reports
+
+Separate from usage stats, official builds report failures that the developers
+can fix in code, so they get fixed even when nobody writes in
+(docs/designs/auto-report-failures.md). They are always on; there is no switch
+in Settings, and the usage stats switch above does not cover them.
+
+**What counts.** A crash of the app or of a screen, a team member's terminal
+ending abnormally, a message the router could not deliver because of a bug, a
+team member stuck in a loop, and failures in the app's own plumbing (its hook
+channel, a provider bridge, a background check whose answer could not be read).
+Anything you or your team can fix (a sign in, credit, your own spending caps,
+a wrong recipient, Research being off) is never reported.
+
+**What a report holds.** Closed fields only:
+
+| Field | Example | Notes |
+| --- | --- | --- |
+| `kind` | `agent-exit` | One of a fixed list |
+| `detail` | `SIGSEGV` | One of a fixed list per kind |
+| `errorName` | `TypeError` | Letters only |
+| `frames` | `out/main/index.js:Hive.routeOnce:3644` | At most 8, only the app's own files; anything else is dropped |
+| `fingerprint` | `0123456789ab` | A hash that groups the same failure |
+| `appVersion`, `os`, `osVersion`, `arch` | `0.2.9`, `darwin`, `15.1.0`, `arm64` | |
+| `engine`, `engineVersion` | `claude`, `unknown` | The engine the failure ran on |
+| `count` | `3` | How often it happened in this version |
+
+**Never sent:** error messages, log lines, terminal output, your office, team
+member or customer names, file paths outside the app, mail, or anything you
+typed.
+
+**Where it goes.** The app files each report as an issue in a private
+repository; an hourly job re-renders the valid ones, field by field, into
+public issues labelled `auto-report` on the main repository. Each computer
+keeps its own copy in `failures.jsonl` in the app's data folder, which is also
+where reports wait while you are offline.
+
+**To stop it:** set `DO_NOT_TRACK` (any value other than `0`); the app still
+keeps the local file but sends nothing. Builds from source never send: the key
+is injected only in official release CI.
 
 ## Self-hosting note
 

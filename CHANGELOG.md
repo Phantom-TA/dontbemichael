@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [Unreleased]
+- **Failures report themselves.** Technical failures the developers can fix in code (an app or
+  screen crash, a team member's terminal ending abnormally, a router or hook failure, a team member
+  stuck in a loop) are kept in `failures.jsonl` and filed automatically as fixed fields only, with
+  no names, messages or files; anything the owner or the team can fix is never sent. DO_NOT_TRACK
+  stops sending (docs/designs/auto-report-failures.md, TELEMETRY.md).
+- **Report a problem lists recent automatic reports**, so a person's report can be matched to them.
+- Home and Manager setup text is 14px or more (#416, with thanks to @glenmiracle18).
+- Hidden Claude calls start on Windows when the Claude path has a space (#426, with thanks to
+  @theshloksschauhan).
+
 ## [0.2.8] (2026-10-27)
 
 ### Added
