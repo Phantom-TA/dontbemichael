@@ -20,3 +20,16 @@ export function cutText(text: string, max: number): string {
   if (limit === 1) return '…';
   return `${parts.slice(0, limit - 1).join('')}…`;
 }
+
+/** `text` cut to at most `max` UTF-16 units, with no "…", and never ending in
+ *  half an emoji. For a name held to a unit limit (a folder name): the file
+ *  system stores a lone half as U+FFFD, so the name on disk would differ from
+ *  the name the app worked out. */
+export function clipUnits(text: string, max: number): string {
+  const limit = Math.floor(max);
+  if (!(limit >= 1)) return '';          // max <= 0 or NaN
+  if (text.length <= limit) return text;
+  const head = text.slice(0, limit);
+  const last = head.charCodeAt(limit - 1);
+  return last >= 0xd800 && last <= 0xdbff ? head.slice(0, -1) : head; // a high half lost its low half
+}

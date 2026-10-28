@@ -17,6 +17,7 @@
 
 import { mkdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, isAbsolute } from 'node:path';
+import { clipUnits } from '../shared/cutText';
 
 /** The folder Michael works in, and that every agent can reach. */
 export const OFFICE_FOLDER = 'Office';
@@ -47,7 +48,7 @@ export function safeFolderName(raw: string, fallback = 'Folder'): string {
     .replace(/^[.\s-]+/, '')
     .replace(/[.\s]+$/, '');
 
-  if (name.length > MAX_NAME) name = name.slice(0, MAX_NAME).replace(/[.\s]+$/, '');
+  if (name.length > MAX_NAME) name = clipUnits(name, MAX_NAME).replace(/[.\s]+$/, '');
   if (!name) return fallback;
   // The suffix goes before the first dot, so `CON.txt` becomes `CON-folder.txt`.
   if (WINDOWS_RESERVED.test(name)) name = name.replace(/^[^.]*/, (device) => `${device}-folder`);
