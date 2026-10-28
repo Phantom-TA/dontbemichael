@@ -11,7 +11,8 @@
  * (owner AP1) and reaches only REPORTS_REPO; nothing here takes another
  * target. No key (dev builds, tests) means nothing is ever called.
  */
-import { REPORTS_REPO, issueBody, issueTitle, parseIssueBody, seenOnLine } from '../shared/failureReport';
+import { createHash } from 'node:crypto';
+import { REPORTS_REPO, fingerprintInput, issueBody, issueTitle, parseIssueBody, seenOnLine } from '../shared/failureReport';
 import type { FailureReporter, LedgerRow } from './failureReport';
 
 export const SEND_EVERY_MS = 10 * 60_000;
@@ -53,6 +54,12 @@ export interface SenderDeps {
   /** One line in the office log for the sender's own state changes. */
   log: (event: Record<string, unknown>) => void;
   timeout?: (ms: number) => AbortSignal | undefined;
+}
+
+/** The issue's fields hash to the fingerprint it claims (as the Action checks). */
+function fingerprintHolds(r: ReturnType<typeof parseIssueBody>, fp: string): boolean {
+  if (!r || r.fingerprint !== fp) return false;
+  return createHash('sha256').update(fingerprintInput(r.kind, r.detail, r.errorName, r.frames)).digest('hex').slice(0, 12) === fp;
 }
 
 export function createFailureSender(deps: SenderDeps) {
@@ -118,18 +125,18 @@ export function createFailureSender(deps: SenderDeps) {
     if (issue === undefined) {
       if (!canSearch()) return 'end';
       searches.push(deps.now());
-      const q = encodeURIComponent(`${row.fingerprint} in:title repo:${REPORTS_REPO} type:issue`);
-      const { res, verdict } = await call('GET', `/search/issues?q=${q}&per_page=1`);
+      const q = encodeURIComponent(`${row.fingerprint} in:title repo:${REPORTS_REPO} type:issue -label:rejected`);
+      const { res, verdict } = await call('GET', `/search/issues?q=${q}&sort=created&order=asc&per_page=5`);
       // Search answers 422 when the reports repo cannot be seen: the key's
       // problem, not this row's, so stop instead of dropping every row.
       const v = verdict === 'drop' && res.status === 422 ? 'stop' : verdict;
       if (v !== 'ok') return handle(v, res.status, res.headers.get('retry-after'), row) ? 'end' : 'next';
       const found = (await res.json()) as { items?: Array<{ number?: unknown; title?: unknown; body?: unknown }> };
-      // Only a real report for this fingerprint counts: a decoy issue with
-      // the fingerprint in its title and junk in its body would hide every
-      // later sighting from the Action.
+      // Only a real report for this fingerprint counts, the oldest first: a
+      // decoy with the fingerprint in its title, junk in its body, or fields
+      // that do not hash to it would hide every later sighting from the Action.
       const hit = found.items?.find((i) => typeof i.number === 'number' && typeof i.title === 'string' && i.title.endsWith(`(${row.fingerprint})`)
-        && typeof i.body === 'string' && parseIssueBody(i.body)?.fingerprint === row.fingerprint);
+        && typeof i.body === 'string' && fingerprintHolds(parseIssueBody(i.body), row.fingerprint));
       if (hit) issue = hit.number as number;
     }
     if (!canWrite()) return 'end';

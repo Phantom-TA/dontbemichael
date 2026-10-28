@@ -22,6 +22,9 @@ export const LEDGER_MAX_BYTES = 1024 * 1024;
 export const FLUSH_MS = 30_000;
 export const PENDING_MAX_AGE_MS = 30 * 24 * 3600_000;
 export const MEMORY_ROWS_ON_WRITE_FAILURE = 50;
+/** Failed reads, at most one per flush interval, before the file is given up
+ *  on and written over (what it held could not be read anyway). */
+export const MAX_READ_FAILURES = 10;
 const RECENT_MS = 7 * 24 * 3600_000;
 
 export type RowState = 'pending' | 'sent' | 'local' | 'dropped';
@@ -51,6 +54,8 @@ export interface FailureReporterDeps {
   engineFor: (agentId?: string) => string;
   officeBreakActive: () => boolean;
   doNotTrack: () => boolean;
+  /** True while sending must wait (DO_NOT_TRACK not yet read from the shell). */
+  holdSending?: () => boolean;
   signalName: (n: number) => string | undefined;
   readFile: (p: string) => string | null;
   writeFile: (p: string, data: string) => void;
@@ -61,12 +66,15 @@ export function createFailureReporter(deps: FailureReporterDeps) {
   const rows = new Map<string, LedgerRow>();
   const memo = new Map<string, { frames: string[]; name: string }>();
   let dirty = false;
-  /** Only counts changed on rows already sent or kept: written at quit, not
-   *  every 30 s, so a failure that keeps repeating does not rewrite the file. */
+  /** Only counts changed (a repeat): written at quit or with the next real
+   *  change, so a failure that keeps repeating does not rewrite the file
+   *  every 30 s. The sender reads counts from memory. */
   let countsDirty = false;
   let busy = false;
   let writeFailed = false;
   let loaded = false;
+  let readFailures = 0;
+  let lastReadFailure = 0;
   const key = (fp: string, version: string) => `${fp}@${version}`;
   const os = (['darwin', 'win32', 'linux'].includes(deps.platform) ? deps.platform : 'linux') as FailureReport['os'];
   const arch = (deps.arch === 'arm64' ? 'arm64' : 'x64') as FailureReport['arch'];
@@ -75,8 +83,16 @@ export function createFailureReporter(deps: FailureReporterDeps) {
    *  and nothing is written until a read works, so saved rows are never lost. */
   function load(): void {
     if (loaded) return;
+    // Retried at most once a flush interval, never on every failure noticed.
+    if (readFailures > 0 && deps.now() - lastReadFailure < FLUSH_MS) return;
     let text: string | null;
-    try { text = deps.readFile(deps.ledgerPath); } catch (e) { deps.warn('read', e); return; }
+    try { text = deps.readFile(deps.ledgerPath); } catch (e) {
+      deps.warn('read', e);
+      readFailures++;
+      lastReadFailure = deps.now();
+      if (readFailures >= MAX_READ_FAILURES) { loaded = true; deps.warn('read-gave-up'); }
+      return;
+    }
     loaded = true;
     if (!text) return;
     const now = deps.now();
@@ -111,15 +127,15 @@ export function createFailureReporter(deps: FailureReporterDeps) {
     if (had) {
       had.count = Math.min(had.count + 1, 1_000_000);
       had.lastTs = now;
-      if (had.state !== 'pending') { countsDirty = true; return; }
-    } else {
-      const facts: FailureReport = {
-        kind, detail, errorName: name, frames, fingerprint, appVersion: deps.appVersion, os,
-        osVersion: cleanOsVersion(deps.osVersion), arch, engine: deps.engineFor(agentId), engineVersion: 'unknown', count: 1
-      };
-      if (validateReport(facts) !== null) { deps.warn('invalid', validateReport(facts)); return; }
-      rows.set(k, { ...facts, ts: now, lastTs: now, state: deps.doNotTrack() ? 'local' : 'pending' });
+      countsDirty = true;
+      return;
     }
+    const facts: FailureReport = {
+      kind, detail, errorName: name, frames, fingerprint, appVersion: deps.appVersion, os,
+      osVersion: cleanOsVersion(deps.osVersion), arch, engine: deps.engineFor(agentId), engineVersion: 'unknown', count: 1
+    };
+    if (validateReport(facts) !== null) { deps.warn('invalid', validateReport(facts)); return; }
+    rows.set(k, { ...facts, ts: now, lastTs: now, state: deps.doNotTrack() ? 'local' : 'pending' });
     dirty = true;
     if (writeFailed || !loaded) trimToMemoryCap();
   }
@@ -231,13 +247,16 @@ export function createFailureReporter(deps: FailureReporterDeps) {
      *  set, including rows kept before it was (SR4: nothing is sent). */
     pending(): LedgerRow[] {
       load();
-      if (deps.doNotTrack()) return [];
+      // Nothing goes before the file is read: a row sent now could be sent
+      // again once the saved copy of it loads.
+      if (!loaded || deps.doNotTrack() || deps.holdSending?.()) return [];
       return [...rows.values()].filter((r) => r.state === 'pending').sort((a, b) => a.ts - b.ts);
     },
 
     /** The issue a fingerprint already has, in any version. */
     issueFor(fingerprint: string): number | undefined {
       load();
+      if (!loaded) return undefined;
       for (const r of rows.values()) if (r.fingerprint === fingerprint && typeof r.issue === 'number') return r.issue;
       return undefined;
     },

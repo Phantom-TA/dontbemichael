@@ -73,12 +73,15 @@ export function userShellPath(): string {
 let cachedDnt: boolean | null = null;
 
 /** DO_NOT_TRACK as the user's shell sets it: a Mac app opened from the Dock
- *  never sees an export in ~/.zshrc. Read once; a shell that fails reads as
- *  unset (process.env still counts). */
-export function userShellDoNotTrack(): boolean {
+ *  never sees an export in ~/.zshrc. Kept once a read works; null when the
+ *  shell could not be read, so the caller holds sending and tries again. */
+export function userShellDoNotTrack(): boolean | null {
   if (cachedDnt !== null) return cachedDnt;
   if (process.platform === 'win32') return (cachedDnt = false);
-  const v = captureFromLoginShell('printf %s "${DO_NOT_TRACK:-}"')?.trim() ?? '';
+  // printenv works in every shell (fish cannot parse ${VAR:-}).
+  const out = captureFromLoginShell('printenv DO_NOT_TRACK');
+  if (out === null) return null;
+  const v = out.trim();
   cachedDnt = v !== '' && v !== '0' && !v.includes('\n');
   return cachedDnt;
 }

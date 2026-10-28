@@ -252,7 +252,7 @@ test('a ledger that cannot be read for a moment is never overwritten; rows merge
   saved.r.flush();
   const text = saved.files.get('/ud/failures.jsonl');
   let locked = true;
-  const { r, files, warnings } = make({ files: [['/ud/failures.jsonl', text]], deps: {
+  const { r, files, warnings, tick } = make({ files: [['/ud/failures.jsonl', text]], deps: {
     readFile: (p) => { if (locked) throw Object.assign(new Error('busy'), { code: 'EBUSY' }); return files.get(p) ?? null; }
   } });
   r.reportFailure('hook-server', Object.assign(new TypeError('x'), { stack: 'TypeError: x\n    at b (/A/out/main/index.js:2:1)' }));
@@ -261,13 +261,14 @@ test('a ledger that cannot be read for a moment is never overwritten; rows merge
   assert.equal(files.get('/ud/failures.jsonl'), text, 'nothing written while unread');
   assert.ok(warnings.some(([w]) => w === 'read'));
   locked = false;
+  tick(30_000);
   r.flush();
   const rows = ledger(files);
   assert.deepEqual(rows.map((x) => x.kind).sort(), ['hook-server', 'router-throw']);
   assert.equal(rows.find((x) => x.kind === 'router-throw').count, 2, 'the saved count and the new one add up');
 });
 
-test('repeats of sent, kept or dropped rows only count, and reach the file at quit', () => {
+test('repeats only count, and reach the file at quit or with the next real change', () => {
   // Value: protects=a failure that keeps repeating after it was sent does not rewrite a 1 MB file every 30 s on the main thread, and its count is still saved at quit; fails_when=a count bump on a non pending row sets dirty, changes state, or is lost at quit; why_new=performance review and the state matrix; seam=writeFile counts; no_claim=real disk timing
   let writes = 0;
   const { r, files } = make({ deps: { writeFile: (p, d) => { writes++; files.set(p, d); } } });
@@ -293,5 +294,37 @@ test('repeats of sent, kept or dropped rows only count, and reach the file at qu
   assert.equal(rows.find((x) => x.fingerprint === c.fingerprint).state, 'pending');
   r.reportFailure('router-throw', e(3));
   r.flush();
-  assert.equal(writes, before + 2, 'a pending row\'s repeat still writes');
+  assert.equal(writes, before + 1, 'a pending row\'s repeat waits too');
+  assert.equal(r.pending()[0].count, 2, 'the sender reads the count from memory');
+  r.reportFailure('hook-server', e(4));
+  r.flush();
+  assert.equal(ledger(files).find((x) => x.fingerprint === c.fingerprint).count, 2, 'a new row writes every count');
+});
+
+test('nothing is offered to the sender before the file is read, reads retry once a flush, and give up after ten', () => {
+  // Value: protects=a row sent before the saved copy loads is never sent twice, and a file that stays unreadable neither blocks the ledger for good nor is read on every failure (pass 2 review); fails_when=pending() serves memory rows before load, or reads retry on every record; why_new=pass 2 reviews; seam=readFile throws, fake clock; no_claim=real OS error codes
+  let reads = 0;
+  const { r, files, warnings, tick } = make({ deps: { readFile: () => { reads++; throw Object.assign(new Error('no access'), { code: 'EACCES' }); } } });
+  const e = Object.assign(new TypeError('x'), { stack: 'TypeError: x\n    at a (/A/out/main/index.js:1:1)' });
+  r.reportFailure('router-throw', e);
+  r.reportFailure('hook-server', e);
+  assert.deepEqual(r.pending(), []);
+  assert.equal(r.issueFor('0123456789ab'), undefined);
+  assert.equal(reads, 1, 'one read until the next flush interval');
+  for (let i = 0; i < 9; i++) { tick(30_000); r.flush(); }
+  assert.equal(reads, 10);
+  assert.ok(warnings.some(([w]) => w === 'read-gave-up'));
+  assert.equal(ledger(files).length, 2, 'given up: memory rows are written');
+  assert.equal(r.pending().length, 2);
+});
+
+test('sending waits while the reporter is told to hold', () => {
+  // Value: protects=nothing is sent before DO_NOT_TRACK has been read from the shell (SR4, pass 2); fails_when=pending() ignores holdSending; why_new=pass 2 red team; seam=holdSending dep; no_claim=the shell read itself
+  let hold = true;
+  const { r } = make({ deps: { holdSending: () => hold } });
+  r.reportFailure('router-throw', Object.assign(new TypeError('x'), { stack: 'TypeError: x\n    at a (/A/out/main/index.js:1:1)' }));
+  assert.deepEqual(r.pending(), []);
+  hold = false;
+  assert.equal(r.pending().length, 1);
+  assert.equal(r.pending()[0].state, 'pending', 'kept as pending, not local, while held');
 });

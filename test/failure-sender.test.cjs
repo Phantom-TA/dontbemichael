@@ -364,3 +364,16 @@ test('a search 5xx backs off and keeps the row pending', async () => {
   assert.equal(sender.state().stopped, false);
   assert.ok(sender.state().waitUntil > 0);
 });
+
+test('a search hit counts only when its fields hash to the fingerprint; rejected issues are not searched', async () => {
+  // Value: protects=a decoy whose body parses but whose fields do not hash to the title's fingerprint never swallows sightings the Action would reject (pass 2 red team); fails_when=the sender trusts the stated fingerprint; why_new=pass 2 red team; seam=injected fetch; no_claim=GitHub search ranking
+  const { reporter } = setup();
+  const row = reporter.pending()[0];
+  const decoy = { ...parseIssueBody(issueBody(row)), errorName: 'RangeError' };
+  const { sender, calls } = setup({ responses: [{ status: 200, json: { items: [{ number: 3, title: `[auto] router-throw RangeError (${row.fingerprint})`, body: issueBody(decoy) }] } }, { status: 201, json: { number: 8 } }] });
+  await sender.tick();
+  assert.match(decodeURIComponent(calls[0].url), /-label:rejected/);
+  assert.match(calls[0].url, /sort=created&order=asc/);
+  assert.equal(calls[1].method, 'POST');
+  assert.match(calls[1].url, new RegExp(`/repos/${REPORTS_REPO}/issues$`), 'filed its own issue instead');
+});

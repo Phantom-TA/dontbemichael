@@ -236,14 +236,14 @@ test('a failed release list ends the run before any report is judged', async () 
   assert.equal(f.calls.length, 0, 'nothing read from the reports repo');
 });
 
-test('a schema, report or search that fails for now queues the report; it is never rejected', async () => {
+test('a schema fetch, report or search that fails for now queues the report; it is never rejected', async () => {
   // Value: protects=a passing GitHub failure costs a run, never a report (state machines); fails_when=a null schema or failed parent read labels rejected, or a failed search files a duplicate; why_new=state matrix; seam=fake GitHub; no_claim=raw.githubusercontent.com outages
   const r = report();
   const f = fakeGitHub({ priv: [privIssue(1, r)] });
-  const noSchema = await runPromotion({ gh: f.gh, schemaFor: async () => null, state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  const noSchema = await runPromotion({ gh: f.gh, schemaFor: async () => { throw new Error('schema for 0.2.9: 502'); }, state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
   assert.deepEqual(f.labels, {});
   assert.equal(noSchema.state.queued.length, 1);
-  assert.ok(noSchema.failures.includes('schema for 0.2.9 not loadable'));
+  assert.ok(noSchema.failures.some((x) => x.includes('schema for 0.2.9: 502')));
   const next = await run(f, noSchema.state);
   assert.equal(f.mainIssues.length, 1, 'the queued report goes on the next run');
   assert.equal(next.state.queued.length, 0);
@@ -337,4 +337,91 @@ test('prerelease versions order alpha, beta, rc, release', () => {
   assert.equal(newer('0.2.9-rc.1', 'v0.2.9-beta.9'), true);
   assert.equal(newer('0.2.9', 'v0.2.9-rc.9'), true);
   assert.equal(newer('0.2.9-beta.2', 'v0.2.9-beta.10'), false);
+});
+
+test('a release with no schema rejects for good, and a report that keeps failing is given up after a day', async () => {
+  // Value: protects=reports naming a release from before reports (no schema file) cannot jam the queue, and nothing is retried forever (pass 2 review); fails_when=a permanent schema miss queues, or tries never end; why_new=pass 2 red team; seam=fake GitHub; no_claim=raw.githubusercontent's real 404
+  const old = report({ appVersion: '0.2.8' });
+  const f = fakeGitHub({ priv: [privIssue(1, old)] });
+  const out = await runPromotion({ gh: f.gh, schemaFor: async (v) => (v === '0.2.8' ? null : schema), state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.deepEqual(f.labels, { 1: ['rejected'] });
+  assert.equal(out.state.queued.length, 0);
+  const partial = { ...schema, fingerprintInput: undefined };
+  const g = fakeGitHub({ priv: [privIssue(1, report())] });
+  await runPromotion({ gh: g.gh, schemaFor: async () => partial, state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.deepEqual(g.labels, { 1: ['rejected'] }, 'an old schema without the needed functions rejects');
+
+  const h = fakeGitHub({ priv: [privIssue(1, report())] });
+  const down = async (token, method, p, body) => (method === 'GET' && p === `/repos/${REPORTS}/issues/1` ? { status: 502, json: null } : h.gh(token, method, p, body));
+  let state = null;
+  let failures = [];
+  for (let i = 0; i < 24; i++) ({ state, failures } = await runPromotion({ gh: down, schemaFor: async () => schema, state, now: () => T0 + i * HOUR, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' }));
+  assert.equal(state.queued.length, 0);
+  assert.ok(failures.some((x) => x.startsWith('gave up on issue 1001')));
+});
+
+test('queued reports that keep failing never starve new reports or the canary', async () => {
+  // Value: protects=new reports and the canary are reached while a backlog fails, and failures go to the back (pass 2 review); fails_when=queued items take every slot or keep the front; why_new=pass 2 red team; seam=fake GitHub; no_claim=GitHub's real search limits
+  const canary = { id: 5000, number: 50, ...buildCanary(schema, 'v0.2.9'), updated_at: new Date(T0 - 5 * 60_000).toISOString() };
+  const f = fakeGitHub({ priv: [canary] });
+  const down = async (token, method, p, body) => (/^\/repos\/[^/]+\/[^/]+\/issues\/([1-9]|[1-9]\d)$/.test(p) && p.startsWith(`/repos/${REPORTS}`) && !p.endsWith('/50') ? { status: 502, json: null } : f.gh(token, method, p, body));
+  const backlog = { queued: Array.from({ length: 60 }, (_, i) => ({ type: 'issue', id: 9000 + i, number: i + 1 })) };
+  const out = await runPromotion({ gh: down, schemaFor: async () => schema, state: backlog, now: () => T0 + 4 * HOUR, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.ok(out.state.canary['0.2.9'], 'the canary was read');
+  assert.ok(!out.failures.includes('no canary for 0.2.9'));
+  assert.equal(out.state.queued.length, 60);
+  assert.equal(out.state.queued[0].id, 9025, 'the 35 not reached wait at the front, the 25 that failed go to the back');
+  assert.equal(out.state.queued[59].tries, 1);
+});
+
+test('already counted reports touched again by comments use no slot, and tied times read the next page', async () => {
+  // Value: protects=comments on counted issues (which move their updated_at) cannot use up a run, and 50+ items in one second never stall a cursor (pass 2 review); fails_when=counted items take slots or the same page is asked for forever; why_new=pass 2 reviews; seam=fake GitHub that pages; no_claim=GitHub's exact tie order
+  const tie = new Date(T0 - 30 * 60_000).toISOString();
+  const r = report();
+  const priv = Array.from({ length: 60 }, (_, i) => ({ ...privIssue(i + 1, r), updated_at: tie }));
+  const comment = { id: 77, issue_url: `https://api.github.com/repos/${REPORTS}/issues/1`, body: schema.seenOnLine(report({ appVersion: '0.2.8', os: 'win32', osVersion: '10.0.26100', arch: 'x64', count: 5 })), updated_at: new Date(T0 - 10 * 60_000).toISOString() };
+  const f = fakeGitHub({ priv });
+  const pages = [];
+  const gh = async (token, method, p, body) => {
+    const list = (all) => {
+      const per = Number(/per_page=(\d+)/.exec(p)[1]);
+      const page = Number(/page=(\d+)/.exec(p.replace(/per_page=\d+/, ''))?.[1] ?? 1);
+      const since = /since=([^&]+)/.exec(p)?.[1];
+      const kept = all.filter((x) => !since || x.updated_at >= decodeURIComponent(since));
+      return { status: 200, json: kept.slice((page - 1) * per, page * per) };
+    };
+    if (method === 'GET' && p.startsWith(`/repos/${REPORTS}/issues?`)) { pages.push(p); return list(priv); }
+    if (method === 'GET' && p.startsWith(`/repos/${REPORTS}/issues/comments?`)) return list([comment]);
+    return f.gh(token, method, p, body);
+  };
+  const go = (state, at) => runPromotion({ gh, schemaFor: async () => schema, state, now: () => at, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  const first = await go(null, T0);
+  const second = await go(first.state, T0 + HOUR);
+  assert.ok(pages.some((p) => /&page=2$/.test(p)), 'a full page on the cursor second reads page 2');
+  assert.equal(Object.keys(second.state.counted).filter((k) => k.startsWith('i')).length, 60, 'all 60 tied issues counted');
+  assert.equal(second.state.counts[FP]['0.2.8|win32'], 5, 'the comment behind 60 counted issues was reached');
+  assert.equal(f.mainIssues.length, 1);
+});
+
+test('state is saved after every report, so a run cut short never files twice', async () => {
+  // Value: protects=a run killed at the job timeout keeps the main issues it filed (pass 2 review); fails_when=state is written only at the end; why_new=pass 2 red team; seam=save callback; no_claim=SIGKILL timing on Actions
+  const priv = Array.from({ length: 3 }, (_, i) => privIssue(i + 1, report({ frames: [`out/main/index.js:s${i}:1`] })));
+  const f = fakeGitHub({ priv });
+  const saves = [];
+  await runPromotion({ gh: f.gh, schemaFor: async () => schema, state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm', save: (s) => saves.push(JSON.parse(JSON.stringify(s))) });
+  const firstFiled = saves.find((s) => Object.keys(s.mainIssue).length === 1);
+  assert.ok(firstFiled, 'saved right after the first main issue');
+  assert.ok(saves.length >= 4);
+});
+
+test('only a state saved before the cursors starts them at its last run', async () => {
+  // Value: protects=the one time move from lastRun to cursors never skips comments later (pass 2 tie test found it); fails_when=a null cursor is reset to lastRun on every run; why_new=bug found while testing cycle 2; seam=fake GitHub; no_claim=none beyond protects
+  const seen = [];
+  const f = fakeGitHub({ priv: [] });
+  const gh = async (token, method, p, body) => { if (method === 'GET' && p.includes('/issues/comments?')) seen.push(p); return f.gh(token, method, p, body); };
+  const go = (state) => runPromotion({ gh, schemaFor: async () => schema, state, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  await go({ lastRun: '2026-10-31T00:00:00.000Z' });
+  assert.match(seen[0], /since=2026-10-31/);
+  await go({ lastRun: '2026-10-31T00:00:00.000Z', issueCursor: null, commentCursor: null });
+  assert.doesNotMatch(seen[1], /since=/);
 });

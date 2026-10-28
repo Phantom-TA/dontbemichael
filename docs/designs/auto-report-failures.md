@@ -403,10 +403,14 @@ detect -> classify -> scrub -> ledger row (pending)
   reports repo's issues and comments oldest change first from a cursor per
   list, at most 50 a run, so a busy hour is finished by later runs and a
   flood of forged comments cannot burn Actions minutes per event. Its own
-  "Promoted to" comments are skipped. (Ship red team, 2026-10-28: one page
-  since the last run lost anything past the first 50.)
+  "Promoted to" comments are skipped, both lists are handled in one time
+  order, a full page that ends on the cursor's own second reads the next
+  page, and reports already counted use no slot. (Ship reviews, 2026-10-28:
+  one page since the last run lost anything past the first 50.)
 - Its state (the two cursors, the ids of issues and comments already
-  counted, the `queued` set of ids only, at most 200) is a `state.json` the Action commits to the
+  counted, the `queued` set of ids only, at most 200, given at most 25 of
+  a run's 50 slots, failures to the back, given up after 24 runs; saved after
+  every report so a run cut short keeps what it did) is a `state.json` the Action commits to the
   reports repo with its own `GITHUB_TOKEN` (contents write); the app key has
   Issues only and cannot change it. Counting is by issue or comment id, so a
   re-read or edited comment is never counted twice, and `queued` reports are
@@ -419,9 +423,10 @@ detect -> classify -> scrub -> ledger row (pending)
   `agentvivekkumar/dontbemichael`, frames matching the frame pattern,
   `seen-on` exactly the one line format, and the fingerprint the hash of
   the report's own fields). Any failure: label `rejected`, nothing is
-  promoted. A failure that is GitHub's for now (the release list, a schema
-  that cannot be fetched, a report or search that does not answer) queues the
-  report or ends the run; it never rejects one.
+  promoted. A release with no schema (any release before reports) rejects.
+  A failure that is GitHub's for now (the release list, a schema fetch, a
+  report or search that does not answer) queues the report or ends the run;
+  it never rejects one.
 - Re-renders the main repo issue from the validated fields only (never copies
   text), label `auto-report`; dedupes in the main repo by fingerprint in the
   title; counts go into one "Seen on (unverified counts)" comment the Action

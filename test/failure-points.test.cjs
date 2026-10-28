@@ -186,12 +186,14 @@ test('kept failures reach the file every 30 seconds and at quit', () => {
   assert.match(index.slice(quit), /^app\.on\('before-quit', \(e\) => \{\n  failures\.flush\(true\);\n  if \(allowQuit\) return;/, 'the flush runs before any early return');
 });
 
-test('DO_NOT_TRACK set in the login shell counts, read once away from crash handlers', () => {
-  // Value: protects=a Mac app opened from the Dock honours an export in ~/.zshrc (SR4; security review); fails_when=doNotTrack reads process.env only, or the blocking shell read can run inside a crash handler; why_new=security review; seam=none; no_claim=every shell's rc behaviour
+test('DO_NOT_TRACK set in the login shell counts, fails closed, and is read away from crash handlers', () => {
+  // Value: protects=a Mac app opened from the Dock honours an export in ~/.zshrc or fish config, and a shell that cannot be read holds sending (SR4; security review, pass 2); fails_when=doNotTrack reads process.env only, a failed read counts as unset, or the blocking read runs in a crash handler or in builds that cannot send; why_new=security review and pass 2 red team; seam=none; no_claim=every shell's rc behaviour
   const index = read('src/main/index.ts');
-  assert.match(index, /doNotTrack: \(\) => dntSet\(\) \|\| \(shellDntRead && userShellDoNotTrack\(\)\),/);
-  assert.match(index, /setTimeout\(\(\) => \{ userShellDoNotTrack\(\); shellDntRead = true; \}, 20_000\)\.unref\(\);/);
-  assert.ok(index.indexOf('let shellDntRead = false;') < index.indexOf('const failures = createFailureReporter({'), 'declared before the reporter can call it');
+  assert.match(index, /doNotTrack: \(\) => dntSet\(\) \|\| shellDnt === true,/);
+  assert.match(index, /holdSending: \(\) => shellDnt === null,/);
+  assert.match(index, /if \(AUTO_FAILURE_REPORTS && __REPORT_KEY__ && !dntSet\(\)\) \{\n  const readShellDnt = \(\): void => \{\n    shellDnt = userShellDoNotTrack\(\);\n    if \(shellDnt === null\) setTimeout\(readShellDnt, SEND_EVERY_MS\)\.unref\(\);/);
+  assert.ok(index.indexOf('let shellDnt: boolean | null = null;') < index.indexOf('const failures = createFailureReporter({'), 'declared before the reporter can call it');
   const shell = read('src/main/shellEnv.ts');
-  assert.match(shell, /captureFromLoginShell\('printf %s "\$\{DO_NOT_TRACK:-\}"'\)/);
+  assert.match(shell, /captureFromLoginShell\('printenv DO_NOT_TRACK'\)/);
+  assert.match(shell, /if \(out === null\) return null;/, 'a failed read is not cached as unset');
 });

@@ -220,8 +220,8 @@ app.setName(APP_NAME);
 // in userData/failures.jsonl, the queue failureSender files from. Created
 // before the crash handlers so they can use it; `hive` and `officeBreak` are
 // read late, inside try, since they are made further down.
-// The shell read blocks for a moment, so it never runs inside a crash handler.
-let shellDntRead = false;
+// DO_NOT_TRACK as the login shell exports it (SR4): null until read.
+let shellDnt: boolean | null = null;
 const failures = createFailureReporter({
   enabled: AUTO_FAILURE_REPORTS,
   ledgerPath: join(app.getPath('userData'), 'failures.jsonl'),
@@ -238,15 +238,24 @@ const failures = createFailureReporter({
     } catch { return 'none'; }
   },
   officeBreakActive: () => { try { return officeBreak.current() !== null; } catch { return false; } },
-  // Process env first (cheap); the login shell's value is read once, after start.
-  doNotTrack: () => dntSet() || (shellDntRead && userShellDoNotTrack()),
+  doNotTrack: () => dntSet() || shellDnt === true,
+  // Nothing is sent until the shell has been read: an opt out never fails open.
+  holdSending: () => shellDnt === null,
   signalName: (n) => Object.entries(osConstants.signals).find(([, v]) => v === n)?.[0],
   readFile: (p) => { try { return readFileSync(p, 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; } },
   writeFile: (p, data) => writeFileAtomic(p, data),
   warn: (what, e) => console.warn(`[failure-report] ${what}:`, e)
 });
 setInterval(() => failures.flush(), FLUSH_MS).unref();
-setTimeout(() => { userShellDoNotTrack(); shellDntRead = true; }, 20_000).unref();
+// The shell read blocks for a moment, so it runs on a timer, never in a crash
+// handler, and only in a build that can send at all.
+if (AUTO_FAILURE_REPORTS && __REPORT_KEY__ && !dntSet()) {
+  const readShellDnt = (): void => {
+    shellDnt = userShellDoNotTrack();
+    if (shellDnt === null) setTimeout(readShellDnt, SEND_EVERY_MS).unref();
+  };
+  setTimeout(readShellDnt, 20_000).unref();
+}
 
 // Keep the main process alive on an unexpected throw/rejection. The harness is a
 // multi-agent supervisor — a single stray throw (e.g. node-pty's ConPTY console
