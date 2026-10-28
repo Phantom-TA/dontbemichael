@@ -15,7 +15,7 @@
  */
 import {
   classifyLogEvent, cleanOsVersion, errorCodeDetail, errorName, fingerprintInput, scrubFrames,
-  validateReport, HIDDEN_CALL_KINDS, KIND_CLASS, type FailureKind, type FailureReport
+  validateReport, ERROR_NAME_RE, HIDDEN_CALL_KINDS, KIND_CLASS, type FailureKind, type FailureReport
 } from '../shared/failureReport';
 
 export const LEDGER_MAX_BYTES = 1024 * 1024;
@@ -61,6 +61,9 @@ export function createFailureReporter(deps: FailureReporterDeps) {
   const rows = new Map<string, LedgerRow>();
   const memo = new Map<string, { frames: string[]; name: string }>();
   let dirty = false;
+  /** Only counts changed on rows already sent or kept: written at quit, not
+   *  every 30 s, so a failure that keeps repeating does not rewrite the file. */
+  let countsDirty = false;
   let busy = false;
   let writeFailed = false;
   let loaded = false;
@@ -68,11 +71,13 @@ export function createFailureReporter(deps: FailureReporterDeps) {
   const os = (['darwin', 'win32', 'linux'].includes(deps.platform) ? deps.platform : 'linux') as FailureReport['os'];
   const arch = (deps.arch === 'arm64' ? 'arm64' : 'x64') as FailureReport['arch'];
 
+  /** Reads the file once. A read that fails (busy, no access) leaves it unread,
+   *  and nothing is written until a read works, so saved rows are never lost. */
   function load(): void {
     if (loaded) return;
+    let text: string | null;
+    try { text = deps.readFile(deps.ledgerPath); } catch (e) { deps.warn('read', e); return; }
     loaded = true;
-    let text: string | null = null;
-    try { text = deps.readFile(deps.ledgerPath); } catch (e) { deps.warn('read', e); }
     if (!text) return;
     const now = deps.now();
     for (const line of text.split('\n')) {
@@ -84,7 +89,15 @@ export function createFailureReporter(deps: FailureReporterDeps) {
       if (validateReport(facts) !== null || typeof ts !== 'number') continue;
       const row: LedgerRow = { ...facts, ts, lastTs: typeof lastTs === 'number' ? lastTs : ts, state, issue, sentAt, why };
       if (row.state === 'pending' && now - row.ts > PENDING_MAX_AGE_MS) { row.state = 'dropped'; row.why = 'age'; dirty = true; }
-      rows.set(key(row.fingerprint, row.appVersion), row);
+      const k = key(row.fingerprint, row.appVersion);
+      // Seen while the file could not be read: the saved row wins, counts add up.
+      const mem = rows.get(k);
+      if (mem) {
+        row.count = Math.min(row.count + mem.count, 1_000_000);
+        row.lastTs = Math.max(row.lastTs, mem.lastTs);
+        dirty = true;
+      }
+      rows.set(k, row);
     }
   }
 
@@ -98,6 +111,7 @@ export function createFailureReporter(deps: FailureReporterDeps) {
     if (had) {
       had.count = Math.min(had.count + 1, 1_000_000);
       had.lastTs = now;
+      if (had.state !== 'pending') { countsDirty = true; return; }
     } else {
       const facts: FailureReport = {
         kind, detail, errorName: name, frames, fingerprint, appVersion: deps.appVersion, os,
@@ -107,7 +121,7 @@ export function createFailureReporter(deps: FailureReporterDeps) {
       rows.set(k, { ...facts, ts: now, lastTs: now, state: deps.doNotTrack() ? 'local' : 'pending' });
     }
     dirty = true;
-    if (writeFailed) trimToMemoryCap();
+    if (writeFailed || !loaded) trimToMemoryCap();
   }
 
   function trimToMemoryCap(): void {
@@ -139,9 +153,13 @@ export function createFailureReporter(deps: FailureReporterDeps) {
     return list.map((r) => JSON.stringify(r)).join('\n') + (list.length ? '\n' : '');
   }
 
-  function flush(): void {
-    if (!dirty) return;
+  /** Writes the file when something changed; `final` (at quit) also writes
+   *  count-only changes. */
+  function flush(final = false): void {
+    if (!dirty && !(final && countsDirty)) return;
     guarded(() => {
+      load();
+      if (!loaded) return;
       let list = [...rows.values()];
       let text = serialize(list);
       if (text.length > LEDGER_MAX_BYTES) {
@@ -155,6 +173,7 @@ export function createFailureReporter(deps: FailureReporterDeps) {
       try {
         deps.writeFile(deps.ledgerPath, text);
         dirty = false;
+        countsDirty = false;
         writeFailed = false;
       } catch (e) {
         writeFailed = true;
@@ -197,8 +216,12 @@ export function createFailureReporter(deps: FailureReporterDeps) {
         const p = payload as Record<string, unknown>;
         if (p.kind !== 'screen-crash' && p.kind !== 'renderer-error') return;
         const stack = typeof p.stack === 'string' ? p.stack.slice(0, 8192) : '';
-        const name = typeof p.name === 'string' && /^[A-Za-z]{1,40}$/.test(p.name) ? p.name : 'Error';
-        record(p.kind, 'none', name, scrubFrames(stack));
+        const name = typeof p.name === 'string' && ERROR_NAME_RE.test(p.name) ? p.name : 'Error';
+        const frames = scrubFrames(stack);
+        // No app frame (a ResizeObserver notice, a cross origin "Script error.")
+        // gives nobody anything to fix, and would be one report from every office.
+        if (!frames.length) return;
+        record(p.kind, 'none', name, frames);
       });
     },
 

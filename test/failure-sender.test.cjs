@@ -315,3 +315,52 @@ test('a full disk, no network and a rate limit in one run leave the app working 
   reporter.flush();
   assert.equal(files.get('/ud/failures.jsonl').split('\n').filter(Boolean).length, 3, 'the ledger is written once the disk has room');
 });
+
+test('a deleted issue answering 410 is forgotten like a 404, with no stop and no back off', async () => {
+  // Value: protects=the owner deleting a spam issue never blocks every later report from an install (red team); fails_when=410 maps to retry and the oldest row holds the queue; why_new=GitHub answers 410 for a deleted issue; seam=injected fetch; no_claim=GitHub's exact deleted issue status on every endpoint
+  assert.equal(classifyResponse(410, hdrs()), 'gone');
+  const forgotten = [];
+  const row = { ...setup().reporter.pending()[0] };
+  const s2 = createFailureSender({
+    key: 'k', appVersion: '0.2.9', now: () => 0, log: () => {},
+    reporter: { pending: () => [row], issueFor: () => 4, markSent: () => assert.fail('not sent'), forgetIssue: (fp) => forgotten.push(fp), markDropped: () => assert.fail('not dropped'), flush: () => {} },
+    fetch: async () => ({ status: 410, headers: hdrs(), json: async () => ({}) })
+  });
+  await s2.tick();
+  assert.deepEqual(forgotten, [row.fingerprint]);
+  assert.equal(s2.state().stopped, false);
+  assert.equal(s2.state().waitUntil, 0, 'no back off on a deleted issue');
+});
+
+test('a 422 on search stops sending instead of dropping every row', async () => {
+  // Value: protects=a reports repo the key cannot see never drops the whole queue one row at a time (state matrix); fails_when=search 422 maps to drop; why_new=search answers 422 when the repo cannot be seen; seam=injected fetch; no_claim=GitHub's 422 bodies
+  const { sender, reporter, logs } = setup({ failures: 2, responses: [{ status: 422 }] });
+  await sender.tick();
+  assert.equal(sender.state().stopped, true);
+  assert.equal(reporter.pending().length, 2, 'nothing dropped');
+  assert.equal(logs[0].kind, 'failure-report-stopped');
+});
+
+test('a secondary rate limit 403 waits instead of stopping, and other client errors drop one row', async () => {
+  // Value: protects=every office shares one key, so a burst after a release waits rather than going quiet for the run (red team); fails_when=a 403 without headers always stops, or a 409 retries the same row forever; why_new=red team; seam=injected fetch; no_claim=GitHub's exact secondary limit wording
+  assert.equal(classifyResponse(403, hdrs(), 'You have exceeded a secondary rate limit.'), 'wait');
+  assert.equal(classifyResponse(403, hdrs(), 'Resource not accessible by personal access token'), 'stop');
+  assert.equal(classifyResponse(409, hdrs()), 'drop');
+  const limited = setup({ responses: [{ status: 200, json: { items: [] } }, { status: 403, json: { message: 'You have exceeded a secondary rate limit' } }] });
+  await limited.sender.tick();
+  assert.equal(limited.sender.state().stopped, false);
+  assert.ok(limited.sender.state().waitUntil > 0);
+  assert.equal(limited.reporter.pending().length, 1);
+  const conflict = setup({ failures: 2, responses: [{ status: 200, json: { items: [] } }, { status: 409 }, { status: 200, json: { items: [] } }, { status: 201, json: { number: 5 } }] });
+  await conflict.sender.tick();
+  assert.deepEqual(conflict.reporter.pending(), [], 'one dropped, the other sent');
+});
+
+test('a search 5xx backs off and keeps the row pending', async () => {
+  // Value: protects=a GitHub outage during search loses nothing (state matrix); fails_when=a search 5xx drops or stops; why_new=untested cell; seam=injected fetch; no_claim=none beyond protects
+  const { sender, reporter } = setup({ responses: [{ status: 503 }] });
+  await sender.tick();
+  assert.equal(reporter.pending().length, 1);
+  assert.equal(sender.state().stopped, false);
+  assert.ok(sender.state().waitUntil > 0);
+});

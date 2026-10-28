@@ -86,12 +86,15 @@ test('a main process error keeps only the app\'s own frames and its code', () =>
   assert.doesNotMatch(files.get('/ud/failures.jsonl'), /jane|secret/);
 });
 
-test('renderer reports are scrubbed again and refused when malformed', () => {
+test('renderer reports are scrubbed again and refused when malformed or frameless', () => {
+  // Value: protects=main trusts nothing the renderer sends, and a renderer error with no app frame (ResizeObserver, "Script error.") is never one report from every office; fails_when=a record's own name reaches a title or frameless errors are kept; why_new=red team; seam=none; no_claim=real Chromium error events
   const { r, files } = make();
   r.reportRenderer({ kind: 'screen-crash', name: 'TypeError', stack: '    at Ve (file:///A.app/Contents/Resources/app.asar/out/renderer/assets/index-B1x_9aZq.js:88:1201)\n    at /Users/jane/x.js:1:1' });
   r.reportRenderer({ kind: 'main-uncaught', name: 'Error', stack: '' });
   r.reportRenderer('crash');
   r.reportRenderer({ kind: 'renderer-error', name: '<b>bad</b>', stack: 'x'.repeat(100000) });
+  r.reportRenderer({ kind: 'renderer-error', name: 'ResizeObserver loop completed with undelivered notifications.', stack: '' });
+  r.reportRenderer({ kind: 'renderer-error', name: 'Pete', stack: '    at go (file:///A.app/Contents/Resources/app.asar/out/renderer/assets/index-B1x_9aZq.js:3:4)' });
   r.flush();
   const rows = ledger(files);
   assert.equal(rows.length, 2);
@@ -240,4 +243,55 @@ test('a full disk is the owner\'s: never kept as a report', () => {
 test('an unreadable failure file gives Report a problem no fingerprints, never an error', () => {
   const { r } = make({ deps: { readFile: () => { throw new Error('EACCES'); } } });
   assert.deepEqual(r.recentFingerprints(), []);
+});
+
+test('a ledger that cannot be read for a moment is never overwritten; rows merge once it reads', () => {
+  // Value: protects=rows an earlier session saved survive a busy or locked file (E3; QA ISSUE-001, captures 002/003); fails_when=load marks the file read after a failed read and flush writes only memory; why_new=QA reproduced the loss; seam=readFile throws; no_claim=the real OS error codes
+  const saved = make();
+  saved.r.reportFailure('router-throw', Object.assign(new TypeError('x'), { stack: 'TypeError: x\n    at a (/A/out/main/index.js:1:1)' }));
+  saved.r.flush();
+  const text = saved.files.get('/ud/failures.jsonl');
+  let locked = true;
+  const { r, files, warnings } = make({ files: [['/ud/failures.jsonl', text]], deps: {
+    readFile: (p) => { if (locked) throw Object.assign(new Error('busy'), { code: 'EBUSY' }); return files.get(p) ?? null; }
+  } });
+  r.reportFailure('hook-server', Object.assign(new TypeError('x'), { stack: 'TypeError: x\n    at b (/A/out/main/index.js:2:1)' }));
+  r.reportFailure('router-throw', Object.assign(new TypeError('x'), { stack: 'TypeError: x\n    at a (/A/out/main/index.js:1:1)' }));
+  r.flush();
+  assert.equal(files.get('/ud/failures.jsonl'), text, 'nothing written while unread');
+  assert.ok(warnings.some(([w]) => w === 'read'));
+  locked = false;
+  r.flush();
+  const rows = ledger(files);
+  assert.deepEqual(rows.map((x) => x.kind).sort(), ['hook-server', 'router-throw']);
+  assert.equal(rows.find((x) => x.kind === 'router-throw').count, 2, 'the saved count and the new one add up');
+});
+
+test('repeats of sent, kept or dropped rows only count, and reach the file at quit', () => {
+  // Value: protects=a failure that keeps repeating after it was sent does not rewrite a 1 MB file every 30 s on the main thread, and its count is still saved at quit; fails_when=a count bump on a non pending row sets dirty, changes state, or is lost at quit; why_new=performance review and the state matrix; seam=writeFile counts; no_claim=real disk timing
+  let writes = 0;
+  const { r, files } = make({ deps: { writeFile: (p, d) => { writes++; files.set(p, d); } } });
+  const e = (n) => Object.assign(new TypeError('x'), { stack: `TypeError: x\n    at f${n} (/A/out/main/index.js:${n}:1)` });
+  r.reportFailure('router-throw', e(1));
+  r.reportFailure('router-throw', e(2));
+  r.reportFailure('router-throw', e(3));
+  r.flush();
+  const [a, b, c] = r.pending();
+  r.markSent(a, 9);
+  r.markDropped(b, '422');
+  r.flush();
+  const before = writes;
+  for (let i = 0; i < 5; i++) { r.reportFailure('router-throw', e(1)); r.reportFailure('router-throw', e(2)); }
+  r.flush();
+  assert.equal(writes, before, 'no write for count only changes');
+  r.flush(true);
+  assert.equal(writes, before + 1);
+  const rows = ledger(files);
+  assert.equal(rows.find((x) => x.fingerprint === a.fingerprint).state, 'sent');
+  assert.equal(rows.find((x) => x.fingerprint === a.fingerprint).count, 6);
+  assert.equal(rows.find((x) => x.fingerprint === b.fingerprint).state, 'dropped');
+  assert.equal(rows.find((x) => x.fingerprint === c.fingerprint).state, 'pending');
+  r.reportFailure('router-throw', e(3));
+  r.flush();
+  assert.equal(writes, before + 2, 'a pending row\'s repeat still writes');
 });

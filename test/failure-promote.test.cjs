@@ -13,13 +13,17 @@ const MAIN = 'agentvivekkumar/dontbemichael';
 const HOUR = 3600_000;
 const T0 = Date.parse('2026-11-01T12:00:00Z');
 
+/** A report whose fingerprint is the hash of its own fields, as the app makes it. */
 function report(over = {}) {
-  return {
+  const r = {
     kind: 'main-uncaught', detail: 'none', errorName: 'TypeError', frames: ['out/main/index.js:f:1'],
-    fingerprint: '0123456789ab', appVersion: '0.2.9', os: 'darwin', osVersion: '15.1.0', arch: 'arm64',
+    fingerprint: '', appVersion: '0.2.9', os: 'darwin', osVersion: '15.1.0', arch: 'arm64',
     engine: 'claude', engineVersion: 'unknown', count: 2, ...over
   };
+  if (!over.fingerprint) r.fingerprint = require('node:crypto').createHash('sha256').update(schema.fingerprintInput(r.kind, r.detail, r.errorName, r.frames)).digest('hex').slice(0, 12);
+  return r;
 }
+const FP = report().fingerprint;
 
 /** A tiny GitHub: private issues and comments, main issues, releases. */
 function fakeGitHub({ priv = [], privComments = [], mainIssues = [], releases }) {
@@ -63,17 +67,17 @@ test('a valid report is re-rendered into one main issue with counts, and linked 
   assert.equal(made.token, 'm');
   assert.equal(made.body.body, schema.issueBody(r), 're-rendered, not copied');
   assert.deepEqual(made.body.labels, ['auto-report']);
-  assert.equal(state.counts['0123456789ab']['0.2.9|darwin'], 2);
+  assert.equal(state.counts[FP]['0.2.9|darwin'], 2);
   assert.ok(f.calls.some((c) => c.p === `/repos/${REPORTS}/issues/1/comments` && c.body.body === `Promoted to ${MAIN}#500.`));
   // A second run counts nothing twice.
   const again = await run(f, state);
-  assert.equal(again.state.counts['0123456789ab']['0.2.9|darwin'], 2);
+  assert.equal(again.state.counts[FP]['0.2.9|darwin'], 2);
 });
 
 test('forged text, an unknown version or a free text body is rejected, never promoted', async () => {
   const good = report();
   const forged = { ...privIssue(2, good), body: schema.issueBody(good).replace('`TypeError`', '`see https://scam.example`') };
-  const unknown = privIssue(3, report({ appVersion: '9.9.9', fingerprint: 'bbbbbbbbbbbb' }));
+  const unknown = privIssue(3, report({ appVersion: '9.9.9' }));
   const junk = { id: 2004, number: 4, title: '[auto] x (cccccccccccc)', body: 'Please click https://scam.example' };
   const f = fakeGitHub({ priv: [forged, unknown, junk] });
   await run(f);
@@ -90,11 +94,11 @@ test('a seen-on comment adds its count to the same main issue', async () => {
   });
   const { state } = await run(f);
   assert.equal(f.mainIssues.length, 1);
-  assert.deepEqual(state.counts['0123456789ab'], { '0.2.9|darwin': 2, '0.2.8|win32': 5 });
+  assert.deepEqual(state.counts[FP], { '0.2.9|darwin': 2, '0.2.8|win32': 5 });
 });
 
 test('past the daily cap reports wait in the queue, the run fails, and they go next day', async () => {
-  const priv = Array.from({ length: 12 }, (_, i) => privIssue(i + 1, report({ fingerprint: i.toString(16).padStart(12, 'a') })));
+  const priv = Array.from({ length: 12 }, (_, i) => privIssue(i + 1, report({ frames: [`out/main/index.js:f${i}:1`] })));
   const f = fakeGitHub({ priv });
   const first = await run(f);
   assert.equal(f.mainIssues.length, 10);
@@ -129,7 +133,7 @@ test('a closed issue reopens once when a newer version than its fix reports it',
   const f = fakeGitHub({ priv: [privIssue(1, r)], mainIssues, releases });
   const { state } = await run(f);
   assert.equal(mainIssues[0].state, 'open');
-  assert.deepEqual(state.reopened['0123456789ab'], ['0.2.10']);
+  assert.deepEqual(state.reopened[FP], ['0.2.10']);
   mainIssues[0].state = 'closed';
   const f2 = fakeGitHub({ priv: [privIssue(2, r)], mainIssues, releases });
   await run(f2, state);
@@ -179,7 +183,7 @@ test('a racing duplicate is labelled, the main issue links back, and Seen on is 
   assert.ok(f.calls.some((c) => c.p === `/repos/${MAIN}/issues/500/comments` && c.body.body === `From the automatic reports: ${REPORTS}#1.`));
   const seenWrites = f.calls.filter((c) => (c.method === 'POST' && c.p === `/repos/${MAIN}/issues/500/comments` && /^Seen on/.test(c.body.body)) || (c.method === 'PATCH' && c.p.startsWith(`/repos/${MAIN}/issues/comments/`)));
   assert.equal(seenWrites.length, 1, 'one Seen on write for three reports');
-  assert.equal(state.counts['0123456789ab']['0.2.9|darwin'], 6);
+  assert.equal(state.counts[FP]['0.2.9|darwin'], 6);
 });
 
 test('end to end: a main process throw becomes one private issue, then one main issue with fields only', async () => {
@@ -219,4 +223,118 @@ test('end to end: a main process throw becomes one private issue, then one main 
   assert.doesNotMatch(pub, /jane|smith|Harbor|customers|Users|node_modules|cannot read/);
   assert.match(pub, /out\/main\/index\.js:Hive\.routeOnce:3644/);
   assert.deepEqual(schema.parseIssueBody(f.mainIssues[0].body).kind, 'router-throw');
+});
+
+test('a failed release list ends the run before any report is judged', async () => {
+  // Value: protects=a main repo outage or bad token never labels every report rejected for good (state machines); fails_when=items are read with an empty release list; why_new=state matrix; seam=fake GitHub; no_claim=none beyond protects
+  const f = fakeGitHub({ priv: [privIssue(1, report())] });
+  const gh = async (token, method, p, body) => (p.startsWith(`/repos/${MAIN}/releases`) ? { status: 502, json: null } : f.gh(token, method, p, body));
+  const out = await runPromotion({ gh, schemaFor: async () => schema, state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.deepEqual(out.failures, ['main repo not reachable with MAIN_ISSUES_TOKEN: 502']);
+  assert.deepEqual(f.labels, {});
+  assert.deepEqual(out.state.counted, {});
+  assert.equal(f.calls.length, 0, 'nothing read from the reports repo');
+});
+
+test('a schema, report or search that fails for now queues the report; it is never rejected', async () => {
+  // Value: protects=a passing GitHub failure costs a run, never a report (state machines); fails_when=a null schema or failed parent read labels rejected, or a failed search files a duplicate; why_new=state matrix; seam=fake GitHub; no_claim=raw.githubusercontent.com outages
+  const r = report();
+  const f = fakeGitHub({ priv: [privIssue(1, r)] });
+  const noSchema = await runPromotion({ gh: f.gh, schemaFor: async () => null, state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.deepEqual(f.labels, {});
+  assert.equal(noSchema.state.queued.length, 1);
+  assert.ok(noSchema.failures.includes('schema for 0.2.9 not loadable'));
+  const next = await run(f, noSchema.state);
+  assert.equal(f.mainIssues.length, 1, 'the queued report goes on the next run');
+  assert.equal(next.state.queued.length, 0);
+
+  const g = fakeGitHub({ priv: [privIssue(1, r)] });
+  const flaky = async (token, method, p, body) => (method === 'GET' && p === `/repos/${REPORTS}/issues/1` ? { status: 502, json: null } : g.gh(token, method, p, body));
+  const parentDown = await runPromotion({ gh: flaky, schemaFor: async () => schema, state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.deepEqual(g.labels, {});
+  assert.equal(parentDown.state.queued.length, 1);
+
+  const h = fakeGitHub({ priv: [privIssue(1, r)] });
+  const searchDown = async (token, method, p, body) => (p.startsWith('/search/') ? { status: 403, json: { message: 'secondary rate limit' } } : h.gh(token, method, p, body));
+  const s = await runPromotion({ gh: searchDown, schemaFor: async () => schema, state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.equal(h.mainIssues.length, 0, 'no issue filed blind');
+  assert.equal(s.state.queued.length, 1);
+  assert.ok(s.failures.includes('search main repo: 403'));
+});
+
+test('a report whose fingerprint is not the hash of its own fields is rejected', async () => {
+  // Value: protects=a made up fingerprint cannot fold junk into a real report's public count (security review); fails_when=promote trusts the stated fingerprint; why_new=security review; seam=fake GitHub; no_claim=none beyond protects
+  const forged = report({ fingerprint: 'abcdefabcdef' });
+  const f = fakeGitHub({ priv: [privIssue(1, forged)] });
+  await run(f);
+  assert.deepEqual(f.labels, { 1: ['rejected'] });
+  assert.equal(f.mainIssues.length, 0);
+});
+
+test('a busy hour is finished by later runs from the cursors, and the Action\'s own comments are skipped', async () => {
+  // Value: protects=nothing past the first page is lost and the Action's comments never use report slots (state machines); fails_when=one page a run with lastRun as since, or own comments read as reports; why_new=state matrix; seam=fake GitHub that honours since and per_page; no_claim=GitHub's exact sort tie order
+  const priv = Array.from({ length: 70 }, (_, i) => ({ ...privIssue(i + 1, report({ frames: [`out/main/index.js:g${i}:1`] })), updated_at: new Date(T0 - (100 - i) * 60_000).toISOString() }));
+  const own = { id: 9001, issue_url: `https://api.github.com/repos/${REPORTS}/issues/1`, body: `Promoted to ${MAIN}#500.`, user: { type: 'Bot' }, updated_at: new Date(T0 - 99 * 60_000).toISOString() };
+  const f = fakeGitHub({ priv });
+  const gh = async (token, method, p, body) => {
+    const page = (list) => {
+      const since = /since=([^&]+)/.exec(p)?.[1];
+      const per = Number(/per_page=(\d+)/.exec(p)[1]);
+      return { status: 200, json: list.filter((x) => !since || x.updated_at >= decodeURIComponent(since)).slice(0, per) };
+    };
+    if (method === 'GET' && p.startsWith(`/repos/${REPORTS}/issues?`)) { assert.match(p, /sort=updated&direction=asc/); return page(priv); }
+    if (method === 'GET' && p.startsWith(`/repos/${REPORTS}/issues/comments?`)) return page([own]);
+    return f.gh(token, method, p, body);
+  };
+  const go = (state, at) => runPromotion({ gh, schemaFor: async () => schema, state, now: () => at, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  const first = await go(null, T0);
+  assert.equal(f.mainIssues.length, 10, 'the daily cap');
+  assert.equal(first.state.issueCursor, priv[49].updated_at);
+  assert.equal(first.state.counted.c9001, undefined, 'own comment never counted as a report');
+  let state = first.state;
+  for (let d = 1; d <= 7; d++) state = (await go(state, T0 + d * 24 * HOUR)).state;
+  assert.equal(f.mainIssues.length, 70, 'every report reached the main repo');
+  assert.equal(state.queued.length, 0);
+});
+
+test('a run stops at its time budget, saves where it was, and the queue never grows past 200', async () => {
+  // Value: protects=state is always saved inside the 2 minute job, and a flood cannot grow the committed state file without end (red team); fails_when=the run works past its budget or queues without a cap; why_new=red team; seam=fake clock and GitHub; no_claim=GitHub Actions' real timeout handling
+  let at = T0;
+  const priv = Array.from({ length: 5 }, (_, i) => ({ ...privIssue(i + 1, report({ frames: [`out/main/index.js:h${i}:1`] })), updated_at: new Date(T0 - (10 - i) * 60_000).toISOString() }));
+  const f = fakeGitHub({ priv });
+  const slow = async (token, method, p, body) => { at += 25_000; return f.gh(token, method, p, body); };
+  const out = await runPromotion({ gh: slow, schemaFor: async () => schema, state: null, now: () => at, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.ok(f.mainIssues.length < 5, 'stopped early');
+  assert.ok(out.state.issueCursor === null || out.state.issueCursor < priv[4].updated_at, 'unread reports stay behind the cursor');
+  assert.equal(out.state.queued.length, 0, 'unread fresh reports are not queued');
+
+  const g = fakeGitHub({ priv: [] });
+  const down = async (token, method, p, body) => (/\/issues\/\d+$/.test(p) && p.startsWith(`/repos/${REPORTS}`) ? { status: 502, json: null } : g.gh(token, method, p, body));
+  const flood = { queued: Array.from({ length: 260 }, (_, i) => ({ type: 'comment', id: i, number: 1 })) };
+  const capped = await runPromotion({ gh: down, schemaFor: async () => schema, state: flood, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.equal(capped.state.queued.length, 200);
+  assert.ok(capped.failures.includes('queue full: 60 oldest dropped'));
+  assert.ok(capped.state.queued.every((q) => q.body === undefined), 'the queue keeps ids only');
+});
+
+test('a queued comment is read again by id, and a throw while handling one report queues only it', async () => {
+  // Value: protects=queued comments keep no text in the committed state, and one bad report never loses the run's state (red team); fails_when=the queue needs the body or a throw escapes runPromotion; why_new=red team; seam=fake GitHub; no_claim=none beyond protects
+  const r = report();
+  const f = fakeGitHub({ priv: [privIssue(1, r)] });
+  const line = schema.seenOnLine(report({ appVersion: '0.2.8', os: 'linux', osVersion: '6.1', arch: 'x64', count: 4 }));
+  const gh = async (token, method, p, body) => (method === 'GET' && p === `/repos/${REPORTS}/issues/comments/55` ? { status: 200, json: { id: 55, body: line } } : f.gh(token, method, p, body));
+  const first = await runPromotion({ gh, schemaFor: async () => schema, state: { queued: [{ type: 'comment', id: 55, number: 1 }] }, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.equal(first.state.counts[FP]['0.2.8|linux'], 4);
+
+  const g = fakeGitHub({ priv: [privIssue(1, r)] });
+  const boom = await runPromotion({ gh: g.gh, schemaFor: async () => ({ ...schema, issueTitle: () => { throw new Error('bad schema'); } }), state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.equal(boom.state.queued.length, 1);
+  assert.ok(boom.failures.some((x) => x.includes('bad schema')));
+});
+
+test('prerelease versions order alpha, beta, rc, release', () => {
+  assert.equal(newer('0.2.9-beta.1', 'v0.2.9-alpha.3'), true);
+  assert.equal(newer('0.2.9-rc.1', 'v0.2.9-beta.9'), true);
+  assert.equal(newer('0.2.9', 'v0.2.9-rc.9'), true);
+  assert.equal(newer('0.2.9-beta.2', 'v0.2.9-beta.10'), false);
 });

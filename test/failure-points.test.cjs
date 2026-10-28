@@ -108,7 +108,7 @@ test('release builds carry the reports key into the app, and only a keyed build 
   assert.match(compile, /FAILURE_REPORT_KEY: \$\{\{ secrets\.FAILURE_REPORT_KEY \}\}/);
   const index = read('src/main/index.ts');
   assert.match(index, /createFailureSender\(\{\n\s+key: __REPORT_KEY__,/);
-  assert.match(index, /if \(AUTO_FAILURE_REPORTS && __REPORT_KEY__\) \{\n\s+setTimeout\(\(\) => \{ void failureSender\.tick\(\); \}, 60_000\)\.unref\(\);\n\s+setInterval\(\(\) => \{ void failureSender\.tick\(\); \}, SEND_EVERY_MS\)\.unref\(\);/);
+  assert.match(index, /if \(AUTO_FAILURE_REPORTS && __REPORT_KEY__\) \{\n\s+(?:\/\/.*\n\s+)?setTimeout\(\(\) => \{ void failureSender\.tick\(\); \}, 60_000 \+ Math\.floor\(Math\.random\(\) \* 4 \* 60_000\)\)\.unref\(\);\n\s+setInterval\(\(\) => \{ void failureSender\.tick\(\); \}, SEND_EVERY_MS\)\.unref\(\);/);
 });
 
 test('the breaker beat reports a loop on constrain and stop, as a valid report, and never a steer or an owner cap', () => {
@@ -183,5 +183,15 @@ test('kept failures reach the file every 30 seconds and at quit', () => {
   assert.equal(index.split('failures.flush(), FLUSH_MS').length, 2, 'one timer only');
   const quit = index.indexOf("app.on('before-quit', (e) => {");
   assert.ok(quit > 0);
-  assert.match(index.slice(quit), /^app\.on\('before-quit', \(e\) => \{\n  failures\.flush\(\);\n  if \(allowQuit\) return;/, 'the flush runs before any early return');
+  assert.match(index.slice(quit), /^app\.on\('before-quit', \(e\) => \{\n  failures\.flush\(true\);\n  if \(allowQuit\) return;/, 'the flush runs before any early return');
+});
+
+test('DO_NOT_TRACK set in the login shell counts, read once away from crash handlers', () => {
+  // Value: protects=a Mac app opened from the Dock honours an export in ~/.zshrc (SR4; security review); fails_when=doNotTrack reads process.env only, or the blocking shell read can run inside a crash handler; why_new=security review; seam=none; no_claim=every shell's rc behaviour
+  const index = read('src/main/index.ts');
+  assert.match(index, /doNotTrack: \(\) => dntSet\(\) \|\| \(shellDntRead && userShellDoNotTrack\(\)\),/);
+  assert.match(index, /setTimeout\(\(\) => \{ userShellDoNotTrack\(\); shellDntRead = true; \}, 20_000\)\.unref\(\);/);
+  assert.ok(index.indexOf('let shellDntRead = false;') < index.indexOf('const failures = createFailureReporter({'), 'declared before the reporter can call it');
+  const shell = read('src/main/shellEnv.ts');
+  assert.match(shell, /captureFromLoginShell\('printf %s "\$\{DO_NOT_TRACK:-\}"'\)/);
 });

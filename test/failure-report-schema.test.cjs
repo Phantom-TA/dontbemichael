@@ -163,3 +163,24 @@ test('an agent exit with no usable signal or code is reported as other, and stil
   assert.equal(S.validateReport(goodReport({ kind: 'agent-exit', detail: 'other' })), null);
   assert.equal(S.validateReport(goodReport({ kind: 'agent-exit', detail: 'code-256' })), 'detail');
 });
+
+test('an error name comes only from a real Error shaped like an error class', () => {
+  // Value: protects=a rejected record ({ name: 'Pete' }) or an Error renamed to a person never reaches a public issue title; fails_when=errorName reads .name off any object or accepts any word; why_new=security review; seam=none; no_claim=every error class a library throws
+  assert.equal(S.errorName({ name: 'Pete', role: 'sales' }), 'Error');
+  assert.equal(S.errorName(new TypeError('x')), 'TypeError');
+  const renamed = new Error('x'); renamed.name = 'Pete';
+  assert.equal(S.errorName(renamed), 'Error');
+  class QuotaExceededError extends Error { constructor() { super('x'); this.name = 'QuotaExceededError'; } }
+  assert.equal(S.errorName(new QuotaExceededError()), 'QuotaExceededError');
+  assert.equal(S.errorName('boom'), 'Error');
+  const base = { kind: 'canary', detail: 'release', errorName: 'Error', frames: [], fingerprint: '000000000000', appVersion: '0.2.9', os: 'linux', osVersion: '0', arch: 'x64', engine: 'none', engineVersion: 'unknown', count: 1 };
+  assert.equal(S.validateReport({ ...base, errorName: 'Pete' }), 'errorName');
+  assert.equal(S.validateReport({ ...base, errorName: 'AbortError' }), null);
+});
+
+test('every prerelease form the release workflow publishes is a valid version', () => {
+  // Value: protects=a beta or alpha build still keeps reports and its canary validates; fails_when=only rc is accepted; why_new=red team; seam=none; no_claim=tags the workflow does not publish
+  const base = { kind: 'canary', detail: 'release', errorName: 'Error', frames: [], fingerprint: '000000000000', os: 'linux', osVersion: '0', arch: 'x64', engine: 'none', engineVersion: 'unknown', count: 1 };
+  for (const v of ['0.2.9', '0.2.9-rc.1', '0.3.0-beta.2', '0.3.0-alpha.1']) assert.equal(S.validateReport({ ...base, appVersion: v }), null, v);
+  for (const v of ['0.2.9-dev', '0.2.9-beta', 'v0.2.9', '0.2']) assert.equal(S.validateReport({ ...base, appVersion: v }), 'appVersion', v);
+});

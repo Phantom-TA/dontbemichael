@@ -7,7 +7,7 @@
  *                      └─> search "<fp> in:title" ── found ─> comment
  *                                                 └─ none ──> create issue
  *
- * One row at a time, every 10 minutes and at start. The key ships in the app
+ * Rows oldest first, every 10 minutes and a few minutes after start. The key ships in the app
  * (owner AP1) and reaches only REPORTS_REPO; nothing here takes another
  * target. No key (dev builds, tests) means nothing is ever called.
  */
@@ -27,15 +27,20 @@ const API = 'https://api.github.com';
 export type Verdict = 'ok' | 'stop' | 'wait' | 'drop' | 'retry' | 'gone';
 
 /** What a GitHub status means for the sender (eng E-R4, OV10). `gone` is a
- *  404, which the caller reads as a deleted issue on a comment and as a
- *  missing repo elsewhere. */
-export function classifyResponse(status: number, headers: { get(name: string): string | null }): Verdict {
+ *  404 or 410, which the caller reads as a deleted issue on a comment and as
+ *  a missing repo elsewhere. Every office shares one key, so a secondary
+ *  rate limit (a 403 whose message says so, often with no header) waits. */
+export function classifyResponse(status: number, headers: { get(name: string): string | null }, message = ''): Verdict {
   if (status >= 200 && status < 300) return 'ok';
   if (status === 401) return 'stop';
-  if (status === 404) return 'gone';
+  if (status === 404 || status === 410) return 'gone';
   if (status === 429) return 'wait';
-  if (status === 403) return headers.get('retry-after') !== null || headers.get('x-ratelimit-remaining') === '0' ? 'wait' : 'stop';
-  if (status === 400 || status === 422) return 'drop';
+  if (status === 403) {
+    const limited = headers.get('retry-after') !== null || headers.get('x-ratelimit-remaining') === '0' || /rate limit|abuse/i.test(message);
+    return limited ? 'wait' : 'stop';
+  }
+  // Any other client error is about this one row: drop it, never block the rest.
+  if (status >= 400 && status < 500) return 'drop';
   return 'retry';
 }
 
@@ -77,7 +82,11 @@ export function createFailureSender(deps: SenderDeps) {
     const res = await deps.fetch(`${API}${path}`, {
       method, headers: headers(), body: body === undefined ? undefined : JSON.stringify(body), signal: deps.timeout?.(REQUEST_TIMEOUT_MS)
     });
-    return { res, verdict: classifyResponse(res.status, res.headers) };
+    let message = '';
+    if (res.status === 403) {
+      try { const j = (await res.json()) as { message?: unknown }; if (typeof j?.message === 'string') message = j.message; } catch { /* no body */ }
+    }
+    return { res, verdict: classifyResponse(res.status, res.headers, message) };
   }
 
   /** Acts on a verdict that is not `ok`; true when the tick must end. */
@@ -111,7 +120,10 @@ export function createFailureSender(deps: SenderDeps) {
       searches.push(deps.now());
       const q = encodeURIComponent(`${row.fingerprint} in:title repo:${REPORTS_REPO} type:issue`);
       const { res, verdict } = await call('GET', `/search/issues?q=${q}&per_page=1`);
-      if (verdict !== 'ok') return handle(verdict, res.status, res.headers.get('retry-after'), row) ? 'end' : 'next';
+      // Search answers 422 when the reports repo cannot be seen: the key's
+      // problem, not this row's, so stop instead of dropping every row.
+      const v = verdict === 'drop' && res.status === 422 ? 'stop' : verdict;
+      if (v !== 'ok') return handle(v, res.status, res.headers.get('retry-after'), row) ? 'end' : 'next';
       const found = (await res.json()) as { items?: Array<{ number?: unknown; title?: unknown; body?: unknown }> };
       // Only a real report for this fingerprint counts: a decoy issue with
       // the fingerprint in its title and junk in its body would hide every
@@ -130,7 +142,7 @@ export function createFailureSender(deps: SenderDeps) {
       return 'next';
     }
     const { res, verdict } = await call('POST', `/repos/${REPORTS_REPO}/issues/${issue}/comments`, { body: seenOnLine(row) });
-    // A deleted issue: forget it and search again next time; never stop for it (OV10).
+    // A deleted issue (404 or 410): forget it and search again next time; never stop for it (OV10).
     if (verdict === 'gone') { deps.reporter.forgetIssue(row.fingerprint); return 'next'; }
     if (verdict !== 'ok') return handle(verdict, res.status, res.headers.get('retry-after'), row) ? 'end' : 'next';
     deps.reporter.markSent(row, issue);

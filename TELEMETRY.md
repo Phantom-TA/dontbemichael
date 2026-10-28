@@ -148,8 +148,10 @@ public issues labelled `auto-report` on the main repository. Each computer
 keeps its own copy in `failures.jsonl` in the app's data folder, which is also
 where reports wait while you are offline.
 
-**To stop it:** set `DO_NOT_TRACK` (any value other than `0`); the app still
-keeps the local file but sends nothing. Builds from source never send: the key
+**To stop it:** set `DO_NOT_TRACK` (any value other than `0`), in the
+environment or exported in your login shell profile (`~/.zshrc`), which the
+app reads once shortly after it starts; the app still keeps the local file but
+sends nothing. Builds from source never send: the key
 is injected only in official release CI.
 
 ## Self-hosting note

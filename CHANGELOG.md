@@ -11,7 +11,9 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
   screen crash, a team member's terminal ending abnormally, a router or hook failure, a team member
   stuck in a loop) are kept in `failures.jsonl` and filed automatically as fixed fields only, with
   no names, messages or files; anything the owner or the team can fix is never sent. DO_NOT_TRACK
-  stops sending (docs/designs/auto-report-failures.md, TELEMETRY.md).
+  stops sending, including an export in your shell profile (docs/designs/auto-report-failures.md,
+  TELEMETRY.md). A report file that cannot be read for a moment is never overwritten, and a
+  failure that keeps repeating no longer rewrites that file every 30 seconds.
 - **Report a problem lists recent automatic reports**, so a person's report can be matched to them.
 - Home and Manager setup text is 14px or more (#416, with thanks to @glenmiracle18).
 - Hidden Claude calls start on Windows when the Claude path has a space (#426, with thanks to

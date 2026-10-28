@@ -598,7 +598,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 <h3 style={groupName}>
                   {t('onboarding.resume.headline')}
                 </h3>
-                <p style={{ margin: 0, lineHeight: '22px' }}>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: '22px' }}>
                   {t('onboarding.resume.desc', {
                     business: found.record.businessName ?? t('onboarding.resume.unnamed'),
                     count: found.record.team.length,
@@ -790,7 +790,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
             {step === 'home' && (
               <>
-                <p style={{ margin: 0, lineHeight: '22px' }}>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: '22px' }}>
                   {t('onboarding.home.desc')}
                 </p>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -808,7 +808,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     </span>
                   </PixelButton>
                 </div>
-                <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>
+                <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                   {t('onboarding.home.note')}
                 </div>
 
@@ -848,7 +848,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
             {step === 'orchestrator' && (
               <>
-                <p style={{ margin: 0, lineHeight: '22px' }}>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: '22px' }}>
                   {t('onboarding.orchestrator.desc')}
                 </p>
 
@@ -900,11 +900,11 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                           <ProviderLogo provider={p.id} size={18} />
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 14 }}>
+                          <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 14, lineHeight: '20px' }}>
                             {p.label}
                           </span>
                           {PROVIDER_BLURB_KEYS[p.id] && (
-                            <span style={{ display: 'block', fontSize: 14, color: 'var(--cth-ink-500)' }}>
+                            <span style={{ display: 'block', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                               {t(PROVIDER_BLURB_KEYS[p.id]!)}
                             </span>
                           )}
@@ -958,10 +958,10 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                         <ProviderLogo provider={p.id} size={18} />
                       </span>
                       <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 14, color: 'var(--cth-ink-500)' }}>
+                        <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                           {p.label}
                         </span>
-                        <span style={{ display: 'block', fontSize: 14, color: 'var(--cth-ink-500)' }}>
+                        <span style={{ display: 'block', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                           {t('onboarding.orchestrator.workersOnlyHint')}
                         </span>
                       </span>
@@ -996,7 +996,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                   </div>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>{t('onboarding.orchestrator.model')}</div>
+                  <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>{t('onboarding.orchestrator.model')}</div>
                   <select
                     value={godModel ?? ''}
                     onChange={(e) => setGodModel(e.target.value || undefined)}
@@ -1014,7 +1014,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                       ));
                     })()}
                   </select>
-                  <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>
+                  <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                     {t('onboarding.orchestrator.modelNote')}
                   </div>
                 </div>

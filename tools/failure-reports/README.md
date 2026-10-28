@@ -13,10 +13,15 @@ runs there. Design: `docs/designs/auto-report-failures.md`.
    `dontbemichael-reports/failures`, permission Issues read and write. Save
    it in this repo (agentvivekkumar/dontbemichael) as the Actions secret
    `FAILURE_REPORT_KEY`. Release builds ship it; nothing else gets it.
+   Set the longest expiry GitHub offers (the form defaults to 30 days) and
+   put the date in your calendar: every installed version ships this key,
+   so when it expires they all stop sending, and a new key reaches people
+   only in a new release. Rotate it well before the date.
 3. As agentvivekkumar, create a fine grained token: repository access only
    `agentvivekkumar/dontbemichael`, permission Issues read and write. Save
    it in the reports repo as the Actions secret `MAIN_ISSUES_TOKEN`. Create
    the label `auto-report` in the main repo.
+   Give it the longest expiry too: when it expires the hourly run fails.
 4. Copy `promote.cjs` to the reports repo's root and `promote.yml` to its
    `.github/workflows/`. Run it once by hand (Actions, Promote reports, Run).
 

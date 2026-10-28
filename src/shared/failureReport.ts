@@ -15,9 +15,6 @@
  *  repo, and the sender refuses any other target (SR2). */
 export const REPORTS_REPO = 'dontbemichael-reports/failures';
 
-/** The public repo reports are promoted into by the Action. */
-export const MAIN_REPO = 'agentvivekkumar/dontbemichael';
-
 export const FAILURE_KINDS = [
   'main-uncaught', 'main-rejection', 'screen-crash', 'renderer-error', 'agent-exit',
   'router-throw', 'loop-messages', 'loop-agent', 'outbox-bad', 'research-inbox',
@@ -74,7 +71,8 @@ export const HIDDEN_ERRORS: Readonly<Record<string, string | null>> = {
   'failed': null
 };
 
-const CODE_SIDE = ['submit-failed', 'prepare-failed', 'answer-too-large', 'empty-prompt', 'answer-unparseable'] as const;
+/** The classes above that are bugs in the app, not sign in, credit or network. */
+const CODE_SIDE: readonly string[] = [...new Set(Object.values(HIDDEN_ERRORS).filter((c): c is string => c !== null))];
 
 export function hiddenErrorClass(reason: unknown): string | null {
   if (typeof reason !== 'string') return null;
@@ -144,11 +142,11 @@ const DETAIL: Readonly<Record<FailureKind, (d: string) => boolean>> = {
   'canary': (d) => d === 'release',
   'hidden-call-failed': (d) => {
     const [kind, cls] = d.split(':');
-    return (HIDDEN_CALL_KINDS as readonly string[]).includes(kind) && (CODE_SIDE as readonly string[]).includes(cls);
+    return (HIDDEN_CALL_KINDS as readonly string[]).includes(kind) && CODE_SIDE.includes(cls);
   },
   'trust-check-failed': (d) => {
     const [kind, cls] = d.split(':');
-    return kind === 'trust-check-failed' && (CODE_SIDE as readonly string[]).includes(cls);
+    return kind === 'trust-check-failed' && CODE_SIDE.includes(cls);
   }
 };
 
@@ -240,13 +238,18 @@ export function scrubFrames(stack: unknown): string[] {
   return out;
 }
 
-/** The constructor name, or `Error`. */
+/** A name shaped like an error class (`TypeError`, `AbortError`). Anything
+ *  else could be a record's own name field and never reaches an issue title. */
+export const ERROR_NAME_RE = /^(Error|[A-Z][A-Za-z]{0,30}(Error|Exception))$/;
+
+/** The error class name of a real Error, or `Error`. */
 export function errorName(err: unknown): string {
-  const n = err && typeof err === 'object' && typeof (err as { name?: unknown }).name === 'string'
-    ? (err as { name: string }).name
-    : err && typeof err === 'object' ? (err as object).constructor?.name : undefined;
-  return typeof n === 'string' && /^[A-Za-z]{1,40}$/.test(n) ? n : 'Error';
+  const n = err instanceof Error ? err.name : undefined;
+  return typeof n === 'string' && ERROR_NAME_RE.test(n) ? n : 'Error';
 }
+
+/** A release version, with the prerelease forms the release workflow publishes. */
+export const VERSION_RE = /^\d+\.\d+\.\d+(-(alpha|beta|rc)\.\d+)?$/;
 
 /** What the fingerprint hashes: no version and no line numbers, so a failure
  *  groups across releases and small edits. Main hashes it with sha256. */
@@ -290,10 +293,10 @@ export function validateReport(r: unknown): string | null {
   for (const k of Object.keys(x)) if (![...FIELDS, 'frames'].includes(k as keyof FailureReport)) return `unknown field ${k}`;
   if (!(FAILURE_KINDS as readonly string[]).includes(x.kind as string)) return 'kind';
   if (typeof x.detail !== 'string' || !DETAIL[x.kind as FailureKind](x.detail)) return 'detail';
-  if (typeof x.errorName !== 'string' || !/^[A-Za-z]{1,40}$/.test(x.errorName)) return 'errorName';
+  if (typeof x.errorName !== 'string' || !ERROR_NAME_RE.test(x.errorName)) return 'errorName';
   if (!Array.isArray(x.frames) || x.frames.length > MAX_FRAMES || !x.frames.every((f) => typeof f === 'string' && FRAME_RE.test(f))) return 'frames';
   if (typeof x.fingerprint !== 'string' || !/^[0-9a-f]{12}$/.test(x.fingerprint)) return 'fingerprint';
-  if (typeof x.appVersion !== 'string' || !/^\d+\.\d+\.\d+(-rc\.\d+)?$/.test(x.appVersion)) return 'appVersion';
+  if (typeof x.appVersion !== 'string' || !VERSION_RE.test(x.appVersion)) return 'appVersion';
   if (!['darwin', 'win32', 'linux'].includes(x.os as string)) return 'os';
   if (typeof x.osVersion !== 'string' || !/^\d+(\.\d+){0,3}$/.test(x.osVersion)) return 'osVersion';
   if (!['x64', 'arm64'].includes(x.arch as string)) return 'arch';

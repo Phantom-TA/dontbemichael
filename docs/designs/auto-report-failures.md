@@ -400,10 +400,13 @@ detect -> classify -> scrub -> ledger row (pending)
 ### Promotion Action (in the private reports repo, SR2)
 
 - Trigger: hourly schedule plus manual run, one run at a time. It reads the
-  reports repo's issues and comments updated since its last run, so a flood
-  of forged comments cannot burn Actions minutes per event.
-- Its state (the last run time, the ids of issues and comments already
-  counted, the `queued` set) is a `state.json` the Action commits to the
+  reports repo's issues and comments oldest change first from a cursor per
+  list, at most 50 a run, so a busy hour is finished by later runs and a
+  flood of forged comments cannot burn Actions minutes per event. Its own
+  "Promoted to" comments are skipped. (Ship red team, 2026-10-28: one page
+  since the last run lost anything past the first 50.)
+- Its state (the two cursors, the ids of issues and comments already
+  counted, the `queued` set of ids only, at most 200) is a `state.json` the Action commits to the
   reports repo with its own `GITHUB_TOKEN` (contents write); the app key has
   Issues only and cannot change it. Counting is by issue or comment id, so a
   re-read or edited comment is never counted twice, and `queued` reports are
@@ -414,8 +417,11 @@ detect -> classify -> scrub -> ledger row (pending)
   against the schema above (kind in the enum list,
   fingerprint 12 hex, version a published release of
   `agentvivekkumar/dontbemichael`, frames matching the frame pattern,
-  `seen-on` exactly the one line format). Any failure: label `rejected`,
-  nothing is promoted.
+  `seen-on` exactly the one line format, and the fingerprint the hash of
+  the report's own fields). Any failure: label `rejected`, nothing is
+  promoted. A failure that is GitHub's for now (the release list, a schema
+  that cannot be fetched, a report or search that does not answer) queues the
+  report or ends the run; it never rejects one.
 - Re-renders the main repo issue from the validated fields only (never copies
   text), label `auto-report`; dedupes in the main repo by fingerprint in the
   title; counts go into one "Seen on (unverified counts)" comment the Action
@@ -427,8 +433,8 @@ detect -> classify -> scrub -> ledger row (pending)
   it once per version with "seen again on <version>".
 - Links both ways (comment in each).
 - Caps per UTC day: 10 new main repo issues and 20 reopens; per run, one
-  edit of each "Seen on" comment, at most 50 reports read, and a 2 minute
-  timeout. Hourly runs of at most 2 minutes cost at most 1,440 minutes a month
+  edit of each "Seen on" comment, at most 50 reports read, a 60 second work
+  budget so state is always saved, and a 2 minute timeout. Hourly runs of at most 2 minutes cost at most 1,440 minutes a month
   (24 x 30 x 2), under the free private repo allowance of about 2,000
   [unverified]; a flood leaves the rest `queued`, it cannot use more minutes. Reports past a cap are `queued` and tried on the
   next run; nothing valid is lost.

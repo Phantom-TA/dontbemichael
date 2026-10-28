@@ -17,7 +17,7 @@ import { join, resolve, sep, basename, dirname, isAbsolute } from 'node:path';
 import { homedir, tmpdir, constants as osConstants } from 'node:os';
 import { request as httpsRequest } from 'node:https';
 import { PtyManager, type ProcessLaunch, type SpawnOptions } from './pty';
-import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath } from './shellEnv';
+import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath, userShellDoNotTrack } from './shellEnv';
 import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations, publishCopy } from './foundations';
@@ -220,6 +220,8 @@ app.setName(APP_NAME);
 // in userData/failures.jsonl, the queue failureSender files from. Created
 // before the crash handlers so they can use it; `hive` and `officeBreak` are
 // read late, inside try, since they are made further down.
+// The shell read blocks for a moment, so it never runs inside a crash handler.
+let shellDntRead = false;
 const failures = createFailureReporter({
   enabled: AUTO_FAILURE_REPORTS,
   ledgerPath: join(app.getPath('userData'), 'failures.jsonl'),
@@ -236,13 +238,15 @@ const failures = createFailureReporter({
     } catch { return 'none'; }
   },
   officeBreakActive: () => { try { return officeBreak.current() !== null; } catch { return false; } },
-  doNotTrack: dntSet,
+  // Process env first (cheap); the login shell's value is read once, after start.
+  doNotTrack: () => dntSet() || (shellDntRead && userShellDoNotTrack()),
   signalName: (n) => Object.entries(osConstants.signals).find(([, v]) => v === n)?.[0],
   readFile: (p) => { try { return readFileSync(p, 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; } },
   writeFile: (p, data) => writeFileAtomic(p, data),
   warn: (what, e) => console.warn(`[failure-report] ${what}:`, e)
 });
 setInterval(() => failures.flush(), FLUSH_MS).unref();
+setTimeout(() => { userShellDoNotTrack(); shellDntRead = true; }, 20_000).unref();
 
 // Keep the main process alive on an unexpected throw/rejection. The harness is a
 // multi-agent supervisor — a single stray throw (e.g. node-pty's ConPTY console
@@ -965,9 +969,6 @@ const pulse = new PulseService({
     return fsPromises.readFile(join(privateRoot(home), ORGANIZED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
   }
 });
-// The office log kinds Pulse counts, and the board each tick reads. Every
-// event also goes to the failure reporter first, which classifies it and
-// never throws (docs/designs/auto-report-failures.md, eng E-R2).
 hive.failureObserver = (kind, e) => failures.reportFailure(kind, e);
 // Files what the reporter keeps into the private reports repo, every 10
 // minutes and a minute after start. Dev builds have no key: nothing is sent.
@@ -981,9 +982,13 @@ const failureSender = createFailureSender({
   timeout: (ms) => AbortSignal.timeout(ms)
 });
 if (AUTO_FAILURE_REPORTS && __REPORT_KEY__) {
-  setTimeout(() => { void failureSender.tick(); }, 60_000).unref();
+  // Offices share one key: spread the first send so a release does not burst.
+  setTimeout(() => { void failureSender.tick(); }, 60_000 + Math.floor(Math.random() * 4 * 60_000)).unref();
   setInterval(() => { void failureSender.tick(); }, SEND_EVERY_MS).unref();
 }
+// The office log kinds Pulse counts, and the board each tick reads. Every
+// event also goes to the failure reporter first, which classifies it and
+// never throws (docs/designs/auto-report-failures.md, eng E-R2).
 hive.logObserver = (e) => {
   failures.observe(e);
   const kind = e.kind;
@@ -8897,7 +8902,7 @@ app.whenReady().then(() => {
 // before-quit covers Cmd-Q / dock-quit; the per-window close handler covers
 // the red close button. Both routes hit the same warning UX.
 app.on('before-quit', (e) => {
-  failures.flush();
+  failures.flush(true);
   if (allowQuit) return;
   const count = ptyManager.list().length;
   if (count === 0) return;
