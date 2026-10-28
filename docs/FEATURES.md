@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.8). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.9). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -210,6 +210,18 @@ moving, and brings you only the decisions that need you.
   as a picture, and a part you select pastes as clean as the whole, in light or dark mode.
 
 ## Part 2: Every change, release by release
+
+### 0.2.9 (2026-10-28)
+- Failures the developers can fix in code report themselves: a crash, a team member's terminal
+  ending abnormally, a router or hook failure, a team member stuck in a loop. Each report is fixed
+  fields only, with no names, messages or files, kept on your computer and filed to a private
+  repository, then copied field by field into a public issue. Anything you can fix yourself is
+  never sent, and DO_NOT_TRACK stops it.
+- Report a problem lists your office's recent automatic reports, so your words can be matched to
+  them.
+- Home and Manager setup text is 14px or more (#416, contributed by @glenmiracle18).
+- Hidden Claude calls start on Windows when the Claude path has a space (#426, contributed by
+  @theshloksschauhan).
 
 ### 0.2.8 (2026-10-27)
 - Copy on every file that opens in a tab: a draft pastes with its headings, bold, lists and links

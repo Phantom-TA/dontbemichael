@@ -1,5 +1,4 @@
-- **Copy any file** that opens in a tab.
-- **Report a problem** sits in the top bar.
-- **Places in Settings** are buttons.
-- Add a whole folder to a foundations card.
-- Contributor fixes across the app.
+- **Failures report themselves** to the developers, as fixed fields only.
+- Report a problem lists recent reports.
+- Larger setup text on Home and Manager.
+- Windows: hidden checks start when the Claude path has a space.
