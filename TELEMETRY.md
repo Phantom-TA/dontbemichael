@@ -142,8 +142,8 @@ a wrong recipient, Research being off) is never reported.
 member or customer names, file paths outside the app, mail, or anything you
 typed.
 
-**Where it goes.** The app files each report as an issue in a private
-repository; an hourly job re-renders the valid ones, field by field, into
+**Where it goes.** The app files each report as an issue in the private
+repository `dontbemichael-reports/failures`; an hourly job re-renders the valid ones, field by field, into
 public issues labelled `auto-report` on the main repository. Each computer
 keeps its own copy in `failures.jsonl` in the app's data folder, which is also
 where reports wait while you are offline.

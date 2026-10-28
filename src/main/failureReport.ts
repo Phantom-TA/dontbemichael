@@ -183,6 +183,8 @@ export function createFailureReporter(deps: FailureReporterDeps) {
       guarded(() => {
         const { frames, name } = describe(err);
         const code = err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined;
+        // A full disk is the owner's to fix, never a report (D11).
+        if (code === 'ENOSPC') return;
         record(kind, opts.detail ?? errorCodeDetail(code), name, frames, opts.agentId);
       });
     },

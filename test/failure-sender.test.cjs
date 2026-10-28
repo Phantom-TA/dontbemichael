@@ -250,3 +250,68 @@ test('an install writes at most 20 times a day, then waits for the day to pass',
   await sender.tick();
   assert.equal(calls.filter((m) => m === 'POST').length, 25, 'the next day it goes on');
 });
+
+test('a flush while a GitHub call is in flight never loses the send or the count', async () => {
+  // Value: protects=the ledger invariant across the sender's await: one row, ends sent, count folded (plan Section 4 async ordering); fails_when=the sender marks a stale copy or a flush overwrites the send; why_new=plan audit item 45; seam=injected fetch; no_claim=real file timing
+  let now = 1_700_000_000_000;
+  const files = new Map();
+  const reporter = createFailureReporter({
+    enabled: true, ledgerPath: '/ud/failures.jsonl', appVersion: '0.2.9', platform: 'darwin', osVersion: '15.1.0', arch: 'arm64',
+    now: () => now, sha256: (s) => crypto.createHash('sha256').update(s).digest('hex'), engineFor: () => 'claude',
+    officeBreakActive: () => false, doNotTrack: () => false, signalName: () => undefined,
+    readFile: (p) => files.get(p) ?? null, writeFile: (p, d) => files.set(p, d), warn: () => {}
+  });
+  const err = () => { const e = new Error('x'); e.stack = 'Error\n    at f (/x/app.asar/out/main/index.js:1:1)'; return e; };
+  reporter.reportFailure('router-throw', err());
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const sender = createFailureSender({
+    key: 'k', appVersion: '0.2.9', reporter, now: () => now, log: () => {},
+    fetch: async (url) => {
+      if (url.includes('/search/')) { await gate; return { status: 200, headers: hdrs(), json: async () => ({ items: [] }) }; }
+      return { status: 201, headers: hdrs(), json: async () => ({ number: 12 }) };
+    }
+  });
+  const ticking = sender.tick();
+  // Paused inside the search: the same failure happens again and a flush runs.
+  await new Promise((r) => setImmediate(r));
+  reporter.reportFailure('router-throw', err());
+  reporter.flush();
+  release();
+  await ticking;
+  const rows = files.get('/ud/failures.jsonl').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].state, 'sent');
+  assert.equal(rows[0].issue, 12);
+  assert.equal(rows[0].count, 2);
+});
+
+test('a full disk, no network and a rate limit in one run leave the app working and the ledger whole', async () => {
+  // Value: protects=the reporter and sender survive their worst day together (plan Section 6 chaos); fails_when=any of the three throws out or loses rows; why_new=plan audit item 47; seam=injected fs and fetch; no_claim=real ENOSPC or a real outage
+  let now = 1_700_000_000_000;
+  let diskFull = true;
+  const files = new Map();
+  const reporter = createFailureReporter({
+    enabled: true, ledgerPath: '/ud/failures.jsonl', appVersion: '0.2.9', platform: 'darwin', osVersion: '15.1.0', arch: 'arm64',
+    now: () => now, sha256: (s) => crypto.createHash('sha256').update(s).digest('hex'), engineFor: () => 'claude',
+    officeBreakActive: () => false, doNotTrack: () => false, signalName: () => undefined,
+    readFile: (p) => files.get(p) ?? null,
+    writeFile: (p, d) => { if (diskFull) { const e = new Error('full'); e.code = 'ENOSPC'; throw e; } files.set(p, d); },
+    warn: () => {}
+  });
+  for (let i = 0; i < 3; i++) { const e = new Error('x'); e.stack = `Error\n    at f${i} (/x/app.asar/out/main/index.js:${i + 1}:1)`; reporter.reportFailure('router-throw', e); }
+  assert.doesNotThrow(() => reporter.flush());
+  const answers = ['offline', { status: 403, headers: { 'retry-after': '60' } }];
+  const sender = createFailureSender({
+    key: 'k', appVersion: '0.2.9', reporter, now: () => now, log: () => {},
+    fetch: async () => { const a = answers.shift(); if (!a || a === 'offline') throw new Error('offline'); return { status: a.status, headers: hdrs(a.headers), json: async () => ({}) }; }
+  });
+  await sender.tick();
+  await sender.tick();
+  assert.equal(sender.state().stopped, false);
+  assert.equal(reporter.pending().length, 3, 'nothing lost while the disk is full and the network is down');
+  diskFull = false;
+  now += 61_000;
+  reporter.flush();
+  assert.equal(files.get('/ud/failures.jsonl').split('\n').filter(Boolean).length, 3, 'the ledger is written once the disk has room');
+});

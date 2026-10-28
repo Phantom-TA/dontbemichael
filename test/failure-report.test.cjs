@@ -226,3 +226,18 @@ test('the recent fingerprints are at most 5, the newest sent first', () => {
   both.r.markSent(both.r.pending()[0], 1);
   assert.deepEqual(both.r.recentFingerprints(), [row.fingerprint], 'one fingerprint once, across versions');
 });
+
+test('a full disk is the owner\'s: never kept as a report', () => {
+  // Value: protects=ENOSPC is not filed as an app bug (D11, plan kinds table); fails_when=a disk full error reaches the ledger; why_new=plan audit item 3; seam=none; no_claim=none beyond protects
+  const { r, files } = make();
+  const e = new Error('no space left on device');
+  e.code = 'ENOSPC';
+  r.reportFailure('main-uncaught', e);
+  r.flush();
+  assert.deepEqual(ledger(files), []);
+});
+
+test('an unreadable failure file gives Report a problem no fingerprints, never an error', () => {
+  const { r } = make({ deps: { readFile: () => { throw new Error('EACCES'); } } });
+  assert.deepEqual(r.recentFingerprints(), []);
+});

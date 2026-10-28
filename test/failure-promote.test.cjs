@@ -168,3 +168,55 @@ test('the promotion workflow stays inside the free Actions minutes', () => {
   assert.match(yml, /MAIN_ISSUES_TOKEN: \$\{\{ secrets\.MAIN_ISSUES_TOKEN \}\}/);
   assert.match(yml, /run: node promote\.cjs/);
 });
+
+test('a racing duplicate is labelled, the main issue links back, and Seen on is edited once a run', async () => {
+  // Value: protects=two offices filing one failure end as one main issue, marked duplicate in private, with one Seen on edit a run (plan Design > Promotion); fails_when=duplicates go unmarked, the back link goes missing or the comment is edited per report; why_new=plan audit items 34-36; seam=none; no_claim=GitHub's real search lag
+  const r = report();
+  const f = fakeGitHub({ priv: [privIssue(1, r), privIssue(2, r), privIssue(3, r)] });
+  const { state } = await run(f);
+  assert.deepEqual(f.labels, { 2: ['duplicate'], 3: ['duplicate'] });
+  assert.equal(f.mainIssues.length, 1);
+  assert.ok(f.calls.some((c) => c.p === `/repos/${MAIN}/issues/500/comments` && c.body.body === `From the automatic reports: ${REPORTS}#1.`));
+  const seenWrites = f.calls.filter((c) => (c.method === 'POST' && c.p === `/repos/${MAIN}/issues/500/comments` && /^Seen on/.test(c.body.body)) || (c.method === 'PATCH' && c.p.startsWith(`/repos/${MAIN}/issues/comments/`)));
+  assert.equal(seenWrites.length, 1, 'one Seen on write for three reports');
+  assert.equal(state.counts['0123456789ab']['0.2.9|darwin'], 6);
+});
+
+test('end to end: a main process throw becomes one private issue, then one main issue with fields only', async () => {
+  // Value: protects=the whole pipeline from a crash to the public issue carries no path, name or text (plan Section 6, 2am Friday); fails_when=any stage passes free text or loses the report; why_new=plan audit item 47; seam=fake GitHub; no_claim=real GitHub and Actions (T9 is the live check)
+  const crypto = require('node:crypto');
+  const { createFailureReporter } = loadTs('src/main/failureReport.ts');
+  const { createFailureSender } = loadTs('src/main/failureSender.ts');
+  const files = new Map();
+  const reporter = createFailureReporter({
+    enabled: true, ledgerPath: '/ud/failures.jsonl', appVersion: '0.2.9', platform: 'darwin', osVersion: '15.1.0', arch: 'arm64',
+    now: () => T0, sha256: (s) => crypto.createHash('sha256').update(s).digest('hex'), engineFor: () => 'claude',
+    officeBreakActive: () => false, doNotTrack: () => false, signalName: () => undefined,
+    readFile: (p) => files.get(p) ?? null, writeFile: (p, d) => files.set(p, d), warn: () => {}
+  });
+  const e = new TypeError('cannot read /Users/jane.smith/Harbor & Pine/customers.csv');
+  e.stack = `TypeError: cannot read /Users/jane.smith/Harbor & Pine/customers.csv\n    at Hive.routeOnce (/Applications/X.app/Contents/Resources/app.asar/out/main/index.js:3644:11)\n    at /Users/jane.smith/x/node_modules/y.js:1:1`;
+  reporter.reportFailure('router-throw', e);
+  reporter.flush();
+  // The private repo, as the sender sees it.
+  const priv = [];
+  const sender = createFailureSender({
+    key: 'k', appVersion: '0.2.9', reporter, now: () => T0, log: () => {},
+    fetch: async (url, init) => {
+      if (url.includes('/search/')) return { status: 200, headers: { get: () => null }, json: async () => ({ items: [] }) };
+      const b = JSON.parse(init.body);
+      const issue = { id: 7000 + priv.length, number: priv.length + 1, title: b.title, body: b.body };
+      priv.push(issue);
+      return { status: 201, headers: { get: () => null }, json: async () => issue };
+    }
+  });
+  await sender.tick();
+  assert.equal(priv.length, 1);
+  const f = fakeGitHub({ priv });
+  await run(f);
+  assert.equal(f.mainIssues.length, 1);
+  const pub = `${f.mainIssues[0].title}\n${f.mainIssues[0].body}`;
+  assert.doesNotMatch(pub, /jane|smith|Harbor|customers|Users|node_modules|cannot read/);
+  assert.match(pub, /out\/main\/index\.js:Hive\.routeOnce:3644/);
+  assert.deepEqual(schema.parseIssueBody(f.mainIssues[0].body).kind, 'router-throw');
+});

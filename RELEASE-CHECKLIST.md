@@ -43,6 +43,10 @@ See `tools/failure-reports/README.md` and `docs/designs/auto-report-failures.md`
 - [ ] **Within 3 hours of publishing, the reports repo's "Promote reports" run is green** and its
   summary shows the canary for this version. A failed run (GitHub emails you) means the key, the
   repo or the Action is broken: check the run's summary first.
+- [ ] **Reports that did not go through:** in the reports repo, issues labelled `rejected` failed the
+  checks and are never promoted; the run summary's "Queued" count is reports waiting on a daily
+  cap. If the Action is down, a report can be promoted by hand: open a main repo issue with the
+  same title and body, label `auto-report`.
 - [ ] **To stop all sending at once:** revoke the bot's token. To also stop detection and the
   local file, ship a release with `AUTO_FAILURE_REPORTS = false`.
 

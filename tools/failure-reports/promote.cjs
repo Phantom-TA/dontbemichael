@@ -39,7 +39,7 @@ function newer(a, b) {
 }
 
 function emptyState() {
-  return { firstRun: null, lastRun: null, counted: {}, queued: [], day: '', newIssues: 0, reopens: 0, counts: {}, seenComment: {}, mainIssue: {}, reopened: {}, linked: {}, canary: {} };
+  return { firstRun: null, lastRun: null, counted: {}, queued: [], day: '', newIssues: 0, reopens: 0, counts: {}, seenComment: {}, mainIssue: {}, privateFor: {}, reopened: {}, linked: {}, canary: {} };
 }
 
 function seenOnBody(fp, counts) {
@@ -83,6 +83,8 @@ async function runPromotion({ gh, schemaFor, state: given, now, reportsRepo, rep
   }
   const queued = [];
   const seenKeys = new Set();
+  // Fingerprints whose Seen on comment changed: edited once at the end of the run.
+  const dirty = new Set();
   let handled = 0;
 
   for (const item of items) {
@@ -128,8 +130,17 @@ async function runPromotion({ gh, schemaFor, state: given, now, reportsRepo, rep
       if (made.status !== 201) { failures.push(`create main issue: ${made.status}`); queued.push(item); continue; }
       main = made.json.number;
       state.newIssues++;
+      // The back link: which private report this came from (the fields are above).
+      await gh(mainToken, 'POST', `/repos/${MAIN_REPO}/issues/${main}/comments`, { body: `From the automatic reports: ${reportsRepo}#${item.number}.` });
     }
     state.mainIssue[fp] = main;
+    // Two offices racing on a new fingerprint each file a private issue: the
+    // later one is marked duplicate; its count still adds up below.
+    if (item.type === 'issue') {
+      const first = (state.privateFor ??= {})[fp];
+      if (first === undefined) state.privateFor[fp] = item.number;
+      else if (first !== item.number) await gh(reportsToken, 'POST', `/repos/${reportsRepo}/issues/${item.number}/labels`, { labels: ['duplicate'] });
+    }
 
     // Reopen once per version when it shows up again after the fixing release.
     const mi = await gh(mainToken, 'GET', `/repos/${MAIN_REPO}/issues/${main}`);
@@ -150,17 +161,22 @@ async function runPromotion({ gh, schemaFor, state: given, now, reportsRepo, rep
     const counts = (state.counts[fp] ??= {});
     const k = `${report.appVersion}|${report.os}`;
     counts[k] = (counts[k] ?? 0) + report.count;
-    if (state.seenComment[fp]) {
-      await gh(mainToken, 'PATCH', `/repos/${MAIN_REPO}/issues/comments/${state.seenComment[fp]}`, { body: seenOnBody(fp, counts) });
-    } else {
-      const c = await gh(mainToken, 'POST', `/repos/${MAIN_REPO}/issues/${main}/comments`, { body: seenOnBody(fp, counts) });
-      if (c.status === 201) state.seenComment[fp] = c.json.id;
-    }
+    dirty.add(fp);
     if (!state.linked[item.number]) {
       await gh(reportsToken, 'POST', `/repos/${reportsRepo}/issues/${item.number}/comments`, { body: `Promoted to ${MAIN_REPO}#${main}.` });
       state.linked[item.number] = 1;
     }
     state.counted[key] = 1;
+  }
+
+  for (const fp of dirty) {
+    const body = seenOnBody(fp, state.counts[fp]);
+    if (state.seenComment[fp]) {
+      await gh(mainToken, 'PATCH', `/repos/${MAIN_REPO}/issues/comments/${state.seenComment[fp]}`, { body });
+    } else {
+      const c = await gh(mainToken, 'POST', `/repos/${MAIN_REPO}/issues/${state.mainIssue[fp]}/comments`, { body });
+      if (c.status === 201) state.seenComment[fp] = c.json.id;
+    }
   }
 
   state.queued = queued;
