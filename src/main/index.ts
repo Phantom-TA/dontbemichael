@@ -6495,11 +6495,11 @@ setHiddenClaudeAuthEnv(() => {
   return env;
 });
 
+/** A Get Michael ready sign in started while the team used an API key. */
+let accountSignInFromKey = false;
 /** `claude auth status`, one at a time, never joining a read that started
  *  before a sign in ended, keeping the last known state on a failed read
  *  (engineSetup.makeClaudeAuthReader). */
-/** A Get Michael ready sign in started while the team used an API key. */
-let accountSignInFromKey = false;
 const claudeAuth = makeClaudeAuthReader((path, done) => {
   const env = buildPtyEnv(process.env, process.platform === 'win32' ? (process.env.PATH || '') : userShellPath());
   const cmd = claudeAuthStatusCommand(process.platform, path, process.env.ComSpec);

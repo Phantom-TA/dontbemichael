@@ -191,6 +191,13 @@ function versionOf(s: UpdateStatus): string | null {
   return 'version' in s ? s.version : null;
 }
 
+/** Whether a native updater error at install means this update can never
+ *  apply here: Squirrel rejects a bundle whose code signature does not meet
+ *  the running app's designated requirement. */
+export function isInstallRefusal(message: string): boolean {
+  return /did not pass validation|code requirement|code signature/i.test(message);
+}
+
 /**
  * Fold a new status into the current one.
  *
@@ -213,13 +220,6 @@ function versionOf(s: UpdateStatus): string | null {
  * meeting a Developer ID signed one) fails at every restart, so a refused
  * install moves to the manual download for good (`installFailed`).
  */
-
-/** Whether a native updater error at install means this update can never
- *  apply here: Squirrel rejects a bundle whose code signature does not meet
- *  the running app's designated requirement. */
-export function isInstallRefusal(message: string): boolean {
-  return /did not pass validation|code requirement|code signature/i.test(message);
-}
 export function reduceStatus(prev: UpdateStatus | null, next: UpdateStatus): UpdateStatus {
   if (!prev) return next;
   const pv = versionOf(prev);
