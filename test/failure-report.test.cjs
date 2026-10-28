@@ -330,3 +330,11 @@ test('sending waits while the reporter is told to hold', () => {
   assert.equal(r.pending().length, 1);
   assert.equal(r.pending()[0].state, 'pending', 'kept as pending, not local, while held');
 });
+
+test('a disk quota error is the owner\'s, like a full disk', () => {
+  // Value: protects=EDQUOT joins ENOSPC as never reported (D11); fails_when=only ENOSPC is skipped; why_new=review note fix; seam=none; no_claim=none beyond protects
+  const { r, files } = make();
+  r.reportFailure('router-throw', Object.assign(new Error('x'), { code: 'EDQUOT' }));
+  r.flush();
+  assert.equal(ledger(files).length, 0);
+});

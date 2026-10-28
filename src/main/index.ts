@@ -250,9 +250,15 @@ setInterval(() => failures.flush(), FLUSH_MS).unref();
 // The shell read blocks for a moment, so it runs on a timer, never in a crash
 // handler, and only in a build that can send at all.
 if (AUTO_FAILURE_REPORTS && __REPORT_KEY__ && !dntSet()) {
+  // Each read blocks for up to 3 s, so failed reads back off: 10 min, 30 min,
+  // 2 h, then every 6 h. Sending stays held meanwhile, said once in the log.
+  const retryMs = [10 * 60_000, 30 * 60_000, 2 * 3600_000, 6 * 3600_000];
+  let tries = 0;
   const readShellDnt = (): void => {
     shellDnt = userShellDoNotTrack();
-    if (shellDnt === null) setTimeout(readShellDnt, SEND_EVERY_MS).unref();
+    if (shellDnt !== null) return;
+    if (tries === 0) { try { hive.appendLog({ kind: 'failure-report-held', reason: 'shell-unread' }); } catch { /* best-effort */ } }
+    setTimeout(readShellDnt, retryMs[Math.min(tries++, retryMs.length - 1)]).unref();
   };
   setTimeout(readShellDnt, 20_000).unref();
 }

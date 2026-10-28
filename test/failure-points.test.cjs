@@ -191,7 +191,10 @@ test('DO_NOT_TRACK set in the login shell counts, fails closed, and is read away
   const index = read('src/main/index.ts');
   assert.match(index, /doNotTrack: \(\) => dntSet\(\) \|\| shellDnt === true,/);
   assert.match(index, /holdSending: \(\) => shellDnt === null,/);
-  assert.match(index, /if \(AUTO_FAILURE_REPORTS && __REPORT_KEY__ && !dntSet\(\)\) \{\n  const readShellDnt = \(\): void => \{\n    shellDnt = userShellDoNotTrack\(\);\n    if \(shellDnt === null\) setTimeout\(readShellDnt, SEND_EVERY_MS\)\.unref\(\);/);
+  assert.match(index, /if \(AUTO_FAILURE_REPORTS && __REPORT_KEY__ && !dntSet\(\)\) \{/);
+  assert.match(index, /const retryMs = \[10 \* 60_000, 30 \* 60_000, 2 \* 3600_000, 6 \* 3600_000\];/, 'failed reads back off');
+  assert.match(index, /shellDnt = userShellDoNotTrack\(\);\n    if \(shellDnt !== null\) return;\n    if \(tries === 0\) \{ try \{ hive\.appendLog\(\{ kind: 'failure-report-held', reason: 'shell-unread' \}\);/, 'the hold is said once in the log');
+  assert.match(index, /setTimeout\(readShellDnt, retryMs\[Math\.min\(tries\+\+, retryMs\.length - 1\)\]\)\.unref\(\);/);
   assert.ok(index.indexOf('let shellDnt: boolean | null = null;') < index.indexOf('const failures = createFailureReporter({'), 'declared before the reporter can call it');
   const shell = read('src/main/shellEnv.ts');
   assert.match(shell, /captureFromLoginShell\('printenv DO_NOT_TRACK'\)/);

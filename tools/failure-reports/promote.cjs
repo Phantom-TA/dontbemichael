@@ -283,13 +283,23 @@ async function runPromotion({ gh, schemaFor, state: given, now, reportsRepo, rep
   for (const fp of [...dirty]) {
     if (now() - at > RUN_BUDGET_MS + SEEN_BUDGET_MS) break;
     const body = seenOnBody(state.counts[fp]);
+    let ok;
     if (state.seenComment[fp]) {
-      await gh(mainToken, 'PATCH', `/repos/${MAIN_REPO}/issues/comments/${state.seenComment[fp]}`, { body });
+      const c = await gh(mainToken, 'PATCH', `/repos/${MAIN_REPO}/issues/comments/${state.seenComment[fp]}`, { body });
+      ok = c.status === 200;
+      // The comment was deleted: post a new one next run.
+      if (c.status === 404) delete state.seenComment[fp];
+      if (!ok) failures.push(`seen on ${fp}: ${c.status}`);
     } else {
       const c = await gh(mainToken, 'POST', `/repos/${MAIN_REPO}/issues/${state.mainIssue[fp]}/comments`, { body });
-      if (c.status === 201) state.seenComment[fp] = c.json.id;
+      ok = c.status === 201;
+      if (ok) state.seenComment[fp] = c.json.id;
+      else failures.push(`seen on ${fp}: ${c.status}`);
+      // The main issue was deleted: the next report of it files a new one.
+      if (c.status === 404 || c.status === 410) { delete state.mainIssue[fp]; ok = true; }
     }
-    dirty.delete(fp);
+    // A write that failed stays for the next run.
+    if (ok) dirty.delete(fp);
     save?.(snapshot());
   }
 

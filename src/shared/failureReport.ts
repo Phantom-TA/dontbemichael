@@ -119,7 +119,8 @@ export const LOG_KIND_CLASS: Readonly<Record<string, FailureClass>> = {
   'trust-layer': 'none', 'trust-retry': 'none', 'trust-wait': 'none', 'upkeep-to-research': 'none',
   'work-style-handoff-written': 'none',
   // The failure sender's own state changes.
-  'failure-report-stopped': 'none', 'failure-report-waiting': 'none', 'failure-report-dropped': 'none'
+  'failure-report-stopped': 'none', 'failure-report-waiting': 'none', 'failure-report-dropped': 'none',
+  'failure-report-held': 'none'
 };
 
 const ERROR_CODE = /^([A-Z][A-Z0-9_]{1,23}|none)$/;
@@ -150,6 +151,9 @@ const DETAIL: Readonly<Record<FailureKind, (d: string) => boolean>> = {
   }
 };
 
+/** Error codes the owner fixes (a full disk or quota), never a report (D11). */
+export const OWNER_ERROR_CODES: readonly string[] = ['ENOSPC', 'EDQUOT'];
+
 /** A Node error code as a detail, or `none`. */
 export function errorCodeDetail(code: unknown): string {
   return typeof code === 'string' && ERROR_CODE.test(code) ? code : 'none';
@@ -179,7 +183,10 @@ export function classifyLogEvent(
     return { kind: 'agent-exit', detail };
   }
   if (kind === 'proxy-degraded') return { kind: 'proxy-degraded', detail: 'proxy-bind' };
-  if (kind === 'hook-server-error') return { kind: 'hook-server', detail: errorCodeDetail(e.code) };
+  if (kind === 'hook-server-error') {
+    if (typeof e.code === 'string' && OWNER_ERROR_CODES.includes(e.code)) return null;
+    return { kind: 'hook-server', detail: errorCodeDetail(e.code) };
+  }
   if ((HIDDEN_CALL_KINDS as readonly string[]).includes(kind) || kind === 'trust-check-failed') {
     // trust-check-failed logs `error`, the callers log `reason` (eng OV3).
     const cls = hiddenErrorClass(e.reason ?? e.error);

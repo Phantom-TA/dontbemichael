@@ -184,3 +184,11 @@ test('every prerelease form the release workflow publishes is a valid version', 
   for (const v of ['0.2.9', '0.2.9-rc.1', '0.3.0-beta.2', '0.3.0-alpha.1']) assert.equal(S.validateReport({ ...base, appVersion: v }), null, v);
   for (const v of ['0.2.9-dev', '0.2.9-beta', 'v0.2.9', '0.2']) assert.equal(S.validateReport({ ...base, appVersion: v }), 'appVersion', v);
 });
+
+test('a full disk or quota is the owner\'s on every path, never a report', () => {
+  // Value: protects=owner fixable errors are never filed, from the hook log path as from a direct report (D11; DeepSeek); fails_when=hook-server-error with ENOSPC classifies as hook-server; why_new=DeepSeek review note; seam=none; no_claim=every errno an OS can give
+  assert.equal(S.classifyLogEvent({ kind: 'hook-server-error', code: 'ENOSPC' }), null);
+  assert.equal(S.classifyLogEvent({ kind: 'hook-server-error', code: 'EDQUOT' }), null);
+  assert.deepEqual(S.classifyLogEvent({ kind: 'hook-server-error', code: 'ECONNRESET' }), { kind: 'hook-server', detail: 'ECONNRESET' });
+  assert.equal(S.LOG_KIND_CLASS['failure-report-held'], 'none');
+});

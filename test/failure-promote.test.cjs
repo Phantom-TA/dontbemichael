@@ -425,3 +425,79 @@ test('only a state saved before the cursors starts them at its last run', async 
   await go({ lastRun: '2026-10-31T00:00:00.000Z', issueCursor: null, commentCursor: null });
   assert.doesNotMatch(seen[1], /since=/);
 });
+
+test('an older comment is reached before 50 newer issues: both lists run in one time order', async () => {
+  // Value: protects=a seen-on comment is never starved by a busy issue list (pass 2 fix; pass 3 found it untested); fails_when=issues are handled before older comments; why_new=pass 3 mutation testing; seam=fake GitHub; no_claim=GitHub's exact sort
+  const priv = Array.from({ length: 60 }, (_, i) => ({ ...privIssue(i + 1, report({ frames: [`out/main/index.js:t${i}:1`] })), updated_at: new Date(T0 - (50 - i % 50) * 60_000).toISOString() }));
+  const comment = { id: 77, issue_url: `https://api.github.com/repos/${REPORTS}/issues/1`, body: schema.seenOnLine(report({ appVersion: '0.2.8', os: 'win32', osVersion: '10.0.26100', arch: 'x64', count: 5 })), updated_at: new Date(T0 - 90 * 60_000).toISOString() };
+  const f = fakeGitHub({ priv, privComments: [comment] });
+  const { state } = await run(f);
+  assert.equal(state.counted.c77, 1, 'the older comment was handled in the first run');
+});
+
+test('past the daily cap a new fingerprint waits without a main repo search', async () => {
+  // Value: protects=a capped run spends no search quota (pass 2 fix; pass 3 found it untested); fails_when=the search runs before the cap check; why_new=pass 3 mutation testing; seam=fake GitHub; no_claim=GitHub's search limits
+  const f = fakeGitHub({ priv: [privIssue(1, report())] });
+  const day = new Date(T0).toISOString().slice(0, 10);
+  const out = await run(f, { day, newIssues: 10 });
+  assert.equal(f.calls.filter((c) => c.p.startsWith('/search/')).length, 0);
+  assert.equal(out.state.queued.length, 1);
+  assert.equal(out.state.queued[0].tries, 0, 'a cap wait is not a failed try');
+  assert.ok(out.failures.includes('daily cap reached: new issues'));
+});
+
+test('a Seen on edit left from a run is made on the next one, and one that fails stays for later', async () => {
+  // Value: protects=counts reach the public Seen on comment even when a run ran out of time or GitHub failed (pass 2 fix and pass 3 note); fails_when=seenDirty is not carried, a failed edit is dropped, or a deleted comment is PATCHed forever; why_new=pass 3 mutation testing and review note; seam=fake GitHub; no_claim=none beyond protects
+  const carried = { seenDirty: [FP], seenComment: { [FP]: 123 }, mainIssue: { [FP]: 500 }, counts: { [FP]: { '0.2.9|darwin': 4 } } };
+  const f = fakeGitHub({ priv: [] });
+  const ok = await run(f, carried);
+  assert.ok(f.calls.some((c) => c.method === 'PATCH' && c.p === `/repos/${MAIN}/issues/comments/123`));
+  assert.deepEqual(ok.state.seenDirty, []);
+
+  const g = fakeGitHub({ priv: [] });
+  const down = async (token, method, p, body) => (method === 'PATCH' && p.includes('/issues/comments/') ? { status: 502, json: null } : g.gh(token, method, p, body));
+  const failed = await runPromotion({ gh: down, schemaFor: async () => schema, state: carried, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.deepEqual(failed.state.seenDirty, [FP], 'kept for the next run');
+  assert.ok(failed.failures.includes(`seen on ${FP}: 502`));
+
+  const h = fakeGitHub({ priv: [] });
+  const gone = async (token, method, p, body) => (method === 'PATCH' && p.includes('/issues/comments/') ? { status: 404, json: null } : h.gh(token, method, p, body));
+  const deleted = await runPromotion({ gh: gone, schemaFor: async () => schema, state: carried, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.equal(deleted.state.seenComment[FP], undefined, 'a deleted comment is forgotten');
+  const again = await run(h, deleted.state);
+  assert.ok(h.calls.some((c) => c.method === 'POST' && c.p === `/repos/${MAIN}/issues/500/comments` && /^Seen on/.test(c.body.body)), 'and posted anew');
+  assert.deepEqual(again.state.seenDirty, []);
+});
+
+test('Seen on edits stop past their own budget and wait for the next run', async () => {
+  // Value: protects=the run saves state inside the job timeout even with many Seen on edits (pass 2 fix; pass 3 found it untested); fails_when=the Seen on loop ignores the clock; why_new=pass 3 mutation testing; seam=fake clock; no_claim=GitHub Actions' real timeout
+  let calls = 0;
+  const now = () => (calls++ === 0 ? T0 : T0 + 100_000);
+  const carried = { seenDirty: [FP], seenComment: { [FP]: 123 }, mainIssue: { [FP]: 500 }, counts: { [FP]: { '0.2.9|darwin': 4 } } };
+  const f = fakeGitHub({ priv: [] });
+  const out = await runPromotion({ gh: f.gh, schemaFor: async () => schema, state: carried, now, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.equal(f.calls.filter((c) => c.method === 'PATCH').length, 0);
+  assert.deepEqual(out.state.seenDirty, [FP]);
+});
+
+test('a save in the middle of a run still holds the queued reports not yet reached', async () => {
+  // Value: protects=a run killed after its first save loses no queued report (pass 2 fix; pass 3 found it untested); fails_when=the snapshot's queue leaves out unreached items; why_new=pass 3 mutation testing; seam=save callback; no_claim=SIGKILL timing
+  const priv = Array.from({ length: 3 }, (_, i) => privIssue(i + 1, report({ frames: [`out/main/index.js:q${i}:1`] })));
+  const f = fakeGitHub({ priv });
+  const saves = [];
+  const queued = priv.map((p) => ({ type: 'issue', id: p.id, number: p.number }));
+  await runPromotion({ gh: f.gh, schemaFor: async () => schema, state: { queued }, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm', save: (s) => saves.push(JSON.parse(JSON.stringify(s))) });
+  const firstAfterItem = saves.find((s) => s.counted[`i${priv[0].id}`]);
+  const ids = firstAfterItem.queued.map((q) => q.id);
+  assert.ok(ids.includes(priv[1].id) && ids.includes(priv[2].id), 'the two not yet reached are in the saved queue');
+});
+
+test('a deleted main issue is forgotten instead of failing every run', async () => {
+  // Value: protects=a main issue the owner deleted never turns every run red; the next report files a new one; fails_when=a 404 on the Seen on post keeps the fingerprint dirty for good; why_new=found reviewing the Seen on retry; seam=fake GitHub; no_claim=none beyond protects
+  const carried = { seenDirty: [FP], mainIssue: { [FP]: 500 }, counts: { [FP]: { '0.2.9|darwin': 4 } } };
+  const f = fakeGitHub({ priv: [] });
+  const gone = async (token, method, p, body) => (method === 'POST' && p === `/repos/${MAIN}/issues/500/comments` ? { status: 404, json: null } : f.gh(token, method, p, body));
+  const out = await runPromotion({ gh: gone, schemaFor: async () => schema, state: carried, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'm' });
+  assert.deepEqual(out.state.seenDirty, []);
+  assert.equal(out.state.mainIssue[FP], undefined);
+});

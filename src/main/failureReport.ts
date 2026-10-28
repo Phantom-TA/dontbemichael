@@ -15,7 +15,7 @@
  */
 import {
   classifyLogEvent, cleanOsVersion, errorCodeDetail, errorName, fingerprintInput, scrubFrames,
-  validateReport, ERROR_NAME_RE, HIDDEN_CALL_KINDS, KIND_CLASS, type FailureKind, type FailureReport
+  validateReport, ERROR_NAME_RE, OWNER_ERROR_CODES, HIDDEN_CALL_KINDS, KIND_CLASS, type FailureKind, type FailureReport
 } from '../shared/failureReport';
 
 export const LEDGER_MAX_BYTES = 1024 * 1024;
@@ -214,7 +214,7 @@ export function createFailureReporter(deps: FailureReporterDeps) {
         const { frames, name } = describe(err);
         const code = err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined;
         // A full disk is the owner's to fix, never a report (D11).
-        if (code === 'ENOSPC') return;
+        if (typeof code === 'string' && OWNER_ERROR_CODES.includes(code)) return;
         record(kind, opts.detail ?? errorCodeDetail(code), name, frames, opts.agentId);
       });
     },
