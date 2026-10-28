@@ -35,3 +35,5 @@ You only do this once. The app is signed with an Apple Developer ID and notarize
 You also need [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and signed in.
 
 When a new version comes out, the app tells you and links to the download. Install it the same way.
+
+**On 0.2.5 or older?** Those versions can't install signed updates on their own: Restart to update keeps coming back. Download the `.dmg` above and install it the same way, once. Updates work as usual after that.
