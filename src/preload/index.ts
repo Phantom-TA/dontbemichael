@@ -823,6 +823,11 @@ const api = {
    *  the picture shown in Downloads. Answers once the report page opened. */
   reportProblem: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('app:reportProblem'),
+  /** A screen crash or renderer error, for automatic failure reports. Main
+   *  scrubs and checks it again; no message text is sent, only the name and
+   *  the stack (docs/designs/auto-report-failures.md). */
+  reportFailure: (f: { kind: 'screen-crash' | 'renderer-error'; name: string; stack: string }): void =>
+    ipcRenderer.send('failure:report', f),
   /** The right-click "Copy link address" label, in the app language. */
   setCopyLinkLabel: (label: string): void =>
     ipcRenderer.send('app:setCopyLinkLabel', label),

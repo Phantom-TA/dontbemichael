@@ -164,3 +164,15 @@ test('Help ▸ Report a problem… and the button run the same reporter', () => 
   assert.match(main, /return image\.isEmpty\(\) \? null : image\.toPNG\(\);/);
   assert.match(read('src/preload/index.ts'), /reportProblem: \(\): Promise<\{ ok: boolean; error\?: string \}> =>\s+ipcRenderer\.invoke\('app:reportProblem'\)/);
 });
+
+test('the report link adds only this office\'s recent automatic report fingerprints', () => {
+  // Value: protects=a person's report links to the automatic issue and still holds nothing private (E7, eng E-R5); fails_when=other text reaches the URL or the field id drifts; why_new=E7; seam=none; no_claim=GitHub prefilling the field
+  const base = { appVersion: '0.2.9', platform: 'darwin', arch: 'arm64' };
+  const u = new URL(reportProblemUrl({ ...base, fingerprints: ['0123456789ab', 'not a fingerprint /Users/jane', 'aaaaaaaaaaaa', 'b', 'c', 'd', 'e', 'f'] }));
+  assert.equal(u.searchParams.get('logs'), 'Recent automatic reports: 0123456789ab, aaaaaaaaaaaa');
+  assert.doesNotMatch(u.toString(), /jane|Users/);
+  assert.equal(new URL(reportProblemUrl({ ...base, fingerprints: [] })).searchParams.has('logs'), false);
+  const many = Array.from({ length: 9 }, (_, i) => String(i).repeat(12));
+  assert.equal(new URL(reportProblemUrl({ ...base, fingerprints: many })).searchParams.get('logs').split(', ').length, 5);
+  assert.match(read('.github/ISSUE_TEMPLATE/bug_report.yml'), /id: logs\b/);
+});

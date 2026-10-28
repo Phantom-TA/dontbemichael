@@ -14,10 +14,10 @@ import {
 import { promises as fsPromises } from 'node:fs';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { join, resolve, sep, basename, dirname, isAbsolute } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, tmpdir, constants as osConstants } from 'node:os';
 import { request as httpsRequest } from 'node:https';
 import { PtyManager, type ProcessLaunch, type SpawnOptions } from './pty';
-import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath } from './shellEnv';
+import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath, userShellDoNotTrack } from './shellEnv';
 import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations, publishCopy } from './foundations';
@@ -123,7 +123,15 @@ import { CostLedgerTotals } from './costLifetime';
 import { RUN_COMPARE_MODEL, RUN_COMPARE_TIMEOUT_MS, RunCompare } from './runCompare';
 import { runHiddenModel } from './hiddenModel';
 import { CostLedgerStore } from './costLedger';
-import { analytics, isRendererMessageSurface } from './analytics';
+import { analytics, dntSet, isRendererMessageSurface } from './analytics';
+import { createFailureReporter, FLUSH_MS } from './failureReport';
+import { loopAgentDetail } from '../shared/failureReport';
+import { createFailureSender, SEND_EVERY_MS } from './failureSender';
+
+/** The failure reports key (docs/designs/auto-report-failures.md): injected by
+ *  release CI from FAILURE_REPORT_KEY, '' in every other build. */
+declare const __REPORT_KEY__: string;
+import { writeFileAtomic } from './atomicFile';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
 import * as integrations from './integrations';
@@ -173,7 +181,7 @@ import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalS
 import { loadHero } from './hero';
 import { loadModelCatalog } from './modelCatalog';
 import { claudeCliVersion } from './claudeCliVersion';
-import { ALLOW_TEMP_WORKERS } from '../shared/buildFeatures';
+import { ALLOW_TEMP_WORKERS, AUTO_FAILURE_REPORTS } from '../shared/buildFeatures';
 import { APP_NAME, APP_DATA_DIR, APP_URL_SCHEME } from '../shared/appName';
 import { copyOfficeData, homeFolderStatus, homeReadyAtLaunch } from './homeFolder';
 import { backfillOfficeRecord, findOffice, folderLayoutFor, isUsableTeamFolder, syncOfficeRecord } from './officeFile';
@@ -208,20 +216,71 @@ const isDev = !!process.env.ELECTRON_RENDERER_URL;
 app.setPath('userData', join(app.getPath('appData'), APP_DATA_DIR));
 app.setName(APP_NAME);
 
+// Automatic failure reports: notices what used to fail silently and keeps it
+// in userData/failures.jsonl, the queue failureSender files from. Created
+// before the crash handlers so they can use it; `hive` and `officeBreak` are
+// read late, inside try, since they are made further down.
+// DO_NOT_TRACK as the login shell exports it (SR4): null until read.
+let shellDnt: boolean | null = null;
+const failures = createFailureReporter({
+  enabled: AUTO_FAILURE_REPORTS,
+  ledgerPath: join(app.getPath('userData'), 'failures.jsonl'),
+  appVersion: app.getVersion(),
+  platform: process.platform,
+  osVersion: process.getSystemVersion(),
+  arch: process.arch,
+  now: () => Date.now(),
+  sha256: (s) => createHash('sha256').update(s).digest('hex'),
+  engineFor: (agentId) => {
+    try {
+      if (agentId) return hive.registry().agents[agentId]?.provider ?? 'claude';
+      return readConfig().godProvider ?? 'claude';
+    } catch { return 'none'; }
+  },
+  officeBreakActive: () => { try { return officeBreak.current() !== null; } catch { return false; } },
+  doNotTrack: () => dntSet() || shellDnt === true,
+  // Nothing is sent until the shell has been read: an opt out never fails open.
+  holdSending: () => shellDnt === null,
+  signalName: (n) => Object.entries(osConstants.signals).find(([, v]) => v === n)?.[0],
+  readFile: (p) => { try { return readFileSync(p, 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; } },
+  writeFile: (p, data) => writeFileAtomic(p, data),
+  warn: (what, e) => console.warn(`[failure-report] ${what}:`, e)
+});
+setInterval(() => failures.flush(), FLUSH_MS).unref();
+// The shell read blocks for a moment, so it runs on a timer, never in a crash
+// handler, and only in a build that can send at all.
+if (AUTO_FAILURE_REPORTS && __REPORT_KEY__ && !dntSet()) {
+  // Each read blocks for up to 3 s, so failed reads back off: 10 min, 30 min,
+  // 2 h, then every 6 h. Sending stays held meanwhile, said once in the log.
+  const retryMs = [10 * 60_000, 30 * 60_000, 2 * 3600_000, 6 * 3600_000];
+  let tries = 0;
+  const readShellDnt = (): void => {
+    shellDnt = userShellDoNotTrack();
+    if (shellDnt !== null) return;
+    if (tries === 0) { try { hive.appendLog({ kind: 'failure-report-held', reason: 'shell-unread' }); } catch { /* best-effort */ } }
+    setTimeout(readShellDnt, retryMs[Math.min(tries++, retryMs.length - 1)]).unref();
+  };
+  setTimeout(readShellDnt, 20_000).unref();
+}
+
 // Keep the main process alive on an unexpected throw/rejection. The harness is a
 // multi-agent supervisor — a single stray throw (e.g. node-pty's ConPTY console
 // helper choking when a fast-exiting agent CLI's console is already gone) must
 // NOT take the whole app and every running agent down with it. Log and continue
 // rather than letting the default handler exit the process.
 // (Restored during the #71 merge — the PR's rebase dropped these handlers.)
+// Each one is also an automatic failure report (docs/designs/auto-report-failures.md).
 process.on('uncaughtException', (err) => {
   console.error('[main] uncaughtException (kept alive):', err);
+  failures.reportFailure('main-uncaught', err);
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[main] unhandledRejection (kept alive):', reason);
+  failures.reportFailure('main-rejection', reason);
 });
 
 const ptyManager = new PtyManager();
+ptyManager.onFailure = (kind, detail) => failures.reportFailure(kind, undefined, { detail });
 
 function runCodexDaemonCommand(
   executable: string,
@@ -925,8 +984,28 @@ const pulse = new PulseService({
     return fsPromises.readFile(join(privateRoot(home), ORGANIZED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
   }
 });
-// The office log kinds Pulse counts, and the board each tick reads.
+hive.failureObserver = (kind, e) => failures.reportFailure(kind, e);
+// Files what the reporter keeps into the private reports repo, every 10
+// minutes and a minute after start. Dev builds have no key: nothing is sent.
+const failureSender = createFailureSender({
+  key: __REPORT_KEY__,
+  appVersion: app.getVersion(),
+  reporter: failures,
+  fetch: (url, init) => fetch(url, init),
+  now: () => Date.now(),
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+  timeout: (ms) => AbortSignal.timeout(ms)
+});
+if (AUTO_FAILURE_REPORTS && __REPORT_KEY__) {
+  // Offices share one key: spread the first send so a release does not burst.
+  setTimeout(() => { void failureSender.tick(); }, 60_000 + Math.floor(Math.random() * 4 * 60_000)).unref();
+  setInterval(() => { void failureSender.tick(); }, SEND_EVERY_MS).unref();
+}
+// The office log kinds Pulse counts, and the board each tick reads. Every
+// event also goes to the failure reporter first, which classifies it and
+// never throws (docs/designs/auto-report-failures.md, eng E-R2).
 hive.logObserver = (e) => {
+  failures.observe(e);
   const kind = e.kind;
   if (kind === 'message') {
     const from = typeof e.from === 'string' ? e.from : '';
@@ -2485,6 +2564,10 @@ function runBreakerBeat(progressWindowMs: number): void {
     if (d.action === 'none') continue;
     const name = reg.agents[d.state.agentId]?.name ?? d.state.agentId;
     const reason = d.state.reason;
+    // A member stuck in a loop is a failure report; a spending or token cap is
+    // the owner's setting and is not (docs/designs/auto-report-failures.md).
+    const loop = loopAgentDetail(d.action, reason);
+    if (loop) failures.reportFailure('loop-agent', undefined, { detail: loop, agentId: d.state.agentId });
     if (d.action === 'steer' || d.action === 'constrain') {
       // The member hears it; on a constrain Michael does too (breakerMessages).
       // No toast: a constrain is a soft pause Michael handles (only Michael
@@ -3798,7 +3881,8 @@ const reporter = createReporter<BrowserWindow>({
   now: () => new Date(),
   urlInputs: () => ({
     appVersion: app.getVersion(), platform: process.platform, arch: process.arch,
-    osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : ''
+    osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : '',
+    fingerprints: failures.recentFingerprints()
   }),
   warn: (step, error) => console.warn(`[report] ${step} failed:`, error)
 });
@@ -4762,6 +4846,8 @@ ipcMain.handle('app:copyRich', (_evt, input: unknown) => copyRich(clipboard, inp
 ipcMain.handle('app:copyImage', (_evt, bytes: unknown) => copyImage(clipboard, nativeImage, bytes));
 // The top bar's Report a problem: it answers once the report page opened; the
 // picture keeps saving after (docs/designs/report-problem-top-bar.md).
+ipcMain.on('failure:report', (_evt, f: unknown) => { failures.reportRenderer(f); });
+
 ipcMain.handle('app:reportProblem', async (evt) => {
   const r = await reporter.report(BrowserWindow.fromWebContents(evt.sender));
   return r.ok ? { ok: true } : { ok: false, error: r.error };
@@ -8831,6 +8917,7 @@ app.whenReady().then(() => {
 // before-quit covers Cmd-Q / dock-quit; the per-window close handler covers
 // the red close button. Both routes hit the same warning UX.
 app.on('before-quit', (e) => {
+  failures.flush(true);
   if (allowQuit) return;
   const count = ptyManager.list().length;
   if (count === 0) return;

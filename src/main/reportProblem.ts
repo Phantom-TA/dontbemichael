@@ -29,7 +29,7 @@ export interface ReporterDeps<W> {
   writeFile: (path: string, bytes: Uint8Array) => Promise<void>;
   showItemInFolder: (path: string) => void;
   now: () => Date;
-  urlInputs: () => { appVersion: string; platform: string; arch: string; osVersion?: string };
+  urlInputs: () => { appVersion: string; platform: string; arch: string; osVersion?: string; fingerprints?: readonly string[] };
   warn: (step: 'capture' | 'open' | 'save', error: unknown) => void;
 }
 

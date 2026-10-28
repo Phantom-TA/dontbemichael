@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const loadTs = require('./load-ts.cjs');
 const { writeFileAtomic } = loadTs('src/main/atomicFile.ts');
 const { mcpListLaunch } = loadTs('src/main/claudeMcpList.ts');
+const { hiddenClaudeLaunch } = loadTs('src/main/hiddenClaude.ts');
 
 function fakeOps(renameFailures, platform = 'win32') {
   const calls = { renames: 0, sleeps: [], removed: [] };
@@ -66,4 +67,22 @@ test('the Claude status check runs a Windows claude.cmd through cmd.exe', () => 
   assert.deepEqual(l.args, [`/d /s /c ""${bin}" mcp list"`]);
   assert.deepEqual(mcpListLaunch('win32', 'C:\\tools\\claude.exe'), { file: 'C:\\tools\\claude.exe', args: ['mcp', 'list'] });
   assert.deepEqual(mcpListLaunch('darwin', '/usr/local/bin/claude'), { file: '/usr/local/bin/claude', args: ['mcp', 'list'] });
+});
+
+test('hidden Claude runs a Windows claude.cmd through cmd.exe with preserved quotes for paths with spaces', () => {
+  // Value: protects=hidden Claude sessions (trust layer, memory tidy, hire check) start when Windows username has a space; fails_when=bare unquoted exe splits at space in cmd.exe; why_new=#426; seam=none
+  const bin = 'C:\\Users\\Jane Smith\\AppData\\Roaming\\npm\\claude.cmd';
+  const args = ['--session-id', '1111', '--settings', '{"disableAllHooks":true}'];
+  const l = hiddenClaudeLaunch('win32', bin, args, 'C:\\Windows\\system32\\cmd.exe');
+  assert.equal(l.file, 'C:\\Windows\\system32\\cmd.exe');
+  assert.equal(l.args, `/d /s /c ""${bin}" --session-id 1111 --settings "{\\"disableAllHooks\\":true}""`);
+  assert.deepEqual(hiddenClaudeLaunch('win32', 'C:\\tools\\claude.exe', args), { file: 'C:\\tools\\claude.exe', args });
+  assert.deepEqual(hiddenClaudeLaunch('darwin', '/usr/local/bin/claude', args), { file: '/usr/local/bin/claude', args });
+});
+
+test('hidden Claude keeps the empty --tools value when it goes through cmd.exe', () => {
+  // Value: protects=no tools hidden calls (the trust layer reads web answers) stay without the owner's connectors; fails_when=an empty argument vanishes from the cmd.exe line, so --strict-mcp-config becomes the --tools value and connectors load; why_new=#426 review; seam=none
+  const bin = 'C:\\Users\\Jane Smith\\AppData\\Roaming\\npm\\claude.cmd';
+  const l = hiddenClaudeLaunch('win32', bin, ['--model', 'sonnet', '--tools', '', '--strict-mcp-config'], 'cmd.exe');
+  assert.equal(l.args, `/d /s /c ""${bin}" --model sonnet --tools "" --strict-mcp-config"`);
 });

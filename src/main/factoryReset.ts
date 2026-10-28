@@ -101,7 +101,10 @@ export const APP_DATA_ENTRIES = [
 export const APP_DATA_KEPT = [
   'config.json', 'hero.json', 'model-catalog.json', 'skill-catalog.json', 'last-run-version', 'updater.log',
   // The anonymous usage id and its version stamp (analytics.ts).
-  'telemetry-install-id', 'telemetry-last-version'
+  'telemetry-install-id', 'telemetry-last-version',
+  // Automatic failure reports and its one old file (failureReport.ts): fixed
+  // fields about this install, no office data, and reports still owed.
+  'failures.jsonl', 'failures.1.jsonl'
 ] as const;
 
 /** Is this folder an office the app made, and not the owner's home folder or a

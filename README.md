@@ -41,10 +41,10 @@ runs on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.2.8: Copy any file, and Report a problem in the top bar.**
-> A draft that opens in a tab pastes with its headings and links into Gmail, Google Docs or
-> WordPress, or as clean words into a plain box. Places in Settings that Michael names are buttons.
-> Add a whole folder from a Company foundations card.
+> **New in 0.2.9: Failures report themselves.**
+> When something breaks that the developers can fix in code, the app files a report on its own, as
+> fixed fields only, with no names, messages or files. Anything you can fix yourself is never sent,
+> and setting DO_NOT_TRACK stops it. In 0.2.8, copy any file that opens in a tab.
 
 ## Contents
 
@@ -317,7 +317,9 @@ follow.
   trust layer that keeps out the kinds of data you mark private in Settings, Research & privacy,
   and their answers are cleaned of instructions before your team reads them. They see none of your
   files, and they are off until you turn them on. On Windows, they can still reach your office files.
-- **No usage data.** The app sends nothing about how you use it. See [`TELEMETRY.md`](./TELEMETRY.md).
+- **No usage data.** The app sends nothing about how you use it. Failures the developers can fix
+  in code (a crash, a team member stuck in a loop) are reported automatically, as fixed fields with
+  no names, messages or files, so they get fixed. See [`TELEMETRY.md`](./TELEMETRY.md).
 
 ## For developers
 
