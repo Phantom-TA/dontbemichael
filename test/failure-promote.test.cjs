@@ -150,3 +150,10 @@ test('the canary is a valid report that names no machine', () => {
   assert.equal(r.appVersion, '0.2.9');
   assert.equal(c.title, schema.issueTitle(r));
 });
+
+test('a main repo key that does not work fails the run', async () => {
+  const f = fakeGitHub({ priv: [] });
+  const gh = async (token, method, p, body) => (p.startsWith(`/repos/${MAIN}/releases`) ? { status: 401, json: { message: 'Bad credentials' } } : f.gh(token, method, p, body));
+  const out = await runPromotion({ gh, schemaFor: async () => schema, state: null, now: () => T0, reportsRepo: REPORTS, reportsToken: 'r', mainToken: 'bad' });
+  assert.deepEqual(out.failures, ['main repo not reachable with MAIN_ISSUES_TOKEN: 401']);
+});

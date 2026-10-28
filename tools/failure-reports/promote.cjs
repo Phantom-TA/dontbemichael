@@ -67,6 +67,8 @@ async function runPromotion({ gh, schemaFor, state: given, now, reportsRepo, rep
 
   const rel = await gh(mainToken, 'GET', `/repos/${MAIN_REPO}/releases?per_page=100`);
   const releases = rel.status === 200 && Array.isArray(rel.json) ? rel.json.filter((r) => !r.draft) : [];
+  // A wrong or expired MAIN_ISSUES_TOKEN must fail the run, not look like a quiet hour.
+  if (rel.status !== 200) failures.push(`main repo not reachable with MAIN_ISSUES_TOKEN: ${rel.status}`);
   const published = new Set(releases.map((r) => String(r.tag_name).replace(/^v/, '')));
 
   // Queued first, then what changed since the last run, at most 50 in all.
@@ -171,7 +173,7 @@ async function runPromotion({ gh, schemaFor, state: given, now, reportsRepo, rep
     const ver = String(newest.tag_name).replace(/^v/, '');
     if (at - Date.parse(newest.published_at) > CANARY_GRACE_MS && !state.canary[ver]) failures.push(`no canary for ${ver}`);
   }
-  return { state, failures };
+  return { state, failures, releasesSeen: releases.length };
 }
 
 async function main() {
@@ -207,7 +209,7 @@ async function main() {
   const state = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf8')) : null;
   const out = await runPromotion({ gh, schemaFor, state, now: () => Date.now(), reportsRepo, reportsToken, mainToken });
   fs.writeFileSync(stateFile, JSON.stringify(out.state, null, 2) + '\n');
-  const summary = [`Last report check: ${out.state.lastRun}`, `Queued: ${out.state.queued.length}`, ...out.failures.map((f) => `FAILED: ${f}`)].join('\n');
+  const summary = [`Last report check: ${out.state.lastRun}`, `Main repo releases seen: ${out.releasesSeen}`, `Queued: ${out.state.queued.length}`, ...out.failures.map((f) => `FAILED: ${f}`)].join('\n');
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + '\n');
   console.log(summary);
   if (out.failures.length) process.exitCode = 1;
