@@ -190,4 +190,6 @@ test('the backfill files a turn cap stop under Max turns, not the tool\'s own ru
   const { turnCapReason } = loadTs('src/main/turnCap.ts');
   assert.equal(gateOfTool('Bash', turnCapReason(3)), 'turn-cap', 'not the sandbox');
   assert.equal(gateOfTool('Read', turnCapReason(1)), 'turn-cap', 'not the folder walls');
+  assert.equal(gateOfTool('AskUserQuestion', turnCapReason(2)), 'turn-cap', 'a question past the cap, as hooks.ts counts it live');
+  assert.equal(gateOfTool('AskUserQuestion', 'Ask Michael instead.'), null, 'a routed question is still not a refusal');
 });
