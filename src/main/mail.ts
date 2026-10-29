@@ -804,6 +804,33 @@ export class MailService {
     return Buffer.isBuffer(m.source) ? m.source : Buffer.from(m.source);
   }
 
+  /** The email with this Message-ID, looked for where mail goes when it leaves
+   *  the inbox: the inbox itself, the archive (Gmail's All Mail) and Sent.
+   *  Null when none holds it. A header search matches part of the header, so
+   *  each hit's own Message-ID is checked before it is used. */
+  private async byMessageId(id: string, messageId: string): Promise<Buffer | null> {
+    for (const key of ['inbox', 'archive', 'sent'] as const) {
+      let found: Buffer | null;
+      try {
+        found = await this.inFolder(id, MailService.folderOf(key), async (c) => {
+          const hits = [...((await c.search({ header: { 'message-id': messageId } }, { uid: true })) || [])].sort((a, b) => b - a);
+          for (const uid of hits.slice(0, 5)) {
+            const m = await c.fetchOne(String(uid), { uid: true, headers: ['message-id'] }, { uid: true }).catch(() => null) as { headers?: Buffer | string } | false | null;
+            const own = m && m.headers ? (await simpleParser(Buffer.isBuffer(m.headers) ? m.headers : Buffer.from(String(m.headers)))).messageId : undefined;
+            if (own === messageId) return this.source(c, String(uid), key, REFERENCE_MAX_BYTES);
+          }
+          return null;
+        }, 'Fetching the referenced message');
+      } catch (e) {
+        // A mailbox with no archive folder yet: look in the next one.
+        if (e instanceof MailError && e.kind === 'not-found') continue;
+        throw e;
+      }
+      if (found) return found;
+    }
+    return null;
+  }
+
   /** Throws unless the fetched message is there and isn't a draft. */
   private static checkReadable(m: { flags?: unknown } | false | null | undefined, uid: string, key: FolderKey): void {
     if (!m) {
@@ -910,7 +937,16 @@ export class MailService {
     let total = 0;
     const fetch = async (ref: MailRef) => {
       const { key, uid } = parseMessageId(ref.id);
-      const buf = await this.inFolder(id, MailService.folderOf(key), (c) => this.source(c, uid, key, REFERENCE_MAX_BYTES), 'Fetching the referenced message');
+      let buf: Buffer;
+      try {
+        buf = await this.inFolder(id, MailService.folderOf(key), (c) => this.source(c, uid, key, REFERENCE_MAX_BYTES), 'Fetching the referenced message');
+      } catch (e) {
+        // An approved forward whose email was archived after it was proposed:
+        // its id names nothing now, so it is found by the Message-ID kept then.
+        const moved = ref.messageId && e instanceof MailError && e.kind === 'not-found' ? await this.byMessageId(id, ref.messageId) : null;
+        if (!moved) throw e;
+        buf = moved;
+      }
       total += buf.length;
       if (buf.length > REFERENCE_MAX_BYTES || total > REFERENCE_MAX_BYTES) throw new MailError('bad-request', REFERENCE_TOO_LARGE);
       return buf;

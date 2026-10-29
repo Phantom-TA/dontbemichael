@@ -108,3 +108,34 @@ test('an agent cannot name a Message-ID itself; only the app keeps one', async (
   assert.equal(p.status, 200, 'a server out of reach does not hold the card up');
   assert.deepEqual(approvals.get(p.body.proposal).forward, { mailbox: 'ceo', id: '2' });
 });
+
+test('an approved forward and attachment still go out after their emails are archived', async (t) => {
+  // Value: protects=the accountant gets the invoice the owner approved forwarding; fails_when=the approved send fetches by the inbox id alone, which archiving leaves naming nothing; why_new=every approved forward of an archived email failed with not-found, every retry too, and Michael was asked about it an hour later; seam=none
+  const { call, approvals, state, archive } = setup(t);
+  const p = await call('pam', 'propose', { mailbox: 'ceo', to: 'acct@firm.com', subject: 'Fwd: Invoice 42', body: 'Please file this.', forward: { mailbox: 'ceo', id: '2' }, attach_from: [{ mailbox: 'ceo', id: '3' }] });
+  archive(2, 900);
+  archive(3, 901);
+  approvals.decide(p.body.proposal, 'approve', {}, '');
+  const sent = await call('pam', 'send', { mailbox: 'ceo', proposal: p.body.proposal });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.equal(state.sends.length, 1);
+  const [fwd, receipt] = state.sends[0].attachments;
+  assert.equal(fwd.filename, 'forwarded-message.eml');
+  assert.match(fwd.content.toString(), /Message-ID: <m2@x\.com>/);
+  assert.equal(receipt.filename, 'receipt.txt');
+  assert.equal(receipt.content.toString().trim(), 'the receipt.txt itself');
+  assert.equal(approvals.get(p.body.proposal).state, 'sent');
+});
+
+test('a forward whose email is gone everywhere is still refused, and never sends an email that only mentions it', async (t) => {
+  // Value: protects=a forward is always the email the agent named; fails_when=a header search hit is used without checking its own Message-ID (a reply in Sent cites the original in References); why_new=the send now searches by Message-ID; seam=fake search matches any header, as a lax server might
+  const { call, approvals, state } = setup(t);
+  const p = await call('pam', 'propose', { mailbox: 'ceo', to: 'acct@firm.com', subject: 'Fwd: Invoice 42', body: 'Please file this.', forward: { mailbox: 'ceo', id: '2' } });
+  state.folders.INBOX = state.folders.INBOX.filter((m) => m.uid !== 2); // deleted, not archived
+  state.folders.Sent.push({ uid: 50, source: Buffer.from('From: ceo@x.com\r\nTo: a@b.com\r\nSubject: Re: Invoice 42\r\nMessage-ID: <reply@x.com>\r\nReferences: <m2@x.com>\r\n\r\nThanks\r\n') });
+  approvals.decide(p.body.proposal, 'approve', {}, '');
+  const sent = await call('pam', 'send', { mailbox: 'ceo', proposal: p.body.proposal });
+  assert.equal(sent.status, 404);
+  assert.match(sent.body.error, /No message with id 2 in the inbox/);
+  assert.equal(state.sends.length, 0);
+});
