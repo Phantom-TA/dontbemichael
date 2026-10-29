@@ -67,6 +67,17 @@ test('digits in any script are read as digits', () => {
   assert.deepEqual(cls('२०२५ में खाद्य सुरक्षा नियम'), [], 'a year in Devanagari is still a year');
 });
 
+test('any hyphen or dash separates digit groups', () => {
+  // Value: protects=a phone, SSN or card copied from Word or Outlook never reaches Research; fails_when=only '-' counts as a separator; why_new=a non-breaking hyphen (U+2011) or a dash hid the shape; seam=none
+  const cls = (t) => dc.patternHits(t).map((h) => h.classId);
+  assert.ok(cls('Who owns 555\u2011123\u20114567?').includes('contact'), 'non-breaking hyphen');
+  assert.ok(cls('Is SSN 123\u201045\u20106789 real?').includes('accounts'), 'U+2010 hyphen');
+  assert.ok(cls('Who owns 98765\u201343210?').includes('contact'), 'en dash');
+  assert.ok(cls('call 555\u2212123\u22124567').includes('contact'), 'minus sign');
+  assert.ok(cls('card 4111\u20121111\u20121111\u20121111').includes('money'), 'figure dash');
+  for (const t of ['a well\u2011known supplier', 'open 9\u20135 weekdays', 'sales 2019\u20132024', 'menu\u2014pizza, pasta']) assert.deepEqual(cls(t), [], t);
+});
+
 test('a card is found beside its expiry, its security code or another number', () => {
   // Value: protects=card details never reach Research; fails_when=digits next to a card fail it on Luhn and it passes as plain text; why_new=a card typed with its expiry tripped no pattern at all; seam=none
   const money = (t) => dc.patternHits(t).some((h) => h.classId === 'money');

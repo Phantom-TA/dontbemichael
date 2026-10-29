@@ -167,6 +167,10 @@ const LONG_DIGITS = /\b\d{9,}\b/;
 // typed in Devanagari or Arabic-Indic digits passed as plain text.
 const OTHER_DIGIT = /(?![0-9])\p{Nd}/gu;
 const IS_DIGIT = /^\p{Nd}$/u;
+// Hyphens, dashes and minus signs other than '-'. NFKC turns the non-breaking
+// hyphen Word and Outlook put in phone numbers into U+2010, not '-', and keeps
+// dashes and the minus sign, so "555‑123‑4567" was not read as a phone.
+const OTHER_HYPHEN = /[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g;
 
 /**
  * The ASCII digit for a decimal digit in any script. Unicode encodes every
@@ -191,9 +195,10 @@ export function patternHits(text: string): PatternHit[] {
   const hits: PatternHit[] = [];
   // Fullwidth forms and invisible characters must not hide a shape (ship
   // review: an sk- key with a zero width space, a joiner or a Hangul filler
-  // inside passed as plain text), and nor must digits in another script.
+  // inside passed as plain text), and nor must digits in another script or
+  // a hyphen that is not '-'.
   const t = typeof text === 'string'
-    ? text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(OTHER_DIGIT, asciiDigit)
+    ? text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(OTHER_DIGIT, asciiDigit).replace(OTHER_HYPHEN, '-')
     : '';
   if (SECRETS.some((re) => re.test(t))) hits.push({ classId: 'secrets' });
   if (EMAIL.test(t)) hits.push({ classId: 'contact' });
