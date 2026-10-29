@@ -54,6 +54,19 @@ test('patterns name the class of what they find', () => {
   assert.ok(cls('call 5125550142').includes('contact'), 'a bare phone length run counts as contact too');
 });
 
+test('digits in any script are read as digits', () => {
+  // Value: protects=a number typed in Devanagari, Arabic-Indic or Bengali digits never reaches Research; fails_when=only ASCII digits trip the patterns; why_new=an Aadhaar or account number in Hindi digits passed the recheck; seam=none
+  const cls = (t) => dc.patternHits(t).map((h) => h.classId);
+  assert.ok(cls('Is aadhaar १२३४ ५६७८ ९०१२ valid?').includes('contact'), 'Devanagari, grouped like the ASCII form');
+  assert.ok(cls('Who owns ९८७६५४३२१०?').includes('contact'));
+  assert.ok(cls('Bank for account ٥٠١٠٠١٢٣٤٥٦٧٨٩?').length > 0, 'Arabic-Indic');
+  assert.ok(cls('acct ۵۰۱۰۰۱۲۳۴۵۶۷۸۹').length > 0, 'Extended Arabic-Indic');
+  assert.ok(cls('card ४१११ ११११ ११११ ११११').includes('money'), 'a card still passes Luhn once read');
+  assert.ok(!cls('card ४१११ ११११ ११११ १११२').includes('money'), 'and still fails it when it should');
+  assert.ok(cls('customer ১২৩৪৫৬৭৮৯০১২').includes('accounts'), 'Bengali');
+  assert.deepEqual(cls('२०२५ में खाद्य सुरक्षा नियम'), [], 'a year in Devanagari is still a year');
+});
+
 test('a card is found beside its expiry, its security code or another number', () => {
   // Value: protects=card details never reach Research; fails_when=digits next to a card fail it on Luhn and it passes as plain text; why_new=a card typed with its expiry tripped no pattern at all; seam=none
   const money = (t) => dc.patternHits(t).some((h) => h.classId === 'money');

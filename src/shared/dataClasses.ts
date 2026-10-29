@@ -162,6 +162,26 @@ const SECRETS: RegExp[] = [
 ];
 const LONG_DIGITS = /\b\d{9,}\b/;
 
+// A decimal digit in any script ("१२३४", "٥٠١"). The patterns above match ASCII
+// digits only and NFKC leaves these alone, so an Aadhaar or account number
+// typed in Devanagari or Arabic-Indic digits passed as plain text.
+const OTHER_DIGIT = /(?![0-9])\p{Nd}/gu;
+const IS_DIGIT = /^\p{Nd}$/u;
+
+/**
+ * The ASCII digit for a decimal digit in any script. Unicode encodes every
+ * decimal digit in runs of ten, 0 to 9 in order, and back to back runs (the
+ * maths digits) are whole runs too, so a digit's value is its distance from
+ * the first digit of its stretch, modulo ten. This holds for scripts added
+ * later without a table to keep up to date.
+ */
+function asciiDigit(ch: string): string {
+  const cp = ch.codePointAt(0) as number;
+  let first = cp;
+  while (IS_DIGIT.test(String.fromCodePoint(first - 1))) first--;
+  return String((cp - first) % 10);
+}
+
 /**
  * The private data fixed patterns can see, each tied to its class so a
  * refusal names it. Patterns catch only what has a shape (an email, a card
@@ -171,8 +191,10 @@ export function patternHits(text: string): PatternHit[] {
   const hits: PatternHit[] = [];
   // Fullwidth forms and invisible characters must not hide a shape (ship
   // review: an sk- key with a zero width space, a joiner or a Hangul filler
-  // inside passed as plain text).
-  const t = typeof text === 'string' ? text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '') : '';
+  // inside passed as plain text), and nor must digits in another script.
+  const t = typeof text === 'string'
+    ? text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(OTHER_DIGIT, asciiDigit)
+    : '';
   if (SECRETS.some((re) => re.test(t))) hits.push({ classId: 'secrets' });
   if (EMAIL.test(t)) hits.push({ classId: 'contact' });
   for (const m of t.matchAll(DIGIT_RUN)) {
