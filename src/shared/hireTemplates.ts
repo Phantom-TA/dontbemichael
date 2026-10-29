@@ -20,6 +20,7 @@ import type { OfficePack } from './officePack';
 import { splitAgentRole, joinAgentRole } from './agentRole';
 import { teamMemberGoal, teamMemberName, folderNameFor } from './teamPlan';
 import { OFFICE_ROLES } from './officeRoles';
+import { clipUnits } from './cutText';
 
 export type HireJobSource = 'card' | 'team' | 'new';
 
@@ -306,7 +307,7 @@ export function hireAgentId(name: string, now: number = Date.now()): string {
  *  mid-word can end in a '.' or ' ' that Windows silently drops, so the
  *  folder on disk would not match the name the office shows for it. */
 export function safeFolder(raw: string): string {
-  return raw.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[.\s-]+/, '').replace(/[.\s]+$/, '').trim().slice(0, 60).replace(/[.\s]+$/, '');
+  return clipUnits(raw.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[.\s-]+/, '').replace(/[.\s]+$/, '').trim(), 60).replace(/[.\s]+$/, '');
 }
 
 /**
