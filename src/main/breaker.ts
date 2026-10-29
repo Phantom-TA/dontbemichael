@@ -142,12 +142,16 @@ export class CircuitBreaker {
 
   private cfg() {
     const c = this.getConfig() ?? {};
+    // A limit of 0 (Settings takes it) or below would trip every member on the
+    // next beat, idle or not: `0 >= 0` is always true. Like an empty field it
+    // means the default, the way 0 means no limit for the token budget.
+    const limit = (v: number | undefined, d: number) => (typeof v === 'number' && v > 0 ? v : d);
     return {
       enabled: c.enabled ?? DEFAULTS.enabled,
       hardStop: c.hardStop ?? DEFAULTS.hardStop,
-      repeatedToolLimit: c.repeatedToolLimit ?? DEFAULTS.repeatedToolLimit,
-      errorStormLimit: c.errorStormLimit ?? DEFAULTS.errorStormLimit,
-      tokenVelocityPerMin: c.tokenVelocityPerMin ?? DEFAULTS.tokenVelocityPerMin,
+      repeatedToolLimit: limit(c.repeatedToolLimit, DEFAULTS.repeatedToolLimit),
+      errorStormLimit: limit(c.errorStormLimit, DEFAULTS.errorStormLimit),
+      tokenVelocityPerMin: limit(c.tokenVelocityPerMin, DEFAULTS.tokenVelocityPerMin),
       costCapUsd: c.costCapUsd,
       costCapTokens: c.costCapTokens,
       agentTokenCaps: c.agentTokenCaps
