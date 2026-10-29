@@ -1202,11 +1202,16 @@ function ref(v: unknown): MailRef | undefined {
 
 /** A proposal's forward and attach_from refs, each with the Message-ID of the
  *  email it names, read as it is filed: the send finds an email archived
- *  meanwhile by that (send-on-approval.md). One that can't be read now keeps
- *  its id alone, and the send reads it then, as before. */
+ *  meanwhile by that (send-on-approval.md). An id that names nothing fails
+ *  here, as a reply's does, while the agent can still search again. One that
+ *  can't be read now (the server out of reach) keeps its id alone, and the
+ *  send reads it then, as before. */
 async function keptRefs(svc: MailService, mailbox: string, input: ComposeInput): Promise<Pick<ComposeInput, 'forward' | 'attachFrom'>> {
   const keep = async (r: MailRef): Promise<MailRef> => {
-    try { return await svc.keepMessageId(mailbox, r); } catch { return r; }
+    try { return await svc.keepMessageId(mailbox, r); } catch (e) {
+      if (e instanceof MailError && (e.kind === 'not-found' || e.kind === 'bad-request')) throw e;
+      return r;
+    }
   };
   const attachFrom: MailRef[] = [];
   for (const r of input.attachFrom ?? []) attachFrom.push(await keep(r));

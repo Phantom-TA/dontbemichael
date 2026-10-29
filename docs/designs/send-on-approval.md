@@ -108,6 +108,7 @@ the owner sees a card that could never be sent.
 A forward or attachment keeps the Message-ID of each email it names the same
 way. If the email has left the inbox by the time the approved email is sent,
 the send finds it by that Message-ID in the archive (Gmail's All Mail) or Sent.
+A forward or attach_from id that names nothing is refused at propose too.
 
 ### What agents read
 

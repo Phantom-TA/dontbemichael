@@ -139,3 +139,15 @@ test('a forward whose email is gone everywhere is still refused, and never sends
   assert.match(sent.body.error, /No message with id 2 in the inbox/);
   assert.equal(state.sends.length, 0);
 });
+
+test('a forward or attachment of an email that is gone is refused when proposed, not after the owner approves', async (t) => {
+  // Value: protects=the owner never approves an email that can't go out; fails_when=propose files a card for a forward or attach_from id that names nothing; why_new=PR 592 refused this for reply_to only; seam=none
+  const { call, approvals } = setup(t);
+  const fwd = await call('pam', 'propose', { mailbox: 'ceo', to: 'acct@firm.com', subject: 'Fwd: nothing', body: 'See this.', forward: { mailbox: 'ceo', id: '777' } });
+  assert.equal(fwd.status, 404);
+  assert.match(fwd.body.error, /No message with id 777 in the inbox\. If it was archived or sent, search with folder "archive"/);
+  const att = await call('pam', 'propose', { mailbox: 'ceo', to: 'acct@firm.com', subject: 'Receipts', body: 'Attached.', attach_from: [{ mailbox: 'ceo', id: '3' }, { mailbox: 'ceo', id: 'archive:12' }] });
+  assert.equal(att.status, 404);
+  assert.match(att.body.error, /No message with id 12 in that folder/);
+  assert.equal(approvals.waiting().length, 0, 'no card for the owner');
+});
