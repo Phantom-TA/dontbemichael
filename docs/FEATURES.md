@@ -81,6 +81,10 @@ moving, and brings you only the decisions that need you.
 - Let one more team member send from a mailbox without reading it (Send only), with its own Sending choice: Sales sends outreach from the CEO's address while the Admin keeps that inbox.
 - The Executive Admin keeps the inbox at zero: every email is routed, tracked, filed or cleared and
   leaves the inbox. Archiving, marking read and marking junk never delete anything.
+- See the email a question or a reply is built on, as it came: an Email chip on the card opens it
+  in an office tab, straight from your mailbox, even after it was archived. Opening it never marks
+  it read or moves it, pictures from the web stay hidden until you show them, and Gmail mailboxes
+  get Open in Gmail.
 
 ### 4. Jobs on a clock
 - Each team member's schedules sit on its Access tab. Name the job ("Check the support
@@ -212,6 +216,13 @@ moving, and brings you only the decisions that need you.
   as a picture, and a part you select pastes as clean as the whole, in light or dark mode.
 
 ## Part 2: Every change, release by release
+
+### Unreleased
+- An Email chip on a question, a Michael reply or a Send on approval card opens the email it is
+  built on in an office tab, exactly as it came from your mailbox: subject, who sent it and who
+  was copied, the email itself on a white page, and its attachments listed. Opening it never marks
+  it read or moves it. Pictures from the web stay hidden until you click Show pictures, so the
+  sender can't tell you looked. Gmail mailboxes get Open in Gmail.
 
 ### 0.3.0 (2026-10-28)
 - Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API

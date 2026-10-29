@@ -25,7 +25,7 @@ import { renamePatches, swapName } from '@shared/hireTemplates';
 import type { Handoff, JobChangeEntry, JobVersion, PlainWords } from '@shared/jobChange';
 import { canOpen } from '../shell/closingFloor';
 import { fileClosedPatch, fileShownPatch, type CenterClaim } from '../shell/wideCenter';
-import { closeTab, openTab, type FileTab, type FixedView } from './fileTabs';
+import { closeTab, openTab, retitleTab, type FileTab, type FixedView } from './fileTabs';
 import { afterLeave, attemptLeave } from './leaveGuard';
 
 export type ToolKind =
@@ -489,6 +489,8 @@ interface State {
   /** Open a file's tab, or select it if it is open (keyed by main's real path). */
   openFileTab: (tab: Omit<FileTab, 'openedAt'>) => void;
   selectFileTab: (id: string) => void;
+  /** Rename an open tab (an email's tab takes its subject once read). */
+  retitleFileTab: (id: string, title: string) => void;
   closeFileTab: (id: string) => void;
   /** Move focus mode WITHOUT touching the preference. For the paths that re-home
    *  a focused agent that went away: the app is following the user, not being
@@ -1499,6 +1501,7 @@ export const useStore = create<State>((set, get) => ({
   // for now (open-file-from-wide-dock.md, rule 8A for files).
   openFileTab: (tab) => set((s) => ({ ...openTab(s, { ...tab, openedAt: Date.now() }), floorView: 'file', taskDetailId: null, ...fileTakesCenter(s, tab.id) })),
   selectFileTab: (id) => set((s) => (s.fileTabs.some((f) => f.id === id) ? { activeFileTab: id, floorView: 'file', ...fileTakesCenter(s, id) } : {})),
+  retitleFileTab: (id, title) => set((s) => retitleTab(s, id, title)),
   closeFileTab: (id) => set((s) => {
     const r = closeTab(s, id);
     const floorView: FloorView = s.floorView !== 'file' ? s.floorView : r.select ?? s.lastFixedView;

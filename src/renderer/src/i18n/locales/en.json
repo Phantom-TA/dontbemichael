@@ -3245,5 +3245,33 @@
     "noGoodRun": "No earlier run of this job went well to compare with.",
     "noTranscript": "This run's conversation is no longer on this computer.",
     "noDifference": "The two runs show nothing to change in the job."
+  },
+  "emailTab": {
+    "openEmail": "Open the email: {{words}}",
+    "openInGmail": "Open in Gmail",
+    "opening": "Opening the email",
+    "noSubject": "(no subject)",
+    "from": "From",
+    "to": "To",
+    "cc": "Cc",
+    "date": "Date",
+    "picturesHidden": "Pictures from the web are hidden.",
+    "showPictures": "Show pictures",
+    "showingPictures": "Loading pictures",
+    "somePicturesFailed": "Some pictures could not load.",
+    "tooLarge": "Too large to show in full. This is its text.",
+    "tryAgain": "Try again",
+    "openMailboxes": "Open Mailboxes",
+    "frameTitle": "Email from {{sender}}",
+    "replyingTo": "Replying to",
+    "failed": {
+      "broken": "This email link is broken.",
+      "mailbox": "This mailbox isn't in the office anymore.",
+      "message": "Not in this mailbox outside Trash and Junk.",
+      "auth": "Sign in to this mailbox failed.",
+      "blocked": "This mailbox can't be reached from the office.",
+      "network": "Couldn't reach the mailbox.",
+      "unknown": "This email couldn't be shown."
+    }
   }
 }

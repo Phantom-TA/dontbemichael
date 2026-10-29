@@ -723,6 +723,8 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 /* File chips in replies and Ask me cards (docs/designs/open-file-tab.md, DD1). */
 .cth-file-chip:hover:not(:disabled) { background: var(--cth-indigo-soft) !important; }
 .cth-file-chip:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 1px; }
+/* The email tab's From, To, Cc and Date rows stack in a narrow window (original-email-view.md, DD8). */
+@media (max-width: 560px) { .cth-email-rows { grid-template-columns: 1fr !important; } }
 .cth-file-action { min-height: 32px; padding: 0 10px; border: none; border-radius: var(--cth-r-md); cursor: pointer; text-align: start; font-family: var(--cth-font-ui); font-size: 13px; color: var(--cth-ink); background: transparent; }
 .cth-file-action:hover, .cth-file-action:focus-visible { background: var(--cth-neutral-soft); }
 .cth-file-action:focus-visible { outline: 2px solid var(--cth-indigo); }

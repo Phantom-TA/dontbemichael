@@ -135,7 +135,10 @@ import { writeFileAtomic } from './atomicFile';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
 import * as integrations from './integrations';
-import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, type AddMailboxInput } from './mail';
+import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, classifyMailError, type AddMailboxInput } from './mail';
+import { EMAIL_IPC, gmailMessageUrl, parseEmailHref, type OriginalFailure, type OriginalResult } from '../shared/emailLink';
+import { fetchableUrl, frameNavigationAllowed, remotePictureUrls } from '../shared/emailFrame';
+import { fetchPictures } from './emailPictures';
 import { MailApprovals } from './mailApprovals';
 import { standingFitCheck } from './standingCheck';
 import { fileFitCheck } from './fileFitCheck';
@@ -3820,6 +3823,14 @@ function createWindow(): BrowserWindow {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
   });
 
+  // A frame inside the window (the email tab, a release drop) shows only its
+  // own srcdoc: a link, a form or a refresh in one never loads a page there
+  // (docs/designs/original-email-view.md). Its links open as new windows,
+  // which the handler above sends to the browser.
+  win.webContents.on('will-frame-navigate', (e) => {
+    if (!frameNavigationAllowed(e.url, e.isMainFrame)) e.preventDefault();
+  });
+
   // Right-click on a web or email link offers "Copy link address": a named link
   // shows a name, so selecting its text never copies the address. Nothing else
   // gets a menu.
@@ -7353,6 +7364,48 @@ ipcMain.handle('mailProposals:decide', (_evt, id: unknown, decision: unknown, ed
  *  (shared-mailboxes.md, O1b): app private, never in the office log. */
 ipcMain.handle('mail:recentSends', (_evt, agentId: unknown, mailbox: unknown) =>
   (typeof agentId === 'string' && typeof mailbox === 'string' ? mailApprovals.recentSends(agentId, mailbox, 5).map((r) => ({ to: r.to, subject: r.subject, sentAt: r.sentAt })) : []));
+// The owner's email tab (docs/designs/original-email-view.md). Only the app
+// window's own page may ask (R7), never a frame inside it, and every link is
+// parsed again here: main never takes the renderer's word for a mailbox.
+function fromAppPage(evt: Electron.IpcMainInvokeEvent): boolean {
+  const win = mainWindow;
+  return !!win && !win.isDestroyed() && evt.sender === win.webContents && evt.senderFrame === win.webContents.mainFrame;
+}
+function gmailUrlFor(mailbox: string, messageId: string): string | null {
+  const rec = (readConfig().mailboxes ?? []).find((m) => m.id === mailbox);
+  return rec && (rec.provider === 'gmail' || rec.provider === 'google-workspace') ? gmailMessageUrl(rec.address, messageId) : null;
+}
+ipcMain.handle(EMAIL_IPC.original, async (evt, href: unknown): Promise<OriginalResult> => {
+  const ref = typeof href === 'string' ? parseEmailHref(href) : null;
+  if (!ref || !fromAppPage(evt)) return { ok: false, reason: 'broken', gmailUrl: null };
+  const gmailUrl = gmailUrlFor(ref.mailbox, ref.messageId);
+  const started = Date.now();
+  try {
+    const email = await mailService.original(ref.mailbox, ref.messageId);
+    console.log(`[mail] owner-view ${ref.mailbox} ok ${Date.now() - started}ms`);
+    return { ok: true, email, gmailUrl };
+  } catch (e) {
+    const err = classifyMailError(e);
+    const reason: OriginalFailure = err.kind === 'not-found' ? (err.message === 'mailbox' ? 'mailbox' : 'message')
+      : err.kind === 'auth' ? 'auth'
+        : err.kind === 'provider-blocked' || err.kind === 'unsupported' ? 'blocked'
+          : err.kind === 'network' || err.kind === 'timeout' || err.kind === 'refused' ? 'network' : 'unknown';
+    // No sender, subject or Message-ID in the log (the office log rule, D14).
+    console.log(`[mail] owner-view ${ref.mailbox} ${reason} ${Date.now() - started}ms`);
+    return { ok: false, reason, gmailUrl: reason === 'mailbox' ? null : gmailUrl };
+  }
+});
+ipcMain.handle(EMAIL_IPC.pictures, async (evt, href: unknown): Promise<{ pictures: Record<string, string>; failed: number }> => {
+  const ref = typeof href === 'string' ? parseEmailHref(href) : null;
+  if (!ref || !fromAppPage(evt)) return { pictures: {}, failed: 0 };
+  const email = mailService.keptOriginal(ref.mailbox, ref.messageId);
+  if (!email?.html) return { pictures: {}, failed: 0 };
+  return fetchPictures(remotePictureUrls(email.html).map((raw) => ({ raw, url: fetchableUrl(raw) })));
+});
+ipcMain.handle(EMAIL_IPC.cancel, (evt, href: unknown): void => {
+  const ref = typeof href === 'string' ? parseEmailHref(href) : null;
+  if (ref && fromAppPage(evt)) mailService.cancelOriginal(ref.mailbox, ref.messageId);
+});
 // Standing approvals: kinds an agent may send without asking, revocable on its Access tab.
 ipcMain.handle('mailStanding:list', (_evt, agentId: unknown) => (typeof agentId === 'string' ? mailApprovals.standing(agentId) : []));
 ipcMain.handle('mailStanding:revoke', (_evt, id: unknown) => (typeof id === 'string' ? mailApprovals.revokeStanding(id) : { ok: false, error: 'invalid' }));

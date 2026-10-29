@@ -6,6 +6,8 @@ import { useHarnessConfig } from '@/hooks/useHarnessConfig';
 import { AgentAvatar } from './AgentAvatar';
 import { GrowingTextarea } from './GrowingTextarea';
 import { PixelButton } from './PixelButton';
+import { emailHref, parseEmailHref } from '@shared/emailLink';
+import { EmailChip } from '@/markdown/EmailChip';
 
 /**
  * Send on approval (docs/designs/send-on-approval.md): an email a team member
@@ -31,6 +33,9 @@ const label: CSSProperties = { fontSize: 11, fontWeight: 600, color: 'var(--cth-
 const meta: CSSProperties = { fontSize: 11.5, lineHeight: '16px', color: 'var(--cth-ink-2)', overflowWrap: 'anywhere' };
 
 function ProposalCard({ p, refresh }: { p: MailProposal; refresh: () => void }) {
+  // From the reply's thread record; a card filed while the server was out of reach has none.
+  const replyHref = p.thread?.inReplyTo ? emailHref({ mailbox: p.mailbox, messageId: p.thread.inReplyTo }) : null;
+  const replying = replyHref ? parseEmailHref(replyHref) : null;
   const { t } = useTranslation();
   const agents = useStore((s) => s.agents);
   const mailboxes = useHarnessConfig()?.mailboxes;
@@ -80,6 +85,13 @@ function ProposalCard({ p, refresh }: { p: MailProposal; refresh: () => void }) 
         <div>{t('askMe.mailFrom', { from: isolate(from) })}</div>
         <div>{t('askMe.mailTo', { to: isolate(p.to) })}</div>
         {p.cc && <div>{t('askMe.mailCc', { cc: isolate(p.cc) })}</div>}
+        {/* The email this reply answers, one click away (original-email-view.md, E1). */}
+        {replying && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            {t('emailTab.replyingTo')}
+            <EmailChip email={replying} words={p.to}>{p.to}</EmailChip>
+          </div>
+        )}
       </div>
       <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         <span style={label}>{t('askMe.mailSubject')}</span>

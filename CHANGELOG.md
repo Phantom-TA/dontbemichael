@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [Unreleased]
+
+### Added
+- **See the original email.** A question, a Michael reply or a Send on approval card built on an email shows an Email chip that opens the email in an office tab, as it came from your mailbox, even after it was archived. Opening it never marks it read or moves it; pictures from the web stay hidden until you click Show pictures; Gmail mailboxes get Open in Gmail.
+
 ## [0.3.0] (2026-10-28)
 
 ### Added

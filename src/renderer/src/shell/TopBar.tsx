@@ -132,9 +132,9 @@ export function ViewTabs() {
       {fileTabs.length > 0 && <span aria-hidden style={{ width: 1, height: 18, background: 'var(--cth-line-2)', margin: '0 4px', flexShrink: 0 }} />}
       {fileTabs.map((f) => {
         const on = view === 'file' && activeFileTab === f.id;
-        const icon = f.kind === 'excel' || f.kind === 'csv' ? 'sheet' : f.kind === 'image' ? 'image' : 'file';
+        const icon = f.kind === 'email' ? 'mail' : f.kind === 'excel' || f.kind === 'csv' ? 'sheet' : f.kind === 'image' ? 'image' : 'file';
         return (
-          <span key={f.id} className="cth-titlebar-nodrag" title={`⁨${f.id}⁩`} style={{
+          <span key={f.id} className="cth-titlebar-nodrag" title={`⁨${f.email ? f.title : f.id}⁩`} style={{
             display: 'inline-flex', alignItems: 'center', height: 32, flex: '0 1 auto', minWidth: 72,
             borderRadius: 'var(--cth-r-md)', background: on ? 'var(--cth-ink)' : 'transparent',
             transition: 'background var(--cth-dur-fast) var(--cth-ease)'
