@@ -105,6 +105,11 @@ proposed, so it still goes out in that thread after inbox zero (or the owner)
 archives the email; a reply id that names nothing is refused at propose, before
 the owner sees a card that could never be sent.
 
+A forward or attachment keeps the Message-ID of each email it names the same
+way. If the email has left the inbox by the time the approved email is sent,
+the send finds it by that Message-ID in the archive (Gmail's All Mail) or Sent.
+A forward or attach_from id that names nothing is refused at propose too.
+
 ### What agents read
 
 The md-mail tools say the agent's Sending choice in `list_mailboxes` and what to

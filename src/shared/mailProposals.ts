@@ -11,7 +11,9 @@
  */
 import type { SendingMode } from './mailboxes';
 
-export interface ProposalRef { mailbox: string; id: string }
+/** `messageId`: the referenced email's own Message-ID, kept when a forward or
+ *  attachment is proposed, so the send still finds it once it is archived. */
+export interface ProposalRef { mailbox: string; id: string; messageId?: string }
 
 /** `cancelled`: withdrawn by the app, never by the owner's no: its grant ended
  *  or was set to Draft only, or it names mail from another mailbox
