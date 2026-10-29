@@ -223,6 +223,8 @@ moving, and brings you only the decisions that need you.
   was copied, the email itself on a white page, and its attachments listed. Opening it never marks
   it read or moves it. Pictures from the web stay hidden until you click Show pictures, so the
   sender can't tell you looked. Gmail mailboxes get Open in Gmail.
+- A choice that needs your own words, like "Send with my changes", asks for them when you pick it,
+  and Reply waits until you write them.
 
 ### 0.3.0 (2026-10-28)
 - Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API
