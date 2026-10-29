@@ -117,7 +117,11 @@ LISP syntax. Seven semantic fields:
 Anti-livelock rules: only `request`/`query`/`propose` obligate a reply (pure
 `inform`/`done` are terminal); every reply increments `hops`; past a hop cap the
 god agent escalates instead of letting two agents loop forever; re-seeing a
-processed `id` is a no-op (idempotent via cursor).
+processed `id` is a no-op (idempotent via cursor). The router sets `hops`
+itself (`replyHops` in `src/shared/handoffRule.ts`), never from the agent's
+file: one more than the message named in `in_reply_to`, 0 for a message that
+answers nothing, and 0 for Michael's answers to the owner, so the owner's
+conversation never meets the cap. Hop counts are kept for the current run.
 
 ---
 
