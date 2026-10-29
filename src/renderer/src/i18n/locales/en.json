@@ -2756,6 +2756,7 @@
         "folder": "Private folders",
         "office-files": "App files",
         "paused": "Paused by you",
+        "turn-cap": "Max turns reached",
         "impostor": "Unconfirmed sender"
       },
       "toInternetTip": "Each question is checked for your private details before it goes out.",
