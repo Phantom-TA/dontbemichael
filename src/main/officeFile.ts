@@ -112,7 +112,10 @@ export interface FoundOffice {
 /** Folders an office record may never send an agent into, whatever it says:
  *  the disk root, the home folder itself, and the places that hold keys and
  *  app settings. A record is a file in a folder that could have been copied or
- *  synced from elsewhere, so its folders are checked before setup offers them. */
+ *  synced from elsewhere, so its folders are checked before setup offers them.
+ *  On a Mac, Dropbox, Google Drive, OneDrive and Box keep the owner's files in
+ *  ~/Library/CloudStorage and iCloud Drive in ~/Library/Mobile Documents
+ *  (a ~/Dropbox link leads there too), so those stay usable inside ~/Library. */
 export function isUsableTeamFolder(folder: string, home = homedir()): boolean {
   if (!isAbsolute(folder)) return false;
   // Follow links (a folder that is a link into ~/.ssh is ~/.ssh), and compare
@@ -128,6 +131,9 @@ export function isUsableTeamFolder(folder: string, home = homedir()): boolean {
   // A disk root is its own parent. Comparing with resolve(sep) missed it on
   // Windows, where `f` is lowercased and the root is not ("c:\" vs "C:\").
   if (dirname(f) === f || f === h) return false;
+  const cloud = join(h, fold('Library/CloudStorage'));
+  const iCloud = join(h, fold('Library/Mobile Documents/com~apple~CloudDocs'));
+  if (f.startsWith(cloud + sep) || f === iCloud || f.startsWith(iCloud + sep)) return true;
   for (const kept of ['.ssh', '.claude', '.config', '.gnupg', 'Library']) {
     const k = join(h, fold(kept));
     if (f === k || f.startsWith(k + sep)) return false;
