@@ -1595,7 +1595,11 @@ export class HiveManager {
       env.OTEL_EXPORTER_OTLP_HEADERS = `${TELEMETRY_TOKEN_HEADER}=${this._otelToken(meta.id)}`;
       env.OTEL_METRIC_EXPORT_INTERVAL = '5000'; // 5s — near-live without spamming
       env.OTEL_LOGS_EXPORT_INTERVAL = '2000';
-      env.OTEL_RESOURCE_ATTRIBUTES = `agent.id=${meta.id},agent.name=${meta.name}`;
+      // A value may not hold a space, comma, semicolon, quote or backslash:
+      // the engine then drops every key, agent.id too, and the collector
+      // refuses the batch ("Jim 2" never showed in Pulse). Percent encoded, it
+      // reads them back as they are.
+      env.OTEL_RESOURCE_ATTRIBUTES = `agent.id=${encodeURIComponent(meta.id)},agent.name=${encodeURIComponent(meta.name)}`;
     }
     const args: string[] = [];
     if (!claudeProvider) return { args, env };
