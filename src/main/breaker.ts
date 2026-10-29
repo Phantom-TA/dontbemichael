@@ -106,6 +106,10 @@ const PROGRESS_TOOL_WINDOW_MS = 300_000;
 /** Consecutive tripping beats the no-progress arm needs before it fires — a
  *  one-beat blip (inbox ack, statusline burst) never steers on its own. */
 const NO_PROGRESS_BEATS = 2;
+/** The loop check reads each string of a call's input only up to here (see
+ *  toolKey). The hook program cuts a big save's input to the same length, so
+ *  a trimmed call keys exactly as the whole one would. */
+export const TOOL_KEY_STRING_CAP = 4096;
 
 interface AgentBreakerState {
   level: BreakerLevel;
@@ -250,7 +254,7 @@ export class CircuitBreaker {
     let inp = '';
     try {
       inp = JSON.stringify(toolInput, (_k, v) =>
-        typeof v === 'string' && v.length > 4096 ? v.slice(0, 4096) : v) ?? '';
+        typeof v === 'string' && v.length > TOOL_KEY_STRING_CAP ? v.slice(0, TOOL_KEY_STRING_CAP) : v) ?? '';
     } catch { inp = String(toolInput); }
     return `${toolName ?? '?'}:${createHash('sha256').update(inp).digest('hex')}`;
   }

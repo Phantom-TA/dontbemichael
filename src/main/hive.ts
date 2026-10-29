@@ -82,6 +82,7 @@ import { expandTilde } from './fs';
 import { MEMBER_SESSIONS_FILE, idsFromRecord } from './memoryReset';
 import { CONNECTOR_UNDECIDED, MCP_RESOURCE_TOOLS, type SpawnConnectorPlan } from '../shared/claudeConnectors';
 import { HOOK_PATH_UNCHECKED, MAX_HOOK_FRAME_BYTES } from '../shared/hookEvents';
+import { TOOL_KEY_STRING_CAP } from './breaker';
 import { isOwnResearchDir, ownResearchDir, readResearchFile } from './researchNotes';
 import { resolveGodName } from '../shared/godIdentity';
 import { ALLOW_TEMP_WORKERS } from '../shared/buildFeatures';
@@ -6594,7 +6595,7 @@ process.stdin.on('end', () => {
   // Every file tool too: a frame the app drops is a call nobody checked.
   const fileTool = payload.hook_event_name === 'PreToolUse' && ${JSON.stringify([...FOLDER_READ_TOOLS, ...FOLDER_WRITE_TOOLS])}.indexOf(tool) >= 0;
   const bigCheck = payload.hook_event_name === 'PreToolUse' && (fileTool || (tool === 'Bash' && input.dangerouslyDisableSandbox === true));
-  if ((mcp || research || tempSave || bigCheck) && Buffer.byteLength(line) > ${MAX_HOOK_FRAME_BYTES}) {
+  const shortFields = () => {
     const small = {};
     for (const k of Object.keys(input)) {
       const v = input[k];
@@ -6603,14 +6604,33 @@ process.stdin.on('end', () => {
       else if (k === 'pattern' && tool === 'Glob' && typeof v === 'string') small[k] = pathMod.isAbsolute(v) ? pathMod.normalize(v) : v;
       else if ((typeof v === 'string' && v.length <= 1024) || typeof v === 'number' || typeof v === 'boolean') small[k] = v;
     }
-    payload.tool_input = small;
+    return small;
+  };
+  const tooBig = () => Buffer.byteLength(line) > ${MAX_HOOK_FRAME_BYTES};
+  if ((mcp || research || tempSave || bigCheck) && tooBig()) {
+    payload.tool_input = shortFields();
     payload.tool_input_trimmed = true;
     line = JSON.stringify(payload);
-    if (Buffer.byteLength(line) > ${MAX_HOOK_FRAME_BYTES}) {
+    if (tooBig()) {
       process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: mcp ? ${JSON.stringify(CONNECTOR_UNDECIDED)} : ${JSON.stringify(HOOK_PATH_UNCHECKED)} } }));
       process.exit(0);
       return;
     }
+  }
+  // A finished call keeps its input for the breaker's loop check, which keys
+  // on the tool and its input with each string cut to its first
+  // ${TOOL_KEY_STRING_CAP} characters. A big save sends its input cut the
+  // same way, so it still arrives (a dropped frame skips the loop check, the
+  // wake watchdog and the end of a stuck episode) and keys exactly as it would
+  // whole: the same file rewritten in a loop still reads as a loop. Many big
+  // edits at once fall back to the short fields, which keep the path, and
+  // past that the call goes with no input, so it still ends.
+  if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure') && tooBig()) {
+    payload.tool_input = JSON.parse(JSON.stringify(input, (_k, v) => typeof v === 'string' && v.length > ${TOOL_KEY_STRING_CAP} ? v.slice(0, ${TOOL_KEY_STRING_CAP}) : v));
+    payload.tool_input_trimmed = true;
+    line = JSON.stringify(payload);
+    if (tooBig()) { payload.tool_input = shortFields(); line = JSON.stringify(payload); }
+    if (tooBig()) { delete payload.tool_input; line = JSON.stringify(payload); }
   }
   const fail = () => {
     if (mcp || web || research || tempSave) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: mcp ? ${JSON.stringify(CONNECTOR_UNDECIDED)} : web ? ${JSON.stringify(WEB_SETTINGS_UNREADABLE)} : ${JSON.stringify(RESEARCH_UNCHECKED_TOOL)} } }));
