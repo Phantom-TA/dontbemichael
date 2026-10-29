@@ -6527,6 +6527,10 @@ process.stdin.on('end', () => {
   const ev = payload.hook_event_name;
   if (ev === 'PostToolBatch') payload.tool_calls = (Array.isArray(payload.tool_calls) ? payload.tool_calls : []).filter((c) => c && typeof c.tool_use_id === 'string').map((c) => ({ tool_use_id: c.tool_use_id }));
   if (ev === 'PostToolUse' || ev === 'PostToolUseFailure') { delete payload.tool_response; delete payload.error; }
+  // Nor what the owner typed: a turn only needs to be known to have started,
+  // and a long paste would make the frame too big, so the turn would go
+  // without its roster, goal and steer.
+  if (ev === 'UserPromptSubmit') delete payload.prompt;
   const sock = process.env.HIVE_SOCK;
   if (isStatus) {
     // Status-line mode: Claude Code pipes the session status JSON (incl.

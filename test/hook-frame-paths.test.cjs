@@ -118,6 +118,43 @@ test('a finished batch too big for one frame goes out with only its call ids, an
   assert.deepEqual(JSON.parse(await send({ hook_event_name: 'PostToolBatch' })).tool_calls, []);
 });
 
+// An office whose app records what reached it: every hook event, and each
+// call the breaker was fed with the input it keys its loop check on.
+async function listening(t) {
+  const home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-frame-big-')));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  const seen = [];
+  const uses = [];
+  const prompts = [];
+  const breaker = {
+    recordToolUse: (agentId, tool, input) => uses.push({ agentId, tool, input }),
+    recordUserPrompt: (agentId) => prompts.push(agentId),
+    recordCompactStart() {}, recordCompactEnd() {}
+  };
+  const server = new HookServer(hive, () => null, () => ({ harnessHome: home }), undefined, breaker, undefined,
+    (_agentId, event, _message, tool) => seen.push(`${event}:${tool ?? ''}`));
+  server.start();
+  t.after(() => server.stop());
+  await new Promise((r) => setTimeout(r, 50));
+  const shim = (payload) => new Promise((resolve) => {
+    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: hive.sockPath(), HIVE_HOOK_SEAL: hive.mintHookToken('pam') } });
+    p.on('close', resolve);
+    p.stdin.end(JSON.stringify({ session_id: 's', cwd: home, ...payload }));
+  });
+  return { home, hive, seen, uses, prompts, shim };
+}
+
+test('a long paste still starts the turn the app knows about', unix, async (t) => {
+  // Value: protects=a prompt over the frame limit still reaches the app, so the turn gets its roster, goal and steer and the breaker's conversation clock moves; fails_when=the hook program sends the prompt text and the app drops the frame as too large; why_new=found in review (reproduced: a 300 KB prompt never arrived); seam=a stand in breaker
+  const { hive, seen, prompts, shim } = await listening(t);
+  await shim({ hook_event_name: 'UserPromptSubmit', prompt: 'p'.repeat(300_000) });
+  assert.deepEqual(seen, ['UserPromptSubmit:']);
+  assert.deepEqual(prompts, ['pam']);
+  assert.deepEqual(hive.logTail(50, 'hook-frame-rejected'), [], 'no frame refused');
+});
+
 test('the app refuses a trimmed file call that arrives without its path', async (t) => {
   // Value: protects=a path lost on the way is never read as "no folder to check"; fails_when=folderCheck allows a call with no target; why_new=red team pass 2; seam=none
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-frame-srv-'));
