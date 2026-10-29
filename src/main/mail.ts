@@ -356,7 +356,10 @@ function addrText(a: any): string {
   return '';
 }
 
-export interface MailRef { mailbox: string; id: string }
+/** `messageId` is the Message-ID of the email `id` named when a proposal was
+ *  filed, kept by the app (never taken from an agent): an inbox id names
+ *  nothing once the email is archived, so the send finds it by this instead. */
+export interface MailRef { mailbox: string; id: string; messageId?: string }
 
 export interface ComposeInput {
   to: string;
@@ -766,6 +769,15 @@ export class MailService {
     return { inReplyTo: parsed.messageId, references: [...prior, parsed.messageId].slice(-50) };
   }
 
+  /** `ref` with the Message-ID of the email it names, read when a proposal
+   *  that forwards or attaches from it is filed: like a reply's thread, the
+   *  email is often archived before the owner says yes, and the send then
+   *  finds it by this. Unchanged when the email has no Message-ID. */
+  async keepMessageId(id: string, ref: MailRef): Promise<MailRef> {
+    const { messageId } = await this.replyHeaders(id, ref);
+    return messageId ? { ...ref, messageId } : ref;
+  }
+
   /** The threading headers of the message a reply answers, without its body. */
   private async replyHeaders(id: string, ref: MailRef): Promise<{ messageId?: string; references?: string | string[] }> {
     const { key, uid } = parseMessageId(ref.id);
@@ -1152,6 +1164,19 @@ function ref(v: unknown): MailRef | undefined {
   return typeof o.mailbox === 'string' && (typeof o.id === 'string' || typeof o.id === 'number') ? { mailbox: o.mailbox, id: String(o.id) } : undefined;
 }
 
+/** A proposal's forward and attach_from refs, each with the Message-ID of the
+ *  email it names, read as it is filed: the send finds an email archived
+ *  meanwhile by that (send-on-approval.md). One that can't be read now keeps
+ *  its id alone, and the send reads it then, as before. */
+async function keptRefs(svc: MailService, mailbox: string, input: ComposeInput): Promise<Pick<ComposeInput, 'forward' | 'attachFrom'>> {
+  const keep = async (r: MailRef): Promise<MailRef> => {
+    try { return await svc.keepMessageId(mailbox, r); } catch { return r; }
+  };
+  const attachFrom: MailRef[] = [];
+  for (const r of input.attachFrom ?? []) attachFrom.push(await keep(r));
+  return { forward: input.forward && await keep(input.forward), attachFrom: input.attachFrom && attachFrom };
+}
+
 type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; organized?: (moved: OrganizedMove) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean; tellMichael?: (subject: string, body: string) => void };
 
 /** Messages Michael has already heard were flagged, so a re-read does not tell him twice. */
@@ -1520,7 +1545,9 @@ async function runMailRequest(
           if (e instanceof MailError && (e.kind === 'not-found' || e.kind === 'bad-request')) throw e;
         }
       }
-      const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: input.forward, attachFrom: input.attachFrom, ...(thread ? { thread } : {}), ...(offer ? { offerStanding: offer } : {}) });
+      // What it forwards or attaches is kept by Message-ID too, for the same reason.
+      const kept = await keptRefs(svc, mailbox!, input);
+      const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: kept.forward, attachFrom: kept.attachFrom, ...(thread ? { thread } : {}), ...(offer ? { offerStanding: offer } : {}) });
       return { status: 200, body: { proposal: p.id, state: 'waiting for the owner on Ask me', ...(p.replaces ? { replaced: p.replaces, note: `This replaces your earlier proposal ${p.replaces} for the same email; that id no longer works.` } : {}), next: 'Nothing is sent yet. You will get a message when the owner decides: approved (then call send with this proposal id), changes asked, or not sent. Do not send it another way.' } };
     }
     const out = await svc.send(agentId, mailbox!, input, () => {
