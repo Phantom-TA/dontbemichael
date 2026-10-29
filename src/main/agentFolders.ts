@@ -17,41 +17,22 @@
 
 import { mkdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, isAbsolute } from 'node:path';
+import { cleanFolderName } from '../shared/folderName';
 
 /** The folder Michael works in, and that every agent can reach. */
 export const OFFICE_FOLDER = 'Office';
 
 const FALLBACK_BUSINESS = 'My Business';
-const MAX_NAME = 60;
-/** Names Windows reserves for devices; a folder by one of these can't be opened
- *  there. Windows reads only the part before the first dot, so `CON.txt` is one. */
-const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
 
 /**
- * One safe folder name from anything a person or a pack might supply.
+ * One safe folder name from anything a person or a pack might supply
+ * (shared/folderName.ts, the same cleaning the hire wizard uses).
  *
  * "A/B Consulting" → "A-B Consulting", "../../x" → "x", "  Café  " → "Café".
  * Returns `fallback` when nothing usable is left.
  */
 export function safeFolderName(raw: string, fallback = 'Folder'): string {
-  let name = String(raw ?? '')
-    // Path separators and characters Windows forbids become a dash; control
-    // characters disappear.
-    .replace(/[\\/:*?"<>|]/g, '-')
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\x00-\x1f\x7f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    // A leading dot makes a hidden folder (and ".." climbs out); Windows strips
-    // trailing dots and spaces, which would make two names collide.
-    .replace(/^[.\s-]+/, '')
-    .replace(/[.\s]+$/, '');
-
-  if (name.length > MAX_NAME) name = name.slice(0, MAX_NAME).replace(/[.\s]+$/, '');
-  if (!name) return fallback;
-  // The suffix goes before the first dot, so `CON.txt` becomes `CON-folder.txt`.
-  if (WINDOWS_RESERVED.test(name)) name = name.replace(/^[^.]*/, (device) => `${device}-folder`);
-  return name;
+  return cleanFolderName(raw, fallback);
 }
 
 /** `~/Documents/<Business name>` — the parent of every default agent folder. */

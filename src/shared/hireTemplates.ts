@@ -20,6 +20,8 @@ import type { OfficePack } from './officePack';
 import { splitAgentRole, joinAgentRole } from './agentRole';
 import { teamMemberGoal, teamMemberName, folderNameFor } from './teamPlan';
 import { OFFICE_ROLES } from './officeRoles';
+import { clipUnits } from './cutText';
+import { cleanFolderName, suffixedFolderName } from './folderName';
 
 export type HireJobSource = 'card' | 'team' | 'new';
 
@@ -299,14 +301,35 @@ export function hireAgentId(name: string, now: number = Date.now()): string {
   return `${base || 'agent'}-${now.toString(36)}`;
 }
 
-/** One folder name, safe on every system: no path separators or characters
- *  Windows forbids, no leading dots, at most 60 characters. "AR/AP Clerk"
- *  becomes "AR-AP Clerk", never a folder inside a folder. The trailing-dot
- *  and trailing-space strip runs again AFTER the length cut: a name sliced
- *  mid-word can end in a '.' or ' ' that Windows silently drops, so the
- *  folder on disk would not match the name the office shows for it. */
+/** One folder name, safe on every system: "AR/AP Clerk" becomes "AR-AP
+ *  Clerk", never a folder inside a folder, and nothing usable is ''. The same
+ *  cleaning as the main process (shared/folderName.ts), which checks and makes
+ *  the folder this name gives. */
 export function safeFolder(raw: string): string {
-  return raw.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[.\s-]+/, '').replace(/[.\s]+$/, '').trim().slice(0, 60).replace(/[.\s]+$/, '');
+  return cleanFolderName(raw, '');
+}
+
+/** The most of a hire's name a folder suffix keeps, so a long name still
+ *  leaves room for the job's folder name and a counter. */
+const HIRE_NAME_IN_FOLDER = 24;
+
+function hireFolderParts(base: string, name: string): { b: string; first: string } {
+  const b = safeFolder(base) || safeFolder(name) || 'Team';
+  // Trailing dots and spaces come off too: Windows drops them silently, so
+  // "Jim." would land on disk as "Jim" while the office keeps showing "Jim.".
+  const n = clipUnits(name.trim().replace(/[\\/:*?"<>|]+/g, ''), HIRE_NAME_IN_FOLDER).replace(/[.\s]+$/, '');
+  return { b, first: n ? `_${n}` : '_2' };
+}
+
+/** The first `count` folders a new hire may get, in the order hireFolderName
+ *  tries them: the job's folder, then `<Folder>_<Name>`, `<Folder>_<Name>_2`,
+ *  ... Each is a whole folder name within the length limit, so the suffix is
+ *  never cut off and the name main checks on disk is the name tried. */
+export function hireFolderCandidates(base: string, name: string, count: number): string[] {
+  const { b, first } = hireFolderParts(base, name);
+  const out = [b];
+  for (let i = 1; out.length < count; i++) out.push(suffixedFolderName(b, i === 1 ? first : `${first}_${i}`));
+  return out;
 }
 
 /**
@@ -315,18 +338,10 @@ export function safeFolder(raw: string): string {
  * whether a folder name is already on disk or in use by a teammate.
  */
 export function hireFolderName(base: string, name: string, taken: (folder: string) => boolean): string {
-  const b = base.trim() || name.trim() || 'Team';
-  if (!taken(b)) return b;
-  // Trailing dots and spaces come off too: Windows drops them silently, so
-  // "Jim." would land on disk as "Jim" while the office keeps showing "Jim.".
-  const n = name.trim().replace(/[\\/:*?"<>|]+/g, '').replace(/[.\s]+$/, '');
-  const first = n ? `${b}_${n}` : `${b}_2`;
-  if (!taken(first)) return first;
-  for (let i = 2; i < 100; i++) {
-    const next = `${first}_${i}`;
-    if (!taken(next)) return next;
-  }
-  return `${first}_${Date.now().toString(36)}`;
+  const free = hireFolderCandidates(base, name, 100).find((f) => !taken(f));
+  if (free) return free;
+  const { b, first } = hireFolderParts(base, name);
+  return suffixedFolderName(b, `${first}_${Date.now().toString(36)}`);
 }
 
 // ─── The distinct job check, rules half (D6) ─────────────────────────────────
