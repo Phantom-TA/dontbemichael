@@ -161,6 +161,8 @@ const SECRETS: RegExp[] = [
   /\b(?:password|passwd|pwd|api[_ -]?key|secret|token)\s*[:=]\s*\S{6,}/i
 ];
 const LONG_DIGITS = /\b\d{9,}\b/;
+// A number grouped in thousands with dots, the European way: "1.234.567".
+const THOUSANDS = /^[1-9]\d{0,2}(?:\.\d{3}){2,}$/;
 
 // A decimal digit in any script ("१२३४", "٥٠١"). The patterns above match ASCII
 // digits only and NFKC leaves these alone, so an Aadhaar or account number
@@ -217,8 +219,10 @@ export function patternHits(text: string): PatternHit[] {
   for (const m of plain.matchAll(PHONE)) {
     const digits = m[1].replace(/\D/g, '');
     // Years, prices and plain counts are not phone numbers: a phone has 9 to
-    // 15 digits and either a + or a separator inside it.
-    if (digits.length >= 9 && digits.length <= 15 && (/^\+/.test(m[1]) || /[\s().-]/.test(m[1])) && !/\d\.\d{3}\.\d{3}/.test(m[1])) {
+    // 15 digits and either a + or a separator inside it. A count grouped in
+    // thousands ("1.234.567.890") is not one either, but only a whole number
+    // grouped that way: "555.123.4567" is a dotted phone number.
+    if (digits.length >= 9 && digits.length <= 15 && (/^\+/.test(m[1]) || /[\s().-]/.test(m[1])) && !m[1].split(/[\s()]+/).some((n) => THOUSANDS.test(n))) {
       hits.push({ classId: 'contact' });
       break;
     }

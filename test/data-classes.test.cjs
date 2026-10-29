@@ -78,6 +78,15 @@ test('any hyphen or dash separates digit groups', () => {
   for (const t of ['a well\u2011known supplier', 'open 9\u20135 weekdays', 'sales 2019\u20132024', 'menu\u2014pizza, pasta']) assert.deepEqual(cls(t), [], t);
 });
 
+test('a dotted phone number is a phone, a count grouped in thousands is not', () => {
+  // Value: protects=a US phone written with dots never reaches Research; fails_when=the thousands exclusion matches inside a phone; why_new=555.123.4567 was never read as a phone; seam=none
+  const cls = (t) => dc.patternHits(t).map((h) => h.classId);
+  assert.ok(cls('Who owns 555.123.4567?').includes('contact'));
+  assert.ok(cls('call +1 555.123.4567').includes('contact'));
+  assert.ok(cls('call (555) 123.4567').includes('contact'));
+  for (const t of ['compare 1.234.567.890 units', 'population 12.345.678 (2020)', 'turnover 1.234.567.890,50 euros', '1.234.567 visitors in 2024']) assert.deepEqual(cls(t), [], t);
+});
+
 test('a card is found beside its expiry, its security code or another number', () => {
   // Value: protects=card details never reach Research; fails_when=digits next to a card fail it on Luhn and it passes as plain text; why_new=a card typed with its expiry tripped no pattern at all; seam=none
   const money = (t) => dc.patternHits(t).some((h) => h.classId === 'money');
