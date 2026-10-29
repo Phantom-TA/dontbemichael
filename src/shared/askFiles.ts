@@ -11,6 +11,7 @@
  * Shared by the renderer (rows and their kind word) and main, which decides on
  * its own whether a file opens (OPEN_EXTENSIONS) and never trusts the renderer.
  */
+import { ownValue } from './ownValue';
 
 /** Extensions that make a code span a file row. */
 const DETECT_EXTENSIONS = new Set([
@@ -203,11 +204,13 @@ export function askFileNames(text: string): string[] {
 }
 
 /** The text with each found name's code span written as its file's path, so
- *  it draws as a chip like any other file. Code fences are left as they are. */
+ *  it draws as a chip like any other file. Code fences are left as they are.
+ *  Every span is looked up, so only a name `found` holds itself counts: a span
+ *  such as `constructor` or `toString` stays as written. */
 export function withNamedFiles(text: string, found: Readonly<Record<string, string>>): string {
   if (!Object.keys(found).length) return text;
   return text.split(/(```[\s\S]*?```)/g).map((part, i) => (i % 2 ? part : part.replace(/`([^`\n]+)`/g, (m, inner: string) => {
-    const path = found[inner.trim()];
+    const path = ownValue(found, inner.trim());
     return path ? `\`${path}\`` : m;
   }))).join('');
 }
