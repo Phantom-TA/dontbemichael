@@ -1,4 +1,4 @@
-- **See and change your Claude sign in** in Settings, Agents.
-- Out of credit on a key? Change sign in from the stop card.
-- A new sign in restarts the team on it at once.
-- A Mac update that will not install offers the download.
+- **See the original email** behind a question or reply.
+- Send with my changes asks for your words.
+- A forward still goes out after its email is archived.
+- Dropbox and iCloud folders keep their privacy wall.

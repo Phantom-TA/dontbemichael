@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.3.0). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.3.1). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -217,7 +217,7 @@ moving, and brings you only the decisions that need you.
 
 ## Part 2: Every change, release by release
 
-### Unreleased
+### 0.3.1 (2026-10-29)
 - An Email chip on a question, a Michael reply or a Send on approval card opens the email it is
   built on in an office tab, exactly as it came from your mailbox: subject, who sent it and who
   was copied, the email itself on a white page, and its attachments listed. Opening it never marks
@@ -228,6 +228,15 @@ moving, and brings you only the decisions that need you.
 - Automatic failure reports carry the facts that tell one cause from another, still closed values
   only: the engine's version, which kind of team member it was, and for a stuck team member the
   breaker's limit and where it came from and the HTTP status numbers of its errors.
+- An approved forward or attachment still goes out after its email was archived.
+- A team member's folder in Dropbox, Google Drive, OneDrive, Box or iCloud Drive on a Mac keeps its
+  privacy wall, and Michael's folder can live there too.
+- A team member whose name has a space or a comma shows in Pulse and in what the office spent.
+- A breaker limit of 0 means the default; a team member that got through after a few errors from
+  Claude is no longer stopped for them.
+- Two team members can no longer reply to each other forever; a big save or a long paste still
+  reaches the app; a webhook you switch off stops answering at once.
+- Pulse counts a stop at the Max turns limit under Steps blocked.
 
 ### 0.3.0 (2026-10-28)
 - Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API
