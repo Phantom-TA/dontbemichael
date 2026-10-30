@@ -12,6 +12,7 @@ import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { OfficeRecord } from '../shared/officeRecord';
 import type { MailboxRecord, AgentCapabilities, MailProvider, MailServer } from '../shared/mailboxes';
+import type { OriginalResult } from '../shared/emailLink';
 import type { ClaudeConnectorsState } from '../shared/claudeConnectors';
 import type { ScheduledMission, ScheduleRequest } from '../shared/missions';
 import type { MailProposal, ProposalDecision, StandingApproval } from '../shared/mailProposals';
@@ -1039,6 +1040,13 @@ const api = {
    *  remove it (docs/designs/shared-mailboxes.md). */
   mailSetSendOnly: (agentId: string, grant: { mailbox: string; sending: 'send' | 'approval' | 'draft' } | null): Promise<{ ok: boolean; restartNeeded: boolean }> =>
     ipcRenderer.invoke('mail:setSendOnly', agentId, grant),
+  /** The owner's email tab (docs/designs/original-email-view.md): the email an
+   *  `email:` link names, as it came, from the owner's own mailbox. */
+  mailOriginal: (href: string): Promise<OriginalResult> => ipcRenderer.invoke('mail:original', href),
+  /** Its pictures from the web, fetched by main, as data URIs. */
+  mailOriginalPictures: (href: string): Promise<{ pictures: Record<string, string>; failed: number }> => ipcRenderer.invoke('mail:originalPictures', href),
+  /** The tab closed: stop an open still running. */
+  mailOriginalCancel: (href: string): Promise<void> => ipcRenderer.invoke('mail:originalCancel', href),
   /** Read the connectors on the owner's Claude account again (a few seconds). */
   connectorsRefresh: (why?: string): Promise<void> => ipcRenderer.invoke('connectors:refresh', why),
   /** Whether a read is running now. */

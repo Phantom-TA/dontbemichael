@@ -49,6 +49,7 @@ import {
   type MailServer
 } from '../shared/mailboxes';
 import { markUntrustedMessage } from '../shared/untrustedText';
+import { emailLinkFor, type OriginalEmail } from '../shared/emailLink';
 import { OWN_SENDS_ONLY, proposalSendProblem, standingProblem, standingTooLong, threadFrom, STANDING_KIND_MAX, type MailProposal, type SendRecord, type StandingApproval, type StandingCheckEmail, type ThreadHeaders } from '../shared/mailProposals';
 
 // Limits (eng review E6 left these to the implementer).
@@ -73,6 +74,11 @@ const SEND_MEMORY_MS = 10 * 60_000;
 const PENDING_MEMORY_MS = 24 * 60 * 60_000;
 /** The most mail one send may forward or attach from, in all. */
 const REFERENCE_MAX_BYTES = 25 * 1024 * 1024;
+/** The owner's email tab keeps this many characters of recent emails in memory. */
+const ORIGINALS_KEPT_CHARS = 30 * 1024 * 1024;
+/** Pictures carried inside an email (`cid:`) shown on the tab: each, and in all. */
+const INLINE_PICTURE_MAX = 2 * 1024 * 1024;
+const INLINE_PICTURES_TOTAL = 5 * 1024 * 1024;
 const REFERENCE_TOO_LARGE = 'That email is too large to forward or attach from (over 25 MB in all). Send a new email instead, or ask the owner to forward it.';
 
 export type MailErrorKind = 'auth' | 'provider-blocked' | 'network' | 'not-found' | 'bad-request' | 'refused' | 'unsupported' | 'timeout' | 'unknown';
@@ -107,7 +113,8 @@ export interface ImapLike {
   logout(): Promise<void>;
   close?(): void;
   list(): Promise<Array<{ path: string; specialUse?: string; flags?: Set<string>; delimiter?: string }>>;
-  getMailboxLock(path: string): Promise<{ release(): void }>;
+  /** `readOnly` opens the folder with EXAMINE, so nothing in it can change. */
+  getMailboxLock(path: string, opts?: { readOnly?: boolean }): Promise<{ release(): void }>;
   search(query: Record<string, unknown>, opts?: { uid?: boolean }): Promise<number[] | false>;
   fetchOne(uid: string | number, query: Record<string, unknown>, opts?: { uid?: boolean }): Promise<any>;
   fetch(range: string | number[], query: Record<string, unknown>, opts?: { uid?: boolean }): AsyncIterable<any>;
@@ -541,7 +548,11 @@ export class MailService {
   }
 
   /** Close every connection (app quit, reset, mailbox removed). */
-  closeAll(): void { for (const id of [...this.boxes.keys()]) this.close(id); }
+  closeAll(): void {
+    for (const id of [...this.boxes.keys()]) this.close(id);
+    for (const c of this.ownerClients.values()) { try { c.close?.(); } catch { /* already gone */ } }
+    this.ownerClients.clear();
+  }
   close(id: string): void {
     const box = this.boxes.get(id);
     if (box?.ready) box.cancelled = true;
@@ -615,17 +626,21 @@ export class MailService {
     // 2026-10-03): spam is where injected instructions live, and a draft is the
     // owner's own unsent words. Sent and the archive have their own names.
     // The folder or any folder it sits in ("Trash/Old", "INBOX.Junk.2025").
-    const parts = hit.delimiter ? hit.path.split(hit.delimiter) : [hit.path];
-    const offLimits = parts.some((_, i) => {
-      const at = parts.slice(0, i + 1).join(hit.delimiter ?? '');
-      const f = list.find((x) => x.path === at);
-      return OFF_LIMITS_USES.has(f?.specialUse ?? '') || OFF_LIMITS_NAMES.test(at);
-    });
-    if (offLimits) {
+    if (MailService.offLimits(list, hit)) {
       throw new MailError('bad-request', `"${key.label}" is spam, trash or drafts, which the team does not read.`);
     }
     return hit.path;
   };
+  /** Spam, trash or drafts: the folder or any folder it sits in
+   *  ("Trash/Old", "INBOX.Junk.2025"). */
+  private static offLimits(list: Array<{ path: string; specialUse?: string; delimiter?: string }>, hit: { path: string; delimiter?: string }): boolean {
+    const parts = hit.delimiter ? hit.path.split(hit.delimiter) : [hit.path];
+    return parts.some((_, i) => {
+      const at = parts.slice(0, i + 1).join(hit.delimiter ?? '');
+      const f = list.find((x) => x.path === at);
+      return OFF_LIMITS_USES.has(f?.specialUse ?? '') || OFF_LIMITS_NAMES.test(at);
+    });
+  }
   private static drafts = (c: ImapLike): Promise<string> => MailService.special(c, '\\Drafts', ['Drafts', '[Gmail]/Drafts', 'INBOX.Drafts', 'Draft']);
   private static sentBox = (c: ImapLike): Promise<string> => MailService.special(c, '\\Sent', ['Sent', '[Gmail]/Sent Mail', 'Sent Messages', 'INBOX.Sent', 'Sent Items']);
 
@@ -902,6 +917,173 @@ export class MailService {
         : raw.toString('utf8').replace(/\r\n?/g, '\n'));
     }
     return { text: texts.join('\n'), cut };
+  }
+
+  // ── The owner's own look at one email (docs/designs/original-email-view.md) ──
+  //
+  // Not a tool: no broker op reaches these (MAIL_TOOL_OPS), only the app
+  // window's IPC. Each open has its own short lived connection (R5), so a big
+  // email never holds the folder lock the agents' calls wait on, and opens
+  // every folder read only with PEEK fetches (R1): nothing is marked read,
+  // moved or flagged. One open per mailbox at a time; the same email asked for
+  // twice shares one open.
+
+  private readonly ownerClients = new Map<string, ImapLike>();
+  private readonly ownerOpens = new Map<string, Promise<OriginalEmail>>();
+  private readonly ownerQueue = new Map<string, Promise<unknown>>();
+  private readonly originals = new Map<string, { size: number; email: OriginalEmail }>();
+
+  private static originalKey = (mailboxId: string, messageId: string): string => `${mailboxId}\n${messageId.toLowerCase()}`;
+
+  /** The email as it came, for the owner's tab. Throws a MailError: `not-found`
+   *  with the message "mailbox" or "message", or the connection's own kind. */
+  async original(mailboxId: string, messageId: string): Promise<OriginalEmail> {
+    const key = MailService.originalKey(mailboxId, messageId);
+    const kept = this.originals.get(key);
+    if (kept) { this.originals.delete(key); this.originals.set(key, kept); return kept.email; }
+    const running = this.ownerOpens.get(key);
+    if (running) return running;
+    const before = this.ownerQueue.get(mailboxId) ?? Promise.resolve();
+    const run = before.catch(() => undefined).then(() => this.originalNow(key, mailboxId, messageId));
+    const settled = run.catch(() => undefined);
+    this.ownerQueue.set(mailboxId, settled);
+    void settled.then(() => { if (this.ownerQueue.get(mailboxId) === settled) this.ownerQueue.delete(mailboxId); });
+    this.ownerOpens.set(key, run);
+    try {
+      const email = await run;
+      this.keepOriginal(key, email);
+      return email;
+    } finally { this.ownerOpens.delete(key); }
+  }
+
+  /** The email from the last open, without fetching (Show pictures reads its HTML). */
+  keptOriginal(mailboxId: string, messageId: string): OriginalEmail | null {
+    return this.originals.get(MailService.originalKey(mailboxId, messageId))?.email ?? null;
+  }
+
+  /** The owner closed the tab: stop its open and close its connection. */
+  cancelOriginal(mailboxId: string, messageId: string): void {
+    const key = MailService.originalKey(mailboxId, messageId);
+    const c = this.ownerClients.get(key);
+    if (!c) return;
+    this.ownerClients.delete(key);
+    try { c.close?.(); } catch { /* already gone */ }
+  }
+
+  /** Recent opens kept in memory, about 30 MB at most, newest last. */
+  private keepOriginal(key: string, email: OriginalEmail): void {
+    const size = (email.html?.length ?? 0) + email.text.length + Object.values(email.inline).reduce((n, v) => n + v.length, 0);
+    this.originals.delete(key);
+    this.originals.set(key, { size, email });
+    let total = [...this.originals.values()].reduce((n, v) => n + v.size, 0);
+    for (const [k, v] of this.originals) {
+      if (total <= ORIGINALS_KEPT_CHARS || k === key) break;
+      this.originals.delete(k);
+      total -= v.size;
+    }
+  }
+
+  private async originalNow(key: string, mailboxId: string, messageId: string): Promise<OriginalEmail> {
+    let rec: MailboxRecord;
+    try { rec = this.record(mailboxId); } catch { throw new MailError('not-found', 'mailbox'); }
+    const client = this.createImap(rec.imap, rec.address, this.password(mailboxId));
+    this.ownerClients.set(key, client);
+    try {
+      return await withTimeout((async () => {
+        await client.connect();
+        const list = await client.list();
+        const hit = await this.findOriginal(client, list, messageId);
+        if (!hit) throw new MailError('not-found', 'message');
+        const lock = await client.getMailboxLock(hit.path, { readOnly: true });
+        try { return await this.originalOf(client, hit.uid, rec.address); } finally { lock.release(); }
+      })(), CALL_TIMEOUT_MS, 'Opening the email');
+    } catch (e) {
+      if (e instanceof MailError && e.kind === 'not-found') throw e;
+      const err = classifyMailError(e);
+      this.note(mailboxId, err);
+      throw err;
+    } finally {
+      if (this.ownerClients.get(key) === client) this.ownerClients.delete(key);
+      client.logout().catch(() => { try { client.close?.(); } catch { /* already gone */ } });
+    }
+  }
+
+  /** The folder and uid holding a Message-ID. Gmail: one search of All Mail,
+   *  which covers every label. Elsewhere: the inbox, the archive, Sent, then
+   *  every other folder the team may read; never spam, trash or drafts. The
+   *  newest copy wins. */
+  private async findOriginal(c: ImapLike, list: Array<{ path: string; specialUse?: string; flags?: Set<string>; delimiter?: string }>, messageId: string): Promise<{ path: string; uid: number } | null> {
+    const look = async (path: string, query: Record<string, unknown>): Promise<number | null> => {
+      const lock = await c.getMailboxLock(path, { readOnly: true });
+      try {
+        const uids = (await c.search(query, { uid: true })) || [];
+        return uids.length ? Math.max(...uids.map(Number)) : null;
+      } finally { lock.release(); }
+    };
+    const all = isGmail(list) ? list.find((f) => f.specialUse === '\\All') : undefined;
+    if (all) {
+      const uid = await look(all.path, { gmraw: `rfc822msgid:${messageId}` });
+      return uid ? { path: all.path, uid } : null;
+    }
+    const order: string[] = ['INBOX'];
+    const archive = await MailService.folderOf('archive')(c).catch(() => null);
+    if (archive) order.push(archive);
+    const sent = await MailService.sentBox(c).catch(() => null);
+    if (sent) order.push(sent);
+    for (const f of list) {
+      if (order.some((p) => p.toLowerCase() === f.path.toLowerCase())) continue;
+      if (f.flags?.has('\\Noselect') || f.flags?.has('\\NonExistent') || MailService.offLimits(list, f)) continue;
+      order.push(f.path);
+    }
+    for (const path of order) {
+      const uid = await look(path, { header: { 'message-id': messageId } }).catch((e: unknown) => {
+        if (['network', 'timeout', 'auth'].includes(classifyMailError(e).kind)) throw e;
+        return null;
+      });
+      if (uid) return { path, uid };
+    }
+    return null;
+  }
+
+  /** One email for the tab. Up to the 25 MB cap it is parsed whole; past it,
+   *  headers and text only (the part by part read). */
+  private async originalOf(c: ImapLike, uid: number, address: string): Promise<OriginalEmail> {
+    const id = String(uid);
+    const head = await c.fetchOne(id, { uid: true, size: true, envelope: true, bodyStructure: true }, { uid: true });
+    if (!head) throw new MailError('not-found', 'message');
+    if (typeof head.size === 'number' && head.size > REFERENCE_MAX_BYTES && c.download && head.bodyStructure && head.envelope) {
+      const body = await this.bodyText(c, id, bodyPartsOf(head.bodyStructure));
+      const e = head.envelope;
+      const from = Array.isArray(e.from) ? e.from[0] : undefined;
+      const date = e.date ? new Date(e.date) : null;
+      return {
+        mailboxAddress: address, fromName: from?.name ?? '', fromAddress: from?.address ?? '',
+        to: addrText(e.to), cc: addrText(e.cc), subject: e.subject ?? '',
+        date: date && !Number.isNaN(date.getTime()) ? date.toISOString() : '',
+        html: null, text: body.text, attachments: attachmentsOf(head.bodyStructure), inline: {}, large: true
+      };
+    }
+    const parsed = await simpleParser(await this.source(c, id, 'archive'));
+    const from = parsed.from?.value?.[0];
+    const inline: Record<string, string> = {};
+    let inlineBytes = 0;
+    const attachments: Array<{ name: string; size: number }> = [];
+    for (const a of parsed.attachments ?? []) {
+      const cid = a.cid ? a.cid.replace(/^<|>$/g, '') : '';
+      if (cid && /^image\//i.test(a.contentType ?? '') && a.size <= INLINE_PICTURE_MAX && inlineBytes + a.size <= INLINE_PICTURES_TOTAL) {
+        inline[cid] = `data:${a.contentType};base64,${a.content.toString('base64')}`;
+        inlineBytes += a.size;
+        if (a.contentDisposition === 'inline' || a.related) continue;
+      }
+      attachments.push({ name: a.filename ?? 'attachment', size: a.size });
+    }
+    return {
+      mailboxAddress: address, fromName: from?.name ?? '', fromAddress: from?.address ?? '',
+      to: addrText(parsed.to), cc: addrText(parsed.cc), subject: parsed.subject ?? '',
+      date: parsed.date && !Number.isNaN(parsed.date.getTime()) ? parsed.date.toISOString() : '',
+      html: typeof parsed.html === 'string' ? parsed.html : null, text: parsed.text ?? '',
+      attachments, inline, large: false
+    };
   }
 
   /** A read of the whole message: a small one, or a client that can't fetch parts. */
@@ -1548,7 +1730,10 @@ async function runMailRequest(
       // Anyone can write to the business: label the text as data and point out lines aimed at an AI.
       const msg = markUntrustedMessage(await svc.read(mailbox!, id));
       tellMichaelFlagged(deps, cfg, agentId, mailbox!, id, msg);
-      return { status: 200, body: msg };
+      // A ready named link to this email, to carry into a filing built on it,
+      // so the owner can open the email itself (original-email-view.md, C1).
+      const link = emailLinkFor(mailbox!, msg);
+      return { status: 200, body: link ? { ...msg, link } : msg };
     }
     if (op === 'archive' || op === 'mark_read' || op === 'mark_junk') {
       const raw = Array.isArray(body.ids) ? body.ids : body.id !== undefined ? [body.id] : [];

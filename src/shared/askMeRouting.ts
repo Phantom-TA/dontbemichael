@@ -192,8 +192,13 @@ export function mergeHumanQA(onDisk: unknown[], incoming: unknown[], only?: numb
 
 /* ───────────────── Options and several questions (ask-me-options.md) ───────────────── */
 
-/** One option Michael wrote on an ask. */
-export interface AskOption { label: string; recommended?: boolean }
+/** One option Michael wrote on an ask. `note` is set on an option that needs
+ *  the owner's own words ("Send with my changes"): a short question the box
+ *  asks once it is picked, and Reply waits for an answer to it. */
+export interface AskOption { label: string; recommended?: boolean; note?: string }
+
+/** How much of an option's question the box shows. */
+const OPTION_NOTE_MAX = 120;
 /** One question of an ask with several; it may carry its own options (a mixed ask). */
 export interface AskPart { q: string; options?: AskOption[] }
 /** The fields that give an ask its shape. An entry has one or the other. */
@@ -216,7 +221,8 @@ function readOptions(v: unknown): AskOption[] | null {
   for (const o of v) {
     const label = o && typeof o === 'object' ? text((o as { label?: unknown }).label) : null;
     if (!label) return null;
-    out.push((o as { recommended?: unknown }).recommended === true ? { label, recommended: true } : { label });
+    const note = text((o as { note?: unknown }).note)?.replace(/\s+/g, ' ').slice(0, OPTION_NOTE_MAX);
+    out.push({ label, ...((o as { recommended?: unknown }).recommended === true ? { recommended: true } : {}), ...(note ? { note } : {}) });
   }
   return out;
 }

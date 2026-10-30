@@ -41,10 +41,10 @@ runs on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.3.0: See and change your Claude sign in.**
-> Settings, Agents shows whether the team works on your Claude account or an Anthropic API key, and
-> moves it from one to the other. Out of credit on a key, the stop card offers Change sign in, and
-> the team restarts on the new sign in at once. In 0.2.9, failures report themselves.
+> **New in 0.3.1: See the original email.**
+> A question or a reply built on an email shows an Email chip that opens the email in an office tab,
+> exactly as it came, even after it was archived. Opening it never marks it read, and pictures from
+> the web wait until you ask. In 0.3.0, see and change your Claude sign in.
 
 ## Contents
 

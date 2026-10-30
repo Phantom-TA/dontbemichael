@@ -416,6 +416,40 @@ Go with it: keep only the owner's own words (the answer, the edit, the note) in 
 **Effort:** M
 **Priority:** P2
 
+## Original email view (deferred from the CEO review of docs/designs/original-email-view.md, 2026-10-29)
+
+### Show the whole conversation in the email tab
+
+**What:** Under the one email the tab opens, list the earlier messages of the same conversation, collapsed, newest at the top, found from its In-Reply-To and References headers.
+
+**Why:** A reply often only makes sense next to what it answers (our nudge, the sender's first message); today the owner still needs the mailbox for those.
+
+**Pros:** Full context in one place; reuses the email tab, the owner fetch and the header lookups.
+
+**Cons:** More folder searches per open (each earlier Message-ID), slower open, more failure paths; Gmail threads and other providers' references differ.
+
+**Context:** Owner deferred it (CEO review D5, 2026-10-29) so the single email view ships first and is used. Start from `MailService.original` and the thread headers `threadOf` already reads (`src/main/mail.ts:762`).
+
+**Effort:** human M / CC S
+**Priority:** P3
+**Depends on:** the email tab shipping.
+
+### Open or save an email's attachments from the email tab
+
+**What:** The email tab lists attachment names and sizes; add Save to a folder the owner picks, and Open in the office for safe kinds (PDF, pictures).
+
+**Why:** The owner still needs the mailbox to open what was attached to the email an ask is built on.
+
+**Pros:** Everything about the email in one place.
+
+**Cons:** Brings files from outside senders onto the Mac; needs its own checks (kind from content not name, size cap, no launching executables, quarantine flag on macOS).
+
+**Context:** Owner deferred it (CEO review D6, 2026-10-29). Pair with "Read one email without downloading its attachments" under Attachments: download only the one part asked for.
+
+**Effort:** human M / CC S
+**Priority:** P3
+**Depends on:** the email tab shipping.
+
 ## Message times and upkeep (deferred from the ship review of mit/file-tab-no-bottom-bar, 2026-10-18)
 
 ### Read a reply's time from the app's record, not the agent's file

@@ -7,9 +7,10 @@
  * SECURITY: agent-generated markdown is untrusted. react-markdown WITHOUT
  * rehype-raw renders to React elements only — no HTML sink exists, raw HTML in
  * the source is shown as text, and the default urlTransform already drops
- * javascript: URIs. Keep it that way: never add rehype-raw here. The one scheme
- * let through besides the default's is `dbm:`, the app's own places
- * (settings-links-in-replies.md), which render as a button and never navigate.
+ * javascript: URIs. Keep it that way: never add rehype-raw here. The schemes
+ * let through besides the default's are `dbm:`, the app's own places
+ * (settings-links-in-replies.md), and `email:`, one email
+ * (original-email-view.md); both render as a button and never navigate.
  *
  * Links never navigate the window: http(s)/mailto go through the main-process
  * opener; relative *.md links surface through onOpenMarkdownLink so the host
@@ -32,6 +33,8 @@ import { remarkFileChips } from './remarkFileChips';
 import { remarkSettingsLinks } from './remarkSettingsLinks';
 import { PlaceChip } from './PlaceChip';
 import { PLACE_SCHEME, parsePlace } from '@shared/settingsPlaces';
+import { EMAIL_SCHEME, parseEmailHref } from '@shared/emailLink';
+import { EmailChip } from './EmailChip';
 import { placeUrlTransform } from './placeUrl';
 import { rehypeAutoDir } from './rehypeAutoDir';
 import { useRtl } from '@/i18n/useDirection';
@@ -120,6 +123,12 @@ export const MarkdownPreview = memo(function MarkdownPreview({
             if (h.slice(0, PLACE_SCHEME.length).toLowerCase() === PLACE_SCHEME) {
               const place = parsePlace(h);
               return place ? <PlaceChip place={place} words={hastText(node)}>{children}</PlaceChip> : <>{children}</>;
+            }
+            // One email (original-email-view.md): a chip in a card, the words
+            // elsewhere. A link that names no email is just its words.
+            if (h.slice(0, EMAIL_SCHEME.length).toLowerCase() === EMAIL_SCHEME) {
+              const email = card ? parseEmailHref(h) : null;
+              return email ? <EmailChip email={email} words={hastText(node)}>{children}</EmailChip> : <>{children}</>;
             }
             // The .md file a link opens, judged on its cleaned path (resolveMdLinkRel).
             const mdTarget = onOpenMarkdownLink && !isExternal(h) ? resolveMdLinkRel(baseRel, h) : null;

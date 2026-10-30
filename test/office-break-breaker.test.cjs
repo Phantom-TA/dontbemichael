@@ -111,7 +111,7 @@ test('the rule, and main uses it for every api_error and every stopped turn', ()
   assert.equal(countsTowardErrorStorm({ ...waiting, reason: 'signin' }, true), false);
   assert.equal(countsTowardErrorStorm(waiting, false), true, 'another engine keeps working');
   const main = read('src/main/index.ts');
-  assert.match(main, /telemetry\.onApiError\(\(agentId, querySource\) => \{\n  if \(countsTowardErrorStorm\(officeBreak\.view\(\), onClaudePlan\(agentId\)\)\) breaker\.recordError\(agentId, querySource\);\n\}\);/);
+  assert.match(main, /telemetry\.onApiError\(\(agentId, querySource, statusCode\) => \{\n  if \(countsTowardErrorStorm\(officeBreak\.view\(\), onClaudePlan\(agentId\)\)\) breaker\.recordError\(agentId, querySource, statusCode\);\n\}\);/);
   assert.equal((main.match(/breaker\.recordError\(/g) ?? []).length, 1, 'no other way in');
   assert.match(main, /const step = officeBreak\.limitReached\(signal\.agentId, signal\.reason, retry\);[\s\S]{0,250}breaker\.clearErrors\(signal\.agentId\);/);
 });

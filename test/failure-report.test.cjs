@@ -338,3 +338,42 @@ test('a disk quota error is the owner\'s, like a full disk', () => {
   r.flush();
   assert.equal(ledger(files).length, 0);
 });
+
+test('a report carries the engine version the app knows, else unknown', () => {
+  // Value: protects=an issue says which Claude Code build failed; fails_when=engineVersion is always unknown (issue 661 had unknown), or a malformed version is sent; why_new=issue 661; seam=none
+  const { r, files } = make({ deps: { engineVersionFor: (id) => (id === 'kelly' ? null : '2.1.309') } });
+  r.observe({ kind: 'agent-exit', agentId: 'pam', signal: 11, exitCode: 0 });
+  r.observe({ kind: 'agent-exit', agentId: 'kelly', exitCode: 3 });
+  r.flush();
+  const rows = ledger(files);
+  assert.equal(rows.find((x) => x.detail === 'SIGSEGV').engineVersion, '2.1.309');
+  assert.equal(rows.find((x) => x.detail === 'code-3').engineVersion, 'unknown');
+  const odd = make({ deps: { engineVersionFor: () => '2.1.309 (Claude Code)' } });
+  odd.r.observe({ kind: 'agent-exit', agentId: 'pam', signal: 11, exitCode: 0 });
+  odd.r.flush();
+  assert.equal(ledger(odd.files)[0].engineVersion, 'unknown', 'anything but digits and dots is unknown');
+});
+
+test('a report carries the member\'s role, the app\'s uptime and the caller\'s checked context', () => {
+  // Value: protects=a loop-agent report reaches the issue with the facts that tell its cause; fails_when=context is dropped on the way to the ledger, or an unchecked value is kept; why_new=issue 661; seam=none
+  const { r, files, tick } = make({ deps: { roleFor: (id) => (id === 'god' ? 'michael' : 'member'), uptimeMs: () => 2 * 3600_000 } });
+  r.reportFailure('loop-agent', undefined, { detail: 'error-storm:constrained', agentId: 'pam', context: { limit: '5', limitSet: 'invalid', codes: '529', note: 'free text', role: 'research' } });
+  tick(1);
+  r.reportFailure('main-uncaught', new TypeError('x'));
+  r.flush();
+  const [loop, crash] = ledger(files);
+  assert.deepEqual(loop.context, { codes: '529', limit: '5', limitSet: 'invalid', role: 'research', uptime: '1-4h' }, 'the caller\'s role wins; unknown keys go');
+  assert.deepEqual(crash.context, { uptime: '1-4h' }, 'no agent, no role');
+  const { r: plain, files: f2 } = make();
+  plain.reportFailure('main-uncaught', new TypeError('x'));
+  plain.flush();
+  assert.equal('context' in ledger(f2)[0], false, 'no facts, no context field');
+});
+
+test('a breaker trip is reported with what the breaker knew', () => {
+  // Value: protects=the wiring from a breaker trip to a report with context; fails_when=index.ts reports loop-agent without the breaker's diagnosis; why_new=issue 661; seam=source
+  const src = read('src/main/index.ts');
+  assert.match(src, /failures\.reportFailure\('loop-agent', undefined, \{\s*detail: loop, agentId: d\.state\.agentId, context: loopAgentContext\(arm, breaker\.diagnosis\(d\.state\.agentId, arm\), now\)/);
+  assert.match(src, /engineVersionFor: \(agentId\) => \(failureEngineFor\(agentId\) === 'claude' \? lastClaudeCliVersion\(\) : null\)/);
+  assert.match(src, /breaker\.recordError\(agentId, querySource, statusCode\)/);
+});

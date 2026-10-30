@@ -192,3 +192,69 @@ test('a full disk or quota is the owner\'s on every path, never a report', () =>
   assert.deepEqual(S.classifyLogEvent({ kind: 'hook-server-error', code: 'ECONNRESET' }), { kind: 'hook-server', detail: 'ECONNRESET' });
   assert.equal(S.LOG_KIND_CLASS['failure-report-held'], 'none');
 });
+
+// Context (issue 661): a loop-agent report said only `error-storm:constrained`,
+// which fits an owner's limit of 0, an agent that recovered and was never
+// cleared, and a real storm alike. Context is closed facts that tell them apart.
+
+test('context holds closed facts per kind, and a bad one is refused', () => {
+  // Value: protects=a report still carries nothing but closed values once it has context; fails_when=a context key or value outside the kind's list is accepted; why_new=context is new (issue 661); seam=none
+  const ctx = { limit: '5', limitSet: 'invalid', hits: '5', hardStop: 'off', sinceTool: 'over-4h', codes: '529-529', errorSpan: '1-5m', sinceSuccess: 'never', role: 'member', uptime: '1-4h' };
+  const r = goodReport({ kind: 'loop-agent', detail: 'error-storm:constrained', context: ctx });
+  assert.equal(S.validateReport(r), null);
+  for (const [k, v] of [['limit', 'five'], ['limitSet', 'mine'], ['codes', '529-overloaded'], ['codes', '700'], ['role', 'Pam'], ['sinceTool', '12 minutes'], ['tool', 'mcp__acme_crm__find']]) {
+    assert.equal(S.validateReport({ ...r, context: { ...ctx, [k]: v } }), 'context', `${k}=${v} is refused`);
+  }
+  assert.equal(S.validateReport({ ...r, context: { ...ctx, note: 'hello' } }), 'context', 'an unknown key is refused');
+  assert.equal(S.validateReport({ ...r, context: {} }), 'context', 'an empty context is left out, never sent');
+  assert.equal(S.validateReport(goodReport({ context: { limit: '5' } })), 'context', 'loop keys belong to loop-agent only');
+  assert.equal(S.validateReport(goodReport({ context: { role: 'michael', uptime: 'under-1m' } })), null, 'role and uptime fit any kind');
+  assert.deepEqual(S.cleanContext('loop-agent', { ...ctx, note: 'x', limit: 'five' }), Object.fromEntries(Object.entries(ctx).filter(([k]) => k !== 'limit').sort()), 'cleanContext keeps only valid entries');
+});
+
+test('an issue body with context reads back exactly, and context leaves the fingerprint alone', () => {
+  // Value: protects=the promotion Action re-renders the same issue from a report with context, and one failure still groups as one issue; fails_when=context rows do not read back, or context is hashed into the fingerprint; why_new=context is new; seam=none
+  const r = goodReport({ kind: 'loop-agent', detail: 'repeat:stopped', frames: [], context: { hits: '8', limit: '8', limitSet: 'default', tool: 'Bash' } });
+  const body = S.issueBody(r);
+  assert.match(body, /\| context\.tool \| `Bash` \|/);
+  assert.match(body, /Noticed in: src\/main\/breaker\.ts/);
+  assert.deepEqual(S.parseIssueBody(body), r);
+  assert.deepEqual(S.parseIssueBody(S.issueBody(goodReport())), goodReport(), 'a report without context reads back without one');
+  assert.equal(S.parseIssueBody(body.replace('`Bash`', '`see https://scam.example`')), null, 'a forged context value is refused');
+  assert.equal(S.fingerprintInput(r.kind, r.detail, r.errorName, r.frames), S.fingerprintInput('loop-agent', 'repeat:stopped', 'TypeError', []));
+  assert.doesNotMatch(S.issueBody({ ...r, context: { tool: 'mcp__acme_crm__find', limit: '8' } }), /acme/, 'only checked context reaches the body');
+});
+
+test('every kind names the code that notices it, and that code exists', () => {
+  // Value: protects=whoever picks an issue up starts in the right file; fails_when=a kind has no source or names a file that moved; why_new=Noticed in is new; seam=source
+  for (const k of S.FAILURE_KINDS) {
+    const src = S.KIND_SOURCE[k];
+    assert.ok(src, k);
+    assert.ok(fs.existsSync(path.join(root, src.split(' ')[0])), `${k}: ${src}`);
+  }
+});
+
+test('a loop trip turns the breaker facts into closed fields', () => {
+  // Value: protects=an error storm report says the limit, where it came from, the statuses and whether a request got through; fails_when=the context drops a fact, sends a raw time or number list, or names an MCP tool; why_new=issue 661; seam=none
+  const now = 1_700_000_000_000;
+  const facts = {
+    limit: 5, limitSet: 'invalid', hits: 5, hardStop: true, lastDistinctToolAt: now - 3 * 3600_000,
+    tool: 'mcp__acme_crm__find', errorCodes: [500, 529, 529, 529, 529, 999], errorRunStartedAt: now - 2 * 60_000,
+    lastErrorAt: now - 30_000, lastApiSuccessAt: now - 60_000
+  };
+  assert.deepEqual(S.loopAgentContext('error-storm', facts, now), {
+    codes: '500-529-529-529-529', errorSpan: '1-5m', hardStop: 'on', hits: '5', limit: '5', limitSet: 'invalid',
+    sinceSuccess: '1-5m', sinceTool: '1-4h'
+  });
+  const loop = S.loopAgentContext('repeat', { ...facts, limitSet: 'default', limit: 8, hits: 8 }, now);
+  assert.equal(loop.tool, 'mcp', 'an MCP tool is only mcp');
+  assert.equal(loop.codes, undefined, 'error details only for an error storm');
+  const quiet = S.loopAgentContext('error-storm', { ...facts, errorCodes: [], lastApiSuccessAt: now - 3600_000 * 9, lastDistinctToolAt: 0 }, now);
+  assert.equal(quiet.codes, 'none');
+  assert.equal(quiet.sinceSuccess, 'never', 'a success from before the run says nothing about it');
+  assert.equal(quiet.sinceTool, 'never');
+  assert.equal(S.validateReport(goodReport({ kind: 'loop-agent', detail: 'error-storm:stopped', context: S.loopAgentContext('error-storm', facts, now) })), null);
+  assert.equal(S.agoBucket(59_999), 'under-1m');
+  assert.equal(S.agoBucket(4 * 3600_000), 'over-4h');
+  assert.equal(S.agoBucket(Number.NaN), 'never');
+});

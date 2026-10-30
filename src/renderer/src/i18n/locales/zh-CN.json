@@ -3246,5 +3246,33 @@
     "noGoodRun": "这项工作之前没有可供比较的顺利运行。",
     "noTranscript": "这次运行的对话已不在这台电脑上。",
     "noDifference": "两次运行没有显示需要更改工作的地方。"
+  },
+  "emailTab": {
+    "openEmail": "打开邮件：{{words}}",
+    "openInGmail": "在 Gmail 中打开",
+    "opening": "正在打开邮件",
+    "noSubject": "（无主题）",
+    "from": "发件人",
+    "to": "收件人",
+    "cc": "抄送",
+    "date": "日期",
+    "picturesHidden": "来自网络的图片已隐藏。",
+    "showPictures": "显示图片",
+    "showingPictures": "正在加载图片",
+    "somePicturesFailed": "部分图片无法加载。",
+    "tooLarge": "邮件太大，无法完整显示。以下是它的文字。",
+    "tryAgain": "重试",
+    "openMailboxes": "打开邮箱设置",
+    "frameTitle": "来自 {{sender}} 的邮件",
+    "replyingTo": "回复给",
+    "failed": {
+      "broken": "这个邮件链接已损坏。",
+      "mailbox": "这个邮箱已不在办公室中。",
+      "message": "在这个邮箱中找不到（废纸篓和垃圾邮件除外）。",
+      "auth": "登录这个邮箱失败。",
+      "blocked": "无法从办公室访问这个邮箱。",
+      "network": "无法连接到邮箱。",
+      "unknown": "无法显示这封邮件。"
+    }
   }
 }

@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.3.0). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.3.1). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -81,6 +81,10 @@ moving, and brings you only the decisions that need you.
 - Let one more team member send from a mailbox without reading it (Send only), with its own Sending choice: Sales sends outreach from the CEO's address while the Admin keeps that inbox.
 - The Executive Admin keeps the inbox at zero: every email is routed, tracked, filed or cleared and
   leaves the inbox. Archiving, marking read and marking junk never delete anything.
+- See the email a question or a reply is built on, as it came: an Email chip on the card opens it
+  in an office tab, straight from your mailbox, even after it was archived. Opening it never marks
+  it read or moves it, pictures from the web stay hidden until you show them, and Gmail mailboxes
+  get Open in Gmail.
 
 ### 4. Jobs on a clock
 - Each team member's schedules sit on its Access tab. Name the job ("Check the support
@@ -212,6 +216,27 @@ moving, and brings you only the decisions that need you.
   as a picture, and a part you select pastes as clean as the whole, in light or dark mode.
 
 ## Part 2: Every change, release by release
+
+### 0.3.1 (2026-10-29)
+- An Email chip on a question, a Michael reply or a Send on approval card opens the email it is
+  built on in an office tab, exactly as it came from your mailbox: subject, who sent it and who
+  was copied, the email itself on a white page, and its attachments listed. Opening it never marks
+  it read or moves it. Pictures from the web stay hidden until you click Show pictures, so the
+  sender can't tell you looked. Gmail mailboxes get Open in Gmail.
+- A choice that needs your own words, like "Send with my changes", asks for them when you pick it,
+  and Reply waits until you write them.
+- Automatic failure reports carry the facts that tell one cause from another, still closed values
+  only: the engine's version, which kind of team member it was, and for a stuck team member the
+  breaker's limit and where it came from and the HTTP status numbers of its errors.
+- An approved forward or attachment still goes out after its email was archived.
+- A team member's folder in Dropbox, Google Drive, OneDrive, Box or iCloud Drive on a Mac keeps its
+  privacy wall, and Michael's folder can live there too.
+- A team member whose name has a space or a comma shows in Pulse and in what the office spent.
+- A breaker limit of 0 means the default; a team member that got through after a few errors from
+  Claude is no longer stopped for them.
+- Two team members can no longer reply to each other forever; a big save or a long paste still
+  reaches the app; a webhook you switch off stops answering at once.
+- Pulse counts a stop at the Max turns limit under Steps blocked.
 
 ### 0.3.0 (2026-10-28)
 - Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API

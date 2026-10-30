@@ -14,6 +14,14 @@ import { realpathSync, statSync } from 'node:fs';
 import { parseCliVersion } from '../shared/modelCliFloor';
 
 const cache = new Map<string, string | null>();
+/** The last version a probe answered, from any binary. */
+let lastKnown: string | null = null;
+
+/** The installed Claude Code version as last probed, or null before any probe
+ *  answered. Synchronous, for a failure report written inside a crash handler. */
+export function lastClaudeCliVersion(): string | null {
+  return lastKnown;
+}
 
 /** How the probe runs `claude --version`. An npm install on Windows is a .cmd
  *  shim, which Node refuses to start without cmd.exe (EINVAL), so it goes
@@ -44,6 +52,6 @@ export async function claudeCliVersion(binPath: string | null): Promise<string |
     } catch { resolve(null); }
   });
   // Only a real answer is cached: a timeout on a busy machine is worth retrying.
-  if (version) cache.set(key, version);
+  if (version) { cache.set(key, version); lastKnown = version; }
   return version;
 }

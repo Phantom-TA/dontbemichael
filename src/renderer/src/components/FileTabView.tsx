@@ -13,6 +13,7 @@ import { MarkdownPreview } from '@/markdown/MarkdownPreview';
 import { useStore } from '@/store/store';
 import type { FileTab } from '@/store/fileTabs';
 import { PixelButton } from './PixelButton';
+import { EmailTabView } from './EmailTabView';
 import { CSV_ROW_LIMIT, parseDelimited } from './delimited';
 import { cleanCopy, copyPicture, encodeShownPicture, escapeHtml, tableCopy, type CopyData, type CopyResult } from './fileTabCopy';
 
@@ -24,6 +25,8 @@ type Read =
 export function FileTabView() {
   const tab = useStore((s) => s.fileTabs.find((f) => f.id === s.activeFileTab));
   if (!tab) return null;
+  // An email opened from a chip (docs/designs/original-email-view.md).
+  if (tab.email) return <EmailTabView key={tab.id} tab={tab} />;
   return <FileTabBody key={tab.id} tab={tab} />;
 }
 

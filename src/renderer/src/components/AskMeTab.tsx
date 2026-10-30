@@ -328,7 +328,10 @@ export function AskMeTab() {
         const draft = drafts[row.key] ?? '';
         const shape = readAskShape(open);
         const pk = picks[row.key] ?? {};
-        const toSend = answerFor(row, shape);
+        // An option that needs the owner's words asks for them in the box, and
+        // Reply waits until there are some (its "note", ask-me-options.md).
+        const pickedNote = shape.kind === 'choice' && pk.pick !== undefined ? shape.options[pk.pick]?.note : undefined;
+        const toSend = pickedNote && !draft.trim() ? '' : answerFor(row, shape);
         const partsAnswered = shape.kind === 'parts' ? shape.parts.filter((p, i) => partAnswerText(p, pk.parts?.[i])).length : 0;
         // Reply says what it will send (D3): the option, or how many questions.
         const replyLabel = shape.kind === 'choice' && pk.pick !== undefined
@@ -434,7 +437,7 @@ export function AskMeTab() {
               onChange={(e) => setAnswerDraft(row.key, e.target.value)}
               onFocus={() => setOpenId(row.key)}
               onKeyDown={(e) => { if (isComposingKey(e)) return; if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void sendAnswer(row); }}
-              placeholder={shape.kind === 'parts' ? translate('askMe.anythingElse') : pk.pick !== undefined ? translate('askMe.addNote') : translate('askMe.ownAnswer')}
+              placeholder={shape.kind === 'parts' ? translate('askMe.anythingElse') : pickedNote ?? (pk.pick !== undefined ? translate('askMe.addNote') : translate('askMe.ownAnswer'))}
               style={{
                 width: '100%', display: 'block', boxSizing: 'border-box', padding: '7px 10px', minHeight: 34,
                 background: 'var(--cth-card)', border: 'none',

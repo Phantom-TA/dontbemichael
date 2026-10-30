@@ -125,7 +125,7 @@ import { runHiddenModel } from './hiddenModel';
 import { CostLedgerStore } from './costLedger';
 import { analytics, dntSet, isRendererMessageSurface } from './analytics';
 import { createFailureReporter, FLUSH_MS } from './failureReport';
-import { loopAgentDetail } from '../shared/failureReport';
+import { breakerArm, loopAgentContext, loopAgentDetail } from '../shared/failureReport';
 import { createFailureSender, SEND_EVERY_MS } from './failureSender';
 
 /** The failure reports key (docs/designs/auto-report-failures.md): injected by
@@ -135,7 +135,10 @@ import { writeFileAtomic } from './atomicFile';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
 import * as integrations from './integrations';
-import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, type AddMailboxInput } from './mail';
+import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, classifyMailError, type AddMailboxInput } from './mail';
+import { EMAIL_IPC, gmailMessageUrl, parseEmailHref, type OriginalFailure, type OriginalResult } from '../shared/emailLink';
+import { fetchableUrl, frameNavigationAllowed, remotePictureUrls } from '../shared/emailFrame';
+import { fetchPictures } from './emailPictures';
 import { MailApprovals } from './mailApprovals';
 import { standingFitCheck } from './standingCheck';
 import { fileFitCheck } from './fileFitCheck';
@@ -180,7 +183,7 @@ import { toolCatalog, type ToolStatus } from '../shared/toolCatalog';
 import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalSkill } from './skills';
 import { loadHero } from './hero';
 import { loadModelCatalog } from './modelCatalog';
-import { claudeCliVersion } from './claudeCliVersion';
+import { claudeCliVersion, lastClaudeCliVersion } from './claudeCliVersion';
 import { ALLOW_TEMP_WORKERS, AUTO_FAILURE_REPORTS } from '../shared/buildFeatures';
 import { APP_NAME, APP_DATA_DIR, APP_URL_SCHEME } from '../shared/appName';
 import { copyOfficeData, homeFolderStatus, homeReadyAtLaunch } from './homeFolder';
@@ -222,6 +225,14 @@ app.setName(APP_NAME);
 // read late, inside try, since they are made further down.
 // DO_NOT_TRACK as the login shell exports it (SR4): null until read.
 let shellDnt: boolean | null = null;
+/** The engine a failure ran on: the member's, else Michael's. */
+function failureEngineFor(agentId?: string): string {
+  try {
+    if (agentId) return hive.registry().agents[agentId]?.provider ?? 'claude';
+    return readConfig().godProvider ?? 'claude';
+  } catch { return 'none'; }
+}
+const appStartedAt = Date.now();
 const failures = createFailureReporter({
   enabled: AUTO_FAILURE_REPORTS,
   ledgerPath: join(app.getPath('userData'), 'failures.jsonl'),
@@ -231,12 +242,11 @@ const failures = createFailureReporter({
   arch: process.arch,
   now: () => Date.now(),
   sha256: (s) => createHash('sha256').update(s).digest('hex'),
-  engineFor: (agentId) => {
-    try {
-      if (agentId) return hive.registry().agents[agentId]?.provider ?? 'claude';
-      return readConfig().godProvider ?? 'claude';
-    } catch { return 'none'; }
-  },
+  engineFor: failureEngineFor,
+  // Only Claude Code's version is probed (at spawn); other engines stay unknown.
+  engineVersionFor: (agentId) => (failureEngineFor(agentId) === 'claude' ? lastClaudeCliVersion() : null),
+  roleFor: (agentId) => (agentId === RESEARCH_ID ? 'research' : agentId === (hive.registry().godId ?? 'god') ? 'michael' : 'member'),
+  uptimeMs: () => Date.now() - appStartedAt,
   officeBreakActive: () => { try { return officeBreak.current() !== null; } catch { return false; } },
   doNotTrack: () => dntSet() || shellDnt === true,
   // Nothing is sent until the shell has been read: an opt out never fails open.
@@ -484,8 +494,8 @@ let pulsePresenceTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
 // Not while the office is stopped: a refused turn is the stop, not a storm.
-telemetry.onApiError((agentId, querySource) => {
-  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId, querySource);
+telemetry.onApiError((agentId, querySource, statusCode) => {
+  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId, querySource, statusCode);
 });
 // Claude Code logs one api_error only after it gives up on a request, and a
 // later api_request shows the session recovered. A request re-issued after a
@@ -2588,7 +2598,14 @@ function runBreakerBeat(progressWindowMs: number): void {
     // A member stuck in a loop is a failure report; a spending or token cap is
     // the owner's setting and is not (docs/designs/auto-report-failures.md).
     const loop = loopAgentDetail(d.action, reason);
-    if (loop) failures.reportFailure('loop-agent', undefined, { detail: loop, agentId: d.state.agentId });
+    const arm = breakerArm(reason);
+    // What the breaker knew, as closed fields, so the report tells one cause
+    // from another (issue 661): the limit and where it came from, the error run.
+    if (loop && arm) {
+      failures.reportFailure('loop-agent', undefined, {
+        detail: loop, agentId: d.state.agentId, context: loopAgentContext(arm, breaker.diagnosis(d.state.agentId, arm), now)
+      });
+    }
     if (d.action === 'steer' || d.action === 'constrain') {
       // The member hears it; on a constrain Michael does too (breakerMessages).
       // No toast: a constrain is a soft pause Michael handles (only Michael
@@ -3825,6 +3842,14 @@ function createWindow(): BrowserWindow {
     if (isDev && process.env.ELECTRON_RENDERER_URL && url.startsWith(process.env.ELECTRON_RENDERER_URL)) return;
     e.preventDefault();
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+  });
+
+  // A frame inside the window (the email tab, a release drop) shows only its
+  // own srcdoc: a link, a form or a refresh in one never loads a page there
+  // (docs/designs/original-email-view.md). Its links open as new windows,
+  // which the handler above sends to the browser.
+  win.webContents.on('will-frame-navigate', (e) => {
+    if (!frameNavigationAllowed(e.url, e.isMainFrame)) e.preventDefault();
   });
 
   // Right-click on a web or email link offers "Copy link address": a named link
@@ -7360,6 +7385,48 @@ ipcMain.handle('mailProposals:decide', (_evt, id: unknown, decision: unknown, ed
  *  (shared-mailboxes.md, O1b): app private, never in the office log. */
 ipcMain.handle('mail:recentSends', (_evt, agentId: unknown, mailbox: unknown) =>
   (typeof agentId === 'string' && typeof mailbox === 'string' ? mailApprovals.recentSends(agentId, mailbox, 5).map((r) => ({ to: r.to, subject: r.subject, sentAt: r.sentAt })) : []));
+// The owner's email tab (docs/designs/original-email-view.md). Only the app
+// window's own page may ask (R7), never a frame inside it, and every link is
+// parsed again here: main never takes the renderer's word for a mailbox.
+function fromAppPage(evt: Electron.IpcMainInvokeEvent): boolean {
+  const win = mainWindow;
+  return !!win && !win.isDestroyed() && evt.sender === win.webContents && evt.senderFrame === win.webContents.mainFrame;
+}
+function gmailUrlFor(mailbox: string, messageId: string): string | null {
+  const rec = (readConfig().mailboxes ?? []).find((m) => m.id === mailbox);
+  return rec && (rec.provider === 'gmail' || rec.provider === 'google-workspace') ? gmailMessageUrl(rec.address, messageId) : null;
+}
+ipcMain.handle(EMAIL_IPC.original, async (evt, href: unknown): Promise<OriginalResult> => {
+  const ref = typeof href === 'string' ? parseEmailHref(href) : null;
+  if (!ref || !fromAppPage(evt)) return { ok: false, reason: 'broken', gmailUrl: null };
+  const gmailUrl = gmailUrlFor(ref.mailbox, ref.messageId);
+  const started = Date.now();
+  try {
+    const email = await mailService.original(ref.mailbox, ref.messageId);
+    console.log(`[mail] owner-view ${ref.mailbox} ok ${Date.now() - started}ms`);
+    return { ok: true, email, gmailUrl };
+  } catch (e) {
+    const err = classifyMailError(e);
+    const reason: OriginalFailure = err.kind === 'not-found' ? (err.message === 'mailbox' ? 'mailbox' : 'message')
+      : err.kind === 'auth' ? 'auth'
+        : err.kind === 'provider-blocked' || err.kind === 'unsupported' ? 'blocked'
+          : err.kind === 'network' || err.kind === 'timeout' || err.kind === 'refused' ? 'network' : 'unknown';
+    // No sender, subject or Message-ID in the log (the office log rule, D14).
+    console.log(`[mail] owner-view ${ref.mailbox} ${reason} ${Date.now() - started}ms`);
+    return { ok: false, reason, gmailUrl: reason === 'mailbox' ? null : gmailUrl };
+  }
+});
+ipcMain.handle(EMAIL_IPC.pictures, async (evt, href: unknown): Promise<{ pictures: Record<string, string>; failed: number }> => {
+  const ref = typeof href === 'string' ? parseEmailHref(href) : null;
+  if (!ref || !fromAppPage(evt)) return { pictures: {}, failed: 0 };
+  const email = mailService.keptOriginal(ref.mailbox, ref.messageId);
+  if (!email?.html) return { pictures: {}, failed: 0 };
+  return fetchPictures(remotePictureUrls(email.html).map((raw) => ({ raw, url: fetchableUrl(raw) })));
+});
+ipcMain.handle(EMAIL_IPC.cancel, (evt, href: unknown): void => {
+  const ref = typeof href === 'string' ? parseEmailHref(href) : null;
+  if (ref && fromAppPage(evt)) mailService.cancelOriginal(ref.mailbox, ref.messageId);
+});
 // Standing approvals: kinds an agent may send without asking, revocable on its Access tab.
 ipcMain.handle('mailStanding:list', (_evt, agentId: unknown) => (typeof agentId === 'string' ? mailApprovals.standing(agentId) : []));
 ipcMain.handle('mailStanding:revoke', (_evt, id: unknown) => (typeof id === 'string' ? mailApprovals.revokeStanding(id) : { ok: false, error: 'invalid' }));

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Original email view mockup</title>
+<style>
+  :root {
+    --bg:#F7F7FB; --card:#FFFFFF; --card-2:#FAFAFD; --ink:#1E1B2E; --ink-2:#4A4660; --ink-3:#6C6884; --ink-4:#B4B1C6;
+    --line:#E8E6F2; --line-2:#DAD7EA; --neutral-soft:#F0EFF5; --indigo:#6C5CE7; --indigo-soft:#EEEBFD; --indigo-text:#4338CA;
+    --coral-soft:#FFECEC; --coral-text:#C8303A; --amber-soft:#FFF4DF; --amber-text:#8F5C07;
+    --r-sm:6px; --r-md:9px; --r-lg:12px; --r-xl:14px;
+    --shadow-md:0 1px 2px rgba(30,27,46,.06),0 4px 12px rgba(30,27,46,.06);
+    --font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif; --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"] {
+    --bg:#14131C; --card:#1F1E2B; --card-2:#24233A; --ink:#ECEAF4; --ink-2:#CFCCDD; --ink-3:#A5A2B8; --ink-4:#8C89A0;
+    --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.14); --neutral-soft:#2A2938; --indigo:#9D90FF; --indigo-soft:rgba(157,144,255,.16); --indigo-text:#A99FFF;
+    --coral-soft:rgba(255,90,95,.16); --coral-text:#FF8C90; --amber-soft:rgba(242,180,90,.15); --amber-text:#F2B45A;
+    --shadow-md:0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.3);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font); font-size:13px; line-height:18px; }
+  .page { max-width:1180px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:20px; line-height:26px; font-weight:600; margin:0 0 4px; }
+  .sub { color:var(--ink-3); font-size:12px; margin:0 0 20px; }
+  .toggle { float:right; }
+  button { font-family:var(--font); }
+  .btn { height:30px; padding:0 12px; border-radius:var(--r-md); border:1px solid var(--line-2); background:var(--card); color:var(--ink); font-size:13px; font-weight:500; cursor:pointer; }
+  .btn.primary { background:var(--ink); color:var(--card); border-color:var(--ink); }
+  .section { margin:28px 0 10px; font-size:15px; line-height:20px; font-weight:600; }
+  .label { display:inline-block; font-size:11px; font-weight:600; color:var(--ink-3); margin-bottom:8px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:20px; align-items:start; }
+
+  /* Question card, as in task detail */
+  .q { background:var(--coral-soft); border:1px solid rgba(255,90,95,.35); border-radius:var(--r-xl); padding:16px 18px; max-width:620px; }
+  .q .meta { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .q .meta b { font-size:13px; } .q .meta span { color:var(--ink-3); font-size:12px; margin-left:8px; }
+  .pill { background:#D4363D; color:#fff; font-size:11px; font-weight:600; border-radius:999px; padding:3px 10px; }
+  .q p { margin:0 0 10px; font-size:13px; line-height:20px; }
+  .q ol { margin:8px 0 0; padding-left:22px; font-size:13px; line-height:22px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 8px; border-radius:var(--r-sm); background:var(--neutral-soft); color:var(--indigo-text); font-size:12px; font-weight:500; vertical-align:middle; border:0; cursor:pointer; max-width:100%; white-space:nowrap; }
+  .chip:hover { background:var(--indigo-soft); }
+  .chip:focus-visible { outline:2px solid var(--indigo); outline-offset:1px; }
+  .chip svg { color:var(--ink-3); flex:none; }
+  .chip .t { overflow:hidden; text-overflow:ellipsis; }
+
+  /* Email tab */
+  .tab { background:var(--card); border:1px solid var(--line); border-radius:var(--r-xl); box-shadow:var(--shadow-md); overflow:hidden; display:flex; flex-direction:column; min-height:520px; }
+  .tabbar { display:flex; gap:4px; padding:8px 10px; background:var(--card-2); border-bottom:1px solid var(--line); font-size:12px; }
+  .tabbar span { padding:4px 10px; border-radius:var(--r-md); color:var(--ink-2); }
+  .tabbar span.on { background:var(--card); color:var(--ink); font-weight:600; box-shadow:0 0 0 1px var(--line); }
+  .head { display:flex; align-items:flex-start; gap:10px; padding:12px 20px; border-bottom:1px solid var(--line); }
+  .head .grow { flex:1; min-width:0; }
+  .title { font-size:14px; font-weight:600; line-height:20px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .where { font-size:12px; color:var(--ink-3); }
+  .rows { display:grid; grid-template-columns:auto 1fr; gap:2px 12px; padding:10px 20px; border-bottom:1px solid var(--line); font-size:12px; line-height:18px; }
+  .rows dt { color:var(--ink-3); } .rows dd { margin:0; color:var(--ink-2); overflow-wrap:anywhere; }
+  .rows dd b { color:var(--ink); font-weight:600; }
+  .who { display:flex; gap:10px; align-items:center; }
+  .avatar { width:32px; height:32px; border-radius:50%; background:var(--indigo-soft); color:var(--indigo-text); display:grid; place-items:center; font-weight:600; font-size:13px; flex:none; }
+  .notice { display:flex; align-items:center; gap:8px; padding:8px 20px; font-size:12px; color:var(--ink-2); background:var(--card-2); border-bottom:1px solid var(--line); }
+  .notice .grow { flex:1; }
+  .link { background:none; border:0; padding:0; color:var(--indigo-text); font-size:12px; font-weight:500; cursor:pointer; }
+  .sheet-wrap { padding:16px 20px; background:var(--bg); flex:1; }
+  .sheet { background:#FFFFFF; color:#222; border-radius:var(--r-md); box-shadow:0 0 0 1px var(--line); padding:20px 24px; font-family:Arial,Helvetica,sans-serif; font-size:14px; line-height:21px; }
+  .sheet .logo { width:120px; height:28px; border:1px dashed #c9c9c9; border-radius:4px; display:grid; place-items:center; color:#999; font-size:11px; margin-bottom:16px; }
+  .sheet .logo.shown { border:0; background:#2f6f4f; color:#fff; font-weight:700; letter-spacing:.04em; }
+  .sheet p { margin:0 0 12px; }
+  .att { padding:10px 20px 14px; border-top:1px solid var(--line); background:var(--card); }
+  .att .row { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-2); line-height:22px; }
+  .att .row small { color:var(--ink-3); font-size:11px; }
+  .quiet { padding:28px 20px; color:var(--ink-3); font-size:13px; }
+  .err { display:flex; align-items:center; gap:10px; padding:28px 20px; color:var(--ink-2); font-size:13px; flex-wrap:wrap; }
+  .skel { height:12px; border-radius:6px; background:var(--neutral-soft); margin:8px 0; }
+  .note { font-size:12px; color:var(--ink-3); margin-top:6px; max-width:620px; }
+  .proposal { background:var(--card); border:1px solid var(--line); border-radius:var(--r-xl); padding:14px 16px; max-width:620px; box-shadow:var(--shadow-md); }
+  .proposal .k { font-size:11px; font-weight:600; color:var(--amber-text); background:var(--amber-soft); border-radius:999px; padding:2px 8px; }
+  .proposal .line { display:flex; gap:8px; align-items:center; margin:8px 0; font-size:12px; color:var(--ink-3); flex-wrap:wrap; }
+  .proposal .body { font-size:12px; line-height:16.5px; color:var(--ink-2); background:var(--card-2); border-radius:var(--r-md); padding:10px 12px; }
+  @media (max-width:560px) { .rows { grid-template-columns:1fr; } .head { flex-wrap:wrap; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="mail" viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2.6 4.5 8 8.6l5.4-4.1" fill="none" stroke="currentColor" stroke-width="1.3"/></symbol>
+  <symbol id="file" viewBox="0 0 16 16"><path d="M4 2h5l3 3v9H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M9 2v3h3" fill="none" stroke="currentColor" stroke-width="1.3"/></symbol>
+  <symbol id="clip" viewBox="0 0 16 16"><path d="M10.5 4.5 5.8 9.2a1.6 1.6 0 0 0 2.3 2.3l5-5a3 3 0 0 0-4.2-4.2l-5 5a4.4 4.4 0 0 0 6.2 6.2l3.6-3.6" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+  <symbol id="ext" viewBox="0 0 16 16"><path d="M9 3h4v4M13 3 7.5 8.5M12 9.5V13H3V4h3.5" fill="none" stroke="currentColor" stroke-width="1.3"/></symbol>
+  <symbol id="img" viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="6.5" r="1.2" fill="currentColor"/><path d="m3 12 3.5-3.5 2.5 2.5 2-2 2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+</svg>
+<div class="page">
+  <button class="btn toggle" onclick="var r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'">Light or dark</button>
+  <h1>Original email view</h1>
+  <p class="sub">Mockup for docs/designs/original-email-view.md, built with the app's tokens (branding/DESIGN.md). Example names are made up.</p>
+
+  <div class="section">1. The chip on a question</div>
+  <div class="q">
+    <div class="meta"><div><b>Question</b><span>21h ago</span></div><span class="pill">Waiting for you</span></div>
+    <p><b>Dana Ortiz at Northwind Cafe replied, and Jordan needs your call on the answer.</b> Dana says she doesn't see what we have to do with either company and isn't comfortable giving out access <button class="chip"><svg width="14" height="14"><use href="#mail"/></svg><span class="t">Dana Ortiz, 27 Oct</span></button>. She copied Sam, who manages their bookings and has the contacts file.</p>
+    <p>Draft: <button class="chip"><svg width="14" height="14"><use href="#file"/></svg><span class="t">Northwind reply draft 2026-10-28</span></button></p>
+    <ol><li>Send as written (recommended)</li><li>Send with my changes</li><li>Don't reply, close it</li></ol>
+  </div>
+  <p class="note">The chip sits where Michael wrote the link, like the Draft chip. Same chip as files and Settings places (PlaceChip: 24 px, neutral soft fill, indigo text, 12/500), with the mail icon.</p>
+
+  <div class="section">2. The reply card (Send on approval)</div>
+  <div class="proposal">
+    <span class="k">Waiting for your approval</span>
+    <div class="line">Replying to <button class="chip"><svg width="14" height="14"><use href="#mail"/></svg><span class="t">dana@northwind.example</span></button></div>
+    <div class="body">Hi Dana, thanks for the quick answer. We're the team helping you move your bookings list...</div>
+  </div>
+
+  <div class="section">3. The email tab: two ways to lead</div>
+  <div class="grid">
+    <div>
+      <span class="label">A. Subject leads, like a file tab</span>
+      <div class="tab">
+        <div class="tabbar"><span>Office</span><span>Who talks to whom</span><span class="on">Re: Free scoping review</span></div>
+        <div class="head"><div class="grow"><div class="title">Re: Free scoping review</div><div class="where">ops@yourbusiness.example</div></div><button class="btn"><svg width="13" height="13" style="vertical-align:-2px"><use href="#ext"/></svg> Open in Gmail</button></div>
+        <dl class="rows"><dt>From</dt><dd><b>Dana Ortiz</b> dana@northwind.example</dd><dt>To</dt><dd>ops@yourbusiness.example</dd><dt>Cc</dt><dd>Sam Lee sam@northwind.example</dd><dt>Date</dt><dd>Mon 27 Oct, 9:14 AM</dd></dl>
+        <div class="notice"><svg width="14" height="14"><use href="#img"/></svg><span class="grow">Pictures from the web are hidden.</span><button class="link" onclick="this.closest('.tab').querySelector('.logo').classList.add('shown');this.closest('.tab').querySelector('.logo').textContent='NORTHWIND';this.closest('.notice').remove()">Show pictures</button></div>
+        <div class="sheet-wrap"><div class="sheet"><div class="logo">picture hidden</div><p>Hi,</p><p>I don't see what you have to do with either company, and I'm not comfortable giving out access to our system. I've copied Sam, who manages our bookings and can send the contacts file if it's needed.</p><p>Dana</p></div></div>
+        <div class="att"><div class="row"><svg width="14" height="14"><use href="#clip"/></svg>bookings-export.csv <small>48 KB</small></div></div>
+      </div>
+    </div>
+    <div>
+      <span class="label">B. Sender leads, like a mail app</span>
+      <div class="tab">
+        <div class="tabbar"><span>Office</span><span>Who talks to whom</span><span class="on">Dana Ortiz</span></div>
+        <div class="head"><div class="who grow"><div class="avatar">DO</div><div style="min-width:0"><div class="title">Dana Ortiz</div><div class="where">dana@northwind.example to ops@yourbusiness.example, Cc Sam Lee</div></div></div><div class="where" style="white-space:nowrap">Mon 27 Oct, 9:14 AM</div></div>
+        <div style="padding:12px 20px 4px;font-size:15px;line-height:20px;font-weight:600">Re: Free scoping review</div>
+        <div class="notice" style="border-top:0"><svg width="14" height="14"><use href="#img"/></svg><span class="grow">Pictures from the web are hidden.</span><button class="link">Show pictures</button><button class="link" style="margin-left:12px">Open in Gmail</button></div>
+        <div class="sheet-wrap"><div class="sheet"><div class="logo">picture hidden</div><p>Hi,</p><p>I don't see what you have to do with either company, and I'm not comfortable giving out access to our system. I've copied Sam, who manages our bookings and can send the contacts file if it's needed.</p><p>Dana</p></div></div>
+        <div class="att"><div class="row"><svg width="14" height="14"><use href="#clip"/></svg>bookings-export.csv <small>48 KB</small></div></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">In both, the email body sits on a white sheet in light and dark mode: senders design for white, and their colors break on a dark ground. Switch to dark to see it.</p>
+
+  <div class="section">4. States (layout A)</div>
+  <div class="grid">
+    <div><span class="label">Loading</span><div class="tab" style="min-height:220px"><div class="head"><div class="grow"><div class="title">Dana Ortiz, 27 Oct</div><div class="where">Opening the email</div></div></div><div style="padding:16px 20px"><div class="skel" style="width:60%"></div><div class="skel" style="width:40%"></div><div class="skel" style="width:85%"></div><div class="skel" style="width:70%"></div></div></div></div>
+    <div><span class="label">Couldn't reach the mailbox</span><div class="tab" style="min-height:220px"><div class="head"><div class="grow"><div class="title">Dana Ortiz, 27 Oct</div><div class="where">ops@yourbusiness.example</div></div></div><div class="err"><span>Couldn't reach the mailbox.</span><button class="btn">Try again</button><button class="btn">Open in Gmail</button></div></div></div>
+    <div><span class="label">Not found</span><div class="tab" style="min-height:220px"><div class="head"><div class="grow"><div class="title">Dana Ortiz, 27 Oct</div><div class="where">ops@yourbusiness.example</div></div></div><div class="err"><span>Not in this mailbox outside Trash and Junk.</span><button class="btn">Open in Gmail</button></div></div></div>
+    <div><span class="label">Sign in failed</span><div class="tab" style="min-height:220px"><div class="head"><div class="grow"><div class="title">Dana Ortiz, 27 Oct</div><div class="where">ops@yourbusiness.example</div></div></div><div class="err"><span>Sign in to this mailbox failed.</span><button class="btn primary">Open Mailboxes</button><button class="btn">Open in Gmail</button></div></div></div>
+    <div><span class="label">Too large</span><div class="tab" style="min-height:220px"><div class="head"><div class="grow"><div class="title">Quarterly report</div><div class="where">ops@yourbusiness.example</div></div></div><div class="notice">Too large to show in full. This is its text.</div><div class="quiet" style="font-family:var(--mono);font-size:12px;color:var(--ink-2)">Hi team, the numbers for the quarter are attached...</div></div></div>
+    <div><span class="label">Text only email</span><div class="tab" style="min-height:220px"><div class="head"><div class="grow"><div class="title">Quick question</div><div class="where">ops@yourbusiness.example</div></div></div><div class="sheet-wrap"><div class="sheet" style="white-space:pre-wrap;font-family:var(--font);font-size:13px">Can we move Thursday's call to 3pm?
+
+Sam</div></div></div></div>
+  </div>
+</div>
+</body>
+</html>

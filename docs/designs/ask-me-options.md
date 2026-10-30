@@ -514,3 +514,12 @@ Sequential implementation, no parallelization opportunity: every step depends on
 - **VERDICT:** DESIGN CLEARED. ENG REVIEWED: 6 findings, all mapped to tasks, 0 unresolved, 0 critical gaps; issues_open means mapped work, not a blocker. Ready to implement.
 
 NO UNRESOLVED DECISIONS
+
+## Options that need the owner's words (owner, 2026-10-29)
+
+Screenshot: the GreenWorld reply card, option 2 "Send with my changes", with the box reading "Add a
+note (optional)" and Reply ready to send nothing. The note did carry the changes ("Picked: Send with
+my changes. Note: ..."), but nothing said so. Decided (owner, /investigate, A): an option may carry
+`"note": "<a short question>"`. Picking it shows that question in the box, and Reply waits until the
+owner writes something. Michael adds it to any option that needs the owner's own words (the changes
+to make, a date, a name). Asks written before keep the old box.

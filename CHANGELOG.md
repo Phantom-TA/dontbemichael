@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [0.3.1] (2026-10-29)
+
+### Added
+- **See the original email.** A question, a Michael reply or a Send on approval card built on an email shows an Email chip that opens the email in an office tab, as it came from your mailbox, even after it was archived. Opening it never marks it read or moves it; pictures from the web stay hidden until you click Show pictures; Gmail mailboxes get Open in Gmail.
+
+### Changed
+- Automatic failure reports now carry the facts that tell one cause from another, still closed values only: the engine's version, which kind of team member it was and how long the app had run, and for a stuck team member the breaker's limit and where it came from, how often it was reached, and the HTTP status numbers of the errors. See TELEMETRY.md for every field.
+- A choice on Needs you that needs your own words, like "Send with my changes", now asks for them: picking it turns the box into Michael's question ("What should change?") and Reply waits until you write something. Before, the box said "optional" and an empty reply could go.
+- Pulse counts a stop at the Max turns per run limit under Steps blocked, as Max turns reached, and older stops are filed there too (#645).
+
+### Fixed
+- An approved forward or attachment still goes out after its email was archived, and one that names no email is refused when proposed, before you see a card that could never go out (#653).
+- A team member's folder in Dropbox, Google Drive, OneDrive, Box or iCloud Drive on a Mac keeps its privacy wall, and setup takes such a folder for Michael (#659).
+- A team member whose name has a space or a comma shows in Pulse and in what the office spent (#658).
+- A breaker limit of 0 in Settings means the default, instead of holding back every team member (#660).
+- A team member that got through after a few errors from Claude is no longer walked up to a stop (#628).
+- Two team members replying to each other can no longer go back and forth forever: the router counts reply hops (#606).
+- A big file save or a long paste still reaches the app, so the loop check and the turn's office notes still apply (#654).
+- A webhook you switch off stops answering connections that were already open (#652).
+- The privacy check before a message reaches Research reads numbers however they are written, in any script and with any dash (#651).
+- A code word like `constructor` in Michael's reply stays as written (#656), and a long folder name is never cut through an emoji (#648).
+
 ## [0.3.0] (2026-10-28)
 
 ### Added
