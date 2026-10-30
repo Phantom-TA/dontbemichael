@@ -82,12 +82,13 @@ import { expandTilde } from './fs';
 import { MEMBER_SESSIONS_FILE, idsFromRecord } from './memoryReset';
 import { CONNECTOR_UNDECIDED, MCP_RESOURCE_TOOLS, type SpawnConnectorPlan } from '../shared/claudeConnectors';
 import { HOOK_PATH_UNCHECKED, MAX_HOOK_FRAME_BYTES } from '../shared/hookEvents';
+import { TOOL_KEY_STRING_CAP } from './breaker';
 import { isOwnResearchDir, ownResearchDir, readResearchFile } from './researchNotes';
 import { resolveGodName } from '../shared/godIdentity';
 import { ALLOW_TEMP_WORKERS } from '../shared/buildFeatures';
 import { OFFICE_ROLES } from '../shared/officeRoles';
 import { APP_NAME } from '../shared/appName';
-import { isPeerAssignment, rerouteToMichael, hopDropNotice } from '../shared/handoffRule';
+import { isPeerAssignment, rerouteToMichael, hopDropNotice, replyHops } from '../shared/handoffRule';
 import {
   legacyOwnerSentDir, legacyOwnerStatePath, pluginsDisabledForSession,
   privateOwnerSentDir, privateOwnerStatePath, privateRoot
@@ -531,6 +532,9 @@ export interface SpawnInjection {
 }
 
 const HOP_CAP = 12;
+/** How many routed messages' hop counts the router keeps, so a reply can be
+ *  counted from the message it answers. Oldest go first. */
+const HOPS_REMEMBERED = 5000;
 /** The owner's sent message ids and who got each, in the private folder: a
  *  member's shell can write the hive log, never this (Company foundations). */
 const OWNER_SAID_FILE = 'owner-said.jsonl';
@@ -1595,7 +1599,11 @@ export class HiveManager {
       env.OTEL_EXPORTER_OTLP_HEADERS = `${TELEMETRY_TOKEN_HEADER}=${this._otelToken(meta.id)}`;
       env.OTEL_METRIC_EXPORT_INTERVAL = '5000'; // 5s — near-live without spamming
       env.OTEL_LOGS_EXPORT_INTERVAL = '2000';
-      env.OTEL_RESOURCE_ATTRIBUTES = `agent.id=${meta.id},agent.name=${meta.name}`;
+      // A value may not hold a space, comma, semicolon, quote or backslash:
+      // the engine then drops every key, agent.id too, and the collector
+      // refuses the batch ("Jim 2" never showed in Pulse). Percent encoded, it
+      // reads them back as they are.
+      env.OTEL_RESOURCE_ATTRIBUTES = `agent.id=${encodeURIComponent(meta.id)},agent.name=${encodeURIComponent(meta.name)}`;
     }
     const args: string[] = [];
     if (!claudeProvider) return { args, env };
@@ -2543,6 +2551,8 @@ export class HiveManager {
   }
   /** Ids of clean copies the trust layer produced; only these reach Research. */
   private researchCleared = new Set<string>();
+  /** Each routed message's hop count by id, this run only (replyHops). */
+  private hopsById = new Map<string, number>();
   /** The sender's message behind each clean copy, by the copy's id and its
    *  thread, so Research's answer lands back in the sender's thread while
    *  Research never sees the sender's thread id (ship review). */
@@ -3413,6 +3423,12 @@ export class HiveManager {
       } catch { /* best-effort notice */ }
       return;
     }
+    this.hopsById.delete(msg.id);
+    this.hopsById.set(msg.id, msg.hops);
+    if (this.hopsById.size > HOPS_REMEMBERED) {
+      const oldest = this.hopsById.keys().next().value;
+      if (oldest !== undefined) this.hopsById.delete(oldest);
+    }
     const reg = this.registry();
     const godId = reg.godId ?? 'god';
     // The hive has no separate human-approval queue — approvals are native to
@@ -3857,6 +3873,12 @@ export class HiveManager {
           // could close the owner's next question or hide a message (Codex
           // review, ship 2026-10-18).
           msg.created_at = new Date().toISOString();
+          // So is the hop count (HIVE.md section 4, PROTOCOL.md): one more than
+          // the message it answers, so two agents replying to each other meet
+          // the loop guard. Michael's answers to the owner are never counted.
+          reg ??= this.registry();
+          const toOwner = id === (reg.godId ?? 'god') && this.ownerAliases().has(String(msg.to).toLowerCase());
+          msg.hops = replyHops(msg.in_reply_to, typeof msg.in_reply_to === 'string' ? this.hopsById.get(msg.in_reply_to) : undefined, toOwner);
           // A file this pass already chose an id for (a pass that died before
           // archiving it) keeps that id and time; a new one is journaled before
           // it is delivered.
@@ -6529,6 +6551,10 @@ process.stdin.on('end', () => {
   const ev = payload.hook_event_name;
   if (ev === 'PostToolBatch') payload.tool_calls = (Array.isArray(payload.tool_calls) ? payload.tool_calls : []).filter((c) => c && typeof c.tool_use_id === 'string').map((c) => ({ tool_use_id: c.tool_use_id }));
   if (ev === 'PostToolUse' || ev === 'PostToolUseFailure') { delete payload.tool_response; delete payload.error; }
+  // Nor what the owner typed: a turn only needs to be known to have started,
+  // and a long paste would make the frame too big, so the turn would go
+  // without its roster, goal and steer.
+  if (ev === 'UserPromptSubmit') delete payload.prompt;
   const sock = process.env.HIVE_SOCK;
   if (isStatus) {
     // Status-line mode: Claude Code pipes the session status JSON (incl.
@@ -6592,7 +6618,7 @@ process.stdin.on('end', () => {
   // Every file tool too: a frame the app drops is a call nobody checked.
   const fileTool = payload.hook_event_name === 'PreToolUse' && ${JSON.stringify([...FOLDER_READ_TOOLS, ...FOLDER_WRITE_TOOLS])}.indexOf(tool) >= 0;
   const bigCheck = payload.hook_event_name === 'PreToolUse' && (fileTool || (tool === 'Bash' && input.dangerouslyDisableSandbox === true));
-  if ((mcp || research || tempSave || bigCheck) && Buffer.byteLength(line) > ${MAX_HOOK_FRAME_BYTES}) {
+  const shortFields = () => {
     const small = {};
     for (const k of Object.keys(input)) {
       const v = input[k];
@@ -6601,14 +6627,33 @@ process.stdin.on('end', () => {
       else if (k === 'pattern' && tool === 'Glob' && typeof v === 'string') small[k] = pathMod.isAbsolute(v) ? pathMod.normalize(v) : v;
       else if ((typeof v === 'string' && v.length <= 1024) || typeof v === 'number' || typeof v === 'boolean') small[k] = v;
     }
-    payload.tool_input = small;
+    return small;
+  };
+  const tooBig = () => Buffer.byteLength(line) > ${MAX_HOOK_FRAME_BYTES};
+  if ((mcp || research || tempSave || bigCheck) && tooBig()) {
+    payload.tool_input = shortFields();
     payload.tool_input_trimmed = true;
     line = JSON.stringify(payload);
-    if (Buffer.byteLength(line) > ${MAX_HOOK_FRAME_BYTES}) {
+    if (tooBig()) {
       process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: mcp ? ${JSON.stringify(CONNECTOR_UNDECIDED)} : ${JSON.stringify(HOOK_PATH_UNCHECKED)} } }));
       process.exit(0);
       return;
     }
+  }
+  // A finished call keeps its input for the breaker's loop check, which keys
+  // on the tool and its input with each string cut to its first
+  // ${TOOL_KEY_STRING_CAP} characters. A big save sends its input cut the
+  // same way, so it still arrives (a dropped frame skips the loop check, the
+  // wake watchdog and the end of a stuck episode) and keys exactly as it would
+  // whole: the same file rewritten in a loop still reads as a loop. Many big
+  // edits at once fall back to the short fields, which keep the path, and
+  // past that the call goes with no input, so it still ends.
+  if ((ev === 'PostToolUse' || ev === 'PostToolUseFailure') && tooBig()) {
+    payload.tool_input = JSON.parse(JSON.stringify(input, (_k, v) => typeof v === 'string' && v.length > ${TOOL_KEY_STRING_CAP} ? v.slice(0, ${TOOL_KEY_STRING_CAP}) : v));
+    payload.tool_input_trimmed = true;
+    line = JSON.stringify(payload);
+    if (tooBig()) { payload.tool_input = shortFields(); line = JSON.stringify(payload); }
+    if (tooBig()) { delete payload.tool_input; line = JSON.stringify(payload); }
   }
   const fail = () => {
     if (mcp || web || research || tempSave) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: mcp ? ${JSON.stringify(CONNECTOR_UNDECIDED)} : web ? ${JSON.stringify(WEB_SETTINGS_UNREADABLE)} : ${JSON.stringify(RESEARCH_UNCHECKED_TOOL)} } }));

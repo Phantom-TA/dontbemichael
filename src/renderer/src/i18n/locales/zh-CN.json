@@ -2756,6 +2756,7 @@
         "folder": "私人文件夹",
         "office-files": "应用文件",
         "paused": "被你暂停",
+        "turn-cap": "已达最大轮数",
         "impostor": "未确认的发送者"
       },
       "toInternetTip": "每个问题发出前，都会检查是否含有你的隐私信息。",

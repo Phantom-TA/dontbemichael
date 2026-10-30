@@ -106,6 +106,10 @@ const PROGRESS_TOOL_WINDOW_MS = 300_000;
 /** Consecutive tripping beats the no-progress arm needs before it fires — a
  *  one-beat blip (inbox ack, statusline burst) never steers on its own. */
 const NO_PROGRESS_BEATS = 2;
+/** The loop check reads each string of a call's input only up to here (see
+ *  toolKey). The hook program cuts a big save's input to the same length, so
+ *  a trimmed call keys exactly as the whole one would. */
+export const TOOL_KEY_STRING_CAP = 4096;
 
 interface AgentBreakerState {
   level: BreakerLevel;
@@ -114,8 +118,11 @@ interface AgentBreakerState {
   /** Consecutive identical tool calls (same name+input). */
   repeatKey: string | null;
   repeatCount: number;
-  /** Consecutive api_error / retry events with no intervening progress. */
+  /** Consecutive api_error events with no intervening progress. */
   errorCount: number;
+  /** The query_source of the last counted api_error (main loop, compaction, a
+   *  subagent, a side call): only a success from the same source ends the run. */
+  errorSource?: string;
   /** Δoutput-based trips are exempt until this instant (compaction in flight,
    *  set on PreCompact; PostCompact shortens it to a trailing grace). */
   compactingUntil: number;
@@ -142,12 +149,16 @@ export class CircuitBreaker {
 
   private cfg() {
     const c = this.getConfig() ?? {};
+    // A limit of 0 (Settings takes it) or below would trip every member on the
+    // next beat, idle or not: `0 >= 0` is always true. Like an empty field it
+    // means the default, the way 0 means no limit for the token budget.
+    const limit = (v: number | undefined, d: number) => (typeof v === 'number' && v > 0 ? v : d);
     return {
       enabled: c.enabled ?? DEFAULTS.enabled,
       hardStop: c.hardStop ?? DEFAULTS.hardStop,
-      repeatedToolLimit: c.repeatedToolLimit ?? DEFAULTS.repeatedToolLimit,
-      errorStormLimit: c.errorStormLimit ?? DEFAULTS.errorStormLimit,
-      tokenVelocityPerMin: c.tokenVelocityPerMin ?? DEFAULTS.tokenVelocityPerMin,
+      repeatedToolLimit: limit(c.repeatedToolLimit, DEFAULTS.repeatedToolLimit),
+      errorStormLimit: limit(c.errorStormLimit, DEFAULTS.errorStormLimit),
+      tokenVelocityPerMin: limit(c.tokenVelocityPerMin, DEFAULTS.tokenVelocityPerMin),
       costCapUsd: c.costCapUsd,
       costCapTokens: c.costCapTokens,
       agentTokenCaps: c.agentTokenCaps
@@ -195,15 +206,33 @@ export class CircuitBreaker {
     }
   }
 
-  /** An api_error / retry occurred (no forward progress). */
-  recordError(agentId: string): void {
-    this.get(agentId).errorCount += 1;
+  /** An api_error occurred (no forward progress). Claude Code logs one only
+   *  after it gives up on a request. `querySource` is the record's
+   *  query_source, kept so recordApiSuccess can tell which calls were failing. */
+  recordError(agentId: string, querySource?: string): void {
+    const s = this.get(agentId);
+    s.errorCount += 1;
+    s.errorSource = querySource;
   }
 
   /** The errors so far were the account refusing this agent's turn (the office
    *  stopped on it), not a storm of its own. */
   clearErrors(agentId: string): void {
-    this.get(agentId).errorCount = 0;
+    const s = this.get(agentId);
+    s.errorCount = 0;
+    s.errorSource = undefined;
+  }
+
+  /** A request got through. A later api_request is how Claude Code's docs tell
+   *  a recovered session from a stalled one (a request re-issued after a
+   *  streaming failure starts `attempt` again at 1, so one turn can log several
+   *  api_errors and then succeed). It ends the run only when it came from the
+   *  same query_source as the errors: compaction, a subagent or a side call can
+   *  succeed while the main loop keeps failing, and that must not hold the
+   *  storm off for good. */
+  recordApiSuccess(agentId: string, querySource?: string): void {
+    const s = this.get(agentId);
+    if (s.errorCount > 0 && s.errorSource === querySource) this.clearErrors(agentId);
   }
 
   /** A human submitted a prompt to this agent (UserPromptSubmit hook). Stamps
@@ -250,7 +279,7 @@ export class CircuitBreaker {
     let inp = '';
     try {
       inp = JSON.stringify(toolInput, (_k, v) =>
-        typeof v === 'string' && v.length > 4096 ? v.slice(0, 4096) : v) ?? '';
+        typeof v === 'string' && v.length > TOOL_KEY_STRING_CAP ? v.slice(0, TOOL_KEY_STRING_CAP) : v) ?? '';
     } catch { inp = String(toolInput); }
     return `${toolName ?? '?'}:${createHash('sha256').update(inp).digest('hex')}`;
   }
@@ -347,7 +376,7 @@ export class CircuitBreaker {
     }
     // (b) api_error storm
     if (s.errorCount >= cfg.errorStormLimit) {
-      return { tripping: true, reason: `error storm: ${s.errorCount} consecutive api errors/retries` };
+      return { tripping: true, reason: `error storm: ${s.errorCount} consecutive api errors` };
     }
     // (a) per-agent token limit — this agent's own WORK tokens over its configured
     // cap. Measured without cacheRead (#189): tested against the all-kinds total,

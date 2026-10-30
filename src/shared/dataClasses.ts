@@ -161,6 +161,32 @@ const SECRETS: RegExp[] = [
   /\b(?:password|passwd|pwd|api[_ -]?key|secret|token)\s*[:=]\s*\S{6,}/i
 ];
 const LONG_DIGITS = /\b\d{9,}\b/;
+// A number grouped in thousands with dots, the European way: "1.234.567".
+const THOUSANDS = /^[1-9]\d{0,2}(?:\.\d{3}){2,}$/;
+
+// A decimal digit in any script ("१२३४", "٥٠١"). The patterns above match ASCII
+// digits only and NFKC leaves these alone, so an Aadhaar or account number
+// typed in Devanagari or Arabic-Indic digits passed as plain text.
+const OTHER_DIGIT = /(?![0-9])\p{Nd}/gu;
+const IS_DIGIT = /^\p{Nd}$/u;
+// Hyphens, dashes and minus signs other than '-'. NFKC turns the non-breaking
+// hyphen Word and Outlook put in phone numbers into U+2010, not '-', and keeps
+// dashes and the minus sign, so "555‑123‑4567" was not read as a phone.
+const OTHER_HYPHEN = /[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g;
+
+/**
+ * The ASCII digit for a decimal digit in any script. Unicode encodes every
+ * decimal digit in runs of ten, 0 to 9 in order, and back to back runs (the
+ * maths digits) are whole runs too, so a digit's value is its distance from
+ * the first digit of its stretch, modulo ten. This holds for scripts added
+ * later without a table to keep up to date.
+ */
+function asciiDigit(ch: string): string {
+  const cp = ch.codePointAt(0) as number;
+  let first = cp;
+  while (IS_DIGIT.test(String.fromCodePoint(first - 1))) first--;
+  return String((cp - first) % 10);
+}
 
 /**
  * The private data fixed patterns can see, each tied to its class so a
@@ -171,8 +197,11 @@ export function patternHits(text: string): PatternHit[] {
   const hits: PatternHit[] = [];
   // Fullwidth forms and invisible characters must not hide a shape (ship
   // review: an sk- key with a zero width space, a joiner or a Hangul filler
-  // inside passed as plain text).
-  const t = typeof text === 'string' ? text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '') : '';
+  // inside passed as plain text), and nor must digits in another script or
+  // a hyphen that is not '-'.
+  const t = typeof text === 'string'
+    ? text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(OTHER_DIGIT, asciiDigit).replace(OTHER_HYPHEN, '-')
+    : '';
   if (SECRETS.some((re) => re.test(t))) hits.push({ classId: 'secrets' });
   if (EMAIL.test(t)) hits.push({ classId: 'contact' });
   for (const m of t.matchAll(DIGIT_RUN)) {
@@ -190,8 +219,10 @@ export function patternHits(text: string): PatternHit[] {
   for (const m of plain.matchAll(PHONE)) {
     const digits = m[1].replace(/\D/g, '');
     // Years, prices and plain counts are not phone numbers: a phone has 9 to
-    // 15 digits and either a + or a separator inside it.
-    if (digits.length >= 9 && digits.length <= 15 && (/^\+/.test(m[1]) || /[\s().-]/.test(m[1])) && !/\d\.\d{3}\.\d{3}/.test(m[1])) {
+    // 15 digits and either a + or a separator inside it. A count grouped in
+    // thousands ("1.234.567.890") is not one either, but only a whole number
+    // grouped that way: "555.123.4567" is a dotted phone number.
+    if (digits.length >= 9 && digits.length <= 15 && (/^\+/.test(m[1]) || /[\s().-]/.test(m[1])) && !m[1].split(/[\s()]+/).some((n) => THOUSANDS.test(n))) {
       hits.push({ classId: 'contact' });
       break;
     }

@@ -230,6 +230,19 @@ test('a file named without its ending opens from its chip when the office holds 
   assert.match(shown, /```\n`not a file`\n```/, 'fenced code is left as written');
 });
 
+test('a code span named like an object built-in stays as written next to a found file', () => {
+  // Value: protects=the words of a reply that names a file and also a code word such as `constructor`; fails_when=a span is looked up on the found table's prototype and shows "function Object() { [native code] }"; why_new=bug fix; seam=none; no_claim=the lookup in main
+  const A = loadTs('src/shared/askFiles.ts');
+  const reply = 'Nick changed the `constructor` and its `toString`, wrote it up in `Release notes`, and checked `__proto__` and `valueOf`.';
+  assert.deepEqual(A.askFileNames(reply), ['constructor', 'toString', 'Release notes', '__proto__', 'valueOf'], 'each span is a name to look up');
+  // FileText builds the found table this way from main's answer: only the file that is there.
+  const found = Object.fromEntries([['Release notes', '/o/Release notes.md']]);
+  assert.equal(
+    A.withNamedFiles(reply, found),
+    'Nick changed the `constructor` and its `toString`, wrote it up in `/o/Release notes.md`, and checked `__proto__` and `valueOf`.'
+  );
+});
+
 test('FileText looks names up and Michael names files by full path with their ending', () => {
   // Value: protects=the wiring of the name lookup into every place questions show, and the owner-approved rule change (D1, 2026-10-19); fails_when=FileText stops looking names up or rendering the swapped text, or the rule drops back to "file names"; why_new=new behavior; seam=none; no_claim=Michael following the rule (prompt, not evaluated)
   const chip = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/components/FileChip.tsx'), 'utf8');

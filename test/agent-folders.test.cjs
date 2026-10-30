@@ -138,3 +138,30 @@ test('ensureFolder says plainly when the app may not create a folder there', {
     fs.chmodSync(locked, 0o755);
   }
 });
+
+const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+// 5 letters + 28 emoji + a tail: the 60 unit cut falls between the two halves of an emoji.
+const EMOJI_NAME = `Sunny${'😀'.repeat(28)} Bakery`;
+
+test('a long name is never cut through an emoji', () => {
+  // Value: protects=the folder name the app works out is the folder name on disk; fails_when=the 60 unit cut leaves half an emoji, which the file system stores as U+FFFD; why_new=the name did not round trip and two names could share one folder; seam=none
+  const name = safeFolderName(EMOJI_NAME);
+  assert.ok(!lone.test(name), 'no half emoji left');
+  assert.ok(name.length <= 60);
+  assert.equal(name, `Sunny${'😀'.repeat(27)}`);
+});
+
+test('the folder made for a long emoji name is found again by the same name', () => {
+  const made = defaultAgentFolder(docs, 'Round Trip', EMOJI_NAME);
+  assert.equal(ensureFolder(made).ok, true);
+  const listed = fs.readdirSync(path.dirname(made));
+  assert.deepEqual(listed, [safeFolderName(EMOJI_NAME)], 'what is on disk is exactly the name the app asked for');
+});
+
+test('the hire wizard and the main process cut a long name the same way', () => {
+  // The wizard works out a custom folder path in the renderer and the main process
+  // makes the folder: they must agree, or the owner's folder is made twice.
+  const { safeFolder } = loadTs('src/shared/hireTemplates.ts');
+  assert.equal(safeFolder(EMOJI_NAME), safeFolderName(EMOJI_NAME));
+  assert.ok(!lone.test(safeFolder(EMOJI_NAME)));
+});

@@ -25,6 +25,7 @@ require.cache[electron] = {
 
 const { HiveManager } = loadTs('src/main/hive.ts');
 const { HookServer } = loadTs('src/main/hooks.ts');
+const { CircuitBreaker } = loadTs('src/main/breaker.ts');
 const { HOOK_PATH_UNCHECKED, MAX_HOOK_FRAME_BYTES } = loadTs('src/shared/hookEvents.ts');
 const F = loadTs('src/shared/folderAccess.ts');
 const R = loadTs('src/shared/research.ts');
@@ -116,6 +117,67 @@ test('a finished batch too big for one frame goes out with only its call ids, an
   assert.equal(failed.tool_use_id, 'toolu_bash');
   // A missing list goes out as no ids.
   assert.deepEqual(JSON.parse(await send({ hook_event_name: 'PostToolBatch' })).tool_calls, []);
+});
+
+// An office whose app records what reached it: every hook event, and each
+// call the breaker was fed with the input it keys its loop check on.
+async function listening(t) {
+  const home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-frame-big-')));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  const seen = [];
+  const uses = [];
+  const prompts = [];
+  const breaker = {
+    recordToolUse: (agentId, tool, input) => uses.push({ agentId, tool, input }),
+    recordUserPrompt: (agentId) => prompts.push(agentId),
+    recordCompactStart() {}, recordCompactEnd() {}
+  };
+  const server = new HookServer(hive, () => null, () => ({ harnessHome: home }), undefined, breaker, undefined,
+    (_agentId, event, _message, tool) => seen.push(`${event}:${tool ?? ''}`));
+  server.start();
+  t.after(() => server.stop());
+  await new Promise((r) => setTimeout(r, 50));
+  const shim = (payload) => new Promise((resolve) => {
+    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: hive.sockPath(), HIVE_HOOK_SEAL: hive.mintHookToken('pam') } });
+    p.on('close', resolve);
+    p.stdin.end(JSON.stringify({ session_id: 's', cwd: home, ...payload }));
+  });
+  return { home, hive, seen, uses, prompts, shim };
+}
+
+test('a long paste still starts the turn the app knows about', unix, async (t) => {
+  // Value: protects=a prompt over the frame limit still reaches the app, so the turn gets its roster, goal and steer and the breaker's conversation clock moves; fails_when=the hook program sends the prompt text and the app drops the frame as too large; why_new=found in review (reproduced: a 300 KB prompt never arrived); seam=a stand in breaker
+  const { hive, seen, prompts, shim } = await listening(t);
+  await shim({ hook_event_name: 'UserPromptSubmit', prompt: 'p'.repeat(300_000) });
+  assert.deepEqual(seen, ['UserPromptSubmit:']);
+  assert.deepEqual(prompts, ['pam']);
+  assert.deepEqual(hive.logTail(50, 'hook-frame-rejected'), [], 'no frame refused');
+});
+
+test('a big save still ends at the app, and keys in the loop check as it would whole', unix, async (t) => {
+  // Value: protects=a Write over the frame limit still feeds the breaker, the wake watchdog and the end of a stuck episode, and a loop of big rewrites of one file still reads as a loop; fails_when=the hook program sends the whole input after the call and the app drops the frame, or trims it so two files share a key or one file keys differently than whole; why_new=found in review (reproduced: no PostToolUse for a 300 KB Write); seam=a stand in breaker, keyed with the real one
+  const { home, hive, seen, uses, shim } = await listening(t);
+  const key = (input) => new CircuitBreaker(() => ({})).toolKey('Write', input);
+  const body = 'x'.repeat(300_000);
+  const report = { file_path: path.join(home, 'report.md'), content: body };
+  const notes = { file_path: path.join(home, 'notes.md'), content: body };
+  await shim({ hook_event_name: 'PostToolUse', tool_name: 'Write', tool_use_id: 'a', tool_input: report, tool_response: { ok: true } });
+  await shim({ hook_event_name: 'PostToolUse', tool_name: 'Write', tool_use_id: 'b', tool_input: notes, tool_response: { ok: true } });
+  assert.deepEqual(seen, ['PostToolUse:Write', 'PostToolUse:Write']);
+  assert.equal(uses.length, 2, 'the breaker hears each call once');
+  assert.equal(uses[0].input.file_path, report.file_path);
+  assert.equal(key(uses[0].input), key(report), 'the same key as the whole call');
+  assert.equal(key(uses[1].input), key(notes));
+  assert.notEqual(key(uses[0].input), key(uses[1].input), 'two files, two keys');
+  // Many big edits at once still arrive with their path, and so does a failed save.
+  const edits = Array.from({ length: 100 }, (_, i) => ({ old_string: `${i}`.repeat(5000), new_string: 'y'.repeat(5000) }));
+  await shim({ hook_event_name: 'PostToolUse', tool_name: 'MultiEdit', tool_use_id: 'c', tool_input: { file_path: report.file_path, edits } });
+  assert.deepEqual(uses[2].input, { file_path: report.file_path });
+  await shim({ hook_event_name: 'PostToolUseFailure', tool_name: 'Write', tool_use_id: 'd', tool_input: report, error: 'disk full' });
+  assert.equal(seen[3], 'PostToolUseFailure:Write');
+  assert.deepEqual(hive.logTail(50, 'hook-frame-rejected'), [], 'no frame refused');
 });
 
 test('the app refuses a trimmed file call that arrives without its path', async (t) => {

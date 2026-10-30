@@ -108,7 +108,7 @@ async function floor(t, config) {
   const server = new HookServer(hive, () => null, () => config, undefined, undefined);
   const send = (hook_event_name, over = {}) => server.handle({ agent_id: 'oscar', session_id: 's1', hook_event_name, cwd: home, ...over });
   const tool = (over) => send('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'echo hi' }, ...over });
-  return { send, tool };
+  return { server, send, tool };
 }
 
 const stopped = (r) => !!r && r.continue === false;
@@ -172,4 +172,24 @@ test('an unreadable config skips only the cap: the folder walls still refuse', a
   const r = server.handle({ agent_id: 'pam', hook_event_name: 'PreToolUse', cwd: home, tool_name: 'Read', tool_input: { file_path: path.join(home, 'a.md') } });
   assert.ok(denied(r), 'the folder check still fails closed');
   assert.notEqual(r.continue, false, 'and it is not reported as the turn cap');
+});
+
+test('the call past the cap counts in Pulse as a step blocked by Max turns', async (t) => {
+  const f = await floor(t, { maxTurns: 1 });
+  const gates = [];
+  f.server.onRefused = (agentId, gate) => gates.push([agentId, gate]);
+  await f.send('UserPromptSubmit');
+  await f.tool();
+  assert.deepEqual(gates, [], 'a call inside the cap is not counted');
+  await f.tool();
+  assert.deepEqual(gates, [['oscar', 'turn-cap']]);
+});
+
+test('the backfill files a turn cap stop under Max turns, not the tool\'s own rule', () => {
+  const { gateOfTool } = loadTs('src/main/pulseBackfill.ts');
+  const { turnCapReason } = loadTs('src/main/turnCap.ts');
+  assert.equal(gateOfTool('Bash', turnCapReason(3)), 'turn-cap', 'not the sandbox');
+  assert.equal(gateOfTool('Read', turnCapReason(1)), 'turn-cap', 'not the folder walls');
+  assert.equal(gateOfTool('AskUserQuestion', turnCapReason(2)), 'turn-cap', 'a question past the cap, as hooks.ts counts it live');
+  assert.equal(gateOfTool('AskUserQuestion', 'Ask Michael instead.'), null, 'a routed question is still not a refusal');
 });

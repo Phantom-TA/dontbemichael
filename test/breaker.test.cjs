@@ -76,6 +76,34 @@ test('error storm trips', () => {
   assert.match(d.state.reason, /error storm/);
 });
 
+test('errors with no success between them still trip the storm', () => {
+  const b = makeBreaker();
+  for (let i = 0; i < 3; i++) b.recordError('a', 'repl_main_thread');
+  b.recordApiSuccess('a', 'repl_main_thread'); // that turn recovered
+  for (let i = 0; i < 5; i++) b.recordError('a', 'repl_main_thread');
+  const d = beat(b, 'a', null, true, T0);
+  assert.equal(d.state.level, 'steering');
+  assert.match(d.state.reason, /error storm: 5 consecutive api errors$/);
+});
+
+test('a success from another query_source does not end the run of errors', () => {
+  // An outage on the main model: each turn a side call gets through, then the
+  // main request gives up. Only a main loop success shows the main loop recovered.
+  const b = makeBreaker();
+  for (let i = 0; i < 5; i++) {
+    b.recordApiSuccess('a', 'compact');
+    b.recordError('a', 'repl_main_thread');
+  }
+  const d = beat(b, 'a', null, true, T0);
+  assert.equal(d.state.level, 'steering');
+  assert.match(d.state.reason, /error storm: 5/);
+  // A success from the main loop itself does end it.
+  const c = makeBreaker();
+  for (let i = 0; i < 5; i++) c.recordError('a', 'repl_main_thread');
+  c.recordApiSuccess('a', 'repl_main_thread');
+  assert.equal(beat(c, 'a', null, true, T0).state.level, 'healthy');
+});
+
 test('token velocity spike trips on the second sample', () => {
   const b = makeBreaker();
   beat(b, 'a', sample('a', T0, 0), true, T0);
@@ -463,6 +491,33 @@ test('a healthy beat de-escalates one level', () => {
   b.recordToolUse('a', 'Read', { file: 'new' });       // distinct call clears the loop
   const d = beat(b, 'a', null, true, T0 + BEAT);
   assert.equal(d.state.level, 'healthy');
+});
+
+// ── a limit of 0 typed in Settings ──────────────────────────────────────────
+
+test('a limit of 0 never trips an idle member, even with hard stop on', () => {
+  // Settings takes 0 in "Same step repeated", "Errors in a row" and "Usage per
+  // minute". It used to trip every member on the next beat (`0 >= 0`), hold
+  // each one the beat after, and stop them all with hard stop on.
+  const b = makeBreaker({ hardStop: true, repeatedToolLimit: 0, errorStormLimit: 0, tokenVelocityPerMin: 0 });
+  for (let i = 0; i < 4; i++) {
+    const now = T0 + i * BEAT;
+    for (const id of ['pam', 'jim']) {
+      const d = beat(b, id, sample(id, now, i * 10), true, now);
+      assert.equal(d.state.level, 'healthy', `${id} beat ${i}: ${d.state.reason}`);
+      assert.equal(d.action, 'none');
+    }
+  }
+});
+
+test('a limit of 0 falls back to the default, so a real loop still trips', () => {
+  const b = makeBreaker({ repeatedToolLimit: 0, errorStormLimit: 0 });
+  for (let i = 0; i < 7; i++) b.recordToolUse('a', 'Bash', { cmd: 'same' });
+  assert.equal(beat(b, 'a', null, true, T0).state.level, 'healthy', 'under the default of 8');
+  b.recordToolUse('a', 'Bash', { cmd: 'same' });
+  assert.match(beat(b, 'a', null, true, T0 + BEAT).state.reason, /looping: 8/);
+  for (let i = 0; i < 5; i++) b.recordError('b');
+  assert.match(beat(b, 'b', null, true, T0).state.reason, /error storm: 5/);
 });
 
 process.exit(failures ? 1 : 0);
