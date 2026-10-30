@@ -135,8 +135,13 @@ a wrong recipient, Research being off) is never reported.
 | `frames` | `out/main/index.js:Hive.routeOnce:3644` | At most 8, only the app's own files; anything else is dropped |
 | `fingerprint` | `0123456789ab` | A hash that groups the same failure |
 | `appVersion`, `os`, `osVersion`, `arch` | `0.2.9`, `darwin`, `15.1.0`, `arm64` | |
-| `engine`, `engineVersion` | `claude`, `unknown` | The engine the failure ran on |
+| `engine`, `engineVersion` | `claude`, `2.1.309` | The engine the failure ran on; the version only when the app has read it (Claude Code), else `unknown` |
 | `count` | `3` | How often it happened in this version |
+| `context.role`, `context.uptime` | `member`, `1-4h` | Which kind of team member it was (`michael`, `research` or `member`, never a name) and how long the app had been running, in rough bands |
+| `context.*` for a stuck team member | `limit` `5`, `limitSet` `invalid`, `codes` `529-529`, `sinceSuccess` `never` | The breaker's limit and whether it is the default or yours, how many times it was reached, Hard stop on or off, how long since the last new step, the tool name if it is one of Claude Code's own (any other tool is only `mcp` or `other`), and for errors the HTTP status numbers and rough times |
+
+Context values are a word from a fixed list, a whole number or a time band
+(`under-1m` to `over-4h`), checked again before anything is sent.
 
 **Never sent:** error messages, log lines, terminal output, your office, team
 member or customer names, file paths outside the app, mail, or anything you

@@ -153,7 +153,7 @@ export class TelemetryCollector {
   private readonly usageSubs = new Set<(s: AgentUsageSample) => void>();
   /** api_error subscribers — feeds Lane A's breaker error-storm trip (#6), which
    *  has no input source of its own (hook payloads don't expose api errors). */
-  private readonly apiErrorSubs = new Set<(agentId: string, querySource?: string) => void>();
+  private readonly apiErrorSubs = new Set<(agentId: string, querySource?: string, statusCode?: number) => void>();
   /** api_request subscribers: a request that completed, which shows the
    *  session recovered from the api_errors before it from the same
    *  query_source (breaker.recordApiSuccess). */
@@ -230,10 +230,11 @@ export class TelemetryCollector {
   }
 
   /** In-process api_error feed for Lane A's breaker (#6), with the record's
-   *  query_source. At integration:
+   *  query_source and HTTP status (the status only for a failure report's
+   *  context). At integration:
    *  `telemetry.onApiError((agentId, querySource) => breaker.recordError(agentId, querySource))`.
    *  Returns an unsubscribe fn. */
-  onApiError(cb: (agentId: string, querySource?: string) => void): () => void {
+  onApiError(cb: (agentId: string, querySource?: string, statusCode?: number) => void): () => void {
     this.apiErrorSubs.add(cb);
     return () => this.apiErrorSubs.delete(cb);
   }
@@ -426,7 +427,10 @@ export class TelemetryCollector {
             for (const cb of this.apiSuccessSubs) { try { cb(agentId, querySource); } catch { /* subscriber threw */ } }
           } else if (name === 'api_error' || (name && name.includes('error'))) {
             const error = str(attrs['error']) || str(attrs['message']) || name;
-            for (const cb of this.apiErrorSubs) { try { cb(agentId, querySource); } catch { /* subscriber threw */ } }
+            // Only a real HTTP status, never the error text.
+            const status = Number(attrs['status_code']);
+            const statusCode = Number.isInteger(status) && status >= 100 && status <= 599 ? status : undefined;
+            for (const cb of this.apiErrorSubs) { try { cb(agentId, querySource, statusCode); } catch { /* subscriber threw */ } }
             this.emit?.('telemetry:event', { kind: 'api_error', agentId, sessionId, ts: Date.now(), error } satisfies TelemetryEvent);
           }
         }
@@ -541,11 +545,12 @@ interface ResourceLogs { resource?: { attributes?: OtelKV[] }; scopeLogs?: { log
 /** Allowlist of attribute keys we ever read — anything else (notably the PII:
  *  user.email, user.account_id/uuid, organization.id, user.id) is ignored, so
  *  nothing this module emits can carry identity. query_source names which part
- *  of Claude Code made a call (repl_main_thread, compact, a subagent), not who. */
+ *  of Claude Code made a call (repl_main_thread, compact, a subagent), not who;
+ *  status_code is an api_error's HTTP status. */
 const ATTR_ALLOWLIST = new Set([
   'agent.id', 'agent.name', 'session.id', 'model', 'type',
   'tool_name', 'success', 'duration_ms', 'decision', 'event.name', 'error', 'message',
-  'query_source'
+  'query_source', 'status_code'
 ]);
 
 /** Flatten an OTLP KeyValue[] to a plain object, keeping only allowlisted keys. */

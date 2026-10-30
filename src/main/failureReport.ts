@@ -14,7 +14,7 @@
  * uncaughtException. A write that fails keeps at most 50 rows in memory.
  */
 import {
-  classifyLogEvent, cleanOsVersion, errorCodeDetail, errorName, fingerprintInput, scrubFrames,
+  agoBucket, classifyLogEvent, cleanContext, cleanOsVersion, errorCodeDetail, errorName, fingerprintInput, scrubFrames,
   validateReport, ERROR_NAME_RE, OWNER_ERROR_CODES, HIDDEN_CALL_KINDS, KIND_CLASS, type FailureKind, type FailureReport
 } from '../shared/failureReport';
 
@@ -49,6 +49,12 @@ export interface FailureReporterDeps {
   sha256: (s: string) => string;
   /** The engine a failure ran on: the member's, else Michael's. */
   engineFor: (agentId?: string) => string;
+  /** That engine's installed version when the app knows it, else null. */
+  engineVersionFor?: (agentId?: string) => string | null;
+  /** Which kind of member a failure was about: Michael, Research or another. */
+  roleFor?: (agentId: string) => 'michael' | 'member' | 'research';
+  /** How long the app has been running. */
+  uptimeMs?: () => number;
   officeBreakActive: () => boolean;
   doNotTrack: () => boolean;
   /** True while sending must wait (DO_NOT_TRACK not yet read from the shell). */
@@ -112,7 +118,25 @@ export function createFailureReporter(deps: FailureReporterDeps) {
     }
   }
 
-  function record(kind: FailureKind, detail: string, name: string, frames: string[], agentId?: string): void {
+  /** The context every kind may carry, then the caller's own, all checked. */
+  function contextFor(kind: FailureKind, agentId: string | undefined, given: Record<string, string> | undefined): Record<string, string> {
+    const base: Record<string, string> = {};
+    try {
+      if (agentId && deps.roleFor) base.role = deps.roleFor(agentId);
+      if (deps.uptimeMs) base.uptime = agoBucket(deps.uptimeMs());
+    } catch { /* context is a help, never a reason to lose the report */ }
+    return cleanContext(kind, { ...base, ...(given ?? {}) });
+  }
+
+  /** The engine's version as a report field: digits and dots, else unknown. */
+  function engineVersion(agentId?: string): string {
+    try {
+      const v = deps.engineVersionFor?.(agentId);
+      return typeof v === 'string' && /^\d+(\.\d+){0,3}$/.test(v) ? v : 'unknown';
+    } catch { return 'unknown'; }
+  }
+
+  function record(kind: FailureKind, detail: string, name: string, frames: string[], agentId?: string, given?: Record<string, string>): void {
     if (!deps.enabled || KIND_CLASS[kind] !== 'repo') return;
     load();
     const fingerprint = deps.sha256(fingerprintInput(kind, detail, name, frames)).slice(0, 12);
@@ -125,9 +149,11 @@ export function createFailureReporter(deps: FailureReporterDeps) {
       countsDirty = true;
       return;
     }
+    const context = contextFor(kind, agentId, given);
     const facts: FailureReport = {
       kind, detail, errorName: name, frames, fingerprint, appVersion: deps.appVersion, os,
-      osVersion: cleanOsVersion(deps.osVersion), arch, engine: deps.engineFor(agentId), engineVersion: 'unknown', count: 1
+      osVersion: cleanOsVersion(deps.osVersion), arch, engine: deps.engineFor(agentId), engineVersion: engineVersion(agentId), count: 1,
+      ...(Object.keys(context).length ? { context } : {})
     };
     if (validateReport(facts) !== null) { deps.warn('invalid', validateReport(facts)); return; }
     rows.set(k, { ...facts, ts: now, lastTs: now, state: deps.doNotTrack() ? 'local' : 'pending' });
@@ -209,13 +235,13 @@ export function createFailureReporter(deps: FailureReporterDeps) {
     },
 
     /** A failure caught in main: a crash handler, the router, a hook, a spawn. */
-    reportFailure(kind: FailureKind, err?: unknown, opts: { detail?: string; agentId?: string } = {}): void {
+    reportFailure(kind: FailureKind, err?: unknown, opts: { detail?: string; agentId?: string; context?: Record<string, string> } = {}): void {
       guarded(() => {
         const { frames, name } = describe(err);
         const code = err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined;
         // A full disk is the owner's to fix, never a report (D11).
         if (typeof code === 'string' && OWNER_ERROR_CODES.includes(code)) return;
-        record(kind, opts.detail ?? errorCodeDetail(code), name, frames, opts.agentId);
+        record(kind, opts.detail ?? errorCodeDetail(code), name, frames, opts.agentId, opts.context);
       });
     },
 

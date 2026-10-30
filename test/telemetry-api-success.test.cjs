@@ -141,5 +141,18 @@ test('main subscribes the breaker to api_request successes', () => {
   // The scenarios above copy the wiring; index.ts needs Electron, so pin the source.
   const main = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
   assert.match(main, /telemetry\.onApiSuccess\(\(agentId, querySource\) => breaker\.recordApiSuccess\(agentId, querySource\)\);/);
-  assert.match(main, /breaker\.recordError\(agentId, querySource\)/);
+  assert.match(main, /breaker\.recordError\(agentId, querySource, statusCode\)/);
+});
+
+test('an api_error passes on its HTTP status, and only a real one', async (t) => {
+  // Value: protects=an error storm report names the statuses (overloaded, server error, bad request) that made it; fails_when=status_code is dropped by the attribute allowlist, or a non status value reaches the breaker; why_new=issue 661; seam=none
+  const { telemetry, endpoint } = await started(t);
+  const token = telemetry.tokenFor('agent-1');
+  const got = [];
+  telemetry.onApiError((id, source, status) => got.push(status));
+  await post(endpoint, logBatch('agent-1', 'api_error', [{ key: 'status_code', value: { intValue: 529 } }]), token);
+  await post(endpoint, logBatch('agent-1', 'api_error', [{ key: 'status_code', value: { stringValue: '500' } }]), token);
+  await post(endpoint, logBatch('agent-1', 'api_error', [{ key: 'status_code', value: { stringValue: 'overloaded' } }]), token);
+  await post(endpoint, logBatch('agent-1', 'api_error'), token);
+  assert.deepEqual(got, [529, 500, undefined, undefined]);
 });

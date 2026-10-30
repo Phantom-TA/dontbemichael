@@ -12,6 +12,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - **See the original email.** A question, a Michael reply or a Send on approval card built on an email shows an Email chip that opens the email in an office tab, as it came from your mailbox, even after it was archived. Opening it never marks it read or moves it; pictures from the web stay hidden until you click Show pictures; Gmail mailboxes get Open in Gmail.
 
 ### Changed
+- Automatic failure reports now carry the facts that tell one cause from another, still closed values only: the engine's version, which kind of team member it was and how long the app had run, and for a stuck team member the breaker's limit and where it came from, how often it was reached, and the HTTP status numbers of the errors. See TELEMETRY.md for every field.
 - A choice on Needs you that needs your own words, like "Send with my changes", now asks for them: picking it turns the box into Michael's question ("What should change?") and Reply waits until you write something. Before, the box said "optional" and an empty reply could go.
 
 ## [0.3.0] (2026-10-28)

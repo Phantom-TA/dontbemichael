@@ -216,6 +216,144 @@ export function loopAgentDetail(action: string, reason: unknown): string | null 
   return `${arm}:${action === 'stop' ? 'stopped' : 'constrained'}`;
 }
 
+/* ── Context ──────────────────────────────────────────────────────────────── */
+// The facts that tell one cause of a failure from another, still closed values
+// only: a word from a fixed list, a whole number, or a time bucket. Context is
+// not in the fingerprint, so a failure groups the same whatever its context.
+// (Issue 661: an error storm report said which arm tripped and nothing else,
+// so it could not tell an owner's limit of 0 from an agent that recovered.)
+
+/** How long since something happened, never the time itself. */
+export const AGO = ['under-1m', '1-5m', '5-15m', '15-60m', '1-4h', 'over-4h', 'never'] as const;
+
+/** The bucket for `ms` ago, or `never` when it never happened (0 or less). */
+export function agoBucket(ms: number | null | undefined): (typeof AGO)[number] {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return 'never';
+  const m = ms / 60_000;
+  return m < 1 ? 'under-1m' : m < 5 ? '1-5m' : m < 15 ? '5-15m' : m < 60 ? '15-60m' : m < 240 ? '1-4h' : 'over-4h';
+}
+
+/** Claude Code's own tools. Any other tool name (an MCP tool names its server,
+ *  which can be the owner's) is only `mcp` or `other`. */
+export const BUILTIN_TOOLS = [
+  'Bash', 'Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Glob', 'Grep', 'LS', 'WebFetch',
+  'WebSearch', 'Task', 'TodoWrite', 'AskUserQuestion', 'ExitPlanMode', 'BashOutput', 'KillShell'
+] as const;
+
+export function toolClass(name: unknown): string {
+  if (typeof name !== 'string' || !name) return 'other';
+  if ((BUILTIN_TOOLS as readonly string[]).includes(name)) return name;
+  return name.startsWith('mcp__') ? 'mcp' : 'other';
+}
+
+const oneOf = (...xs: readonly string[]) => (v: string) => xs.includes(v);
+const whole = (max: number) => (v: string) => /^\d{1,8}$/.test(v) && Number(v) <= max;
+const ago = oneOf(...AGO);
+
+/** Keys any kind may carry: which kind of member it was and how long the app
+ *  had been running. */
+const CONTEXT_ANY: Readonly<Record<string, (v: string) => boolean>> = {
+  role: oneOf('michael', 'member', 'research'),
+  uptime: ago
+};
+
+/** Keys per kind, each with the only values it may hold. */
+const CONTEXT: Partial<Record<FailureKind, Readonly<Record<string, (v: string) => boolean>>>> = {
+  'loop-agent': {
+    // The limit the arm tripped at, and where it came from: `invalid` is a
+    // value Settings kept that the breaker cannot use (0 or below).
+    limit: whole(10_000_000),
+    limitSet: oneOf('default', 'custom', 'invalid'),
+    // What reached the limit: repeats, errors, tokens a minute or quiet beats.
+    hits: whole(10_000_000),
+    hardStop: oneOf('on', 'off'),
+    sinceTool: ago,
+    tool: oneOf(...BUILTIN_TOOLS, 'mcp', 'other'),
+    // Error storm: the last HTTP statuses counted, how long the run lasted,
+    // and whether a request got through after it started.
+    codes: (v) => /^(none|[1-5]\d\d(-[1-5]\d\d){0,4})$/.test(v),
+    errorSpan: ago,
+    sinceSuccess: ago
+  }
+};
+
+/** What the breaker knows when it trips one arm (CircuitBreaker.diagnosis).
+ *  Times are epoch ms, 0 when it never happened. */
+export interface BreakerFacts {
+  limit: number;
+  limitSet: 'default' | 'custom' | 'invalid';
+  hits: number;
+  hardStop: boolean;
+  lastDistinctToolAt: number;
+  /** The tool a repeat names, as the breaker saw it. */
+  tool?: string;
+  /** The HTTP statuses of the errors counted, oldest first (at most 5). */
+  errorCodes: number[];
+  errorRunStartedAt: number;
+  lastErrorAt: number;
+  /** The last request that got through, from any part of the engine. */
+  lastApiSuccessAt: number;
+}
+
+/** The `loop-agent` context for one trip. Only what the arm tells apart:
+ *  error details for an error storm, the tool for a repeat. */
+export function loopAgentContext(arm: string, f: BreakerFacts, now: number): Record<string, string> {
+  const since = (t: number) => agoBucket(t > 0 ? now - t : -1);
+  const out: Record<string, string> = {
+    limit: String(Math.max(0, Math.round(f.limit))),
+    limitSet: f.limitSet,
+    hits: String(Math.max(0, Math.round(f.hits))),
+    hardStop: f.hardStop ? 'on' : 'off',
+    sinceTool: since(f.lastDistinctToolAt)
+  };
+  if (arm === 'repeat') out.tool = toolClass(f.tool);
+  if (arm === 'error-storm') {
+    const codes = f.errorCodes.filter((c) => Number.isInteger(c) && c >= 100 && c <= 599).slice(-5);
+    out.codes = codes.length ? codes.join('-') : 'none';
+    out.errorSpan = f.errorRunStartedAt > 0 && f.lastErrorAt >= f.errorRunStartedAt
+      ? agoBucket(f.lastErrorAt - f.errorRunStartedAt) : 'never';
+    // A success before the run began says nothing about this run.
+    out.sinceSuccess = f.lastApiSuccessAt >= f.errorRunStartedAt && f.errorRunStartedAt > 0 ? since(f.lastApiSuccessAt) : 'never';
+  }
+  return cleanContext('loop-agent', out);
+}
+
+/** The valid entries of `ctx` for `kind`, keys sorted; the rest are dropped,
+ *  never the report. */
+export function cleanContext(kind: FailureKind, ctx: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!ctx || typeof ctx !== 'object') return out;
+  const allowed = { ...CONTEXT_ANY, ...(CONTEXT[kind] ?? {}) };
+  for (const k of Object.keys(ctx as object).sort()) {
+    const v = (ctx as Record<string, unknown>)[k];
+    const check = Object.prototype.hasOwnProperty.call(allowed, k) ? allowed[k] : undefined;
+    if (check && typeof v === 'string' && check(v)) out[k] = v;
+  }
+  return out;
+}
+
+/** Where each kind is noticed, for whoever picks the issue up. */
+export const KIND_SOURCE: Readonly<Record<FailureKind, string>> = {
+  'main-uncaught': 'src/main/index.ts (uncaughtException)',
+  'main-rejection': 'src/main/index.ts (unhandledRejection)',
+  'screen-crash': 'src/renderer/src/components/ErrorBoundary.tsx',
+  'renderer-error': 'src/renderer/src/main.tsx (window error listeners)',
+  'agent-exit': 'src/main/hive.ts (recordAgentExit)',
+  'router-throw': 'src/main/hive.ts (routeOnce)',
+  'loop-messages': 'src/main/hive.ts (hop-cap drop)',
+  'loop-agent': 'src/main/breaker.ts (evaluate), reported from src/main/index.ts',
+  'outbox-bad': 'src/main/hive.ts (outbox drop)',
+  'research-inbox': 'src/main/hive.ts (research inbox drop)',
+  'canary': '.github/workflows/release.yml',
+  'proxy-degraded': 'src/main/hive.ts (proxy-degraded)',
+  'owner-outbox-unrouted': 'src/main/hive.ts (owner outbox drop)',
+  'hook-server': 'src/main/hooks.ts',
+  'cmd-fallback': 'src/main/pty.ts (cmd.exe fallback)',
+  'bridge-install': 'src/main/hive.ts (provider bridge install)',
+  'hidden-call-failed': 'src/main/hiddenModel.ts and its callers',
+  'trust-check-failed': 'src/main/index.ts (trust check)'
+};
+
 /* ── Stack frames ─────────────────────────────────────────────────────────── */
 
 export const MAX_FRAMES = 8;
@@ -279,6 +417,8 @@ export interface FailureReport {
   engine: string;
   engineVersion: string;
   count: number;
+  /** Closed facts for this kind (cleanContext), absent when there are none. */
+  context?: Record<string, string>;
 }
 
 const FIELDS: ReadonlyArray<keyof FailureReport> = [
@@ -297,8 +437,15 @@ export function cleanOsVersion(v: unknown): string {
 export function validateReport(r: unknown): string | null {
   if (!r || typeof r !== 'object') return 'not an object';
   const x = r as Record<string, unknown>;
-  for (const k of Object.keys(x)) if (![...FIELDS, 'frames'].includes(k as keyof FailureReport)) return `unknown field ${k}`;
+  for (const k of Object.keys(x)) if (![...FIELDS, 'frames', 'context'].includes(k as keyof FailureReport)) return `unknown field ${k}`;
   if (!(FAILURE_KINDS as readonly string[]).includes(x.kind as string)) return 'kind';
+  if (x.context !== undefined) {
+    const c = x.context;
+    if (!c || typeof c !== 'object' || Array.isArray(c)) return 'context';
+    const kept = cleanContext(x.kind as FailureKind, c);
+    const keys = Object.keys(c as object);
+    if (!keys.length || keys.length !== Object.keys(kept).length) return 'context';
+  }
   if (typeof x.detail !== 'string' || !DETAIL[x.kind as FailureKind](x.detail)) return 'detail';
   if (typeof x.errorName !== 'string' || !ERROR_NAME_RE.test(x.errorName)) return 'errorName';
   if (!Array.isArray(x.frames) || x.frames.length > MAX_FRAMES || !x.frames.every((f) => typeof f === 'string' && FRAME_RE.test(f))) return 'frames';
@@ -322,12 +469,18 @@ export function issueTitle(r: FailureReport): string {
  *  block, so nothing in them is linkified. Rendered by code, never copied. */
 export function issueBody(r: FailureReport): string {
   const rows = FIELDS.map((k) => `| ${k} | \`${String(r[k])}\` |`);
+  // Only context that checks out reaches the body, whatever the row holds.
+  const context = cleanContext(r.kind, r.context);
+  const contextRows = Object.keys(context).map((k) => `| context.${k} | \`${context[k]}\` |`);
   return [
     'Automatic failure report. Fields only, no free text (docs/designs/auto-report-failures.md).',
     '',
     '| field | value |',
     '|---|---|',
     ...rows,
+    ...contextRows,
+    '',
+    `Noticed in: ${KIND_SOURCE[r.kind]}`,
     '',
     'Frames:',
     '```text',
@@ -340,10 +493,14 @@ export function issueBody(r: FailureReport): string {
 /** Reads a body written by issueBody; null when it is not one. */
 export function parseIssueBody(body: string): FailureReport | null {
   const x: Record<string, unknown> = {};
+  const context: Record<string, string> = {};
   for (const line of body.split('\n')) {
+    const c = line.match(/^\| context\.(\w+) \| `([^`]*)` \|$/);
+    if (c) { context[c[1]] = c[2]; continue; }
     const m = line.match(/^\| (\w+) \| `([^`]*)` \|$/);
     if (m && (FIELDS as readonly string[]).includes(m[1])) x[m[1]] = m[1] === 'count' ? Number(m[2]) : m[2];
   }
+  if (Object.keys(context).length) x.context = context;
   const block = body.match(/```text\n([\s\S]*?)\n```/);
   x.frames = block ? block[1].split('\n').filter((f) => f !== '(none)') : [];
   return validateReport(x) === null ? (x as unknown as FailureReport) : null;

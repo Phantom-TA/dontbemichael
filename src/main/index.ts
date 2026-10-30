@@ -125,7 +125,7 @@ import { runHiddenModel } from './hiddenModel';
 import { CostLedgerStore } from './costLedger';
 import { analytics, dntSet, isRendererMessageSurface } from './analytics';
 import { createFailureReporter, FLUSH_MS } from './failureReport';
-import { loopAgentDetail } from '../shared/failureReport';
+import { breakerArm, loopAgentContext, loopAgentDetail } from '../shared/failureReport';
 import { createFailureSender, SEND_EVERY_MS } from './failureSender';
 
 /** The failure reports key (docs/designs/auto-report-failures.md): injected by
@@ -183,7 +183,7 @@ import { toolCatalog, type ToolStatus } from '../shared/toolCatalog';
 import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalSkill } from './skills';
 import { loadHero } from './hero';
 import { loadModelCatalog } from './modelCatalog';
-import { claudeCliVersion } from './claudeCliVersion';
+import { claudeCliVersion, lastClaudeCliVersion } from './claudeCliVersion';
 import { ALLOW_TEMP_WORKERS, AUTO_FAILURE_REPORTS } from '../shared/buildFeatures';
 import { APP_NAME, APP_DATA_DIR, APP_URL_SCHEME } from '../shared/appName';
 import { copyOfficeData, homeFolderStatus, homeReadyAtLaunch } from './homeFolder';
@@ -225,6 +225,14 @@ app.setName(APP_NAME);
 // read late, inside try, since they are made further down.
 // DO_NOT_TRACK as the login shell exports it (SR4): null until read.
 let shellDnt: boolean | null = null;
+/** The engine a failure ran on: the member's, else Michael's. */
+function failureEngineFor(agentId?: string): string {
+  try {
+    if (agentId) return hive.registry().agents[agentId]?.provider ?? 'claude';
+    return readConfig().godProvider ?? 'claude';
+  } catch { return 'none'; }
+}
+const appStartedAt = Date.now();
 const failures = createFailureReporter({
   enabled: AUTO_FAILURE_REPORTS,
   ledgerPath: join(app.getPath('userData'), 'failures.jsonl'),
@@ -234,12 +242,11 @@ const failures = createFailureReporter({
   arch: process.arch,
   now: () => Date.now(),
   sha256: (s) => createHash('sha256').update(s).digest('hex'),
-  engineFor: (agentId) => {
-    try {
-      if (agentId) return hive.registry().agents[agentId]?.provider ?? 'claude';
-      return readConfig().godProvider ?? 'claude';
-    } catch { return 'none'; }
-  },
+  engineFor: failureEngineFor,
+  // Only Claude Code's version is probed (at spawn); other engines stay unknown.
+  engineVersionFor: (agentId) => (failureEngineFor(agentId) === 'claude' ? lastClaudeCliVersion() : null),
+  roleFor: (agentId) => (agentId === RESEARCH_ID ? 'research' : agentId === (hive.registry().godId ?? 'god') ? 'michael' : 'member'),
+  uptimeMs: () => Date.now() - appStartedAt,
   officeBreakActive: () => { try { return officeBreak.current() !== null; } catch { return false; } },
   doNotTrack: () => dntSet() || shellDnt === true,
   // Nothing is sent until the shell has been read: an opt out never fails open.
@@ -487,8 +494,8 @@ let pulsePresenceTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
 // Not while the office is stopped: a refused turn is the stop, not a storm.
-telemetry.onApiError((agentId, querySource) => {
-  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId, querySource);
+telemetry.onApiError((agentId, querySource, statusCode) => {
+  if (countsTowardErrorStorm(officeBreak.view(), onClaudePlan(agentId))) breaker.recordError(agentId, querySource, statusCode);
 });
 // Claude Code logs one api_error only after it gives up on a request, and a
 // later api_request shows the session recovered. A request re-issued after a
@@ -2591,7 +2598,14 @@ function runBreakerBeat(progressWindowMs: number): void {
     // A member stuck in a loop is a failure report; a spending or token cap is
     // the owner's setting and is not (docs/designs/auto-report-failures.md).
     const loop = loopAgentDetail(d.action, reason);
-    if (loop) failures.reportFailure('loop-agent', undefined, { detail: loop, agentId: d.state.agentId });
+    const arm = breakerArm(reason);
+    // What the breaker knew, as closed fields, so the report tells one cause
+    // from another (issue 661): the limit and where it came from, the error run.
+    if (loop && arm) {
+      failures.reportFailure('loop-agent', undefined, {
+        detail: loop, agentId: d.state.agentId, context: loopAgentContext(arm, breaker.diagnosis(d.state.agentId, arm), now)
+      });
+    }
     if (d.action === 'steer' || d.action === 'constrain') {
       // The member hears it; on a constrain Michael does too (breakerMessages).
       // No toast: a constrain is a soft pause Michael handles (only Michael

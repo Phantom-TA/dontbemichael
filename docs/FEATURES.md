@@ -225,6 +225,9 @@ moving, and brings you only the decisions that need you.
   sender can't tell you looked. Gmail mailboxes get Open in Gmail.
 - A choice that needs your own words, like "Send with my changes", asks for them when you pick it,
   and Reply waits until you write them.
+- Automatic failure reports carry the facts that tell one cause from another, still closed values
+  only: the engine's version, which kind of team member it was, and for a stuck team member the
+  breaker's limit and where it came from and the HTTP status numbers of its errors.
 
 ### 0.3.0 (2026-10-28)
 - Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API

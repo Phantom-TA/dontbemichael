@@ -308,6 +308,29 @@ so a new engine cannot be missed; or `none`; `engineVersion`
 `^\d+(\.\d+){0,3}$` or `unknown`; `count` an integer 1 to 1000000;
 `fingerprint` `^[0-9a-f]{12}$`.
 
+**Context (2026-10-29, after issue 661).** An optional `context` map of closed
+facts that tell one cause of a kind from another. Issue 661 read only
+`error-storm:constrained` with `engineVersion` `unknown`, which fits an owner's
+limit of 0 (fixed by #660), an agent that recovered and was never cleared
+(fixed by #628) and a real storm alike, so it could not be diagnosed. Every
+key has a fixed value check per kind (`cleanContext`, in the shared module):
+any kind may carry `role` (`michael`, `member`, `research`) and `uptime`;
+`loop-agent` adds `limit` and `hits` (whole numbers), `limitSet` (`default`,
+`custom`, or `invalid` for a value Settings kept that the breaker cannot use),
+`hardStop`, `sinceTool`, `tool` (Claude Code's own tool names, else `mcp` or
+`other`, because an MCP tool names a server that can be the owner's), and for
+an error storm `codes` (up to five HTTP statuses), `errorSpan` and
+`sinceSuccess`. Times are bands only (`under-1m`, `1-5m`, `5-15m`, `15-60m`,
+`1-4h`, `over-4h`, `never`). Context is rendered as `context.<key>` rows, is
+not in the fingerprint (a failure groups the same whatever its context), and a
+bad entry is dropped by the app rather than losing the report; the validator
+refuses a report holding one. A release before this has no `context`, so its
+reports validate as before against their own schema. `engineVersion` is now the
+installed Claude Code version the app last probed (`claudeCliVersion.ts`),
+`unknown` for other engines. The body also names where the kind is noticed
+(`KIND_SOURCE`), fixed text from the schema, so whoever picks an issue up
+starts in the right file.
+
 Never: the error message, log text, terminal tails, office or member names,
 paths outside the app bundle, mail, or customer data.
 

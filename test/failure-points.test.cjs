@@ -118,7 +118,7 @@ test('the breaker beat reports a loop on constrain and stop, as a valid report, 
   const { createFailureReporter } = loadTs('src/main/failureReport.ts');
   const { loopAgentDetail } = loadTs('src/shared/failureReport.ts');
   // runBreakerBeat reports exactly what loopAgentDetail returns.
-  assert.match(read('src/main/index.ts'), /const loop = loopAgentDetail\(d\.action, reason\);\n\s+if \(loop\) failures\.reportFailure\('loop-agent', undefined, \{ detail: loop, agentId: d\.state\.agentId \}\);/);
+  assert.match(read('src/main/index.ts'), /const loop = loopAgentDetail\(d\.action, reason\);\n\s+const arm = breakerArm\(reason\);[\s\S]{0,300}?if \(loop && arm\) \{\n\s+failures\.reportFailure\('loop-agent', undefined, \{\n\s+detail: loop, agentId: d\.state\.agentId, context: loopAgentContext\(arm, breaker\.diagnosis\(d\.state\.agentId, arm\), now\)/);
 
   const warnings = [];
   const reporter = createFailureReporter({
