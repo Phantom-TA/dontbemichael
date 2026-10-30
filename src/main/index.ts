@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
 import { cutText } from '../shared/cutText';
@@ -14,15 +14,15 @@ import {
 import { promises as fsPromises } from 'node:fs';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { join, resolve, sep, basename, dirname, isAbsolute } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, tmpdir, constants as osConstants } from 'node:os';
 import { request as httpsRequest } from 'node:https';
 import { PtyManager, type ProcessLaunch, type SpawnOptions } from './pty';
-import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath } from './shellEnv';
+import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath, userShellDoNotTrack } from './shellEnv';
 import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, namedFolders, readFoldersFor, sectionFor, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -69,7 +69,7 @@ import { linkWorktreeDeps, unlinkWorktreeDeps } from './worktreeDeps';
 import { HiveManager, type AgentMeta, type HiveMessage, type HiveTask } from './hive';
 import { HookServer, type PlanSignal } from './hooks';
 import { OfficeBreak, type OfficeBreakState } from './officeBreak';
-import { countsTowardErrorStorm, heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
+import { countsTowardErrorStorm, heldByBreak, stopNeedsOwner, type OfficeStopReason } from '../shared/officeBreak';
 import { loadBundledPacks, packsResourceDir } from './packs';
 import { businessFolderRoot, ensureFolder, safeFolderName } from './agentFolders';
 import { CircuitBreaker, breakerMessages, type BreakerInput } from './breaker';
@@ -123,7 +123,15 @@ import { CostLedgerTotals } from './costLifetime';
 import { RUN_COMPARE_MODEL, RUN_COMPARE_TIMEOUT_MS, RunCompare } from './runCompare';
 import { runHiddenModel } from './hiddenModel';
 import { CostLedgerStore } from './costLedger';
-import { analytics, isRendererMessageSurface } from './analytics';
+import { analytics, dntSet, isRendererMessageSurface } from './analytics';
+import { createFailureReporter, FLUSH_MS } from './failureReport';
+import { loopAgentDetail } from '../shared/failureReport';
+import { createFailureSender, SEND_EVERY_MS } from './failureSender';
+
+/** The failure reports key (docs/designs/auto-report-failures.md): injected by
+ *  release CI from FAILURE_REPORT_KEY, '' in every other build. */
+declare const __REPORT_KEY__: string;
+import { writeFileAtomic } from './atomicFile';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
 import * as integrations from './integrations';
@@ -173,7 +181,7 @@ import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalS
 import { loadHero } from './hero';
 import { loadModelCatalog } from './modelCatalog';
 import { claudeCliVersion } from './claudeCliVersion';
-import { ALLOW_TEMP_WORKERS } from '../shared/buildFeatures';
+import { ALLOW_TEMP_WORKERS, AUTO_FAILURE_REPORTS } from '../shared/buildFeatures';
 import { APP_NAME, APP_DATA_DIR, APP_URL_SCHEME } from '../shared/appName';
 import { copyOfficeData, homeFolderStatus, homeReadyAtLaunch } from './homeFolder';
 import { backfillOfficeRecord, findOffice, folderLayoutFor, isUsableTeamFolder, syncOfficeRecord } from './officeFile';
@@ -195,6 +203,9 @@ import {
   withCodexRemoteArgs
 } from '../shared/codexRemote';
 import { canRelaunch, restartApp } from './restart';
+import { copyImage, copyRich } from './clipboardCopy';
+import { createReporter } from './reportProblem';
+import { createMailboxNotes, newlyHeld, GRANT_NOTES_FILE, type PendingGrant } from './mailboxNotes';
 import { PromptSubmits, confirmSubmit } from '../shared/submitConfirm';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
@@ -205,20 +216,71 @@ const isDev = !!process.env.ELECTRON_RENDERER_URL;
 app.setPath('userData', join(app.getPath('appData'), APP_DATA_DIR));
 app.setName(APP_NAME);
 
+// Automatic failure reports: notices what used to fail silently and keeps it
+// in userData/failures.jsonl, the queue failureSender files from. Created
+// before the crash handlers so they can use it; `hive` and `officeBreak` are
+// read late, inside try, since they are made further down.
+// DO_NOT_TRACK as the login shell exports it (SR4): null until read.
+let shellDnt: boolean | null = null;
+const failures = createFailureReporter({
+  enabled: AUTO_FAILURE_REPORTS,
+  ledgerPath: join(app.getPath('userData'), 'failures.jsonl'),
+  appVersion: app.getVersion(),
+  platform: process.platform,
+  osVersion: process.getSystemVersion(),
+  arch: process.arch,
+  now: () => Date.now(),
+  sha256: (s) => createHash('sha256').update(s).digest('hex'),
+  engineFor: (agentId) => {
+    try {
+      if (agentId) return hive.registry().agents[agentId]?.provider ?? 'claude';
+      return readConfig().godProvider ?? 'claude';
+    } catch { return 'none'; }
+  },
+  officeBreakActive: () => { try { return officeBreak.current() !== null; } catch { return false; } },
+  doNotTrack: () => dntSet() || shellDnt === true,
+  // Nothing is sent until the shell has been read: an opt out never fails open.
+  holdSending: () => shellDnt === null,
+  signalName: (n) => Object.entries(osConstants.signals).find(([, v]) => v === n)?.[0],
+  readFile: (p) => { try { return readFileSync(p, 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; } },
+  writeFile: (p, data) => writeFileAtomic(p, data),
+  warn: (what, e) => console.warn(`[failure-report] ${what}:`, e)
+});
+setInterval(() => failures.flush(), FLUSH_MS).unref();
+// The shell read blocks for a moment, so it runs on a timer, never in a crash
+// handler, and only in a build that can send at all.
+if (AUTO_FAILURE_REPORTS && __REPORT_KEY__ && !dntSet()) {
+  // Each read blocks for up to 3 s, so failed reads back off: 10 min, 30 min,
+  // 2 h, then every 6 h. Sending stays held meanwhile, said once in the log.
+  const retryMs = [10 * 60_000, 30 * 60_000, 2 * 3600_000, 6 * 3600_000];
+  let tries = 0;
+  const readShellDnt = (): void => {
+    shellDnt = userShellDoNotTrack();
+    if (shellDnt !== null) return;
+    if (tries === 0) { try { hive.appendLog({ kind: 'failure-report-held', reason: 'shell-unread' }); } catch { /* best-effort */ } }
+    setTimeout(readShellDnt, retryMs[Math.min(tries++, retryMs.length - 1)]).unref();
+  };
+  setTimeout(readShellDnt, 20_000).unref();
+}
+
 // Keep the main process alive on an unexpected throw/rejection. The harness is a
 // multi-agent supervisor — a single stray throw (e.g. node-pty's ConPTY console
 // helper choking when a fast-exiting agent CLI's console is already gone) must
 // NOT take the whole app and every running agent down with it. Log and continue
 // rather than letting the default handler exit the process.
 // (Restored during the #71 merge — the PR's rebase dropped these handlers.)
+// Each one is also an automatic failure report (docs/designs/auto-report-failures.md).
 process.on('uncaughtException', (err) => {
   console.error('[main] uncaughtException (kept alive):', err);
+  failures.reportFailure('main-uncaught', err);
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[main] unhandledRejection (kept alive):', reason);
+  failures.reportFailure('main-rejection', reason);
 });
 
 const ptyManager = new PtyManager();
+ptyManager.onFailure = (kind, detail) => failures.reportFailure(kind, undefined, { detail });
 
 function runCodexDaemonCommand(
   executable: string,
@@ -519,7 +581,8 @@ const hookServer = new HookServer(
   (agentId) => booksReadRoleIds().has(agentId),
   memberPresent,
   (signal) => onPlanSignal(signal),
-  (agentId) => foundationsForAgent(agentId)
+  (agentId) => foundationsForAgent(agentId),
+  (agentId) => foundationReadFolders(agentId)
 );
 // Pulse's Kept safe: each step a setting stopped, by gate (proposal 3).
 hookServer.onRefused = (agentId, gate) => pulseTelemetry.record({ agentId: agentId ?? null, kind: 'refused', ts: Date.now(), attrs: { gate } });
@@ -800,8 +863,24 @@ const foundations = new Foundations({
     memory.companyKnowledgeChanged(); // index it for search by meaning
     return r.docId;
   },
-  docTitle: (id) => knowledge.get(id)?.meta.title
+  docTitle: (id) => knowledge.get(id)?.meta.title,
+  // A folder named on a card (eng review 2026-10-26, D3): never the home
+  // folder, the business folder or a team member's.
+  folderBounds: () => {
+    const cfg = readConfig();
+    const team = [...(cfg.businessTeam ?? []).map((m) => m.folder),
+      ...Object.values(hive.registry().agents).filter((a) => !a.isGod && !a.isAssistant && a.cwd).map((a) => a.cwd)];
+    return { userHome: homedir(), business: cfg.businessFolder ? expandTilde(cfg.businessFolder) : undefined, team: team.filter((f): f is string => typeof f === 'string' && !!f).map(expandTilde) };
+  }
 });
+/** The folders the owner named on a Company foundations card that this
+ *  member's job uses (eng review 2026-10-26, D1): read only, even inside the
+ *  business folder. Every other member keeps today's rules (D2). */
+function foundationReadFolders(agentId: string): string[] {
+  const rec = foundations.read();
+  if (!namedFolders(rec).length) return [];
+  return readFoldersFor(rec, foundationsTeam().jobs[agentId] ?? []);
+}
 /** What an agent carries of the foundations: its job's part, or all of it for
  *  Michael. Research is left out by the hook itself. */
 function foundationsForAgent(agentId: string): string | null {
@@ -912,8 +991,28 @@ const pulse = new PulseService({
     return fsPromises.readFile(join(privateRoot(home), ORGANIZED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
   }
 });
-// The office log kinds Pulse counts, and the board each tick reads.
+hive.failureObserver = (kind, e) => failures.reportFailure(kind, e);
+// Files what the reporter keeps into the private reports repo, every 10
+// minutes and a minute after start. Dev builds have no key: nothing is sent.
+const failureSender = createFailureSender({
+  key: __REPORT_KEY__,
+  appVersion: app.getVersion(),
+  reporter: failures,
+  fetch: (url, init) => fetch(url, init),
+  now: () => Date.now(),
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+  timeout: (ms) => AbortSignal.timeout(ms)
+});
+if (AUTO_FAILURE_REPORTS && __REPORT_KEY__) {
+  // Offices share one key: spread the first send so a release does not burst.
+  setTimeout(() => { void failureSender.tick(); }, 60_000 + Math.floor(Math.random() * 4 * 60_000)).unref();
+  setInterval(() => { void failureSender.tick(); }, SEND_EVERY_MS).unref();
+}
+// The office log kinds Pulse counts, and the board each tick reads. Every
+// event also goes to the failure reporter first, which classifies it and
+// never throws (docs/designs/auto-report-failures.md, eng E-R2).
 hive.logObserver = (e) => {
+  failures.observe(e);
   const kind = e.kind;
   if (kind === 'message') {
     const from = typeof e.from === 'string' ? e.from : '';
@@ -999,7 +1098,7 @@ function markMailboxStatus(id: string, status: 'connected' | 'needs-attention', 
         dependsOn: [],
         priority: 1,
         createdAt: new Date().toISOString(),
-        humanQA: [{ q: `**${rec.address} stopped working: ${reason ?? 'the mail server refused the password'}**\n\nOpen Settings, Connections, Mailboxes and choose Fix to enter a new app password.`, askedAt: new Date().toISOString(), raisedBy: 'god' }]
+        humanQA: [{ q: `**${rec.address} stopped working: ${reason ?? 'the mail server refused the password'}**\n\nOpen [Settings, Connections, Mailboxes](dbm:settings/connections/mailboxes) and choose Fix to enter a new app password.`, askedAt: new Date().toISOString(), raisedBy: 'god' }]
       };
       if (!hive.addTask(card)) hive.patchTask(cardId, { status: 'blocked', humanQA: card.humanQA });
     } else if (rec.status === 'needs-attention') {
@@ -1508,7 +1607,21 @@ ptyManager.setExitHandler((id, exitCode, info) => {
     if (id === ENGINE_INSTALL_PTY) {
       analytics.track('agent_install_finished', { provider: 'claude', rung: 'native', outcome: claudePathFast() ? 'agent_launched' : 'install_failed' });
     }
-    try { liveWebContents()?.send('engineSetup:changed', { id, exitCode: exitCode ?? null }); } catch { /* window gone */ }
+    const changed = (): void => {
+      try { liveWebContents()?.send('engineSetup:changed', { id, exitCode: exitCode ?? null }); } catch { /* window gone */ }
+    };
+    // A sign in started on an API key office: the team moves to the account
+    // only once it is signed in, so a sign in left half done keeps the key.
+    const path = id === ENGINE_SIGNIN_PTY && accountSignInFromKey ? claudePathFast() : null;
+    if (!path) { changed(); return; }
+    void claudeAuth.read(path).catch(() => null).then((s) => {
+      if (s?.signedIn && readConfig().claudeAuth === 'apiKey') {
+        accountSignInFromKey = false;
+        writeConfig({ claudeAuth: 'account' });
+        claudeAuthChanged();
+      }
+      changed();
+    });
     return;
   }
   // Record an ABNORMAL death before teardown — teardownPty drops the
@@ -2472,6 +2585,10 @@ function runBreakerBeat(progressWindowMs: number): void {
     if (d.action === 'none') continue;
     const name = reg.agents[d.state.agentId]?.name ?? d.state.agentId;
     const reason = d.state.reason;
+    // A member stuck in a loop is a failure report; a spending or token cap is
+    // the owner's setting and is not (docs/designs/auto-report-failures.md).
+    const loop = loopAgentDetail(d.action, reason);
+    if (loop) failures.reportFailure('loop-agent', undefined, { detail: loop, agentId: d.state.agentId });
     if (d.action === 'steer' || d.action === 'constrain') {
       // The member hears it; on a constrain Michael does too (breakerMessages).
       // No toast: a constrain is a soft pause Michael handles (only Michael
@@ -3766,6 +3883,31 @@ const QUIT_LABEL = 'Close Office';
  *  "Hide Don't Be Michael" read as a double negative (owner, 2026-09-24). */
 const HIDE_LABEL = 'Hide Office';
 
+/** Report a problem (docs/designs/report-problem-top-bar.md): one reporter for
+ *  the top bar button and Help ▸ Report a problem…, so a second click from
+ *  either while a report starts is ignored. */
+const reporter = createReporter<BrowserWindow>({
+  capture: async (win) => {
+    if (!win || win.isDestroyed()) return null;
+    const image = await win.webContents.capturePage();
+    return image.isEmpty() ? null : image.toPNG();
+  },
+  wait: (ms) => new Promise((done) => { setTimeout(done, ms); }),
+  openExternal: (url) => shell.openExternal(url),
+  downloads: () => app.getPath('downloads'),
+  exists: (path) => existsSync(path),
+  // wx: never overwrite, even if a file appeared after the name was chosen.
+  writeFile: (path, bytes) => fsPromises.writeFile(path, bytes, { flag: 'wx' }),
+  showItemInFolder: (path) => shell.showItemInFolder(path),
+  now: () => new Date(),
+  urlInputs: () => ({
+    appVersion: app.getVersion(), platform: process.platform, arch: process.arch,
+    osVersion: typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : '',
+    fingerprints: failures.recentFingerprints()
+  }),
+  warn: (step, error) => console.warn(`[report] ${step} failed:`, error)
+});
+
 /** Build + install the application menu: standard role-based items so
  *  copy/paste/quit work per platform, trimmed to what an office owner uses. */
 function installAppMenu(): void {
@@ -3839,7 +3981,17 @@ function installAppMenu(): void {
         { role: 'togglefullscreen' }
       ]
     },
-    { role: 'windowMenu' }
+    { role: 'windowMenu' },
+    // The same report as the top bar button. role help: macOS puts it last and
+    // adds its search field. Windows hides the menu bar with this title bar
+    // style, so there the button is the way in.
+    {
+      role: 'help',
+      submenu: [{
+        label: 'Report a problem…',
+        click: (_item, focused) => { void reporter.report(focused instanceof BrowserWindow ? focused : mainWindow); }
+      }]
+    }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -4205,7 +4357,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         ...Object.values(hive.registry().agents).filter((a) => a.id !== RESEARCH_ID && a.cwd).map((a) => a.cwd)];
       const memberPolicy = (): AgentFolderPolicy | undefined => {
         const base = businessFolder
-          ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd }, businessFolderLayout(businessFolder), process.platform !== 'linux')
+          ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd, readFolders: opts.hive!.isGod ? [] : foundationReadFolders(opts.hive!.id) }, businessFolderLayout(businessFolder), process.platform !== 'linux')
           : privateOnlyFolderPolicy(!!opts.hive!.isGod, opts.cwd);
         if (!base) return undefined;
         const hiveRoot = hive.root();
@@ -4391,8 +4543,10 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         .trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
       if (label) args.push('--remote-control-session-name-prefix', label);
     }
-    // Coarse runaway cap. A --max-turns already in the command (the owner's, or
-    // one a shared hire brought in) can only lower it, never raise it.
+    // Max turns per run is counted by the hook server (turnCap.ts), because
+    // Claude Code honours --max-turns in print mode only. The flag is still
+    // passed: it costs nothing, and a --max-turns already in the command (the
+    // owner's, or one a shared hire brought in) can only lower it, never raise it.
     args.splice(0, args.length, ...argsWithTurnCap(args, cfg.maxTurns));
     // Resume: an explicit session id (Add Agent "resume session" field, #2) wins,
     // else this agent's last recorded session (#1 restore-on-restart / #6.6a).
@@ -4460,9 +4614,11 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         if (typedSid) resumeNotFound = true;
       } else {
         if (ownerHome !== myHome) opts.env = { ...(opts.env ?? {}), CODEX_HOME: ownerHome };
+        const prompt = opts.hive ? hive.injectedPromptFor(opts.hive.id) : undefined;
+        if (prompt) hive.writeCodexInstructions(ownerHome, prompt);
         const args = opts.args ?? [];
         // Positional order matters: `codex resume [OPTIONS] [SESSION_ID] [PROMPT]`.
-        // The hive identity prompt rides in `args` as a POSITIONAL (codex has no
+        // The seed prompt rides in `args` as a POSITIONAL (codex has no
         // prompt flag), so the id must come BEFORE it — appending the id last made
         // codex read the prompt as SESSION_ID ("No saved session found with ID
         // You are \"Dev2\"…") and the id as the prompt.
@@ -4704,6 +4860,18 @@ ipcMain.handle('app:copyToClipboard', (_evt, text: unknown) => {
   if (typeof text !== 'string') return { ok: false, error: 'invalid text' };
   try { clipboard.writeText(text); return { ok: true }; }
   catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+});
+// The file tab's Copy (docs/designs/copy-document.md): formatted and plain in
+// one write, or the picture the tab shows.
+ipcMain.handle('app:copyRich', (_evt, input: unknown) => copyRich(clipboard, input));
+ipcMain.handle('app:copyImage', (_evt, bytes: unknown) => copyImage(clipboard, nativeImage, bytes));
+// The top bar's Report a problem: it answers once the report page opened; the
+// picture keeps saving after (docs/designs/report-problem-top-bar.md).
+ipcMain.on('failure:report', (_evt, f: unknown) => { failures.reportRenderer(f); });
+
+ipcMain.handle('app:reportProblem', async (evt) => {
+  const r = await reporter.report(BrowserWindow.fromWebContents(evt.sender));
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
 });
 // The link menu's label in the app language (linkMenu.ts), sent by the renderer.
 let copyLinkLabel = DEFAULT_COPY_LINK_LABEL;
@@ -5378,6 +5546,46 @@ ipcMain.handle('hive:procedure', (_evt, id: unknown, slug: unknown) =>
   (typeof id === 'string' && typeof slug === 'string' ? hive.procedure(id, slug) : null));
 ipcMain.handle('hive:inbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.inbox(id) : []));
 
+// Michael hears when email becomes usable (docs/designs/settings-links-in-replies.md):
+// a new mailbox at once; a member given one once they have started with it.
+const grantNotesFile = (): string | null => {
+  const home = readConfig().harnessHome;
+  return home ? join(privateRoot(home), GRANT_NOTES_FILE) : null;
+};
+const mailboxNotes = createMailboxNotes({
+  readPending: () => {
+    const f = grantNotesFile();
+    if (!f || !existsSync(f)) return [];
+    const parsed: unknown = JSON.parse(readFileSync(f, 'utf8'));
+    return Array.isArray(parsed) ? parsed.filter((g): g is PendingGrant => !!g && typeof g.agentId === 'string' && typeof g.address === 'string' && typeof g.at === 'number') : [];
+  },
+  writePending: (list) => {
+    const f = grantNotesFile();
+    if (!f) throw new Error('no office folder');
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, JSON.stringify(list), { mode: 0o600 });
+  },
+  tell: (subject, body) => {
+    if (!hive.enabled()) return false;
+    hive.send({ to: hive.registry().godId ?? 'god', act: 'inform', subject, body }, 'system');
+    return true;
+  },
+  openQuestions: () => hive.ownerQuestions().map((q) => ({ id: q.id, text: q.text })),
+  isRunning: (agentId) => { const p = ptyForAgent(agentId); return !!p && ptyManager.list().some((s) => s.id === p); },
+  nameOf: (agentId) => hive.registry().agents?.[agentId]?.name ?? agentId,
+  now: () => Date.now(),
+  warn: (what, error) => console.warn(`[mailbox-note] ${what} failed:`, error)
+});
+hookServer.onSessionStart = (agentId) => mailboxNotes.sessionStarted(agentId);
+setInterval(() => mailboxNotes.sweep(), 60_000).unref();
+mailboxNotes.sweep();
+
+/** The mailbox ids a member can read now (email on). */
+const readableMailboxes = (agentId: string): string[] => {
+  const e = readConfig().agentCapabilities?.[agentId]?.email;
+  return e?.enabled ? (e.mailboxes ?? []) : [];
+};
+
 // ─── IPC: mailboxes and Capabilities (docs/designs/multi-mailbox.md) ─────────
 // Records carry no password; the renderer only ever sends one, to save it.
 ipcMain.handle('mail:save', async (_evt, input: unknown) => {
@@ -5389,6 +5597,8 @@ ipcMain.handle('mail:save', async (_evt, input: unknown) => {
   // owner before: a failure during the login test can open the card after
   // `before` was read, and the fix that just worked has to close it too.
   if (res.ok && before) closeMailboxCard(res.record.id, `${res.record.address} is connected again.`);
+  // A new mailbox, not a fix: Michael may have a question waiting on email.
+  if (res.ok && typeof fixId !== 'string') mailboxNotes.mailboxAdded(res.record.address);
   return res;
 });
 ipcMain.handle('mail:remove', (_evt, id: unknown) => {
@@ -5402,7 +5612,17 @@ ipcMain.handle('mail:setCapabilities', (_evt, agentId: unknown, caps: unknown) =
   if (typeof agentId !== 'string' || !caps || typeof caps !== 'object') return { ok: false, restartNeeded: false };
   // Research holds no office data (issue #230): no mailbox, ever.
   if (agentId === RESEARCH_ID) return { ok: false, restartNeeded: false };
-  return setAgentCapabilities(mailAdmin, agentId, caps as Parameters<typeof setAgentCapabilities>[2]);
+  const before = readableMailboxes(agentId);
+  const res = setAgentCapabilities(mailAdmin, agentId, caps as Parameters<typeof setAgentCapabilities>[2]);
+  // Only a mailbox they did not hold before tells Michael; a Sending change
+  // alone does not (settings-links-in-replies.md).
+  if (res.ok) {
+    for (const id of newlyHeld(before, readableMailboxes(agentId))) {
+      const address = (readConfig().mailboxes ?? []).find((m) => m.id === id)?.address;
+      if (address) mailboxNotes.granted(agentId, address, res.restartNeeded);
+    }
+  }
+  return res;
 });
 /** A member's Send only grant (docs/designs/shared-mailboxes.md), or null to remove it. */
 ipcMain.handle('mail:setSendOnly', (_evt, agentId: unknown, grant: unknown) => {
@@ -5534,7 +5754,7 @@ function connectorsUpgradeCard(keys: string[]): void {
       priority: 2,
       createdAt: now,
       humanQA: [{
-        q: `**${keys.join(', ')} ${keys.length === 1 ? 'is' : 'are'} now off for the team.**\n\nAgents used to reach every connector on your Claude account. Now each one is off until you turn it on in Settings, Connections, Claude connectors, and give it to the team members who need it on their Access tab.`,
+        q: `**${keys.join(', ')} ${keys.length === 1 ? 'is' : 'are'} now off for the team.**\n\nAgents used to reach every connector on your Claude account. Now each one is off until you turn it on in [Settings, Connections, Claude connectors](dbm:settings/connections/claude-connectors), and give it to the team members who need it on their Access tab.`,
         askedAt: now,
         raisedBy: 'god'
       }]
@@ -6122,7 +6342,12 @@ const reviseRuns = new Map<string, AbortController>();
 ipcMain.handle('workStyle:convert', async (evt, payload: unknown) => {
   if ((payload as { to?: unknown } | null)?.to === 'revise') {
     const rev = readReviseRequest(payload);
-    if (!rev) return { kind: 'error', reason: 'failed' };
+    if (!rev) {
+      // Logged, and said as what to fix: a request with no name or no change
+      // fails the same way on every try (owner, 2026-10-26).
+      try { hive.appendLog({ kind: 'work-style-revise-failed', reason: 'request unreadable (no name or no change)' }); } catch { /* best-effort */ }
+      return { kind: 'error', reason: 'no-name' };
+    }
     const stop = new AbortController();
     if (rev.requestId) reviseRuns.set(rev.requestId, stop);
     const cfg = readConfig();
@@ -6277,6 +6502,8 @@ setHiddenClaudeAuthEnv(() => {
   return env;
 });
 
+/** A Get Michael ready sign in started while the team used an API key. */
+let accountSignInFromKey = false;
 /** `claude auth status`, one at a time, never joining a read that started
  *  before a sign in ended, keeping the last known state on a failed read
  *  (engineSetup.makeClaudeAuthReader). */
@@ -6321,8 +6548,9 @@ ipcMain.handle('engineSetup:install', (e): { ok: boolean; error?: string } => {
 ipcMain.handle('engineSetup:signIn', (e): { ok: boolean; error?: string } => {
   const claude = claudePathFast();
   if (!claude) return { ok: false, error: 'not installed' };
-  // Signing in with an account means the team uses it, not a key.
-  if (readConfig().claudeAuth === 'apiKey') writeConfig({ claudeAuth: 'account' });
+  // Signing in with an account means the team uses it, not a key: the switch
+  // waits for the sign in to finish (the terminal's exit handler).
+  accountSignInFromKey = readConfig().claudeAuth === 'apiKey';
   if (ptyManager.list().some((x) => x.id === ENGINE_SIGNIN_PTY)) ptyManager.kill(ENGINE_SIGNIN_PTY);
   return ptyManager.spawn({ id: ENGINE_SIGNIN_PTY, cwd: homedir(), command: claude, args: ['auth', 'login'], cols: 100, rows: 12 }, e.sender);
 });
@@ -6348,15 +6576,22 @@ ipcMain.handle('engineSetup:useApiKey', async (_e, raw: unknown): Promise<{ ok: 
   if (!saved.ok) return { ok: false, error: 'store' };
   writeConfig({ claudeAuth: 'apiKey' });
   try { liveWebContents()?.send('engineSetup:changed', { id: 'api-key', exitCode: null }); } catch { /* window gone */ }
-  // A key that stopped working was replaced (office-stopped-account.md, B1).
-  // Running Claude terminals got the old key in their environment when they
-  // started (claudeAuthEnv), so they restart, resumed; the office checks again.
-  if (officeBreak.view()?.reason === 'signin') {
-    try { liveWebContents()?.send('office:restartClaude', runningClaudePtys()); } catch { /* window gone */ }
-    ownerRetryOffice();
-  }
+  accountSignInFromKey = false;
+  claudeAuthChanged();
   return { ok: true };
 });
+
+/** The team's Claude sign in changed: a new key, a Claude account in place of
+ *  a key, or a key in place of the account. Running Claude terminals got the
+ *  old sign in in their environment when they started (claudeAuthEnv), so they
+ *  restart at once, resumed (owner, 2026-10-28: a change from Settings works
+ *  right away, even mid step). An office stopped on the owner
+ *  (office-stopped-account.md, B1), out of credit or a sign in that stopped
+ *  working, checks again. */
+function claudeAuthChanged(): void {
+  try { liveWebContents()?.send('office:restartClaude', runningClaudePtys()); } catch { /* window gone */ }
+  if (stopNeedsOwner(officeBreak.view())) ownerRetryOffice();
+}
 
 /** The terminals of agents on Claude that are running now. */
 function runningClaudePtys(): string[] {
@@ -6984,6 +7219,17 @@ ipcMain.handle('foundations:pickFile', async (evt) => {
   return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
 });
 ipcMain.handle('foundations:addFile', (_evt, id: unknown, path: unknown) => foundations.addFile(id, path));
+// A folder from a foundation card (eng review 2026-10-26): picked here or
+// dropped on the card, checked, then named in the answer.
+ipcMain.handle('foundations:pickFolder', async (evt) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  if (!win) return { ok: false as const, error: 'no window' };
+  const res = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: 'Add a folder' });
+  if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
+  return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
+});
+ipcMain.handle('foundations:checkFolder', (_evt, id: unknown, path: unknown) => foundations.checkFolder(id, path));
+ipcMain.handle('foundations:answerFolder', (_evt, id: unknown, path: unknown, words: unknown) => foundations.answerFolder(id, path, words));
 ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown) => foundations.answerFile(id, docId, words));
 ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
 ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));
@@ -8702,6 +8948,7 @@ app.whenReady().then(() => {
 // before-quit covers Cmd-Q / dock-quit; the per-window close handler covers
 // the red close button. Both routes hit the same warning UX.
 app.on('before-quit', (e) => {
+  failures.flush(true);
   if (allowQuit) return;
   const count = ptyManager.list().length;
   if (count === 0) return;

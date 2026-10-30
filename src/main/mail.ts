@@ -310,7 +310,13 @@ export function classifyMailError(e: unknown): MailError {
   if (e instanceof MailError) return e;
   const err = e as { code?: string; authenticationFailed?: boolean; responseText?: string; response?: string; message?: string };
   const text = `${err?.responseText ?? ''} ${err?.response ?? ''} ${err?.message ?? ''}`;
-  if (/application-specific password required|web login required|basic auth(entication)? (is )?(disabled|blocked)|app passwords? (are |is )?(not allowed|disabled)|please log ?in via your web browser/i.test(text)) {
+  // Google says this when the normal password is used with 2 Step Verification
+  // on: it wants an app password, it is not refusing one (eng review of the
+  // Google step cards, 2026-10-26). Worded for the dialog and the card alike.
+  if (/application-specific password required/i.test(text)) {
+    return new MailError('auth', 'That is the normal Google password. Google needs an app password instead: make one on Google\'s App passwords page.');
+  }
+  if (/web login required|basic auth(entication)? (is )?(disabled|blocked)|app passwords? (are |is )?(not allowed|disabled)|please log ?in via your web browser/i.test(text)) {
     return new MailError('provider-blocked', 'This provider no longer accepts the app password for this mailbox.');
   }
   // 535 is the SMTP reply code for a refused login. It counts only as a reply
@@ -350,7 +356,10 @@ function addrText(a: any): string {
   return '';
 }
 
-export interface MailRef { mailbox: string; id: string }
+/** `messageId` is the Message-ID of the email `id` named when a proposal was
+ *  filed, kept by the app (never taken from an agent): an inbox id names
+ *  nothing once the email is archived, so the send finds it by this instead. */
+export interface MailRef { mailbox: string; id: string; messageId?: string }
 
 export interface ComposeInput {
   to: string;
@@ -760,6 +769,15 @@ export class MailService {
     return { inReplyTo: parsed.messageId, references: [...prior, parsed.messageId].slice(-50) };
   }
 
+  /** `ref` with the Message-ID of the email it names, read when a proposal
+   *  that forwards or attaches from it is filed: like a reply's thread, the
+   *  email is often archived before the owner says yes, and the send then
+   *  finds it by this. Unchanged when the email has no Message-ID. */
+  async keepMessageId(id: string, ref: MailRef): Promise<MailRef> {
+    const { messageId } = await this.replyHeaders(id, ref);
+    return messageId ? { ...ref, messageId } : ref;
+  }
+
   /** The threading headers of the message a reply answers, without its body. */
   private async replyHeaders(id: string, ref: MailRef): Promise<{ messageId?: string; references?: string | string[] }> {
     const { key, uid } = parseMessageId(ref.id);
@@ -784,6 +802,33 @@ export class MailService {
     const m = await c.fetchOne(uid, { uid: true, source: true, flags: true }, { uid: true });
     MailService.checkReadable(m && m.source ? m : false, uid, key);
     return Buffer.isBuffer(m.source) ? m.source : Buffer.from(m.source);
+  }
+
+  /** The email with this Message-ID, looked for where mail goes when it leaves
+   *  the inbox: the inbox itself, the archive (Gmail's All Mail) and Sent.
+   *  Null when none holds it. A header search matches part of the header, so
+   *  each hit's own Message-ID is checked before it is used. */
+  private async byMessageId(id: string, messageId: string): Promise<Buffer | null> {
+    for (const key of ['inbox', 'archive', 'sent'] as const) {
+      let found: Buffer | null;
+      try {
+        found = await this.inFolder(id, MailService.folderOf(key), async (c) => {
+          const hits = [...((await c.search({ header: { 'message-id': messageId } }, { uid: true })) || [])].sort((a, b) => b - a);
+          for (const uid of hits.slice(0, 5)) {
+            const m = await c.fetchOne(String(uid), { uid: true, headers: ['message-id'] }, { uid: true }).catch(() => null) as { headers?: Buffer | string } | false | null;
+            const own = m && m.headers ? (await simpleParser(Buffer.isBuffer(m.headers) ? m.headers : Buffer.from(String(m.headers)))).messageId : undefined;
+            if (own === messageId) return this.source(c, String(uid), key, REFERENCE_MAX_BYTES);
+          }
+          return null;
+        }, 'Fetching the referenced message');
+      } catch (e) {
+        // A mailbox with no archive folder yet: look in the next one.
+        if (e instanceof MailError && e.kind === 'not-found') continue;
+        throw e;
+      }
+      if (found) return found;
+    }
+    return null;
   }
 
   /** Throws unless the fetched message is there and isn't a draft. */
@@ -892,7 +937,16 @@ export class MailService {
     let total = 0;
     const fetch = async (ref: MailRef) => {
       const { key, uid } = parseMessageId(ref.id);
-      const buf = await this.inFolder(id, MailService.folderOf(key), (c) => this.source(c, uid, key, REFERENCE_MAX_BYTES), 'Fetching the referenced message');
+      let buf: Buffer;
+      try {
+        buf = await this.inFolder(id, MailService.folderOf(key), (c) => this.source(c, uid, key, REFERENCE_MAX_BYTES), 'Fetching the referenced message');
+      } catch (e) {
+        // An approved forward whose email was archived after it was proposed:
+        // its id names nothing now, so it is found by the Message-ID kept then.
+        const moved = ref.messageId && e instanceof MailError && e.kind === 'not-found' ? await this.byMessageId(id, ref.messageId) : null;
+        if (!moved) throw e;
+        buf = moved;
+      }
       total += buf.length;
       if (buf.length > REFERENCE_MAX_BYTES || total > REFERENCE_MAX_BYTES) throw new MailError('bad-request', REFERENCE_TOO_LARGE);
       return buf;
@@ -1144,6 +1198,24 @@ function ref(v: unknown): MailRef | undefined {
   if (!v || typeof v !== 'object') return undefined;
   const o = v as Record<string, unknown>;
   return typeof o.mailbox === 'string' && (typeof o.id === 'string' || typeof o.id === 'number') ? { mailbox: o.mailbox, id: String(o.id) } : undefined;
+}
+
+/** A proposal's forward and attach_from refs, each with the Message-ID of the
+ *  email it names, read as it is filed: the send finds an email archived
+ *  meanwhile by that (send-on-approval.md). An id that names nothing fails
+ *  here, as a reply's does, while the agent can still search again. One that
+ *  can't be read now (the server out of reach) keeps its id alone, and the
+ *  send reads it then, as before. */
+async function keptRefs(svc: MailService, mailbox: string, input: ComposeInput): Promise<Pick<ComposeInput, 'forward' | 'attachFrom'>> {
+  const keep = async (r: MailRef): Promise<MailRef> => {
+    try { return await svc.keepMessageId(mailbox, r); } catch (e) {
+      if (e instanceof MailError && (e.kind === 'not-found' || e.kind === 'bad-request')) throw e;
+      return r;
+    }
+  };
+  const attachFrom: MailRef[] = [];
+  for (const r of input.attachFrom ?? []) attachFrom.push(await keep(r));
+  return { forward: input.forward && await keep(input.forward), attachFrom: input.attachFrom && attachFrom };
 }
 
 type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; organized?: (moved: OrganizedMove) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean; tellMichael?: (subject: string, body: string) => void };
@@ -1514,7 +1586,9 @@ async function runMailRequest(
           if (e instanceof MailError && (e.kind === 'not-found' || e.kind === 'bad-request')) throw e;
         }
       }
-      const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: input.forward, attachFrom: input.attachFrom, ...(thread ? { thread } : {}), ...(offer ? { offerStanding: offer } : {}) });
+      // What it forwards or attaches is kept by Message-ID too, for the same reason.
+      const kept = await keptRefs(svc, mailbox!, input);
+      const p = deps.proposals.file({ agentId, mailbox: mailbox!, to: input.to, cc: input.cc, subject: input.subject, body: input.body, replyTo: input.replyTo, forward: kept.forward, attachFrom: kept.attachFrom, ...(thread ? { thread } : {}), ...(offer ? { offerStanding: offer } : {}) });
       return { status: 200, body: { proposal: p.id, state: 'waiting for the owner on Ask me', ...(p.replaces ? { replaced: p.replaces, note: `This replaces your earlier proposal ${p.replaces} for the same email; that id no longer works.` } : {}), next: 'Nothing is sent yet. You will get a message when the owner decides: approved (then call send with this proposal id), changes asked, or not sent. Do not send it another way.' } };
     }
     const out = await svc.send(agentId, mailbox!, input, () => {

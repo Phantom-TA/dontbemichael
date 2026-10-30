@@ -1,5 +1,4 @@
-- **Memory notes** say what showed them.
-- **Went wrong** compares a job's runs.
-- **Explain how two members split** the work.
-- Pulse shows how long the office ran.
-- Contributor fixes across the app.
+- **See and change your Claude sign in** in Settings, Agents.
+- Out of credit on a key? Change sign in from the stop card.
+- A new sign in restarts the team on it at once.
+- A Mac update that will not install offers the download.

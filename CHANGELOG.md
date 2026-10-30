@@ -6,6 +6,63 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [0.3.0] (2026-10-28)
+
+### Added
+- **Claude sign in in Settings.** Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API key, with Change key, Use a Claude account or Use an API key. An office set up before skips setup, so this used to show nowhere.
+
+### Changed
+- Out of credit on an API key, the stop card adds Change sign in, for a new key or your Claude account.
+- A new key, or your Claude account in place of a key, restarts the running team on it at once, picking up where each member left off. A stopped office checks again. Signing in to an account moves the team off its key only once the sign in finished.
+
+### Fixed
+- An update the Mac refuses to install now offers the manual download instead of the same Restart to update again and again.
+
+### Upgrading from 0.2.5 or older on a Mac
+- Those versions can't install signed updates on their own: Restart to update keeps coming back. Download the DMG and install it by hand once; updates work as usual after that.
+
+## [0.2.9] (2026-10-28)
+
+### Added
+- **Failures report themselves.** Technical failures the developers can fix in code (an app or screen crash, a team member's terminal ending abnormally, a router or hook failure, a team member stuck in a loop) are kept in `failures.jsonl` and filed automatically as fixed fields only, with no names, messages or files; anything the owner or the team can fix is never sent. DO_NOT_TRACK stops sending, including an export in your shell profile (docs/designs/auto-report-failures.md, TELEMETRY.md). A report file that cannot be read for a moment is never overwritten, and a failure that keeps repeating no longer rewrites that file every 30 seconds.
+- **Report a problem lists recent automatic reports**, so a person's report can be matched to them.
+
+### Fixed
+- Home and Manager setup text is 14px or more (#416, with thanks to @glenmiracle18).
+- Hidden Claude calls start on Windows when the Claude path has a space (#426, with thanks to @theshloksschauhan).
+
+## [0.2.8] (2026-10-27)
+
+### Added
+- **Copy any file that opens in a tab.** An email draft or a blog post pastes with its headings, bold, lists and links into Gmail, Outlook, Google Docs or WordPress, and as clean words with no Markdown marks into a plain box such as LinkedIn. A spreadsheet pastes as real cells, a picture as a picture, and a part you select pastes as clean as the whole.
+- **Report a problem sits in the top bar,** on every view, in place of the Beta pill. One click opens a bug report with the app version and your system filled in, and saves a picture of the window in your Downloads, ready to add. Help, Report a problem does the same.
+- **Places in Settings are buttons.** When Michael or a card names a place in Settings, one click opens Settings right there, on the right group. Ask for email work before email is connected, and Michael's answer ends with Connect your email, then asks who should read it, and does the job once you give it to them.
+- **Add a whole folder from a Company foundations card,** picked or dropped. Nothing is copied: the answer names the folder, and the team members whose job uses that question can read it, read only.
+- **Pulse's Early look shows the four things it watches:** schedules finding nothing, schedules with more to do, a cheaper model and a stronger model, each lit with what it found so far or saying it waits.
+
+### Changed
+- Gmail and Google Workspace are one choice in Add a mailbox, "Gmail or GSuite", and setting it up is three numbered steps, each with a button that opens the right Google page. Typing your normal Google password says so in plain words, instead of saying the provider refused the app password.
+- A file you open while the conversation with Michael is wide shows in the middle, with the conversation waiting at the side; closing the file brings it back.
+- Pulse's Recommendations start folded to one line with View recommendations, and stay open once you open them.
+- When a job change can't be worked out, the box says why and what to do: name the hire, check Claude is signed in, wait, or reword.
+- A team member on Codex gets its rules at the system level, and one on Gemini gets them again after a compaction or a resume, so the rules survive a long run on every engine (contributed in #311).
+- Max turns per run in Settings now really caps a run: each tool call since the member's last prompt counts, and the one past the cap is refused and the run stops (contributed in #601).
+- A webhook asking whether it is fine, alright or safe to act, or whether there is any objection, waits for approval like "is it ok to" does, and charging, wiping, erasing or purging counts as acting (contributed in #540).
+
+### Fixed
+- Clearing the Name box when hiring no longer makes every job change and overlap check fail.
+- While you were away says when the office's running clock began, even when it began today.
+- Went wrong waits until it has finished with a run's session file, so Windows can tidy the folder after it.
+- A shared hire can no longer put a word after a flag that takes no value, which the engine would have read as its first instruction (contributed in #539).
+- Company profile edits save with the Settings Save button, survive switching sections and a failed save, and closing Settings with unsaved changes asks first (contributed in #554).
+- An office pack window that ends before it starts is refused instead of silently dropping its schedules (contributed in #520).
+- A mailbox set up as Other can pair incoming 993 with outgoing 587: the outgoing server's encryption follows its own port (contributed in #574).
+- A pasted block of several lines in a team member's terminal stays one draft instead of being sent line by line (contributed in #548).
+- The Git tab draws a merge's second parent in its own lane, keeps a shared parent in its lane, and lists the log in order (contributed in #544 and #641).
+- A link to a file whose name has spaces, or that starts at the workspace root, opens that file (contributed in #543).
+- A folded Ask me card that starts with a list item or a quote shows its question (contributed in #542).
+- A skill saved with a byte order mark, or with a blank line in its description, shows its name and whole description (contributed in #564).
+
 ## [0.2.7] (2026-10-26)
 
 ### Added

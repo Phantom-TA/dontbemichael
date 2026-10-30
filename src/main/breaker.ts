@@ -106,6 +106,10 @@ const PROGRESS_TOOL_WINDOW_MS = 300_000;
 /** Consecutive tripping beats the no-progress arm needs before it fires — a
  *  one-beat blip (inbox ack, statusline burst) never steers on its own. */
 const NO_PROGRESS_BEATS = 2;
+/** The loop check reads each string of a call's input only up to here (see
+ *  toolKey). The hook program cuts a big save's input to the same length, so
+ *  a trimmed call keys exactly as the whole one would. */
+export const TOOL_KEY_STRING_CAP = 4096;
 
 interface AgentBreakerState {
   level: BreakerLevel;
@@ -145,12 +149,16 @@ export class CircuitBreaker {
 
   private cfg() {
     const c = this.getConfig() ?? {};
+    // A limit of 0 (Settings takes it) or below would trip every member on the
+    // next beat, idle or not: `0 >= 0` is always true. Like an empty field it
+    // means the default, the way 0 means no limit for the token budget.
+    const limit = (v: number | undefined, d: number) => (typeof v === 'number' && v > 0 ? v : d);
     return {
       enabled: c.enabled ?? DEFAULTS.enabled,
       hardStop: c.hardStop ?? DEFAULTS.hardStop,
-      repeatedToolLimit: c.repeatedToolLimit ?? DEFAULTS.repeatedToolLimit,
-      errorStormLimit: c.errorStormLimit ?? DEFAULTS.errorStormLimit,
-      tokenVelocityPerMin: c.tokenVelocityPerMin ?? DEFAULTS.tokenVelocityPerMin,
+      repeatedToolLimit: limit(c.repeatedToolLimit, DEFAULTS.repeatedToolLimit),
+      errorStormLimit: limit(c.errorStormLimit, DEFAULTS.errorStormLimit),
+      tokenVelocityPerMin: limit(c.tokenVelocityPerMin, DEFAULTS.tokenVelocityPerMin),
       costCapUsd: c.costCapUsd,
       costCapTokens: c.costCapTokens,
       agentTokenCaps: c.agentTokenCaps
@@ -271,7 +279,7 @@ export class CircuitBreaker {
     let inp = '';
     try {
       inp = JSON.stringify(toolInput, (_k, v) =>
-        typeof v === 'string' && v.length > 4096 ? v.slice(0, 4096) : v) ?? '';
+        typeof v === 'string' && v.length > TOOL_KEY_STRING_CAP ? v.slice(0, TOOL_KEY_STRING_CAP) : v) ?? '';
     } catch { inp = String(toolInput); }
     return `${toolName ?? '?'}:${createHash('sha256').update(inp).digest('hex')}`;
   }

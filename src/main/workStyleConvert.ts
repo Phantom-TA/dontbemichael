@@ -117,7 +117,21 @@ export interface ReviseRequest {
   askHome?: boolean;
 }
 
-export type ReviseResult = ReviseAnswer | { kind: 'error'; reason: 'failed' | 'cancelled' };
+/** Why a change could not be worked out, so the box says what to do instead
+ *  of "try again" for a cause a retry never clears (owner, 2026-10-26): the
+ *  request named nobody, Claude never took the prompt (signed out, or a
+ *  screen waiting), Claude ran out of time, its answer could not be read, or
+ *  anything else. */
+export type ReviseFailure = 'no-name' | 'not-started' | 'slow' | 'unreadable' | 'failed';
+export type ReviseResult = ReviseAnswer | { kind: 'error'; reason: ReviseFailure | 'cancelled' };
+
+/** A hidden run's failure as the owner's reason. */
+export function reviseFailure(result: { ok: boolean; error?: string }): ReviseFailure {
+  if (result.ok) return 'unreadable';
+  if (/never took the prompt/.test(result.error ?? '')) return 'not-started';
+  if (/timed out/.test(result.error ?? '')) return 'slow';
+  return 'failed';
+}
 
 const CHANGE_MAX = 1500;
 
@@ -226,6 +240,7 @@ export async function reviseWorkStyle(
     if (answer?.kind === 'ok') return withHandoffLines(answer, req, bound, deps.log);
     if (answer) return answer;
     deps.log?.({ kind: 'work-style-revise-failed', reason: result.ok ? 'unreadable' : (result.error ?? 'failed') });
+    return { kind: 'error', reason: reviseFailure(result) };
   } catch (e) {
     deps.log?.({ kind: 'work-style-revise-failed', reason: String(e).slice(0, 200) });
   }

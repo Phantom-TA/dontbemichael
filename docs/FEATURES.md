@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.7). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.3.0). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -64,8 +64,11 @@ moving, and brings you only the decisions that need you.
   cards to hand on. Michael, his assistant and Pete can't be deleted.
 
 ### 3. A mailbox for every job
-- Connect as many mailboxes as your business runs on: Gmail, Google Workspace, iCloud, Yahoo, Zoho
-  or any IMAP mailbox. Passwords stay encrypted on your computer.
+- Connect as many mailboxes as your business runs on: Gmail or GSuite (one choice, they connect
+  the same way), iCloud, Yahoo, Zoho or any IMAP mailbox. Passwords stay encrypted on your computer.
+- Setting up Gmail or GSuite is three numbered steps, each with a button that opens the right Google
+  page on your account: turn on 2 Step Verification, create an app password, paste it. Typing your
+  normal Google password says so in plain words.
 - A mail server that isn't encrypted from the start must switch to encryption before the app sends
   the password. One that can't is refused, and the mailbox says so in plain words, with the
   encrypted port to use instead.
@@ -187,10 +190,75 @@ moving, and brings you only the decisions that need you.
   itself.
 - Setup ends on Get Michael ready: it installs Claude Code and signs you in where you can see it,
   or takes an Anthropic API key instead. Skip it, and Ask me keeps a card until Michael can start.
+  Settings, Agents shows how the team signs in to Claude and changes it: a new key, your Claude
+  account in place of a key, or a key in place of the account.
 - If your settings file was damaged, setup says that is why it starts again and where a copy of
   the file was kept.
+- When Michael or a card sends you somewhere in Settings, the words are a button that opens Settings right there, on
+  the right group. If you ask for email work before email is connected, Michael's answer ends with Connect your email,
+  then asks who on the team should read it, and does the job once you give it to them.
+- Report a problem sits in the top bar on every view, hard to miss. One click opens a bug report
+  with the app version and your system filled in, and saves a picture of the window in your
+  Downloads, ready to add. Help, Report a problem does the same. Reports are public, so the hover
+  text says to check the picture first. It also lists your office's recent automatic reports, so
+  your words can be matched to them.
+- Failures the developers can fix in code are reported automatically: a crash, a team member stuck
+  in a loop, a message that could not be delivered because of a bug. Each report is fixed fields
+  only, with no names, messages or files, and anything you can fix yourself is never sent. Setting
+  DO_NOT_TRACK stops it.
+- Copy on every file that opens in a tab: an email draft or a blog post pastes with its headings,
+  bold, lists and links into Gmail, Outlook, Google Docs or WordPress, and as clean words with no
+  Markdown marks into a plain box such as LinkedIn. A spreadsheet pastes as real cells, a picture
+  as a picture, and a part you select pastes as clean as the whole, in light or dark mode.
 
 ## Part 2: Every change, release by release
+
+### 0.3.0 (2026-10-28)
+- Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API
+  key, with Change key, Use a Claude account or Use an API key. An office set up before skips
+  setup, so this used to show nowhere.
+- Out of credit on an API key, the stop card adds Change sign in, for a new key or your Claude
+  account.
+- A new sign in restarts the running team on it at once, each member picking up where it left off,
+  and a stopped office checks again. Signing in to an account moves the team off its key only once
+  the sign in finished.
+- An update the Mac refuses to install offers the manual download instead of the same Restart to
+  update again and again. Macs on 0.2.5 or older download the new version by hand once.
+
+### 0.2.9 (2026-10-28)
+- Failures the developers can fix in code report themselves: a crash, a team member's terminal
+  ending abnormally, a router or hook failure, a team member stuck in a loop. Each report is fixed
+  fields only, with no names, messages or files, kept on your computer and filed to a private
+  repository, then copied field by field into a public issue. Anything you can fix yourself is
+  never sent, and DO_NOT_TRACK stops it.
+- Report a problem lists your office's recent automatic reports, so your words can be matched to
+  them.
+- Home and Manager setup text is 14px or more (#416, contributed by @glenmiracle18).
+- Hidden Claude calls start on Windows when the Claude path has a space (#426, contributed by
+  @theshloksschauhan).
+
+### 0.2.8 (2026-10-27)
+- Copy on every file that opens in a tab: a draft pastes with its headings, bold, lists and links
+  into Gmail, Outlook, Google Docs or WordPress, and as clean words into a plain box such as
+  LinkedIn; a spreadsheet pastes as real cells and a picture as a picture.
+- Report a problem sits in the top bar on every view, in place of the Beta pill: a prefilled bug
+  report and a picture of the window saved in Downloads.
+- Places in Settings named by Michael or a card are buttons that open Settings on that group. Email
+  work asked for before email is connected ends with Connect your email, then who should read it,
+  and Michael does it once that is set.
+- Add a whole folder from a Company foundations card, picked or dropped: nothing is copied, the
+  answer names the folder, and the team members whose job uses that question can read it, read
+  only.
+- A file you open while the conversation with Michael is wide shows in the middle, with the
+  conversation waiting at the side; closing the file brings the conversation back.
+- Pulse's Early look shows the four things it watches: schedules finding nothing, schedules with
+  more to do, a cheaper model and a stronger model. Recommendations start folded.
+- Gmail and Google Workspace are one choice, Gmail or GSuite, set up in three numbered steps with
+  buttons that open the right Google page.
+- Contributor changes: rules that survive a long run on Codex and Gemini, Max turns per run that
+  really caps a run, more webhook asks held for approval, a safer shared hire, Company profile
+  saving, office pack windows checked, mailbox ports, terminal pastes, the Git graph, links with
+  spaces, Ask me headlines and skill descriptions.
 
 ### 0.2.7 (2026-10-26)
 - Every memory note says what showed it, shown behind an info icon on the Memory tab. Your Ask me

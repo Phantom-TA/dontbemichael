@@ -49,9 +49,10 @@ test('the renderer restores its notice when the restart reports a cancel', () =>
   const src = read('src/renderer/src/components/UpdateToast.tsx');
   const fn = src.slice(src.indexOf('const restart = async'));
   const body = fn.slice(0, fn.indexOf('\n  };'));
-  assert.ok(/if \(!res\.ok\) \{ setStatus\(prev\); setBusy\(false\); \}/.test(body),
+  assert.ok(/if \(!res\.ok\) \{ setStatus\(\(cur\) => cur \?\? prev\); setBusy\(false\); \}/.test(body),
     'a cancelled restart has to put the notice back AND clear busy — clearing one '
-    + 'without the other leaves either a dead button or no way to retry');
+    + 'without the other leaves either a dead button or no way to retry; a status '
+    + 'main pushed meanwhile (a refused install) wins over the old one');
 });
 
 test('a re-entry guard refuses a duplicate restart instead of firing quitAndInstall twice', () => {

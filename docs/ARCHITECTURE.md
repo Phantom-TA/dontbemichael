@@ -169,6 +169,10 @@ src/
                              cached, never fatal; fetchText.ts is the one https fetcher they share
     analytics.ts             product analytics (PostHog), anonymous, allowlisted and governed by TELEMETRY.md; off in this
                              build (COLLECT_USAGE_STATS)
+    failureReport.ts / failureSender.ts   automatic failure reports (docs/designs/auto-report-failures.md, TELEMETRY.md):
+                             failures the developers can fix in code, folded by fingerprint into failures.jsonl in the
+                             app's data folder, then filed as fixed fields to the private reports repo; on in this build
+                             (AUTO_FAILURE_REPORTS), and DO_NOT_TRACK stops sending
     updater.ts               auto update from GitHub releases through electron-updater: downloads in the background, installs
                              only when the owner asks
     restart.ts               restarts the app after a reset or a home change, and knows when a dev build cannot relaunch
@@ -267,6 +271,8 @@ src/
     costFold.ts              the cost running total rule the lifetime ledger and Pulse share
     runCompare.ts            comparing a run that went wrong with one that went well: the pick, the transcript slices,
                              the prompt and the suggestion's states (main/runCompare.ts runs it)
+    failureReport.ts         the failure report's schema: the kinds, the closed fields, frame scrubbing, and the issue's
+                             title and body; it imports nothing, so the reports repo's Action runs it on its own
   preload/                   contextBridge → typed window.cth API
   renderer/src/
     App.tsx                  top-level layout + wiring
@@ -347,6 +353,7 @@ resources/md-mail-mcp.cjs    md-mail MCP server: an agent's mail tools, forwarde
 docs/                        `model-catalog.json` and `hero.json` (fetched by the app at runtime)
 docs/demo/studio-lab.html    the studio lab, built by `npm run lab`
 tools/studio-lab/            the studio lab and the reference screens (`npm run lab`, `npm run shoot`)
+tools/failure-reports/       the reports repo's promotion Action and the release canary; its README.md is the owner runbook
 docs/designs/                design docs, including business-mode-office-packs.md (the business mode design and its decisions)
                              (the old project's website files still here are tracked for removal in TODOS.md)
 branding/reference/studio/   the app's reference screens, also the README's images (npm run shoot)

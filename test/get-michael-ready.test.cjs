@@ -162,9 +162,14 @@ test('an API key instead of a Claude account: checked with Anthropic, kept write
   assert.match(read('src/main/hiddenClaude.ts'), /const auth = hiddenClaudeAuthEnv\(\);[\s\S]*\.\.\.auth,\s*\.\.\.\(opts\.env \?\? \{\}\)/);
   // The key an isolated check approves is the one its session gets (cycle 3 review).
   assert.match(read('src/main/hiddenClaude.ts'), /isolatedConfigDir\(opts\.cwd, \{ \.\.\.auth, \.\.\.\(opts\.env \?\? \{\}\) \}\)/);
-  // A key counts as signed in; signing in with an account switches back.
+  // A key counts as signed in; signing in with an account switches back, once
+  // the sign in finished (a half done one keeps the key).
   assert.match(main, /const status = await readEngineSetupStatus\(\{[\s\S]*?claudeAuth: cfg\.claudeAuth,\s*hasKey: \(\) => integrations\.hasSecret\(providerKeyRef\('anthropic'\)\),/);
-  assert.match(main, /if \(readConfig\(\)\.claudeAuth === 'apiKey'\) writeConfig\(\{ claudeAuth: 'account' \}\);/);
+  const signIn = main.slice(main.indexOf("ipcMain.handle('engineSetup:signIn'"));
+  assert.match(signIn.slice(0, signIn.indexOf('\n});')), /accountSignInFromKey = readConfig\(\)\.claudeAuth === 'apiKey';/);
+  assert.doesNotMatch(signIn.slice(0, signIn.indexOf('\n});')), /writeConfig/, 'clicking Sign in never moves the team off its key');
+  assert.match(main, /const path = id === ENGINE_SIGNIN_PTY && accountSignInFromKey \? claudePathFast\(\) : null;/);
+  assert.match(main, /if \(s\?\.signedIn && readConfig\(\)\.claudeAuth === 'apiKey'\) \{\s*accountSignInFromKey = false;\s*writeConfig\(\{ claudeAuth: 'account' \}\);\s*claudeAuthChanged\(\);/);
   const ready = read('src/renderer/src/components/GetMichaelReady.tsx');
   assert.match(ready, /type="password" autoComplete="off"/);
   assert.match(ready, /t\('engineSetup\.useApiKey'\)/);
@@ -340,7 +345,7 @@ test('the step marks an install that ended without Claude as failed, and install
   // Value: protects=a failed install shows Try again instead of spinning forever, and opening the step never starts two installs; fails_when=the install exit no longer sets installFailed, or the first look loses its once guard; why_new=review testing specialist; seam=none (source pin, no DOM harness)
   const ready = read('src/renderer/src/components/GetMichaelReady.tsx');
   assert.match(ready, /if \(e\.id === ENGINE_INSTALL_PTY\) \{\s*setInstalling\(false\);\s*setInstallFailed\(!s\.installed\);/);
-  assert.match(ready, /if \(s && s\.applies && !s\.installed && !autoInstalled\.current\) \{\s*autoInstalled\.current = true;/);
+  assert.match(ready, /if \(s && s\.applies && !s\.installed && !autoInstalled\.current && !manage\) \{\s*autoInstalled\.current = true;/);
   assert.match(ready, /if \(inFlight\.current\) return;/, 'the 2 s sign in poll never stacks claude auth status');
   assert.match(ready, /case 'unknown': return keyForm \? keyFormRow : \(\s*<Row icon="help" tone="idle" label=\{t\('engineSetup\.account'\)\} status=\{t\('engineSetup\.signInUnknown'\)\}>/, 'unknown sign in: no green check');
 });

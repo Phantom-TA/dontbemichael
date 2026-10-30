@@ -61,6 +61,10 @@ jobs:
           # forks without the secret compile with '' and analytics no-ops.
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # Automatic failure reports (docs/designs/auto-report-failures.md): a
+          # fine grained key that can write issues in the private reports repo
+          # only. Mac and Windows both get it; forks build without it.
+          FAILURE_REPORT_KEY: ${{ secrets.FAILURE_REPORT_KEY }}
 
       # Sign from a keychain this job creates, not from CSC_LINK. electron-builder
       # 25 makes its own keychain from CSC_LINK, then calls set-key-partition-list
@@ -195,3 +199,16 @@ jobs:
             release/*.blockmap
             release/latest*.yml
             release/SHA256SUMS.txt
+
+      # The release canary (docs/designs/auto-report-failures.md): one report
+      # filed with this release's key, so the reports repo's Action can tell a
+      # working pipeline from a broken one. It never blocks the release.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: File the failure reports canary
+        continue-on-error: true
+        env:
+          TAG: ${{ github.ref_name }}
+          FAILURE_REPORT_KEY: ${{ secrets.FAILURE_REPORT_KEY }}
+        run: node tools/failure-reports/canary.cjs

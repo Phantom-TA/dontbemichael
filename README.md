@@ -41,10 +41,10 @@ runs on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.2.4: Company foundations, and company knowledge you can open.**
-> One document holds what each job needs to know about your business; when work needs an empty
-> answer, a card asks you once. Settings lists every document your team searches, and you can open
-> and edit one in your own app. In 0.2.3, the office clocks in and Waiting cards come back.
+> **New in 0.3.0: See and change your Claude sign in.**
+> Settings, Agents shows whether the team works on your Claude account or an Anthropic API key, and
+> moves it from one to the other. Out of credit on a key, the stop card offers Change sign in, and
+> the team restarts on the new sign in at once. In 0.2.9, failures report themselves.
 
 ## Contents
 
@@ -317,7 +317,9 @@ follow.
   trust layer that keeps out the kinds of data you mark private in Settings, Research & privacy,
   and their answers are cleaned of instructions before your team reads them. They see none of your
   files, and they are off until you turn them on. On Windows, they can still reach your office files.
-- **No usage data.** The app sends nothing about how you use it. See [`TELEMETRY.md`](./TELEMETRY.md).
+- **No usage data.** The app sends nothing about how you use it. Failures the developers can fix
+  in code (a crash, a team member stuck in a loop) are reported automatically, as fixed fields with
+  no names, messages or files, so they get fixed. See [`TELEMETRY.md`](./TELEMETRY.md).
 
 ## For developers
 

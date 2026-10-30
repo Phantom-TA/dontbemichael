@@ -52,6 +52,13 @@ export const SHOW_ORG_TRIGGER = false;
  *  never sends without having shown the choice (owner, 2026-09-24). */
 export const COLLECT_USAGE_STATS = false;
 
+/** Automatic failure reports (docs/designs/auto-report-failures.md): failures
+ *  the repo owners can fix in code are filed to GitHub, always on with no
+ *  switch (owner D14) and separate from usage stats (owner, eng D1);
+ *  DO_NOT_TRACK still stops sending. Off turns off detection, the local file
+ *  and sending in a release (R9); revoking the key stops sending at once. */
+export const AUTO_FAILURE_REPORTS = true;
+
 /** The "auto mode on / off" text in the header bar. It named a developer
  *  setting in words owners don't use, and it wasn't clickable. The setting
  *  itself is unchanged and stays in Settings → Agents

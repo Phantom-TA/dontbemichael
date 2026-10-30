@@ -12,6 +12,7 @@ import { Terminal } from '@xterm/headless';
 import { ANSWER_MARK, screenAnswer } from './screenAnswer';
 import { tokenizeCommand } from '../shared/commandLine';
 import { pasteSafe } from '../shared/pasteSafe';
+import { buildCmdCommandLine } from './pty';
 
 /**
  * Shared helper: run a HIDDEN interactive claude session (ephemeral PTY) and
@@ -167,6 +168,23 @@ function isolatedConfigDir(cwd: string, auth: Record<string, string>): { dir: st
   };
 }
 
+/**
+ * How to launch a hidden Claude session across platforms.
+ * On Windows, route non-.exe targets (such as npm's claude.cmd) through cmd.exe
+ * using buildCmdCommandLine so paths with spaces survive intact (#426).
+ */
+export function hiddenClaudeLaunch(
+  platform: NodeJS.Platform,
+  exe: string,
+  args: string[],
+  comSpec = process.env.ComSpec || 'cmd.exe'
+): { file: string; args: string | string[] } {
+  const winWrap = platform === 'win32' && !/\.(exe|com)$/i.test(exe);
+  const file = winWrap ? comSpec : exe;
+  const launchArgs = winWrap ? buildCmdCommandLine(exe, args) : args;
+  return { file, args: launchArgs };
+}
+
 export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Promise<HiddenClaudeResult> {
   return new Promise((resolve) => {
     if (!prompt.trim()) { resolve({ ok: false, error: 'empty prompt' }); return; }
@@ -208,10 +226,11 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
 
     // Windows: node-pty's CreateProcess can't exec the npm `.cmd`/extensionless
     // `claude` shim directly (ERROR_BAD_EXE_FORMAT, error 193) — route non-.exe
-    // targets through cmd.exe. A real claude.exe (WinGet) launches directly. (#22)
-    const winWrap = process.platform === 'win32' && !/\.(exe|com)$/i.test(exe);
-    const spawnFile = winWrap ? (process.env.ComSpec || 'cmd.exe') : exe;
-    const spawnArgs = winWrap ? ['/c', exe, ...args] : args;
+    // targets through cmd.exe. A real claude.exe (WinGet) launches directly (#22).
+    // Routing through cmd.exe uses buildCmdCommandLine so an executable path
+    // containing spaces (C:\Users\<First Last>\AppData\Roaming\npm\claude.cmd)
+    // does not split on spaces under cmd.exe (#426).
+    const { file: spawnFile, args: spawnArgs } = hiddenClaudeLaunch(process.platform, exe, args);
     const auth = hiddenClaudeAuthEnv();
     let isolated: { dir: string; env: Record<string, string> } | null = null;
     if (opts.isolateConfig) {

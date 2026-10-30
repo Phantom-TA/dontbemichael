@@ -54,6 +54,20 @@ test('patterns mark private spans for the model, and a pass that ignores them is
   assert.match(prompts[0], /already found these private kinds by pattern: contact/);
 });
 
+test('a pass is denied however the private number is written', async () => {
+  // Value: protects=the recheck catches what the model waved through however the digits are written; fails_when=a model PASS on Devanagari digits, Unicode hyphens or dots delivers; why_new=only ASCII digits and '-' were read, and dotted phones never; seam=fake runner
+  const { l } = layer(json({ decision: 'PASS' }));
+  const ascii = await l.inbound({ subject: 'q', body: 'Who owns 9876543210?' });
+  assert.equal(ascii.by, 'recheck');
+  assert.deepEqual(await l.inbound({ subject: 'q', body: 'Who owns ९८७६५४३२१०?' }), ascii);
+  assert.deepEqual(await l.inbound({ subject: 'q', body: 'Bank for account ٥٠١٠٠١٢٣٤٥٦٧٨٩?' }),
+    await l.inbound({ subject: 'q', body: 'Bank for account 50100123456789?' }));
+  assert.deepEqual(await l.inbound({ subject: 'q', body: 'Is SSN 123\u201045\u20106789 real?' }),
+    await l.inbound({ subject: 'q', body: 'Is SSN 123-45-6789 real?' }), 'a hyphen that is not ASCII');
+  assert.deepEqual(await l.inbound({ subject: 'q', body: 'Who owns 555.123.4567?' }),
+    await l.inbound({ subject: 'q', body: 'Who owns 555 123 4567?' }), 'a dotted phone number');
+});
+
 test('passwords and keys never reach a model or Research', async () => {
   // Value: protects=a secret never leaves; fails_when=the model is asked about a key; why_new=trust layer; seam=fake runner
   const { l, prompts } = layer(json({ decision: 'PASS' }));

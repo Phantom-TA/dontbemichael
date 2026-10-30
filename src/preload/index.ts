@@ -724,7 +724,7 @@ const api = {
       handoffs?: Array<{ toId: string; scope: string }>; drops?: Array<{ toId: string; scope: string }> }
     | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> }
     | { kind: 'home'; question: string }
-    | { kind: 'error'; reason: 'failed' | 'cancelled' }
+    | { kind: 'error'; reason: 'no-name' | 'not-started' | 'slow' | 'unreadable' | 'failed' | 'cancelled' }
   > => ipcRenderer.invoke('workStyle:convert', { ...req, to: 'revise' }),
   /** Where a rewrite is (starting, reading, writing) and what it has written
    *  so far, by its request id. Returns the unsubscribe. */
@@ -813,6 +813,21 @@ const api = {
   // ─── Clipboard ─────────────────────────────────────────────────────────────
   copyToClipboard: (text: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('app:copyToClipboard', text),
+  /** The file tab's Copy: text, and HTML when given, in one clipboard write. */
+  copyRich: (data: { text: string; html?: string }): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:copyRich', data),
+  /** The file tab's Copy for a picture: PNG bytes drawn from the shown picture. */
+  copyImage: (png: Uint8Array): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:copyImage', png),
+  /** Report a problem: a picture of the window, the prefilled bug report, then
+   *  the picture shown in Downloads. Answers once the report page opened. */
+  reportProblem: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:reportProblem'),
+  /** A screen crash or renderer error, for automatic failure reports. Main
+   *  scrubs and checks it again; no message text is sent, only the name and
+   *  the stack (docs/designs/auto-report-failures.md). */
+  reportFailure: (f: { kind: 'screen-crash' | 'renderer-error'; name: string; stack: string }): void =>
+    ipcRenderer.send('failure:report', f),
   /** The right-click "Copy link address" label, in the app language. */
   setCopyLinkLabel: (label: string): void =>
     ipcRenderer.send('app:setCopyLinkLabel', label),
@@ -1465,6 +1480,14 @@ const api = {
   /** The owner's answer from a file added with foundationsAddFile. */
   foundationsAnswerFile: (id: string, docId: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
     ipcRenderer.invoke('foundations:answerFile', id, docId, words),
+  /** One folder for a foundation card, from the OS picker. */
+  foundationsPickFolder: (): Promise<{ ok: true; path: string; name: string } | { ok: false; error: string }> => ipcRenderer.invoke('foundations:pickFolder'),
+  /** Check a card's folder before the card is answered (nothing is written). */
+  foundationsCheckFolder: (id: string, path: string): Promise<{ ok: true; path: string; name: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-folder' | 'too-wide' | 'app-folder' | 'member-folder' | 'empty' | 'too-long' }> =>
+    ipcRenderer.invoke('foundations:checkFolder', id, path),
+  /** The owner's answer naming a folder; the members whose job uses it read it. */
+  foundationsAnswerFolder: (id: string, path: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('foundations:answerFolder', id, path, words),
   /** Have the member draft it: the draft comes back into the card. */
   foundationsDraft: (id: string, memberId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:draft', id, memberId),
   /** Not now: out of Needs you for a week. */
@@ -1904,7 +1927,7 @@ const api = {
   officeRetry: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('office:retry'),
   /** Add credit: main opens the Anthropic billing page (a fixed address). */
   officeAddCredit: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('office:addCredit'),
-  /** A new key replaced one that stopped working: these Claude terminals restart, resumed. */
+  /** The team's Claude sign in changed: these Claude terminals restart, resumed. */
   onOfficeRestartClaude: (cb: (ptyIds: string[]) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, ids: unknown): void => cb(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []);
     ipcRenderer.on('office:restartClaude', listener);

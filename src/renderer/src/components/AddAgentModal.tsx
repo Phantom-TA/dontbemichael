@@ -269,8 +269,11 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   const [jobBusy, setJobBusy] = useState(false);
   const [plainAll, setPlainAll] = useState(false);
   const describeSeq = useRef(0);
-  const styleCtx = () => ({ name: name.trim(), title: title.trim() || undefined, business, manager: godName });
+  // The name the screen shows: with the Name box cleared it is the
+  // character's, and both checks get it too, since one with no name is
+  // refused on every try (owner, 2026-10-26).
   const hireWho = name.trim() || CAST_BY_NAME[character].displayName;
+  const styleCtx = () => ({ name: hireWho, title: title.trim() || undefined, business, manager: godName });
   /** Show a job's instructions as plain words: the quick rewrite at once, the
    *  model's when it arrives. */
   const setInstructions = (next: string, forName = name.trim(), forTitle = title.trim()): void => {
@@ -328,7 +331,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     // A new job keeps the picked character's role (Creed: Quality Control),
     // for the owner to change.
     if (!chosenJob) { setTitle(newJobStart(character).title); setRouting(''); setInstructions(''); setSourceCard(undefined); return; }
-    const copy = jobFor(chosenJob, name.trim());
+    const copy = jobFor(chosenJob, hireWho);
     setTitle(copy.title);
     setRouting(copy.routing);
     setInstructions(copy.workStyle, name.trim(), copy.title);
@@ -368,7 +371,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   }), [team, config.agentCapabilities, mailboxes]);
   const [binding, setBinding] = useState<Binding | null>(null);
   const profile: JobProfile = {
-    name: name.trim(), title: title.trim(), routing: routing.trim(), workStyle: instructions,
+    name: hireWho, title: title.trim(), routing: routing.trim(), workStyle: instructions,
     mailbox: mailboxAddress(binding?.mailboxId)
   };
   // The check judges what to send, never the title: renaming "Sales Director"
@@ -432,9 +435,9 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   // shows the check already under way. A short pause lets the owner click
   // through jobs without starting one for each.
   useEffect(() => {
-    if (step !== 'job' || !chosenJob || !name.trim()) return;
-    const copy = jobFor(chosenJob, name.trim());
-    const job: JobProfile = { name: name.trim(), title: copy.title.trim(), routing: copy.routing.trim(), workStyle: copy.workStyle };
+    if (step !== 'job' || !chosenJob) return;
+    const copy = jobFor(chosenJob, hireWho);
+    const job: JobProfile = { name: hireWho, title: copy.title.trim(), routing: copy.routing.trim(), workStyle: copy.workStyle };
     if (!job.routing) return;
     const sig = `${job.name}\n${job.routing}`;
     if (check?.sig === sig || prefetchSig.current === sig) return;

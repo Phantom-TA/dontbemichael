@@ -493,4 +493,31 @@ test('a healthy beat de-escalates one level', () => {
   assert.equal(d.state.level, 'healthy');
 });
 
+// ── a limit of 0 typed in Settings ──────────────────────────────────────────
+
+test('a limit of 0 never trips an idle member, even with hard stop on', () => {
+  // Settings takes 0 in "Same step repeated", "Errors in a row" and "Usage per
+  // minute". It used to trip every member on the next beat (`0 >= 0`), hold
+  // each one the beat after, and stop them all with hard stop on.
+  const b = makeBreaker({ hardStop: true, repeatedToolLimit: 0, errorStormLimit: 0, tokenVelocityPerMin: 0 });
+  for (let i = 0; i < 4; i++) {
+    const now = T0 + i * BEAT;
+    for (const id of ['pam', 'jim']) {
+      const d = beat(b, id, sample(id, now, i * 10), true, now);
+      assert.equal(d.state.level, 'healthy', `${id} beat ${i}: ${d.state.reason}`);
+      assert.equal(d.action, 'none');
+    }
+  }
+});
+
+test('a limit of 0 falls back to the default, so a real loop still trips', () => {
+  const b = makeBreaker({ repeatedToolLimit: 0, errorStormLimit: 0 });
+  for (let i = 0; i < 7; i++) b.recordToolUse('a', 'Bash', { cmd: 'same' });
+  assert.equal(beat(b, 'a', null, true, T0).state.level, 'healthy', 'under the default of 8');
+  b.recordToolUse('a', 'Bash', { cmd: 'same' });
+  assert.match(beat(b, 'a', null, true, T0 + BEAT).state.reason, /looping: 8/);
+  for (let i = 0; i < 5; i++) b.recordError('b');
+  assert.match(beat(b, 'b', null, true, T0).state.reason, /error storm: 5/);
+});
+
 process.exit(failures ? 1 : 0);

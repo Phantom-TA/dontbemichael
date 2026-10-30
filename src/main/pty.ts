@@ -142,6 +142,10 @@ export function buildCmdCommandLine(resolved: string, args: string[]): string {
     // an unquoted `&`/`|`/etc. would let one token chain a second command once this
     // string is executed by cmd.exe. Quoting neutralizes them — cmd does not
     // interpret metacharacters inside a double-quoted run.
+    // An empty argument is written as "": left bare it vanishes, and the next
+    // flag becomes its value (`--tools ''` would swallow `--strict-mcp-config`,
+    // #426).
+    if (s === '') return '""';
     const escaped = s.replace(/"/g, '\\"');
     return /[ \t"&|^<>()%!]/.test(s) ? `"${escaped}"` : escaped;
   };
@@ -338,6 +342,9 @@ export function parseNpmCmdShim(shimPath: string, content: string): NpmShimTarge
 export class PtyManager {
   private sessions = new Map<string, PtySession>();
   private webContents: WebContents | null = null;
+  /** A spawn that will silently lose something (the lossy cmd.exe fallback),
+   *  for the failure reporter (docs/designs/auto-report-failures.md). */
+  onFailure?: (kind: 'cmd-fallback', detail: 'multiline') => void;
   /** Fired when a PTY exits on its OWN (child finished/crashed/killed
    *  externally), so the main process can run the SAME lifecycle teardown
    *  (archive, worktree removal, map cleanup) that the explicit kill() path
@@ -653,6 +660,8 @@ export class PtyManager {
         // argument is actually at risk in THIS spawn.
         if (needsCmd) {
           const multiline = (opts.args ?? []).some((a) => a.includes('\n'));
+          // The lossy case is a failure report too (docs/designs/auto-report-failures.md).
+          if (multiline) { try { this.onFailure?.('cmd-fallback', 'multiline'); } catch { /* never block a spawn */ } }
           console.warn(
             `[pty] Windows: "${resolved}" could not be decoded as an npm shim — falling back to cmd.exe.` +
             (multiline

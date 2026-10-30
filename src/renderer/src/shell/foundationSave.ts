@@ -1,11 +1,11 @@
-import { FOUNDATION_QUESTIONS, fileAnswerLine, type FoundationId } from '@shared/foundations';
+import { FOUNDATION_QUESTIONS, fileAnswerLine, folderAnswerLine, type FoundationId } from '@shared/foundations';
 
 /**
  * The foundation card's Save, as its steps (components/FoundationCard.tsx
  * keeps the state around them). The window.cth calls come in as `cth`, so the
  * order can be run without the app (test/review-behavior.test.cjs).
  */
-export type FoundationSaveCth = Pick<Window['cth'], 'foundationsAnswer' | 'foundationsAddFile' | 'foundationsAnswerFile' | 'kgRemove' | 'hiveSend'>;
+export type FoundationSaveCth = Pick<Window['cth'], 'foundationsAnswer' | 'foundationsAddFile' | 'foundationsAnswerFile' | 'foundationsCheckFolder' | 'foundationsAnswerFolder' | 'kgRemove' | 'hiveSend'>;
 
 /** Answer the card like any Ask me reply; false when the card did not take it. */
 export type CardAnswer = (text: string) => Promise<boolean>;
@@ -69,6 +69,47 @@ export async function saveFileAnswer(
   if (r?.ok) return { kind: 'taken', how: 'saved' };
   // Michael adds it: the exact line, so the document id survives (Codex 3).
   const line = fileAnswerLine(text, added.docId, added.name);
+  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${line}` }, 'human').catch(() => null);
+  return { kind: 'taken', how: sent?.ok ? 'michael' : 'failed' };
+}
+
+/** Why the check refused a folder. */
+export type FolderRefusal = Extract<Awaited<ReturnType<FoundationSaveCth['foundationsCheckFolder']>>, { ok: false }>['error'];
+
+export type FolderSaveOutcome =
+  | { kind: 'refused'; error: FolderRefusal }
+  | { kind: 'failed' }
+  | { kind: 'not-taken' }
+  | { kind: 'taken'; how: SavedHow };
+
+/**
+ * A folder answer (eng review 2026-10-26): the folder is checked first
+ * (nothing is written), then the card is answered, then the answer naming the
+ * folder is written, which lets the members whose job uses the question read
+ * it. Nothing is copied, so a card that doesn't take it leaves nothing over.
+ */
+export async function saveFolderAnswer(
+  id: FoundationId,
+  picked: { path: string },
+  text: string,
+  cth: FoundationSaveCth,
+  onAnswer: CardAnswer,
+  steps: { checked?: () => void; taken?: () => void } = {}
+): Promise<FolderSaveOutcome> {
+  const checked = await cth.foundationsCheckFolder(id, picked.path).catch(() => null);
+  steps.checked?.();
+  if (!checked?.ok) {
+    if (checked && checked.error !== 'unknown' && checked.error !== 'no-office') return { kind: 'refused', error: checked.error };
+    return { kind: 'failed' };
+  }
+  const note = `I pointed the team to the folder "${checked.name}" for this (${checked.path}). Members whose job uses this question can read it now with their file tools, and with commands from their next start.`;
+  if (!(await onAnswer(text ? `${text}\n\n${note}` : note).catch(() => false))) return { kind: 'not-taken' };
+  steps.taken?.();
+  const r = await cth.foundationsAnswerFolder(id, checked.path, text).catch(() => null);
+  if (r?.ok) return { kind: 'taken', how: 'saved' };
+  // Michael adds the line; an answer he adds names the folder but opens it to
+  // nobody (only the owner's own card answer does, readFoldersFor).
+  const line = folderAnswerLine(text, checked.path) ?? `Kept in the folder ${checked.path}`;
   const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${line}` }, 'human').catch(() => null);
   return { kind: 'taken', how: sent?.ok ? 'michael' : 'failed' };
 }

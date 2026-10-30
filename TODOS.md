@@ -83,6 +83,22 @@ Go with it: keep only the owner's own words (the answer, the edit, the note) in 
 
 ## Connections
 
+### Step cards for iCloud, Yahoo and Zoho app passwords
+
+**What:** Give iCloud Mail, Yahoo and Zoho the same numbered step cards Google gets in Add a mailbox (eng review 2026-10-26, D3 B): each step with an Open button to that service's own two step and app password pages, and a plain line on what to copy.
+
+**Why:** Each still shows one paragraph with an address to type; the owner saw a business user struggle with the same paragraph for Google.
+
+**Pros:** One look across Add a mailbox; owners on those services set up without help.
+
+**Cons:** Three more providers' pages to find, link and keep current when they move.
+
+**Context:** The Google cards (AddMailboxDialog.tsx, Google steps) are built to take a per provider list of steps; start from `mailboxes.help.icloud/yahoo/zoho` in the locales and add each provider's steps and page addresses.
+
+**Effort:** human S / CC S
+**Priority:** P3
+**Depends on:** the Google step cards landing.
+
 ### One call at a time per connected app, and a throttle notice
 
 **What:** The broker now backs off per connected app after a 429 or a 503 with `Retry-After` (`src/main/brokerThrottle.ts`, PR #399): a wait of 20 s or less is held, a longer one is answered at once with when to try again. Two parts are left. Send one call at a time per app, so the calls held during a wait don't all go out together when it ends and hit the limit again. And show the owner a throttle that lasts, in plain words, instead of it showing only in agents' answers.
@@ -1112,22 +1128,6 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 **Effort:** human M / CC S
 **Priority:** P2
 **Depends on / blocked by:** the owner choosing a service and passing its identity check.
-
-### Copy diagnostics for problem reports
-
-**What:** A "Copy diagnostics" button beside Settings' Report a problem: app and OS versions, the last 50 office event types from `log.jsonl`, agent exit summaries, with paths and names redacted; copied to the clipboard only.
-
-**Why:** Report a problem carries version numbers only, on purpose, so beta reports can lack what happened just before the failure.
-
-**Pros:** Remote debugging of Windows beta problems without back and forth.
-
-**Cons:** Redaction must be exact: office names, folder paths and customer names must never reach the copy.
-
-**Context:** Deferred as S3 in `docs/designs/windows-11-installer.md` (CEO review 2026-10-04) to design from what the first real beta reports lack. Sources: hive `log.jsonl`, `crashes/` (raw terminal tails, never copied raw).
-
-**Effort:** human M / CC S
-**Priority:** P3
-**Depends on / blocked by:** the first Windows beta reports.
 
 ### Go live steps for the Windows beta
 

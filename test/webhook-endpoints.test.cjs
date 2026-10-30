@@ -313,3 +313,38 @@ test('the webhook server answers this computer only, and the security policy nam
     assert.match(policy, new RegExp(`\\*\\*The ${listener}\\*\\*`), `SECURITY.md names the ${listener}`);
   }
 });
+
+test('a stopped server does not act on a request still open on a kept-alive connection', async (t) => {
+  // Value: protects=turning off the last webhook really cuts its caller off; fails_when=stop() only closes the listener and the open keep-alive socket keeps reaching onMessage; why_new=a busy socket outlived server.close(); seam=none
+  const http = require('node:http');
+  const { server, seen } = makeServer();
+  await server.listen(); // the bind alone: start() would open a real tunnel
+  const bound = server.server;
+  t.after(() => { bound.close(); bound.closeAllConnections?.(); });
+  const { port } = bound.address();
+  // tunnelmole forwards with Node's keep-alive global agent; one socket mimics it.
+  const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+  t.after(() => agent.destroy());
+  const send = (body, beforeEnd) => new Promise((resolve) => {
+    const req = http.request({
+      host: '127.0.0.1', port, path: '/alpha', method: 'POST', agent,
+      headers: { ...auth(SECRET_A), 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }
+    }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+    req.on('error', (e) => resolve(e.code));
+    if (!beforeEnd) { req.end(body); return; }
+    const half = Math.floor(body.length / 2);
+    req.write(body.slice(0, half));
+    beforeEnd().then(() => req.end(body.slice(half)));
+  });
+
+  // The operator turns the endpoint off while a request is mid body.
+  const first = await send(post({ message: 'in flight at stop' }), async () => {
+    await new Promise((resolve) => bound.once('request', resolve));
+    server.stop();
+  });
+  assert.equal(first, 503, 'a body that finished after stop is refused, not dispatched');
+  // The same caller tries again: it must not reach the stopped instance.
+  const second = await send(post({ message: 'after stop' }));
+  assert.notEqual(second, 200);
+  assert.equal(seen.length, 0, 'nothing reached onMessage after stop');
+});

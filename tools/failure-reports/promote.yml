@@ -1,0 +1,42 @@
+# The reports repo's promotion Action (docs/designs/auto-report-failures.md).
+# Copy to .github/workflows/promote.yml in the private reports repo, beside
+# promote.cjs, at setup. Secret: MAIN_ISSUES_TOKEN (fine grained, owned by
+# agentvivekkumar, Issues read and write on agentvivekkumar/dontbemichael only).
+name: Promote reports
+
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    # Hourly runs of at most 2 minutes stay under 1,440 minutes a month.
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Promote
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAIN_ISSUES_TOKEN: ${{ secrets.MAIN_ISSUES_TOKEN }}
+        run: node promote.cjs
+      - name: Save state
+        if: always()
+        run: |
+          git config user.name "reports-bot"
+          git config user.email "reports-bot@users.noreply.github.com"
+          git add state.json
+          git diff --cached --quiet || git commit -m "state: promotion run"
+          git push

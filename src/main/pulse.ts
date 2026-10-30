@@ -19,7 +19,7 @@ import {
   compareFrom, dayKey, keptAsIs, measuredSaving, MIN_DECISIONS, periodRange, planHeadroom, previousRange, pulseSnapshot,
   type AskFact, type DayRange, type Period, type PlanReading, type PulseSnapshot
 } from '../shared/teamPerformance';
-import { adviceFor, visibleAdvice, ADVICE_WINDOW_MS, EARLY_SCALE, type Advice, type Dismissal, type EarlyMode, type LadderModel, type MissionFact } from '../shared/teamAdvice';
+import { adviceFor, earlyWatch, visibleAdvice, ADVICE_WINDOW_MS, EARLY_SCALE, type Advice, type Dismissal, type EarlyMode, type EarlyWatch, type LadderModel, type MemberModelFact, type MissionFact } from '../shared/teamAdvice';
 import { keptSafe, type KeptSafe } from '../shared/pulseSafety';
 import { planCostFor, scaleSnapshot, type PlanPrice } from '../shared/claudePlan';
 import { countFromDay, learnedNotes, learning, type AddedNote, type LearnedNote, type NoteFact } from '../shared/teamLearning';
@@ -194,6 +194,12 @@ export class PulseService {
   /** Every suggestion the last 14 days support, before dismissals. In the
    *  early mode, what the live days so far show at half the evidence (eng D1). */
   private allAdvice(office: string, early?: EarlyMode): Advice[] {
+    return this.evidence(office, early).advice;
+  }
+
+  /** The advice rules over their window, with the member facts they read
+   *  (the Early look shows the closest member too). */
+  private evidence(office: string, early?: EarlyMode): { advice: Advice[]; members: MemberModelFact[] } {
     const now = this.now();
     const since = early ? Math.max(early.from, now - ADVICE_WINDOW_MS) : now - ADVICE_WINDOW_MS;
     const days = this.d.processor.days(office, dayKey(since)).filter((x) => x.day >= dayKey(since));
@@ -203,14 +209,14 @@ export class PulseService {
     const missions: MissionFact[] = this.d.missions()
       .filter((m) => m.enabled && (m.kind ?? 'dispatch') === 'dispatch')
       .map((m) => ({ id: m.id, to: m.to === 'god' && godId ? godId : m.to, label: m.label, intervalMs: m.intervalMs, timed: !!(m.times?.length || m.weekly) }));
-    const members = this.d.models().map((m) => {
+    const members: MemberModelFact[] = this.d.models().map((m) => {
       const mine = days.filter((x) => x.agentId === m.agentId);
       const kept = keptAsIs(m.agentId, decisions, cards, early ? Math.ceil(MIN_DECISIONS * early.scale) : undefined);
       return {
         agentId: m.agentId, provider: m.provider, model: m.model, isGod: m.agentId === godId,
         pieces: mine.reduce((s, x) => s + x.emails + x.sent + x.tasks + x.checks, 0),
         mailDecisions: decisions.filter((x) => x.agentId === m.agentId && x.decision !== 'cancelled').length,
-        keptShare: kept.share, keptDecisions: kept.decisions,
+        keptShare: kept.share, keptDecisions: kept.decisions, kept: kept.kept,
         reopens: cards.filter((c) => c.assignee === m.agentId && c.reopened).length,
         usdPerWeek: mine.reduce((s, x) => s + x.usd, 0) / 2
       };
@@ -218,10 +224,19 @@ export class PulseService {
     // A change the owner applied in the window makes the evidence before it
     // stale: that suggestion waits for 14 days of new records.
     const recent = new Set(this.appliedChanges(office).filter((a) => a.undoneAt === null && a.at >= since).map((a) => a.adviceId));
-    return adviceFor({
+    const advice = adviceFor({
       now, runs: this.d.processor.runs(office, since), missions, members,
       ladder: this.d.ladder(), gapDays: this.d.store.failureDays(office), priceOf: this.d.priceOf
     }, early).filter((a) => !recent.has(a.id));
+    return { advice, members };
+  }
+
+  /** Before advice can show (from the first live day, `firstMs`): what the
+   *  rules see so far as facts (eng D1), and what each rule is watching. */
+  private early(office: string, firstMs: number | null): { early: Advice[]; earlyWatch?: EarlyWatch } {
+    if (firstMs === null) return { early: [] };
+    const { advice, members } = this.evidence(office, { from: firstMs, scale: EARLY_SCALE });
+    return { early: earliest(advice), earlyWatch: earlyWatch(advice, members, this.d.ladder()) };
   }
 
   snapshot(period: Period, compare = false): PulseView {
@@ -278,7 +293,7 @@ export class PulseService {
       snapshot: cur.snapshot,
       advice: adviceReady ? visibleAdvice(this.allAdvice(office), this.dismissed(office), now) : [],
       // Before advice can show: what the live days so far show, as facts (eng D1).
-      early: adviceReady || !live ? [] : earliest(this.allAdvice(office, { from: firstMs, scale: EARLY_SCALE })),
+      ...this.early(office, adviceReady || !live ? null : firstMs),
       adviceFrom: adviceReady ? null : dayKey(firstMs + ADVICE_WINDOW_MS),
       saved: this.saved(office, applied),
       headroom: billing === 'account' ? planHeadroom(this.reading) : null,

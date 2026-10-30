@@ -25,7 +25,11 @@ export type UpdateStatus =
       /** Direct asset for THIS platform/arch, when the release has one. The
        *  modal's primary button downloads it; without it the button falls back
        *  to the releases page. */
-      downloadUrl?: string }
+      downloadUrl?: string;
+      /** The staged update of this version was refused at install (its code
+       *  signature does not match this install's): a restart can never apply
+       *  it, so this replaces `downloaded`, and stays over a new one. */
+      installFailed?: boolean }
   /** First launch after the version moved: `version` is the one now RUNNING and
    *  `notes` its release body, so the renderer can show that release's page. */
   | { state: 'just-updated'; version: string; notes?: string }
@@ -187,6 +191,13 @@ function versionOf(s: UpdateStatus): string | null {
   return 'version' in s ? s.version : null;
 }
 
+/** Whether a native updater error at install means this update can never
+ *  apply here: Squirrel rejects a bundle whose code signature does not meet
+ *  the running app's designated requirement. */
+export function isInstallRefusal(message: string): boolean {
+  return /did not pass validation|code requirement|code signature/i.test(message);
+}
+
 /**
  * Fold a new status into the current one.
  *
@@ -204,7 +215,10 @@ function versionOf(s: UpdateStatus): string | null {
  * showed, until the next release shipped. So an `error` ends `downloading`,
  * and `available-manual` replaces a download that failed or never started.
  * A staged download (`downloaded`) still survives either: it is on disk, and
- * the restart it offers still works.
+ * the restart it offers still works. Unless the install refused it: an update
+ * whose code signature this install does not accept (an ad hoc signed build
+ * meeting a Developer ID signed one) fails at every restart, so a refused
+ * install moves to the manual download for good (`installFailed`).
  */
 export function reduceStatus(prev: UpdateStatus | null, next: UpdateStatus): UpdateStatus {
   if (!prev) return next;
@@ -212,6 +226,10 @@ export function reduceStatus(prev: UpdateStatus | null, next: UpdateStatus): Upd
   const nv = versionOf(next);
   if (pv && nv && isNewerRelease(nv, pv)) return next;   // a newer release supersedes
   if (pv && nv && pv !== nv) return next;         // different (e.g. rolled back) release
+  // A staged update the install refused: only the manual download applies it,
+  // and the same version downloaded again is refused again.
+  if (next.state === 'available-manual' && next.installFailed) return next;
+  if (prev.state === 'available-manual' && prev.installFailed) return prev;
   if (prev.state === 'downloading' && next.state === 'error') return next;   // the download failed
   if ((prev.state === 'available' || prev.state === 'downloading') && next.state === 'available-manual') return next;
   return rank(next) >= rank(prev) ? next : prev;

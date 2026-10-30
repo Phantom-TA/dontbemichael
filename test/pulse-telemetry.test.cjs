@@ -203,10 +203,14 @@ test('before 14 live days Pulse shows what the advice rules see so far, as facts
   assert.equal(v8.early.length, 1);
   assert.equal(v8.early[0].kind, 'run-less');
   assert.deepEqual(v8.early[0].evidence, { runs: 8, nothing: 6 }, 'counted over the 8 live days only');
+  // What each rule watches comes with them, even with no pattern (owner, 2026-10-26).
+  assert.deepEqual(v8.earlyWatch.counts, { 'run-less': 1, 'run-more': 0, 'cheaper-model': 0, 'stronger-model': 0 });
   const few = service(t, { days: 4 });
   assert.deepEqual(few.svc.snapshot('this-week').early, [], '4 runs: under half the 10 run minimum');
+  assert.ok(few.svc.snapshot('this-week').earlyWatch, 'the tiles show before any pattern');
   const ready = service(t).svc.snapshot('this-week');
   assert.deepEqual(ready.early, [], 'no early lines once advice can show');
+  assert.equal(ready.earlyWatch, undefined, 'and no tiles');
   assert.equal(ready.advice[0].kind, 'run-less');
 });
 
@@ -707,7 +711,7 @@ test('running time: awake minutes count, away minutes count as away too, a stopp
   assert.equal(RUN_GAP_CAP_MS, 15 * MIN);
   const pts = proc.running('/office', 0).points.map((p) => [p.ms, p.awayMs]);
   assert.deepEqual(pts, [[5 * MIN, 0], [16 * MIN, 16 * MIN], [MIN, MIN], [MIN, MIN]], 'the sleep from minute 28 to 90 is not running time');
-  assert.equal(proc.running('/office', 0).since, '2026-10-15');
+  assert.equal(proc.running('/office', 0).since, t0, 'when the first saved run began, not its day');
   void persist;
 });
 
@@ -739,7 +743,8 @@ test('Pulse reads how long the office ran into the period and the span before', 
   env.store.flush();
   const view = env.svc.snapshot('this-week', true);
   assert.deepEqual(view.snapshot.running, { ms: 2.5 * 3600_000, awayMs: 30 * MIN, since: null });
-  assert.deepEqual(view.compare.snapshot.running, { ms: 3600_000, awayMs: 10 * MIN, since: '2026-10-06' }, 'the span before, and recording began inside it');
+  // Recording began when the first point's hour started: 17:00 on Tuesday 6 Oct.
+  assert.deepEqual(view.compare.snapshot.running, { ms: 3600_000, awayMs: 10 * MIN, since: new Date(2026, 9, 6, 17).getTime() }, 'the span before, and recording began inside it');
   assert.equal(env.svc.snapshot('today').snapshot.running, null, 'a period with no record shows none');
 });
 

@@ -357,7 +357,9 @@ test('main files a foundation card\'s document through company knowledge, reinde
   assert.match(block, /\n  readFile: \(path\) => knowledge\.readDocument\(path\),\n/);
   assert.match(block, /\n  fitFile: \(f\) => fileFit\(f\),\n/);
   assert.match(block, /\n  addToKnowledge: \(path, read, opts\) => \{\n    const r = knowledge\.ingestRead\(path, read, opts\);\n    memory\.companyKnowledgeChanged\(\);[^\n]*\n    return r\.docId;\n  \},\n/, 'added, then indexed for search by meaning, then its id');
-  assert.match(block, /\n  docTitle: \(id\) => knowledge\.get\(id\)\?\.meta\.title\n\}\);$/);
+  assert.match(block, /\n  docTitle: \(id\) => knowledge\.get\(id\)\?\.meta\.title,\n/);
+  // A folder named on a card is bounded by the home, business and team folders (foundation-folder.test.cjs).
+  assert.match(block, /\n  folderBounds: \(\) => \{\n/);
   const body = (opener) => {
     const at = src.indexOf(opener);
     assert.ok(at >= 0, opener);

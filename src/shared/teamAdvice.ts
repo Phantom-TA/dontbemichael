@@ -60,6 +60,8 @@ export interface MemberModelFact {
   keptShare: number | null;
   /** Kept as is decisions counted (drafts plus cards). */
   keptDecisions: number;
+  /** Of those, kept as is. */
+  kept?: number;
   reopens: number;
   usdPerWeek: number;
 }
@@ -193,6 +195,26 @@ export function adviceFor(input: {
     }
   }
   return out;
+}
+
+/** What the Early look watches (owner, 2026-10-26: it read as schedules
+ *  only): how many patterns each rule found, and the member closest to a
+ *  cheaper model, so a rule that found nothing yet still shows it is looking. */
+export interface EarlyWatch {
+  counts: Record<AdviceKind, number>;
+  /** The member the cheaper model rule could reach, with the most work kept
+   *  as is: top tier Claude, never Michael. Null when none has a decision. */
+  closest: { agentId: string; kept: number; decisions: number } | null;
+}
+
+export function earlyWatch(found: Advice[], members: MemberModelFact[], ladder: LadderModel[]): EarlyWatch {
+  const counts: Record<AdviceKind, number> = { 'run-less': 0, 'run-more': 0, 'cheaper-model': 0, 'stronger-model': 0 };
+  for (const a of found) counts[a.kind]++;
+  const reachable = members.filter((p) => p.provider === 'claude' && !p.isGod && !!p.model && p.keptDecisions > 0
+    && ladder.find((m) => m.provider === p.provider && m.id === p.model)?.tier === 'top');
+  const share = (p: MemberModelFact): number => (p.kept ?? 0) / p.keptDecisions;
+  const best = [...reachable].sort((a, b) => share(b) - share(a) || b.keptDecisions - a.keptDecisions)[0];
+  return { counts, closest: best ? { agentId: best.agentId, kept: best.kept ?? 0, decisions: best.keptDecisions } : null };
 }
 
 /** D13: a dismissed suggestion stays hidden until its band rises or 14 days pass. */

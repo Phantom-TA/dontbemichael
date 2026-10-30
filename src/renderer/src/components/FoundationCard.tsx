@@ -10,7 +10,7 @@ import { useRtl } from '@/i18n/useDirection';
 import { isComposingKey } from '@shared/imeGuard';
 import { FOUNDATION_CAP, FOUNDATION_QUESTIONS, draftPending, jobsAsking, type FoundationId, type FoundationsView } from '@shared/foundations';
 import { refreshNeedsYou } from '@/shell/useNeedsYou';
-import { saveFileAnswer, saveTextAnswer } from '@/shell/foundationSave';
+import { saveFileAnswer, saveFolderAnswer, saveTextAnswer } from '@/shell/foundationSave';
 
 /**
  * One Company foundations card in Needs you (docs/designs/office-foundations.md,
@@ -28,6 +28,11 @@ import { saveFileAnswer, saveTextAnswer } from '@/shell/foundationSave';
  * couldn't be checked stops there with its line (D3, D4, D5). Then the card
  * is answered (the document is removed again if the card doesn't take it),
  * then the answer naming the document is written.
+ *
+ * Add a folder (eng review 2026-10-26): the folder stays where it is. It is
+ * checked for plain mistakes only (D3), the card is answered, then the answer
+ * naming it is written, and the members whose job uses the question read it
+ * from there (D1).
  */
 export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raiserName, raiserIsMember = true, memberName, chipStyle, foundations, onAnswer, onSaved }: {
   id: FoundationId;
@@ -60,8 +65,8 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
   const [busy, setBusy] = useState(false);
   // Which action did not go through, so the line names it.
   const [failed, setFailed] = useState<'save' | 'draft' | 'later' | null>(null);
-  // The file the owner picked or dropped, and why the last one was refused.
-  const [file, setFile] = useState<{ path: string; name: string } | null>(null);
+  // The file or folder the owner picked or dropped, and why the last one was refused.
+  const [file, setFile] = useState<{ path: string; name: string; kind: 'file' | 'folder' } | null>(null);
   const [checking, setChecking] = useState(false);
   const [refused, setRefused] = useState<{ name: string; error: string; reason?: string } | null>(null);
   const asked = foundations?.drafts?.[id];
@@ -84,18 +89,47 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
   const pickFile = async (): Promise<void> => {
     if (busy) return;
     const r = await window.cth.foundationsPickFile().catch(() => null);
-    if (r?.ok) { setFile({ path: r.path, name: r.name }); setRefused(null); }
+    if (r?.ok) { setFile({ path: r.path, name: r.name, kind: 'file' }); setRefused(null); }
+  };
+  const pickFolder = async (): Promise<void> => {
+    if (busy) return;
+    const r = await window.cth.foundationsPickFolder().catch(() => null);
+    if (r?.ok) { setFile({ path: r.path, name: r.name, kind: 'folder' }); setRefused(null); }
   };
   const dropFile = (e: React.DragEvent): void => {
     const f = e.dataTransfer.files?.[0];
     if (!f || busy) return;
     e.preventDefault();
+    // A dropped folder is taken as a folder, not refused as an unreadable file.
+    const folder = !!e.dataTransfer.items?.[0]?.webkitGetAsEntry?.()?.isDirectory;
     const path = window.cth.pathForFile(f);
-    if (path) { setFile({ path, name: f.name }); setRefused(null); }
+    if (path) { setFile({ path, name: f.name, kind: folder ? 'folder' : 'file' }); setRefused(null); }
   };
 
   // The steps and their order live in shell/foundationSave.ts; the card keeps
   // its state around them.
+  const saveFolder = async (picked: { path: string; name: string }): Promise<void> => {
+    setBusy(true);
+    setFailed(null);
+    setRefused(null);
+    const res = await saveFolderAnswer(id, picked, text, window.cth, onAnswer, { taken: () => setFile(null) });
+    if (res.kind === 'refused' || res.kind === 'failed') {
+      if (res.kind === 'refused') setRefused({ name: picked.name, error: `folder-${res.error}` });
+      else setFailed('save');
+      setFile(null);
+      setBusy(false);
+      return;
+    }
+    if (res.kind === 'not-taken') {
+      setFailed('save');
+      setBusy(false);
+      return;
+    }
+    onSaved?.(res.how);
+    refreshNeedsYou();
+    setBusy(false);
+  };
+
   const saveFile = async (picked: { path: string; name: string }): Promise<void> => {
     setBusy(true);
     setFailed(null);
@@ -123,7 +157,7 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
 
   const save = async (): Promise<void> => {
     if (busy) return;
-    if (file) { await saveFile(file); return; }
+    if (file) { await (file.kind === 'folder' ? saveFolder(file) : saveFile(file)); return; }
     if (!text) return;
     setBusy(true);
     setFailed(null);
@@ -191,16 +225,20 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
         <div id={hintId} style={{ flex: 1, minWidth: 160, fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-3)' }}>{t('foundations.card.hint', { n: FOUNDATION_CAP })}</div>
         {file ? (
           <span data-foundation-file style={fileChip}>
-            <span dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{file.name}</span>
+            <span dir="auto" title={file.path} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{file.kind === 'folder' ? t('foundations.card.folderChip', { name: file.name }) : file.name}</span>
             <button type="button" aria-label={t('foundations.card.removeFile', { name: file.name })} disabled={busy} onClick={() => setFile(null)} style={{ ...quietLink, fontSize: 13, lineHeight: '13px', minWidth: 24, minHeight: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
           </span>
         ) : (
-          <button type="button" onClick={() => void pickFile()} disabled={busy} style={{ ...quietLink, fontSize: 11, color: 'var(--cth-indigo-text)' }}>{t('foundations.card.addFile')}</button>
+          <span style={{ display: 'inline-flex', gap: 10 }}>
+            <button type="button" onClick={() => void pickFile()} disabled={busy} style={{ ...quietLink, fontSize: 11, color: 'var(--cth-indigo-text)' }}>{t('foundations.card.addFile')}</button>
+            <button type="button" onClick={() => void pickFolder()} disabled={busy} style={{ ...quietLink, fontSize: 11, color: 'var(--cth-indigo-text)' }}>{t('foundations.card.addFolder')}</button>
+          </span>
         )}
       </div>
       {refused && (
         <div role="alert" style={{ marginTop: 6, fontSize: 11, lineHeight: '15px', color: 'var(--cth-coral-text)' }}>
-          {refused.error === 'misfit' ? t('foundations.card.fileMisfit', { name: refused.name, reason: refused.reason ?? '' })
+          {refused.error.startsWith('folder-') ? t(`foundations.card.${FOLDER_LINES[refused.error] ?? 'folderMissing'}`, { name: refused.name })
+            : refused.error === 'misfit' ? t('foundations.card.fileMisfit', { name: refused.name, reason: refused.reason ?? '' })
             : refused.error === 'unreadable' ? t('foundations.card.fileUnreadable', { name: refused.name, reason: refused.reason ?? '' })
               : refused.error === 'picture-type' ? t('foundations.card.filePictureType')
                 : refused.error === 'picture-engine' ? t('foundations.card.filePictureEngine')
@@ -233,6 +271,16 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
     </section>
   );
 }
+
+/** Each folder refusal's card line (foundations.card.*). */
+const FOLDER_LINES: Record<string, string> = {
+  'folder-no-folder': 'folderMissing',
+  'folder-too-wide': 'folderTooWide',
+  'folder-app-folder': 'folderApp',
+  'folder-member-folder': 'folderMember',
+  'folder-empty': 'folderEmpty',
+  'folder-too-long': 'folderTooLong'
+};
 
 const cardStyle: CSSProperties = {
   position: 'relative', flexShrink: 0,

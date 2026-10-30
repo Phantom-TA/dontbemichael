@@ -220,13 +220,10 @@
     "killConfirmSchedulesPlural": "Close {{name}}? {{name}} has {{count}} schedules on. They'll pause."
   },
   "settingsHero": {
-    "beta": "Beta",
-    "betaInfo": "An early version. If something looks wrong, use Report a problem below.",
     "sponsoredBy": "Sponsored by",
     "visit": "visit",
     "whatsNew": "What's new",
-    "starOnGitHub": "Star on GitHub",
-    "reportProblem": "Report a problem"
+    "starOnGitHub": "Star on GitHub"
   },
   "settings": {
     "title": "Settings",
@@ -300,11 +297,16 @@
       "arabicTerminalDesc": "Renders terminals with the browser's text engine so Arabic joins and reads right to left (xterm has no bidi of its own). Off is the GPU renderer: faster, but it can't lay out right to left text. Applies to open terminals and new ones alike.",
       "arabicTerminalFollowsLanguage": "Following your app language. Switch it here to override that either way; the choice sticks even if you change language again."
     },
+    "claudeSignIn": {
+      "title": "Claude sign in",
+      "tip": "How your team on Claude signs in: your Claude account, on your Claude plan, or an Anthropic API key, billed to your Anthropic account."
+    },
     "agentsModels": {
       "defaultModel": "Default agent model",
       "defaultModelDesc": "Every newly spawned Claude team member starts on this model unless another is picked for that member. {{godName}} has a separate model setting. Marked \"· default\" in the model pickers.",
       "advanced": "Advanced",
       "maxTurns": "Max turns per run",
+      "maxTurnsTip": "A turn is one tool call, so several tools called at once use several turns. A run starts when a team member gets a message and lasts until the next one.",
       "unlimited": "Unlimited",
       "blankUnlimited": "Blank = unlimited",
       "planPrice": "Your Claude plan",
@@ -1840,11 +1842,15 @@
     "close": "Close {{name}}",
     "office": "Office",
     "openInApp": "Open in app",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Couldn't copy",
     "reading": "Reading…",
     "empty": "Empty file",
     "tooLarge": "Too large to show here",
     "unreadable": "Can't show this file here",
-    "rows": "Showing {{shown}} of {{total}} rows"
+    "rows": "Showing {{shown}} of {{total}} rows",
+    "opened": "{{name}} opened"
   },
   "companyProfile": {
     "intro": "Key facts about your business. Every team member, {{godName}} included, works from them. Short answers only: anything longer goes in Memory & Knowledge.",
@@ -2001,6 +2007,18 @@
     "openFolderFailed": "Couldn't open the folder. It may have been moved or deleted."
   },
   "mailboxes": {
+    "google": {
+      "step1Title": "Turn on 2 Step Verification",
+      "step1Line": "Google sends a code to your phone when you sign in. Already on? Go to step 2.",
+      "step1Open": "Open Google's page",
+      "step2Title": "Create an app password",
+      "step2Line": "Type a name, such as My office, then copy the 16 letters Google shows.",
+      "step2Open": "Open app passwords",
+      "step2Admin": "On GSuite, if Google says app passwords aren't available, your admin has turned them off: ask them to allow it.",
+      "step3Title": "Paste it below",
+      "step3Line": "The 16 letters from step 2, as Google shows them. Spaces are fine."
+    },
+    "googleTile": "Gmail or GSuite",
     "title": "Mailboxes",
     "intro": "Mailboxes your team can work in. You choose who uses which one on each team member's Access tab.",
     "add": "Add a mailbox",
@@ -2039,8 +2057,6 @@
     "testing": "Testing {{address}}. One sec.",
     "tryAgain": "Try again",
     "help": {
-      "gmail": "Gmail needs an app password, not your normal one. Turn on 2 Step Verification, then create one at myaccount.google.com/apppasswords.",
-      "google-workspace": "Use an app password from myaccount.google.com/apppasswords. If that page is missing, your Workspace admin has turned app passwords off.",
       "icloud": "iCloud needs an app specific password. Create one at account.apple.com under Sign In and Security.",
       "yahoo": "Yahoo needs an app password. Create one in Account Security, then Generate app password.",
       "zoho": "Zoho needs an app specific password from Security, then App Passwords, with IMAP turned on in Mail settings.",
@@ -2174,7 +2190,9 @@
     "focus": "Focus mode",
     "exitFocus": "Exit focus mode (Esc)",
     "settings": "Settings",
-    "betaInfo": "An early version. If something looks wrong, use Report a problem in Settings.",
+    "reportProblem": "Report a problem",
+    "reportProblemTip": "Opens a bug report on GitHub (a free account). A picture of this window is saved in your Downloads to add to it. Reports are public: check the picture first.",
+    "reportProblemFailed": "Couldn't open",
     "briefPlaceholder": "Talk to {{godName}}…",
     "brief": "Talk to {{godName}}",
     "attach": "Attach files",
@@ -2425,6 +2443,8 @@
     "cardAction": "Get {{godName}} ready",
     "done": "Done",
     "useApiKey": "Use an API key",
+    "changeKey": "Change key",
+    "useAccount": "Use a Claude account",
     "apiKey": "Anthropic API key",
     "keyInfo": "Billed to your Anthropic account. Create a key at console.anthropic.com. Your team's tools on this computer can use it, so pick one with a spending limit.",
     "keySave": "Save key",
@@ -2461,12 +2481,15 @@
     "tryAgain": "Try again",
     "signInAction": "Sign in",
     "changeKey": "Change key",
+    "changeSignIn": "Change sign in",
     "chip": "Office stopped",
     "creditInfo": "Claude stopped the whole team because the Anthropic account has no credit left. Add credit on the Anthropic website, then press Try again. The office also checks again on its own every 15 minutes. Scheduled jobs wait in the inbox until then.",
+    "creditKeyInfo": "Claude stopped the whole team because the Anthropic account behind your API key has no credit left. Add credit on the Anthropic website, then press Try again, or use Change sign in for a new key or your Claude account. The office also checks again on its own every 15 minutes. Scheduled jobs wait in the inbox until then.",
     "signInInfo": "Claude stopped the whole team because the Claude sign in expired. Sign in again and the team carries on where it stopped. Scheduled jobs wait in the inbox until then.",
     "keyInfo": "Claude stopped the whole team because the Anthropic API key stopped working. Paste a new key and the team restarts and carries on. Scheduled jobs wait in the inbox until then."
   },
   "markdown": {
+    "openPlace": "Open {{place}}",
     "opensInBrowser": "opens in your browser",
     "opensInEmail": "opens your email app",
     "copyLinkAddress": "Copy link address",
@@ -2612,7 +2635,27 @@
       "capWork": "found work so far",
       "capKept": "kept as is so far",
       "capReopened": "cards you reopened so far",
-      "more": "More patterns show here as your team works."
+      "watchLabel": "What Pulse watches",
+      "watch": {
+        "runLess": "Schedules finding nothing",
+        "runLessTip": "Schedules whose runs mostly find nothing to do. Running them less often costs less.",
+        "runMore": "Schedules with more to do",
+        "runMoreTip": "Schedules that find work nearly every run, with more each week. Running them more often keeps up.",
+        "cheaper": "A cheaper model",
+        "cheaperTip": "Members on the top model whose work you keep as is nearly every time, with no card reopened and a few email drafts you decided on. Never {{godName}}.",
+        "stronger": "A stronger model",
+        "strongerTip": "Members whose work you often change, or whose cards you reopen.",
+        "soFar": "{{count}} so far",
+        "none": "None yet",
+        "fine": "Nothing worrying",
+        "closest": "{{name}}: {{kept}} of {{decisions}} kept as is"
+      },
+      "tag": {
+        "runLess": "Schedule finding nothing",
+        "runMore": "Schedule with more to do",
+        "cheaper": "Toward a cheaper model",
+        "stronger": "Toward a stronger model"
+      }
     },
     "nothingToChange": "Nothing to change this week.",
     "savedByChanges": "Saved by your changes",
@@ -2713,6 +2756,7 @@
         "folder": "Private folders",
         "office-files": "App files",
         "paused": "Paused by you",
+        "turn-cap": "Max turns reached",
         "impostor": "Unconfirmed sender"
       },
       "toInternetTip": "Each question is checked for your private details before it goes out.",
@@ -2957,6 +3001,12 @@
       "byWho": "{{name}}: {{where}}",
       "none": "No emails organized in this period.",
       "earlier": "{{count}} more organized before the app kept their names."
+    },
+    "recs": {
+      "view": "View recommendations",
+      "hide": "Hide",
+      "title": "Pulse has suggestions for your team.",
+      "ready": "{{count}} ready"
     }
   },
   "foundations": {
@@ -3030,7 +3080,7 @@
       "needs": "needs this",
       "needsAgo": "needs this, {{ago}}",
       "yourAnswer": "Your answer",
-      "hint": "A few plain sentences, under {{n}} characters, or add a file.",
+      "hint": "A few plain sentences, under {{n}} characters, or add a file or folder.",
       "save": "Save answer",
       "draftBy": "Have {{name}} draft it",
       "notNow": "Not now",
@@ -3047,6 +3097,7 @@
       "failedGone": "Couldn't add your answer to Company foundations. Tell {{godName}}.",
       "drafted": "a draft, edit and save",
       "addFile": "Add a file",
+      "addFolder": "Add a folder",
       "removeFile": "Remove {{name}}",
       "checking": "Checking the file",
       "fileMisfit": "{{name}} doesn't look like the answer: {{reason}}",
@@ -3054,7 +3105,14 @@
       "fileUnchecked": "Couldn't check this file, try again.",
       "filePictureType": "Save this picture as PNG or JPEG and add it again.",
       "filePictureEngine": "Pictures can be checked only on Claude. Add this as a PDF or a document instead.",
-      "fileMissing": "Couldn't find {{name}}, add it again."
+      "fileMissing": "Couldn't find {{name}}, add it again.",
+      "folderChip": "{{name}} folder",
+      "folderMissing": "Couldn't find the folder {{name}}, add it again.",
+      "folderTooWide": "{{name}} holds too much. Pick the folder that has the records.",
+      "folderApp": "{{name}} is one of the app's own folders. Pick another.",
+      "folderMember": "{{name}} is inside a team member's folder. Pick another.",
+      "folderEmpty": "{{name}} has no files.",
+      "folderTooLong": "{{name}} sits too deep to name here. Move it higher and add it again."
     }
   },
   "knowledgeNotice": {
@@ -3105,6 +3163,10 @@
     "errorTitle": "Couldn't work out the change",
     "errorNote": "Try again in a moment. Your words are still in the box.",
     "errorNoteCard": "Try again in a moment. Nothing has changed.",
+    "errorNoName": "Type a name for them first, then try again.",
+    "errorNotStarted": "Claude didn't start. Check that Claude is signed in under Settings, Prerequisites, then try again.",
+    "errorSlow": "Claude took too long to answer. Try again in a moment.",
+    "errorUnreadable": "Claude's answer couldn't be read. Try again, or say the change in other words.",
     "tryAgain": "Try again",
     "movedTitle": "{{name}}'s job changed meanwhile",
     "movedNote": "Your change is still here. Run it again on the new job.",
