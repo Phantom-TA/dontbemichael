@@ -97,6 +97,20 @@ test('card text folds C1 line breaks and drops format characters', () => {
   assert.ok(m.body.split('\n').includes('Q (as written on the card): Pay now? A: yes'));
 });
 
+test('card text cut to its limit never ends in half an emoji', () => {
+  // Value: protects=a long card title or question reaches Michael and the owner as whole characters; fails_when=the cut is a plain slice and lands between the two halves of an emoji, leaving a lone surrogate before the ellipsis; why_new=cardText feeds every message that quotes a card, and an emoji in a title is ordinary for a small business; seam=none
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const cut = cardText(`${'a'.repeat(118)}😀 tail`);        // the emoji spans units 119 and 120
+  assert.ok(!lone.test(cut), 'no half emoji before the ellipsis');
+  assert.equal(cut, `${'a'.repeat(118)}…`);
+  assert.equal(cardText(`${'a'.repeat(117)}😀 tail`), `${'a'.repeat(117)}😀…`, 'an emoji that fits is kept whole');
+  assert.equal(cardText(`${'😀'.repeat(70)}`, 60), `${'😀'.repeat(29)}…`);
+  assert.ok(cardText('x'.repeat(500), 60).length <= 60, 'the unit limit is unchanged');
+  assert.equal(cardText('short title'), 'short title');
+  const [m] = answerMessages({ raiser: 'oscar', raiserName: 'Oscar', taskId: 't1', title: `${'a'.repeat(118)}😀 tail`, q: 'ok?', a: 'Yes.' });
+  assert.ok(!lone.test(m.body), 'the title quoted in the message body has no half emoji');
+});
+
 test('what the owner tells Michael in the dock is kept as his note from the owner, only once the message is really sent', async (t) => {
   // Value: protects=memory evidence D11: a rule the owner gives Michael in passing lasts past the conversation, as the owner's, never through his writable inbox; fails_when=owner:ask stops filing the dock message, files it before the guard that withdraws an unsaved message, sends it to another member, or rememberOwnerNote writes Michael's inbox or drops the Why; why_new=the dock wiring is new and owner-notes tests only store a string; seam=none (the owner:ask handler is a source pin); no_claim=what the tidy-up keeps from it
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-dock-note-'));

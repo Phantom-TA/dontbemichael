@@ -7,6 +7,8 @@
  * technical failure), both are Michael.
  */
 
+import { clipUnits } from './cutText';
+
 export const MICHAEL_ID = 'god';
 
 /**
@@ -53,7 +55,7 @@ export function cardText(s: string | undefined, max = 120): string {
   // C1 controls fold too (a NEL reads as a new line), and format characters
   // such as a right to left override are dropped, as in toolLine.
   const one = (s ?? '').replace(/\p{Cf}+/gu, '').replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return one.length > max ? `${one.slice(0, max - 1)}…` : one;
+  return one.length > max ? `${clipUnits(one, max - 1)}…` : one;
 }
 
 /** Most of a question kept in Michael's request; the card has all of it. */
