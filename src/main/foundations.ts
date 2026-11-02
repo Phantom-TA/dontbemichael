@@ -6,7 +6,8 @@
  *
  *   member ─(answer + source | gap | draft)─► handle()
  *     ├─ source checked: an owner message the app kept as sent to the sender, or a file in the
- *     │  office folders; Michael's confirmation; anything else goes to Michael
+ *     │  office folders; Michael's confirmation; anything else, what a member says the
+ *     │  owner taught it included, goes to Michael
  *     ├─ fill only empty, owner wins, cap, a clash goes to Michael
  *     ├─ a gap kept once per question, the first one told to Michael
  *     ├─ foundations.json ─► telemetry event (harness.db, Pulse)
@@ -446,10 +447,10 @@ export class Foundations {
     const src = (p.source && typeof p.source === 'object' ? p.source : {}) as Record<string, unknown>;
     const level = this.level(from, src);
     if (!level) {
-      if (typeof src.outside !== 'string' && typeof src.owner !== 'string' && typeof src.confirmed !== 'string' && typeof src.file !== 'string') {
-        return `Not saved: an answer needs its source, "source": {"owner": "<id of the owner's message>"} or {"file": "<full path of the office file>"}, or {"outside": "<where it came from>"} for anything from outside the office.`;
+      if (typeof src.outside !== 'string' && typeof src.taught !== 'string' && typeof src.owner !== 'string' && typeof src.confirmed !== 'string' && typeof src.file !== 'string') {
+        return `Not saved: an answer needs its source, "source": {"owner": "<id of the owner's message>"} or {"file": "<full path of the office file>"}, {"taught": "<what the owner told you and when>"} for what the owner taught you through ${this.michaelName()}, or {"outside": "<where it came from>"} for anything from outside the office.`;
       }
-      this.toMichael('Foundation answer to check', `${this.nameOf(from)} offers this answer to "${q}" (${id}), from ${this.describe(src)}: ${text}\n\nIt comes from outside the office or from a source the app could not check, so it waits for you. If it is right, send it to "foundations" with "foundation": {"question": "${id}", "answer": "<the answer>", "source": {"confirmed": "<why you trust it>"}}; otherwise leave it.`);
+      this.toMichael('Foundation answer to check', `${this.nameOf(from)} offers this answer to "${q}" (${id}), from ${this.describe(from, src)}: ${text}\n\nIt comes from outside the office or from a source the app could not check, so it waits for you. If it is right, send it to "foundations" with "foundation": {"question": "${id}", "answer": "<the answer>", "source": {"confirmed": "<why you trust it>"}}; otherwise leave it.`);
       return `Sent to ${this.michaelName()} to check first, because the app could not check where it came from.`;
     }
     const rec = this.read();
@@ -457,11 +458,11 @@ export class Foundations {
     if (had && same(had.text, text)) return `Already in the company foundations: "${q}".`;
     const ownerWrote = had && (had.source === 'owner' || had.source === 'profile');
     if (had && level !== 'owner' && ownerWrote) {
-      this.toMichael('Foundation answer suggestion', `${this.nameOf(from)} suggests a different answer to "${q}" (${id}), which the owner answered: "${had.text}". Suggested, from ${this.describe(src)}: ${text}\n\nThe owner's answer stands; ask the owner if it should change.`);
+      this.toMichael('Foundation answer suggestion', `${this.nameOf(from)} suggests a different answer to "${q}" (${id}), which the owner answered: "${had.text}". Suggested, from ${this.describe(from, src)}: ${text}\n\nThe owner's answer stands; ask the owner if it should change.`);
       return `The owner's answer to "${q}" stands. Your suggestion went to ${this.michaelName()}.`;
     }
     if (had && (level === 'file' || level === 'taught')) {
-      this.toMichael('Foundation answers differ', `Two answers to "${q}" (${id}) differ. Kept: "${had.text}", from ${this.nameOf(had.by)}. New, from ${this.nameOf(from)} (${this.describe(src)}): ${text}\n\nThe first stays until you decide. To replace it, send the right one to "foundations" with "source": {"confirmed": "<why>"}.`);
+      this.toMichael('Foundation answers differ', `Two answers to "${q}" (${id}) differ. Kept: "${had.text}", from ${this.nameOf(had.by)}. New, from ${this.nameOf(from)} (${this.describe(from, src)}): ${text}\n\nThe first stays until you decide. To replace it, send the right one to "foundations" with "source": {"confirmed": "<why>"}.`);
       return `A different answer to "${q}" is already recorded, so it stays and ${this.michaelName()} decides.`;
     }
     const source: FoundationSourceKind = level;
@@ -488,8 +489,9 @@ export class Foundations {
     return null;
   }
 
-  private describe(src: Record<string, unknown>): string {
+  private describe(from: string, src: Record<string, unknown>): string {
     if (typeof src.outside === 'string') return `outside text (${src.outside.slice(0, 120)})`;
+    if (typeof src.taught === 'string') return `what ${this.nameOf(from)} says the owner taught it (${src.taught.slice(0, 200)})`;
     if (typeof src.owner === 'string') return `a message said to be the owner's (${src.owner.slice(0, 60)}), which the app has no record of reaching them`;
     if (typeof src.file === 'string') return `the file ${src.file.slice(0, 200)}`;
     if (typeof src.confirmed === 'string') return 'a confirmation only you can give';

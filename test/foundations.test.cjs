@@ -408,6 +408,45 @@ test('instructions: members report gaps and teach the foundations; Michael raise
   assert.match(read('src/main/factoryReset.ts'), /'foundations\.json'/);
 });
 
+test('what the owner taught a member through Michael waits for his check, then fills the answer', (t) => {
+  // Value: protects=a member can hand in an owner taught fact it holds in memory (the audit of 2 Nov found every owner message reaches only Michael, so a member can never cite one); fails_when=the taught source is refused or goes live unchecked; why_new=live office audit, 2026-11-02.
+  const o = writer(t);
+  assert.match(o.w.handle('ryan', { question: 'competitors', answer: 'Acme', source: { taught: 'The owner told Michael on 2 Oct' } }), /to Michael to check/);
+  assert.equal(o.w.read().answers.competitors, undefined, 'nothing goes live on a member\'s word');
+  assert.match(o.told.at(-1).subject, /answer to check/);
+  assert.match(o.told.at(-1).body, /says the owner taught it \(The owner told Michael on 2 Oct\)/);
+  assert.match(o.w.handle('god', { question: 'competitors', answer: 'Acme', source: { confirmed: 'Matches what the owner told me' } }), /Saved/);
+  assert.equal(o.w.read().answers.competitors.source, 'michael');
+  assert.match(o.w.handle('ryan', { question: 'brand', answer: 'Blue' }), /needs its source[\s\S]*"taught"/, 'the refusal names the new source');
+});
+
+test('the money question asks for every place money moves, in every language', () => {
+  // Value: protects=the question asks for the whole map of money, so one line about the books no longer reads as a full answer; fails_when=it goes back to asking only where money is recorded; why_new=Oscar answered the old wording with one line on 2 Nov.
+  assert.match(F.FOUNDATION_QUESTIONS.money.text, /^Every place money comes in and goes out .*banks, cards, payment services, investments.*where each is recorded$/);
+  assert.equal(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).foundations.q.money, F.FOUNDATION_QUESTIONS.money.text);
+  assert.equal(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).foundations.short.money, F.FOUNDATION_QUESTIONS.money.short);
+  for (const loc of ['zh-CN', 'ar']) assert.doesNotMatch(read(`src/renderer/src/i18n/locales/${loc}.json`), /收支记录在哪里|أين يسجل المال الداخل والخارج/);
+});
+
+test('members check their empty questions before each report, send only whole answers, and the weekly check collects what they hold', () => {
+  // Value: protects=the owner hears about a question the work hit even when the member knows part of it, and held answers reach the document; fails_when=a gap again waits on a task depending on a question, a partial answer closes one, or an office keeps the old weekly focus; why_new=audit of 2 Nov: owed, offer and access were hit with no gap, seven more were held and never sent.
+  const hive = read('src/main/hive.ts');
+  assert.match(hive, /Before you send a report or hand work back, read the "Empty now" list in your section/);
+  assert.match(hive, /even when you know part of the answer or the work did not stop/);
+  assert.match(hive, /Send an answer only when it answers the whole question as worded; when you hold only part, send a gap instead/);
+  assert.match(hive, /"source": \{"taught": "<what the owner told you and when, as your memory has it>"\}/);
+  assert.match(hive, /only for a message the owner sent you directly/);
+  assert.match(hive, /asks you to check what you hold for your empty questions/);
+  assert.match(hive, /or says the owner taught it, comes to you to check/);
+  assert.match(hive, /tell the member to report it as a gap/);
+  const config = read('src/main/config.ts');
+  assert.match(config, /FOUNDATIONS_CHECK_FOCUS =[\s\S]*Raise nothing for a question no work has hit[\s\S]*send each team member with an empty question in its job\\'s part one message/);
+  assert.match(config, /FOUNDATIONS_CHECK_BUILT_IN_FOCUSES[\s\S]*Raise nothing for a question no work has hit, and nothing when every hit question is answered\.'\n\];/, 'the shipped text is kept word for word, so an office carrying it is updated');
+  const main = read('src/main/index.ts');
+  assert.match(main, /m\.id === FOUNDATIONS_CHECK_MISSION\.id && m\.focus && FOUNDATIONS_CHECK_BUILT_IN_FOCUSES\.includes\(m\.focus\)/, 'the owner\'s own text is never replaced');
+  assert.match(main, /before\.map\(standupFocus\)\.map\(foundationsFocus\)/);
+});
+
 test('every shipped pack role reads as a job with a foundations section', () => {
   const dir = path.resolve(__dirname, '..', 'resources', 'packs');
   const misses = [];

@@ -51,7 +51,7 @@ Plain Markdown, one section per job, numbered questions with an answer after the
 ## Finance
 1. Accounting method (cash or accrual): <empty>
 2. Financial year: <empty>
-3. Where money in and out is recorded: <empty>
+3. Every place money comes in and goes out (banks, cards, payment services, investments), and where each is recorded: <empty>
 4. Who owes us and whom we owe, and where that is kept: <empty>
 5. Statements, budgets or targets: <empty>
 ...
@@ -231,6 +231,30 @@ Pulse counts only what the app records).
   copy. The owner's editing form waits for a later release (owner, 2026-10-19).
 - "Foundations 2 of 6", never a quality score; kept as is stays the quality measure.
 - The foundations and the company profile hold one set of shared facts.
+
+## Changed after the audit of 2 Nov 2026 (owner, 2026-11-02)
+
+The owner asked why Oscar never asked for the money question. An audit of all ten members for
+20 Oct to 2 Nov found 3 gaps sent in all. Of the 19 empty questions, 3 were hit with no gap
+(`owed`, `offer`, `access`), 7 were held at least in part and never sent, 1 was worked around and
+8 were not needed. All five changes below are the owner's decisions; sections 4, 5 and 8 keep the
+original plan and these change them:
+
+1. **The `money` question** asks for every place money moves and where each is recorded, so a
+   line about the books no longer reads as a full answer. An answer already given stays as it is.
+2. **Members check before each report.** The rule no longer waits on a task "depending on" a
+   question: each question on the "Empty now" list that the work could not settle or worked
+   around gets a gap, even when the member knows part of it or the work did not stop.
+3. **Only a whole answer is sent.** A member holding part sends a gap with that part in its line.
+   A whole learned answer still goes live at once. Gap lines stay capped at 200 characters.
+4. **The weekly check collects what is held.** After its cards, Michael's Foundations check asks
+   each member with an empty question to send each whole answer it holds. Offices still carrying
+   the shipped focus get the new one at launch; the owner's own text stays. Cards still come only
+   from questions the work hit.
+5. **A `taught` source.** Every owner message reaches only Michael (84 of 84 in the audited
+   office), so a member can never cite one, and memory notes carry no message id. A member sends
+   what the owner taught it with `"source": {"taught": "..."}`; it goes to Michael to check, like
+   outside text, and he confirms it or tells the member to report a gap.
 
 ## Changed at ship (2026-10-20)
 

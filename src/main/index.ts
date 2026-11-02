@@ -40,7 +40,7 @@ import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
   readConfig, damagedConfigCopy, writeConfig, setAgentTokenCap, resetConfig, onConfigWritten, ensureHarnessHome, ensureClaudePermissionsAccepted, approveClaudeApiKey,
-  modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, heartbeatMessage, COMPACT_MAINTENANCE_MISSION, FOUNDATIONS_CHECK_MISSION, type HarnessConfig, type ScheduledMission
+  modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, heartbeatMessage, COMPACT_MAINTENANCE_MISSION, FOUNDATIONS_CHECK_MISSION, FOUNDATIONS_CHECK_BUILT_IN_FOCUSES, FOUNDATIONS_CHECK_FOCUS, type HarnessConfig, type ScheduledMission
 } from './config';
 import { terminalLaunches } from './terminalAtFolder';
 import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileByName, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
@@ -2219,8 +2219,8 @@ function ensureDefaultMissions(): void {
   // The standup's focus area (schedule-focus-areas.md F6), in one pass. Once,
   // for offices made before focus areas, a standup with no focus and no prompt
   // of the owner's gets the built-in one; and a standup still carrying an
-  // earlier built-in focus word for word gets the current one. The owner's own
-  // text is never replaced.
+  // earlier built-in focus word for word gets the current one, as does the
+  // Foundations check. The owner's own text is never replaced.
   const cfg6 = readConfig();
   const seed = !cfg6.standupFocusSeeded;
   const standupFocus = (m: ScheduledMission): ScheduledMission => {
@@ -2228,8 +2228,10 @@ function ensureDefaultMissions(): void {
     if (seed && !m.focus && !(m.body ?? '').trim()) return { ...m, focus: OPS_STANDUP_FOCUS };
     return m.focus && OPS_STANDUP_BUILT_IN_FOCUSES.includes(m.focus) ? { ...m, focus: OPS_STANDUP_FOCUS } : m;
   };
+  const foundationsFocus = (m: ScheduledMission): ScheduledMission =>
+    (m.id === FOUNDATIONS_CHECK_MISSION.id && m.focus && FOUNDATIONS_CHECK_BUILT_IN_FOCUSES.includes(m.focus) ? { ...m, focus: FOUNDATIONS_CHECK_FOCUS } : m);
   const before = cfg6.missions ?? [];
-  const after = before.map(standupFocus);
+  const after = before.map(standupFocus).map(foundationsFocus);
   if (seed || after.some((m, i) => m !== before[i])) {
     writeConfig({ missions: after, ...(seed ? { standupFocusSeeded: true } : {}) });
   }

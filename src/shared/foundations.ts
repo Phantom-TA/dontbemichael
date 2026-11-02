@@ -53,7 +53,7 @@ export const FOUNDATION_QUESTIONS = {
   competitors: { text: 'Who we compete with, and how we differ', short: 'competitors' },
   accounting: { text: 'Accounting method (cash or accrual)', short: 'accounting method' },
   fiscal_year: { text: 'Financial year', short: 'financial year' },
-  money: { text: 'Where money in and out is recorded', short: 'where money is recorded' },
+  money: { text: 'Every place money comes in and goes out (banks, cards, payment services, investments), and where each is recorded', short: 'where money moves' },
   owed: { text: 'Who owes us and whom we owe, and where that is kept', short: 'who owes whom' },
   results: { text: 'Statements, budgets or targets', short: 'budgets and targets' },
   policies: { text: 'Refunds, returns and service promises', short: 'service policies' },
