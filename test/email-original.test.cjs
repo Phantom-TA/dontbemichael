@@ -222,3 +222,29 @@ test('on a real IMAP server, opening the email leaves it unread, and a read give
   assert.equal(read.status, 200);
   assert.match(read.body.link, /^\[Dana Ortiz, 2[67] Oct\]\(email:ops\/%3Cm1%40northwind\.example%3E\)$/);
 });
+
+test('on a real IMAP server, a tab that remounts while it opens still gets the email', { timeout: 15_000 }, async (t) => {
+  // Value: protects=the owner's first click on an email opens it; fails_when=a cancelled open is shared with the next open of the same email, which then shows Try again; why_new=every tab mount runs cleanup then a second open under React StrictMode, and returning to a tab mid open does the same; seam=real ImapFlow and a local server
+  const port = await imapServer(t);
+  const clients = [];
+  const s = { host: '127.0.0.1', port, secure: false };
+  const config = { mailboxes: [{ id: 'ops', address: USER, provider: 'other', imap: s, smtp: s, status: 'connected', createdAt: 1, updatedAt: 1 }] };
+  const deps = {
+    getConfig: () => config, getPassword: () => PASS, markStatus: () => {},
+    createImap: (srv, user, pass) => { const c = new ImapFlow({ host: srv.host, port: srv.port, secure: false, doSTARTTLS: false, auth: { user, pass }, logger: false }); clients.push(c); return c; }
+  };
+  const svc = new MailService(deps);
+  t.after(() => { svc.closeAll(); for (const c of clients) c.close(); });
+
+  const tick = () => new Promise((r) => setImmediate(r));
+  const first = svc.original('ops', ID).then((e) => e, (e) => e);
+  await tick();
+  svc.cancelOriginal('ops', ID);
+  await tick();
+  const started = Date.now();
+  const e = await svc.original('ops', ID);
+  assert.equal(e.subject, 'Re: Free scoping review');
+  assert.ok(Date.now() - started < 5000, 'the new open does not wait out the cancelled one');
+  assert.equal(clients.length, 2, 'the cancelled connection is not reused');
+  assert.ok((await first) instanceof Error, 'the cancelled open itself fails');
+});

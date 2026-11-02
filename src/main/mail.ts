@@ -572,8 +572,7 @@ export class MailService {
   /** Close every connection (app quit, reset, mailbox removed). */
   closeAll(): void {
     for (const id of [...this.boxes.keys()]) this.close(id);
-    for (const c of this.ownerClients.values()) { try { c.close?.(); } catch { /* already gone */ } }
-    this.ownerClients.clear();
+    for (const key of [...this.ownerClients.keys()]) this.stopOriginal(key);
   }
   close(id: string): void {
     const box = this.boxes.get(id);
@@ -979,7 +978,7 @@ export class MailService {
   // moved or flagged. One open per mailbox at a time; the same email asked for
   // twice shares one open.
 
-  private readonly ownerClients = new Map<string, ImapLike>();
+  private readonly ownerClients = new Map<string, { client: ImapLike; stop: () => void }>();
   private readonly ownerOpens = new Map<string, Promise<OriginalEmail>>();
   private readonly ownerQueue = new Map<string, Promise<unknown>>();
   private readonly originals = new Map<string, { size: number; email: OriginalEmail }>();
@@ -1004,7 +1003,7 @@ export class MailService {
       const email = await run;
       this.keepOriginal(key, email);
       return email;
-    } finally { this.ownerOpens.delete(key); }
+    } finally { if (this.ownerOpens.get(key) === run) this.ownerOpens.delete(key); }
   }
 
   /** The email from the last open, without fetching (Show pictures reads its HTML). */
@@ -1014,11 +1013,19 @@ export class MailService {
 
   /** The owner closed the tab: stop its open and close its connection. */
   cancelOriginal(mailboxId: string, messageId: string): void {
-    const key = MailService.originalKey(mailboxId, messageId);
-    const c = this.ownerClients.get(key);
-    if (!c) return;
+    this.stopOriginal(MailService.originalKey(mailboxId, messageId));
+  }
+
+  /** Fails the open now, since a closed socket can leave connect waiting, and
+   *  forgets it, so the next open of this email starts afresh instead of
+   *  sharing a dead one (a tab remounted while it opened). */
+  private stopOriginal(key: string): void {
+    const open = this.ownerClients.get(key);
+    if (!open) return;
     this.ownerClients.delete(key);
-    try { c.close?.(); } catch { /* already gone */ }
+    this.ownerOpens.delete(key);
+    open.stop();
+    try { open.client.close?.(); } catch { /* already gone */ }
   }
 
   /** Recent opens kept in memory, about 30 MB at most, newest last. */
@@ -1038,23 +1045,26 @@ export class MailService {
     let rec: MailboxRecord;
     try { rec = this.record(mailboxId); } catch { throw new MailError('not-found', 'mailbox'); }
     const client = this.createImap(rec.imap, rec.address, this.password(mailboxId));
-    this.ownerClients.set(key, client);
+    let stop = (): void => {};
+    const stopped = new Promise<never>((_, reject) => { stop = () => reject(new MailError('refused', 'The email was closed before it opened.')); });
+    const open = { client, stop };
+    this.ownerClients.set(key, open);
     try {
-      return await withTimeout((async () => {
+      return await withTimeout(Promise.race([stopped, (async () => {
         await client.connect();
         const list = await client.list();
         const hit = await this.findOriginal(client, list, messageId);
         if (!hit) throw new MailError('not-found', 'message');
         const lock = await client.getMailboxLock(hit.path, { readOnly: true });
         try { return await this.originalOf(client, hit.uid, rec.address); } finally { lock.release(); }
-      })(), CALL_TIMEOUT_MS, 'Opening the email');
+      })()]), CALL_TIMEOUT_MS, 'Opening the email');
     } catch (e) {
       if (e instanceof MailError && e.kind === 'not-found') throw e;
       const err = classifyMailError(e);
       this.note(mailboxId, err);
       throw err;
     } finally {
-      if (this.ownerClients.get(key) === client) this.ownerClients.delete(key);
+      if (this.ownerClients.get(key) === open) this.ownerClients.delete(key);
       client.logout().catch(() => { try { client.close?.(); } catch { /* already gone */ } });
     }
   }
