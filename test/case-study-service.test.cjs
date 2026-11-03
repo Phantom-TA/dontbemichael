@@ -36,7 +36,7 @@ function deps(over = {}) {
     ],
     missions: () => [{ to: 'pam', label: 'Morning inbox', enabled: true }, { to: 'pam', label: 'Old job', enabled: false }],
     figures: () => ({ snapshot: snapshot(), days: Array.from({ length: 30 }, (_, i) => ({ day: `d${i}`, ms: 0, awayMs: 0 })) }),
-    runModel: async () => { calls.model++; return { ok: true, text: JSON.stringify({ subtitle: 'A bakery and its team', about: 'Bakes bread', why: 'It frees the owner', headlines: { email: 'Harbor Bakery handled {n} emails' }, team: { pam: 'Sorts the inbox', god: 'Routes the work' } }) }; },
+    runModel: async () => { calls.model++; return { ok: true, text: JSON.stringify({ subtitle: "A bakery and its Don't Be Michael team", about: 'Bakes bread', why: "Don't Be Michael frees the owner", headlines: { email: 'Harbor Bakery handled {n} emails' }, team: { pam: 'Sorts the inbox', god: 'Routes the work' } }) }; },
     readLogo: () => null, writeLogo: () => {}, fetchLogo: async () => ({ ok: false, reason: 'no-site' }), decodeLogo: () => null, readFile: () => null,
     makePdf: async () => { calls.pdf++; return { ok: true, pdf: Buffer.from('%PDF') }; },
     mailSend: async (mailbox, input) => { calls.sends.push({ mailbox, input }); return { sent: true }; },
@@ -85,10 +85,10 @@ test('no measured work: no draft call, and Save and Send refuse (D19)', async ()
 
 test('the draft runs a second time only for parts the first left out', async () => {
   let n = 0;
-  const { svc } = deps({ runModel: async () => ({ ok: true, text: n++ === 0 ? JSON.stringify({ subtitle: 'First words', about: 'Saves 10 hours' }) : JSON.stringify({ subtitle: 'Later words', about: 'Bakes bread' }) }) });
+  const { svc } = deps({ runModel: async () => ({ ok: true, text: n++ === 0 ? JSON.stringify({ subtitle: "First words with Don't Be Michael", about: 'Saves 10 hours' }) : JSON.stringify({ subtitle: "Later words with Don't Be Michael", about: 'Bakes bread' }) }) });
   const r = await svc.draft(input);
   assert.equal(n, 2);
-  assert.equal(r.draft.subtitle, 'First words', 'the first draft wins where it gave a part');
+  assert.equal(r.draft.subtitle, "First words with Don't Be Michael", 'the first draft wins where it gave a part');
   assert.equal(r.draft.about, 'Bakes bread');
   const failed = deps({ runModel: async () => ({ ok: false, error: 'engine unavailable' }) });
   assert.deepEqual(await failed.svc.draft(input), { ok: false, reason: 'failed' });
@@ -138,7 +138,7 @@ test('the case study is prepared in the background and opens complete; asking ag
   let release;
   const gate = new Promise((r) => { release = r; });
   const { svc, calls } = deps({
-    runModel: async () => { calls.model++; await gate; return { ok: true, text: JSON.stringify({ subtitle: 'A bakery', about: 'Bakes bread', why: 'Frees the owner', headlines: { email: 'Harbor Bakery handled {n} emails', task: 'Harbor Bakery finished {n} tasks', away: 'Harbor Bakery worked {n} hours while the owner was away' }, team: { pam: 'Sorts the inbox', god: 'Routes the work' } }) }; },
+    runModel: async () => { calls.model++; await gate; return { ok: true, text: JSON.stringify({ subtitle: "A bakery on Don't Be Michael", about: 'Bakes bread', why: "Don't Be Michael frees the owner", headlines: { email: 'Harbor Bakery handled {n} emails', task: 'Harbor Bakery finished {n} tasks', away: 'Harbor Bakery worked {n} hours while the owner was away' }, team: { pam: 'Sorts the inbox', god: 'Routes the work' } }) }; },
     readLogo: () => ({ png: Buffer.from('PNG'), colour: '#8C5A2B' })
   });
   assert.deepEqual(svc.prepare(input), { state: 'preparing', input }, 'returns at once');
@@ -150,7 +150,7 @@ test('the case study is prepared in the background and opens complete; asking ag
   const p = svc.status();
   assert.equal(p.state, 'ready');
   assert.equal(calls.ready, 1, 'main is told once');
-  assert.equal(p.draft.subtitle, 'A bakery');
+  assert.equal(p.draft.subtitle, "A bakery on Don't Be Michael");
   assert.equal(p.logo.ok, true);
   assert.equal(calls.model, 1, 'one draft for both clicks');
   assert.equal(svc.prepare(input).state, 'ready', 'asking again returns the prepared one');
@@ -181,7 +181,7 @@ test('after Send the next Get featured prepares a fresh case study', async () =>
 test('the headline is a drafted choice only: words sent from the screen are replaced by main\'s own (D24)', async () => {
   let page = '';
   const { svc } = deps({
-    runModel: async () => ({ ok: true, text: JSON.stringify({ subtitle: 'A bakery', about: 'Bakes bread', why: 'Frees the owner', headlines: { email: 'Harbor Bakery handled {n} emails', task: 'Harbor Bakery finished {n} tasks', away: 'Harbor Bakery worked {n} hours while the owner was away' }, team: { pam: 'Sorts the inbox', god: 'Routes the work' } }) }),
+    runModel: async () => ({ ok: true, text: JSON.stringify({ subtitle: "A bakery on Don't Be Michael", about: 'Bakes bread', why: "Don't Be Michael frees the owner", headlines: { email: 'Harbor Bakery handled {n} emails', task: 'Harbor Bakery finished {n} tasks', away: 'Harbor Bakery worked {n} hours while the owner was away' }, team: { pam: 'Sorts the inbox', god: 'Routes the work' } }) }),
     makePdf: async (html) => { page = html; return { ok: true, pdf: Buffer.from('%PDF') }; }
   });
   svc.prepare(input);

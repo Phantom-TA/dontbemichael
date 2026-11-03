@@ -41,7 +41,8 @@ function worst(lang, paper) {
     palette: cs.heroPalette('#8C5A2B')
   };
   const edits = {
-    headline: { figure: 'email', before: fill(lang, Math.floor(c.headlineWords / 2)), after: fill(lang, Math.ceil(c.headlineWords / 2)) },
+    // The longest built in headline with a long business name: the owner can't shorten it (D24).
+    headline: { figure: 'away', ...cs.builtInHeadline({ lang, showName: true, businessName: 'Harbor Bakery and Cafe Company' }, 'away') },
     subtitle: fill(lang, c.subtitle), about: fill(lang, c.about), quote: fill(lang, c.quote), why: fill(lang, c.why),
     team: Object.fromEntries(members.map((m) => [m.id, fill(lang, c.teamLine)]))
   };

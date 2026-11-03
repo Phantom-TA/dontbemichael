@@ -60,14 +60,14 @@ test("a member's figure is their largest kind, Michael's is routed, none when no
 test('a drafted part with a number is refused, the rest are kept', () => {
   const f = facts();
   const reply = 'Here you go:\n' + JSON.stringify({
-    subtitle: 'A bakery and its AI office team',
+    subtitle: "A bakery and its Don't Be Michael team",
     about: 'Saves 10 hours a week on email',
     why: 'Dozens of small tasks get done',
     headlines: { email: "Harbor Bakery's AI office handled {n} emails in a month", task: 'Finished {n} tasks and {n} more', away: 'Worked {n} hours, about 20 a day' },
     team: { pam: 'Answers order questions and sorts the morning inbox', god: 'Routes 5 requests an hour' }
   });
   const d = cs.parseDraft(reply, f);
-  assert.equal(d.subtitle, 'A bakery and its AI office team');
+  assert.equal(d.subtitle, "A bakery and its Don't Be Michael team");
   assert.equal(d.about, undefined);
   assert.equal(d.why, undefined, 'a quantity word is a number');
   assert.deepEqual(d.headlines.email, { before: "Harbor Bakery's AI office handled", after: 'emails in a month' });
@@ -86,7 +86,10 @@ test('a fresh screen starts from the draft, built in headline words and role des
   const f = facts();
   const e = cs.startingEdits(f, { headlines: {}, team: {} });
   assert.equal(e.headline.figure, 'email');
-  assert.equal(e.headline.before, 'The AI office at Harbor Bakery handled');
+  assert.equal(e.headline.before, "The Don't Be Michael team at Harbor Bakery handled");
+  assert.equal(e.headline.after, 'emails', 'no day count: every number on the page is a Pulse figure');
+  assert.match(e.subtitle, /^Harbor Bakery runs its office with Don't Be Michael\.$/, 'built in subtitle names the product (D25)');
+  assert.match(e.why, /Don't Be Michael/);
   assert.equal(e.team.pam, 'Answers the inbox and sorts mail', 'a missing team line starts from the role description');
   assert.equal(e.team.god, '');
   assert.equal(cs.startingEdits(f, { headlines: {}, team: {} }, 'away').headline.figure, 'away');
@@ -117,7 +120,7 @@ test('the prompt reads only the allowed facts; the name is out with D8 off, the 
 test("the page is read only, and the headline's number is Pulse's, between its words (D16, D22)", () => {
   const typed = edits(facts(), { headline: { figure: 'email', before: 'The AI office handled', after: 'emails' } });
   const html = page(facts(), typed);
-  const h1 = html.match(/<h1 class="headline">(.*?)<\/h1>/)[1];
+  const h1 = html.match(/<h1 class="headline[^"]*">(.*?)<\/h1>/)[1];
   assert.match(h1, /^<span>The AI office handled<\/span> <span class="lock"[^>]*>1,284<\/span> <span>emails<\/span>$/);
   assert.doesNotMatch(html, /contenteditable|data-part/, 'nothing on the page is editable');
   assert.match(html, /\.lock\{font-weight:700;color:var\(--hl\)/, 'the number has no box, in the hero tint (D23)');
@@ -130,7 +133,7 @@ test('with the name switch off the page hides the name, logo and website (D8)', 
   const f = facts({ showName: false, logo: 'data:image/png;base64,AAAA', palette: { hero: '#6B3F1D', tint: '#F6EEE6', line: '#E8D9CA', away: '#C9782F' } });
   const html = page(f, edits(f, { quote: 'The team keeps up with the mail' }));
   assert.doesNotMatch(html, /Harbor Bakery|harborbakery|<img/);
-  assert.match(html, /The AI office at a bakery in Austin handled/);
+  assert.match(html, /The Don&#39;t Be Michael team at a bakery in Austin handled|The Don't Be Michael team at a bakery in Austin handled/);
   assert.match(html, /Bakery in Austin/);
   assert.match(html, /--hero:#1E1B2E/, 'our ink when the name, and so the logo, is hidden');
   assert.match(html, /<figcaption>The owner<\/figcaption>/);
@@ -185,4 +188,25 @@ test('the email to us is in the app language and carries the take down promise (
   assert.match(cs.caseStudyEmail(facts()).body, /will take it down if I ask/);
   assert.match(cs.caseStudyEmail(facts({ lang: 'zh-CN' })).subject, /^客户案例/);
   assert.equal(cs.CASE_STUDY_TO, 'hello@dontbemichael.com');
+});
+
+test("the subtitle and the closing must name Don't Be Michael; every built in headline is free of typed numbers (D25)", () => {
+  const f = facts();
+  const d = cs.parseDraft(JSON.stringify({ subtitle: 'A bakery and its AI team', why: 'An AI team frees the owner', headlines: {}, team: {} }), f);
+  assert.equal(d.subtitle, undefined, 'a generic AI team is refused');
+  assert.equal(d.why, undefined);
+  assert.ok(cs.missingParts(d, f).includes('subtitle'));
+  assert.equal(cs.parseDraft(JSON.stringify({ subtitle: 'Runs on Don\u2019t Be Michael' }), f).subtitle, 'Runs on Don\u2019t Be Michael', 'a curly apostrophe counts');
+  for (const lang of ['en', 'ar', 'zh-CN']) {
+    const fl = facts({ lang });
+    for (const k of cs.HEADLINE_FIGURES) {
+      const h = cs.builtInHeadline(fl, k);
+      assert.equal(cs.hasNumber(h.before + ' ' + h.after, lang), false, `${lang} ${k}`);
+      assert.match(h.before, /Don't Be Michael/);
+    }
+    assert.match(cs.builtInSubtitle(fl), /Don't Be Michael/);
+    assert.match(cs.builtInWhy(fl), /Don't Be Michael/);
+    assert.equal(cs.cleanEdits(fl, cs.startingEdits(fl, { headlines: {}, team: {} })).headlineNumber, false, `${lang}: a built in headline never trips the number check`);
+  }
+  assert.match(page(f), /Don't Be Michael case study|Don&#39;t Be Michael case study/, 'the label above the headline names the product');
 });
