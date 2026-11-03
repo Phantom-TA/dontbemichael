@@ -45,6 +45,24 @@ export function isFileSpan(span: string): boolean {
   return DETECT_EXTENSIONS.has(extensionOf(s));
 }
 
+/** Whether a code span reads as a folder (owner, 2026-11-02: an ask saying
+ *  where to save files listed its folders as raw paths): a full path whose last
+ *  part has no ending, with two parts at least after a leading `/`, so a slash
+ *  command such as `/compact` stays code. Main decides whether it is a folder
+ *  inside the office; anything else stays as written (FileText). */
+export function isFolderSpan(span: string): boolean {
+  const s = span.trim();
+  if (!s || s.startsWith('$') || s.includes('@') || /[\r\n`]/.test(s) || !isAbsolutePathText(s)) return false;
+  const parts = s.split(/[\\/]/).filter((p) => p && p !== '~' && !/^[A-Za-z]:$/.test(p));
+  if (!parts.length || (s.startsWith('/') && parts.length < 2)) return false;
+  return extensionOf(s.replace(/[\\/]+$/, '')) === '';
+}
+
+/** A folder chip's name: the folder's own name, dots and all. */
+export function folderTitle(path: string): string {
+  return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? path;
+}
+
 /** Files a tab can show inside the office (docs/designs/open-file-tab.md, R3):
  *  Markdown, text, JSON, CSV and images, and the words of a Word, Excel,
  *  PowerPoint or PDF file (R3a); the tab's Open in app button still reaches the

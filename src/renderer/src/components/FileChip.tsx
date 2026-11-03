@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { askFileNames, fileTitle, kindOf, withNamedFiles, type AskFileCheck } from '@shared/askFiles';
+import { askFileNames, fileTitle, folderTitle, isFolderSpan, kindOf, withNamedFiles, type AskFileCheck } from '@shared/askFiles';
 import { MarkdownPreview, type MarkdownVariant } from '@/markdown/MarkdownPreview';
 import { chipPaths } from '@/markdown/chipPaths';
 import { folderTeam, type FolderMember } from '@/markdown/remarkFolderChips';
@@ -94,9 +94,10 @@ export function FileChip({ path, check, who, onGone }: {
   const { t } = useTranslation();
   // Finder is the Mac's; Windows and Linux both say folder.
   const win = window.cth.platform !== 'darwin';
-  const name = fileTitle(path);
+  const folder = isFolderSpan(path);
+  const name = folder ? folderTitle(path) : fileTitle(path);
   const kind = kindOf(path);
-  const icon = kind === 'excel' || kind === 'csv' ? 'sheet' : kind === 'image' ? 'image' : 'file';
+  const icon = folder ? 'folder' : kind === 'excel' || kind === 'csv' ? 'sheet' : kind === 'image' ? 'image' : 'file';
   const missing = check?.verdict === 'missing';
   const reveal = !!check && !check.tab && check.verdict === 'reveal';
   const chip: CSSProperties = {
@@ -305,13 +306,17 @@ export function FileText({ source, who, checks: given, variant = 'card' }: {
   // As a string, so a member's status changing doesn't redraw every card.
   const teamKey = useStore((s) => JSON.stringify(folderTeam(s.agents)));
   const team = useMemo(() => JSON.parse(teamKey) as FolderMember[], [teamKey]);
-  const fileChip = useCallback((p: string) => (
-    <FileChip
+  const fileChip = useCallback((p: string) => {
+    // A folder path is only a chip for a folder the office holds: a path
+    // anywhere else (another app's folder, a route) stays as it was written.
+    const folder = isFolderSpan(p);
+    if (folder && checks[p]?.verdict === 'missing' && !gone[p]) return <code>{p}</code>;
+    return <FileChip
       path={p}
       check={gone[p] ? { verdict: 'missing', tab: false, path: p } : checks[p]}
       who={{ raisedBy, assignee }}
       onGone={onGone}
-    />
-  ), [checks, gone, raisedBy, assignee, onGone]);
+    />;
+  }, [checks, gone, raisedBy, assignee, onGone]);
   return <MarkdownPreview source={shown} variant={variant} fileChip={paths.length ? fileChip : undefined} placeLinks folderTeam={team} />;
 }
