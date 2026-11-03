@@ -55,7 +55,7 @@ export interface CaseFigures {
   spendUsd: number;
 }
 
-export interface HeroPalette { hero: string; tint: string; line: string; away: string }
+export interface HeroPalette { hero: string; tint: string; line: string; away: string; /** The headline's number (D23). */ highlight: string }
 
 export interface CaseStudyFacts {
   lang: CaseLang;
@@ -236,8 +236,15 @@ function hsl([r, g, b]: RGB): { h: number; s: number; l: number } {
   return { h: h * 60, s, l };
 }
 
+function fromHsl(h: number, s: number, l: number): RGB {
+  const k = (n: number): number => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number): number => 255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)));
+  return [f(0), f(8), f(4)];
+}
+
 /** Our ink: the hero when a logo has no usable colour (D17). */
-export const INK_PALETTE: HeroPalette = { hero: '#1E1B2E', tint: '#F0EFF5', line: '#DAD7EA', away: '#6C5CE7' };
+export const INK_PALETTE: HeroPalette = { hero: '#1E1B2E', tint: '#F0EFF5', line: '#DAD7EA', away: '#6C5CE7', highlight: '#C9C1FF' };
 
 /**
  * The logo's main colour from RGBA pixels (main samples the logo at 32 px):
@@ -266,13 +273,29 @@ export function logoColour(rgba: Uint8Array | number[]): string | null {
 }
 
 /** The hero and its shades: darkened until white text passes 4.5:1 (D17),
- *  the tint and line light enough for ink-2 labels at 4.5:1. */
+ *  the tint and line light enough for ink-2 labels at 4.5:1, and the
+ *  headline number's light tint of the hero's hue, at 3:1 on it (large
+ *  bold text, D23). */
 export function heroPalette(colour: string | null): HeroPalette {
   if (!colour) return INK_PALETTE;
   let c = rgbOf(colour);
   for (let i = 0; i < 60 && contrast(hex(c), '#FFFFFF') < 4.5; i++) c = mix(c, [0, 0, 0], 0.06);
   const white: RGB = [255, 255, 255];
-  return { hero: hex(c), tint: hex(mix(c, white, 0.9)), line: hex(mix(c, white, 0.78)), away: hex(mix(c, white, 0.35)) };
+  // The number's tint: the logo's own hue, light and kept saturated so it
+  // still reads as the brand, lifted until it reads at 3:1 on the hero, the
+  // WCAG bar for large bold text such as the headline; a light logo colour
+  // needs the hero a little darker still (D23).
+  const { h: hue, s: sat } = hsl(c);
+  const tintFor = (h: RGB): RGB | null => {
+    for (let l = 0.66; l <= 0.94; l += 0.02) {
+      const cand = fromHsl(hue, Math.max(0.55, sat), l);
+      if (contrast(hex(cand), hex(h)) >= 3) return cand;
+    }
+    return null;
+  };
+  let hl = tintFor(c);
+  for (let i = 0; i < 40 && hl === null; i++) { c = mix(c, [0, 0, 0], 0.06); hl = tintFor(c); }
+  return { hero: hex(c), tint: hex(mix(c, white, 0.9)), line: hex(mix(c, white, 0.78)), away: hex(mix(c, white, 0.35)), highlight: hex(hl ?? mix(c, white, 0.9)) };
 }
 
 // ---------------------------------------------------------------- page words
@@ -639,11 +662,11 @@ export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: Pag
   return `<!doctype html><html lang="${facts.lang}" dir="${rtl ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${esc(w.caseStudy)}</title><style>
 ${opts.fontCss}
 @page{size:${paper.css};margin:0}
-:root{--hero:${pal.hero};--tint:${pal.tint};--hline:${pal.line};--aw:${pal.away}}
+:root{--hero:${pal.hero};--tint:${pal.tint};--hline:${pal.line};--aw:${pal.away};--hl:${pal.highlight}}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:#fff}
 body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic",system-ui,sans-serif;color:#1E1B2E;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.mono,.n,.lock,.t-n,.big b,.strip-x{font-family:"IBM Plex Mono",ui-monospace,monospace;letter-spacing:0}
+.mono,.n,.t-n,.big b,.strip-x{font-family:"IBM Plex Mono",ui-monospace,monospace;letter-spacing:0}
 .page{width:${paper.w}px;height:${paper.h}px;zoom:${PAGE_ZOOM};overflow:hidden;display:flex;flex-direction:column;background:#fff}
 .hero{background:var(--hero);color:#fff;padding:26px 40px 22px}
 .hero-top{display:flex;align-items:center;gap:12px}
@@ -653,7 +676,8 @@ body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic
 .biz-meta{font-size:10.5px;line-height:14px;color:rgba(255,255,255,.82)}
 .eyebrow{margin-top:18px;font-weight:600;font-size:9px;line-height:12px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.78)}
 .headline{margin-top:5px;font-weight:600;font-size:26px;line-height:32px;letter-spacing:-.03em;max-width:580px}
-.lock{font-weight:500;letter-spacing:-.06em;background:rgba(255,255,255,.16);border-radius:6px;padding:0 6px;white-space:nowrap}
+/* The headline's number: its own font, no box, a light tint of the hero (D23). */
+.lock{font-weight:700;color:var(--hl);white-space:nowrap}
 .sub{margin-top:8px;font-size:11.5px;line-height:17px;color:rgba(255,255,255,.9);max-width:560px;min-height:17px}
 .band{background:var(--tint);display:grid;grid-template-columns:repeat(${band.length},1fr);padding:14px 40px 10px;border-bottom:1px solid var(--hline)}
 .stat .n{font-weight:500;font-size:26px;line-height:30px;letter-spacing:-.06em}

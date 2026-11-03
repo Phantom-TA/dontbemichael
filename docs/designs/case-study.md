@@ -103,6 +103,7 @@ D2 was the review mode question (Selective expansion), an admin choice, so it ha
 | D20 (owner) | Numbers the owner types. D4, eng pass outside voice | A: refused only in the headline's words, checked again on Save and Send; the owner's numbers elsewhere stay | B: anywhere but the quote; C: never checked (declined) | approved | Owner chose "Headline words only (recommended)" in D20, 2026-11-03 |
 | D21 (owner) | When the owner sees the screen. Owner message after the first build | Get featured (or the invitation) prepares the case study in main in the background: the draft and the logo read run while the owner works on; Pulse's button says it is preparing; when it is ready a toast on any view (and a desktop notice when the window is in the background) opens the screen already filled in. Inside the screen, a period or name change keeps the page up while it prepares again | the screen opening first and filling in while the owner waits (replaced) | approved | Owner: "there is no point in showing user empty frame and letting him wait. probably run this in the background and notify when it is ready to view and send", 2026-11-03 |
 | D22 (owner) | Where the owner changes the words. Owner message after trying it | The page preview is read only. The headline is picked from the drafted options (each shown with its number) or written in the panel with Write my own (words before and after Pulse's number); subtitle, about, your words, each team line and why are fields in a The words panel; the page follows as the owner types | editable in place on the page (D15 to D19 mockup, replaced) | approved | Owner: "allowing typing in the header directly looks awkward and bad as a design. let user pick from the options or type there. keep visual view read only", 2026-11-03 |
+| D23 (owner) | How the headline's number looks. Owner: "the header with the number with the background looks ugly" | C: the number in the headline's own font, bold, no box, in a light tint of the logo's hue, at 3:1 on the hero (the WCAG bar for large bold text; 4.5:1 left the tint nearly white); a light logo colour darkens the hero a little more | A: plain, no box; B: underlined (declined) | approved | Owner chose "C: tinted number (recommended)" in D23, 2026-11-03 (the 4.5:1 in the option became 3:1 on evidence, told to the owner) |
 
 Approval readiness: PASS. Checked D1, D3, D4, D5, D6, D7, D8, D9, D10, each against its recorded
 answer above (2026-11-03). Reviewer mechanics inside approved rows are labelled as such.
@@ -1249,6 +1250,14 @@ One pass, completed. Checked against the code; dispositions:
 Approval readiness: PASS. Checked D20 against its answer (A, 2026-11-03); the other remedies are
 mechanics enforcing D4, D13 and D16 to D19 under the standing rule.
 
+## Design review follow up (2026-11-03)
+
+The headline's number sat in a grey box in IBM Plex Mono, so it looked pasted on (owner). D23: it
+is now set in the headline's Sora at 700, no box, in `highlight`, a light tint of the logo's hue
+from `heroPalette`, checked to 3:1 on the hero. Drawn in four hero colors at
+/Users/moblizeit/.gstack/projects/agentvivekkumar-dontbemichael/designs/case-study-headline-20261103/headline-final.png.
+Pass 4 (slop) and Pass 5 (system) stay 8 and 9: one font in the headline, no decorative chip.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
@@ -1256,7 +1265,7 @@ mechanics enforcing D4, D13 and D16 to D19 under the standing rule.
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | CLEAR | 4 proposals, 4 accepted, 0 deferred |
 | Outside Review | `codex exec -p deepseek-review` | Independent 2nd opinion | 4 (CEO 2, 1 timed out; eng 1; eng pass 1) | completed | CEO 7, eng 7, eng pass 7 findings; all resolved |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 2 for this plan | ISSUES OPEN (all mapped to tasks) | run 1: 17 issues; run 2 (design additions): 5 issues; 0 critical gaps |
-| Design Review | `/plan-design-review` | UI/UX gaps | 1 for this plan | CLEAR | score: 3/10 → 8/10, 7 decisions |
+| Design Review | `/plan-design-review` | UI/UX gaps | 2 for this plan | CLEAR | score: 3/10 → 8/10, 7 decisions; follow up: 1 decision (D23) |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
 - **OUTSIDE COVERAGE:** codex with the deepseek-review profile: CEO phase (pass 2 completed), eng phase (completed), eng pass on the design additions (completed, 7 findings: 1 Critical settled by D20, 2 factual corrections, 4 accepted). Design phase skipped (the owner chose a deep research run instead).

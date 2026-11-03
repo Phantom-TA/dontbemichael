@@ -120,6 +120,7 @@ test("the page is read only, and the headline's number is Pulse's, between its w
   const h1 = html.match(/<h1 class="headline">(.*?)<\/h1>/)[1];
   assert.match(h1, /^<span>The AI office handled<\/span> <span class="lock"[^>]*>1,284<\/span> <span>emails<\/span>$/);
   assert.doesNotMatch(html, /contenteditable|data-part/, 'nothing on the page is editable');
+  assert.match(html, /\.lock\{font-weight:700;color:var\(--hl\)/, 'the number has no box, in the hero tint (D23)');
   assert.doesNotMatch(page(facts()), /<figure class="quote/, 'no quote block without the owner\'s words');
 });
 
@@ -172,6 +173,8 @@ test('the hero keeps white text at 4.5:1 and its tint keeps labels readable', ()
     assert.ok(cs.contrast(p.hero, '#FFFFFF') >= 4.5, `${c} hero`);
     assert.ok(cs.contrast(p.tint, '#4A4660') >= 4.5, `${c} tint`);
     assert.ok(cs.contrast(p.tint, '#1E1B2E') >= 4.5);
+    assert.ok(cs.contrast(p.highlight, p.hero) >= 3, `${c} headline number on the hero (large bold text)`);
+    assert.notEqual(p.highlight.toUpperCase(), '#FFFFFF', 'a tint, not plain white');
   }
   assert.deepEqual(cs.heroPalette(null), cs.INK_PALETTE);
 });
