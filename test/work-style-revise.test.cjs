@@ -212,3 +212,38 @@ test('the foundations reach the rewrite as a check, a broken reader never stops 
   assert.deepEqual(W.readReviseRequest({ ...base, answer: { question: ' Which? ', answer: 'Ask me first' } }).answer, { question: 'Which?', answer: 'Ask me first' });
   assert.doesNotMatch(T.toRevisePrompt({ ctx, instructions: 'x', handles: '', changes: ['y'], answer: W.readReviseRequest({ ...base, answer: { question: 'Which?', answer: '' } }).answer }), /ANSWERED YOUR QUESTION/);
 });
+
+test('near misses in a real answer still read (issue 676): curly quotes, raw line breaks, a note after it, string choices and summary', () => {
+  // Value: protects=an owner's job change is saved when the model's answer differs only in form; fails_when=a near miss is refused again and the owner sees "could not read"; why_new=issue 676 reported answer-unparseable with no way to tell which check; seam=none; no_claim=which near miss the reported answers had (their text is never kept)
+  const joes = { ...ctx, business: { name: "Joe's Pizza", city: 'Denver' } };
+  const exact = T.instructionsOpening(joes.business);
+  const curly = exact.replace("Joe's", 'Joe’s').replace(' work style', '  work style');
+  const r = T.parseRevise(okReply({ instructions: `${curly}\n\n### The job\nAnswer customers.` }), joes);
+  assert.equal(r.instructions, `${exact}\n\n### The job\nAnswer customers.`, 'the house line is written back exactly');
+  const raw = okReply().replace(/\\n/g, '\n');
+  assert.ok(raw.includes('\n### The job'), 'the reply has raw line breaks inside its strings');
+  assert.equal(T.parseRevise(raw, ctx).kind, 'ok');
+  assert.equal(T.parseRevise(`${okReply()}\nNote: {see above}`, ctx).kind, 'ok', 'a note with braces after the object');
+  const q = T.parseRevise(JSON.stringify({ kind: 'question', question: 'Which rule wins?', choices: ['Ask first', 'Refund at once'] }), ctx);
+  assert.deepEqual(q.choices, [{ label: 'Ask first' }, { label: 'Refund at once' }]);
+  assert.deepEqual(T.parseRevise(okReply({ summary: 'Pam will answer refunds.' }), ctx).summary, ['Pam will answer refunds.']);
+});
+
+test('an unreadable answer says which check failed, and the report carries it (issue 676)', async () => {
+  // Value: protects=the next failure report names the failed check instead of "answer-unparseable"; fails_when=a fail code goes missing or is not reported; why_new=issue 676 could not be traced; seam=stubbed hidden model
+  for (const [reply, fail] of [
+    ['Sure! Here is the new job.', 'json'],
+    [okReply({ kind: 'done' }), 'shape'],
+    [okReply({ instructions: 'You answer customers.' }), 'opening'],
+    [okReply({ instructions: T.instructionsOpening({ name: 'Other Shop' }) + '\n\nWork.' }), 'opening'],
+    [okReply({ plain: '' }), 'missing-part'],
+    [JSON.stringify({ kind: 'question', question: 'Q?', choices: [{ label: 'only one' }] }), 'question'],
+    [JSON.stringify({ kind: 'home', question: 'Where should Pam keep hours?' }), 'home']
+  ]) assert.deepEqual(T.readRevise(reply, ctx), { fail }, reply);
+  const logs = [];
+  stub({ ok: true, text: okReply({ instructions: 'You answer customers.' }) });
+  assert.deepEqual(await W.reviseWorkStyle({ ctx, current: { instructions: 'x', handles: '' }, changes: ['c'] }, { ...deps, log: (e) => logs.push(e) }), { kind: 'error', reason: 'unreadable' });
+  assert.deepEqual(logs, [{ kind: 'work-style-revise-failed', reason: 'unreadable: opening' }]);
+  const R = loadTs('src/shared/failureReport.ts');
+  assert.deepEqual(R.classifyLogEvent(logs[0]), { kind: 'hidden-call-failed', detail: 'work-style-revise-failed:answer-wrong-opening' });
+});

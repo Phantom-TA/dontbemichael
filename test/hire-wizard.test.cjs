@@ -111,7 +111,7 @@ test('the model list starts on the default for agents from Settings, marked defa
 test('a job is required: hiring waits for an applied one, and a change never saves an empty one (owner, 2026-09-27)', () => {
   assert.match(modal, /onClick=\{submit\} disabled=\{busy \|\| checking \|\| !instructions\.trim\(\)\}/);
   const text = read('src/shared/workStyleText.ts');
-  assert.match(text, /if \(!instructions \|\| instructions === opening \|\| !plain \|\| summary\.length === 0\) return null;/, 'a rewrite without a job is a failure, never saved');
+  assert.match(text, /if \(!instructions \|\| instructions === opening \|\| !plain \|\| summary\.length === 0\) return \{ fail: 'missing-part' \};/, 'a rewrite without a job is a failure, never saved');
   const edit = read('src/renderer/src/components/EditAgentModal.tsx');
   assert.doesNotMatch(edit, /Work style \(optional\)/);
 });

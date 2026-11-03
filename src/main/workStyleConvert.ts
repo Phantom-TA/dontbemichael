@@ -13,7 +13,7 @@ import {
   instructionsFallback,
   parseFocusCheck,
   instructionsOpening,
-  parseRevise,
+  readRevise,
   revisePreview,
   plainFallback,
   roleLabel,
@@ -234,12 +234,14 @@ export async function reviseWorkStyle(
       signal
     });
     if (result.error === 'cancelled' || signal?.aborted) return { kind: 'error', reason: 'cancelled' };
-    const answer = result.ok && result.text
-      ? parseRevise(result.text, req.ctx, req.lead, { askHome: req.askHome, teammates: req.teammates, handoffList: req.handoffList })
+    const read = result.ok && result.text
+      ? readRevise(result.text, req.ctx, req.lead, { askHome: req.askHome, teammates: req.teammates, handoffList: req.handoffList })
       : null;
+    const answer = read && 'answer' in read ? read.answer : null;
     if (answer?.kind === 'ok') return withHandoffLines(answer, req, bound, deps.log);
     if (answer) return answer;
-    deps.log?.({ kind: 'work-style-revise-failed', reason: result.ok ? 'unreadable' : (result.error ?? 'failed') });
+    // Which check failed, as a fixed word the failure report can carry (issue 676).
+    deps.log?.({ kind: 'work-style-revise-failed', reason: !result.ok ? (result.error ?? 'failed') : read && 'fail' in read ? `unreadable: ${read.fail}` : 'empty' });
     return { kind: 'error', reason: reviseFailure(result) };
   } catch (e) {
     deps.log?.({ kind: 'work-style-revise-failed', reason: String(e).slice(0, 200) });

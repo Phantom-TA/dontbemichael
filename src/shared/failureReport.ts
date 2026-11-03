@@ -57,6 +57,13 @@ export const HIDDEN_ERRORS: Readonly<Record<string, string | null>> = {
   'empty prompt': 'empty-prompt',
   // The callers' own words for an answer that came back but did not parse.
   'unreadable': 'answer-unparseable',
+  // A Work style change's answer, by the check it failed (issue 676).
+  'unreadable: json': 'answer-not-json',
+  'unreadable: shape': 'answer-wrong-shape',
+  'unreadable: opening': 'answer-wrong-opening',
+  'unreadable: missing-part': 'answer-missing-part',
+  'unreadable: question': 'answer-bad-question',
+  'unreadable: home': 'answer-unasked-home',
   'empty': 'answer-unparseable',
   'no verdict': 'answer-unparseable',
   'engine unavailable': null,
