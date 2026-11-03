@@ -18,6 +18,7 @@
 
 import { ownValue } from './ownValue';
 import { cleanHandoffScope } from './jobChange';
+import { readObject } from './jsonReply';
 
 export interface WorkStyleContext {
   /** The team member's name. */
@@ -276,62 +277,6 @@ export interface ReviseParseOpts {
 /** Why an answer did not read (issue 676): a fixed code the failure report
  *  carries, so the next report says which check failed, never the text. */
 export type ReviseParseFail = 'json' | 'shape' | 'opening' | 'missing-part' | 'question' | 'home';
-
-/** The first whole JSON object in a reply, read with string awareness, so a
- *  note after it with braces of its own does not break it. */
-function firstObject(text: string): string | null {
-  const start = text.indexOf('{');
-  if (start < 0) return null;
-  let depth = 0, inString = false, escaped = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') inString = true;
-    else if (ch === '{') depth++;
-    else if (ch === '}' && --depth === 0) return text.slice(start, i + 1);
-  }
-  return null;
-}
-
-/** Raw line breaks and tabs inside JSON strings, escaped: a model writing a
- *  long job sometimes leaves them raw, which JSON.parse refuses. */
-function escapeRawControls(json: string): string {
-  let out = '', inString = false, escaped = false;
-  for (const ch of json) {
-    if (inString) {
-      if (escaped) { escaped = false; out += ch; continue; }
-      if (ch === '\\') { escaped = true; out += ch; continue; }
-      if (ch === '"') inString = false;
-      out += ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t' : ch;
-      continue;
-    }
-    if (ch === '"') inString = true;
-    out += ch;
-  }
-  return out;
-}
-
-/** The reply as an object: the whole span, then the first object, each as
- *  written and then with raw line breaks escaped. */
-function readObject(text: string): Record<string, unknown> | null {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  const spans = [end > start && start >= 0 ? text.slice(start, end + 1) : null, firstObject(text)].filter((x): x is string => !!x);
-  for (const span of spans) {
-    for (const candidate of [span, escapeRawControls(span)]) {
-      try {
-        const o = JSON.parse(candidate) as unknown;
-        if (o && typeof o === 'object' && !Array.isArray(o)) return o as Record<string, unknown>;
-      } catch { /* the next form */ }
-    }
-  }
-  return null;
-}
 
 /** Typographic quotes and spacing as plain ones, for finding the house line. */
 const plainQuotes = (t: string): string => t.replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"').replace(/[ \t ]+/g, ' ');

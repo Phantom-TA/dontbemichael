@@ -220,3 +220,19 @@ test('a binding whose scope has a period or a semicolon is released too', () => 
   const { others } = H.bindingLines('the data in HubSpot', 'Nick');
   assert.deepEqual(H.releaseBindings('Creed', [{ id: 'o', description: `Finance: Books. ${others}` }]), []);
 });
+
+test('a verdict reads past form slips, and says which check failed (issue 677)', () => {
+  // Value: protects=the hire check's own verdict is used when the model's answer differs only in form, and the next failure report names the failed check; fails_when=a near miss falls back to the rules again or a fail code goes missing; why_new=issue 677 reported answer-unparseable with no way to tell which check; seam=none; no_claim=which slip the reported answer had (its text is never kept)
+  const team = ['Pam', 'Ryan'];
+  const fenced = '```json\n{\n  "distinct": false,\n  "overlapsWith": ["Pam"],\n  "why": "Both answer customers."\n}\n```';
+  assert.deepEqual(H.parseDistinctAnswer(fenced, team).overlapsWith, ['Pam'], 'a fenced answer, as the check model writes it');
+  assert.equal(H.parseDistinctAnswer('{"distinct": false, "overlapsWith": ["Pam"], "why": "Both answer\ncustomers."}', team).why, 'Both answer\ncustomers.', 'a raw line break inside a string');
+  assert.equal(H.parseDistinctAnswer('{"distinct": true, "overlapsWith": []}\nNote: {none}', team).distinct, true, 'a note with braces after the object');
+  assert.deepEqual(H.parseDistinctAnswer('{"distinct": "false", "overlapsWith": "Ryan"}', team).overlapsWith, ['Ryan'], 'the verdict and a name written as words');
+  assert.deepEqual(H.readDistinctAnswer('I think they are fine.', team), { fail: 'json' });
+  assert.deepEqual(H.readDistinctAnswer('{"distinct": "maybe"}', team), { fail: 'verdict' });
+  assert.deepEqual(H.readDistinctAnswer('{"overlapsWith": ["Pam"]}', team), { fail: 'verdict' });
+  const R = loadTs('src/shared/failureReport.ts');
+  assert.deepEqual(R.classifyLogEvent({ kind: 'hire-check-fallback', reason: 'no verdict: json' }), { kind: 'hidden-call-failed', detail: 'hire-check-fallback:answer-not-json' });
+  assert.deepEqual(R.classifyLogEvent({ kind: 'hire-check-fallback', reason: 'no verdict: verdict' }), { kind: 'hidden-call-failed', detail: 'hire-check-fallback:answer-no-verdict' });
+});

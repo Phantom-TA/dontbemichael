@@ -12,7 +12,7 @@
 import { runHiddenModel, type HiddenModelEngine } from './hiddenModel';
 import {
   distinctPrompt,
-  parseDistinctAnswer,
+  readDistinctAnswer,
   overlapsByRules,
   type DistinctMode,
   type DistinctVerdict,
@@ -89,14 +89,16 @@ export async function checkDistinct(job: JobProfile, teamIn: JobProfile[], deps:
     });
     // Stopped because the owner picked another job: nobody reads this answer.
     if (!result.ok && result.error === 'cancelled') return rulesVerdict(job, team);
-    const verdict = result.ok && result.text ? parseDistinctAnswer(result.text, team.map((m) => m.name)) : null;
+    const read = result.ok && result.text ? readDistinctAnswer(result.text, team.map((m) => m.name)) : null;
+    const verdict = read && 'verdict' in read ? read.verdict : null;
     // The rules always count too, so the model can't be talked past a job
     // whose what to send reads like a teammate's.
     if (verdict) {
       const overlapsWith = [...new Set([...verdict.overlapsWith, ...overlapsByRules(job, team)])];
       return { ...verdict, distinct: overlapsWith.length === 0, overlapsWith };
     }
-    deps.log?.({ kind: 'hire-check-fallback', reason: result.ok ? 'no verdict' : (result.error ?? 'failed') });
+    // Which check failed, as a fixed word the failure report can carry (issue 677).
+    deps.log?.({ kind: 'hire-check-fallback', reason: !result.ok ? (result.error ?? 'failed') : read && 'fail' in read ? `no verdict: ${read.fail}` : 'empty' });
   } catch (e) {
     deps.log?.({ kind: 'hire-check-fallback', reason: String(e).slice(0, 200) });
   }

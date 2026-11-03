@@ -21,6 +21,7 @@ import { splitAgentRole, joinAgentRole } from './agentRole';
 import { teamMemberGoal, teamMemberName, folderNameFor } from './teamPlan';
 import { OFFICE_ROLES } from './officeRoles';
 import { clipUnits } from './cutText';
+import { readObject } from './jsonReply';
 import { cleanFolderName, suffixedFolderName } from './folderName';
 
 export type HireJobSource = 'card' | 'team' | 'new';
@@ -580,28 +581,35 @@ function changePrompt(job: JobProfile, team: JobProfile[]): string {
   ].join('\n');
 }
 
-/** The JSON verdict from the model's answer, names limited to the team's.
- *  Null when the answer holds no usable verdict. */
-export function parseDistinctAnswer(text: string, teamNames: string[]): DistinctVerdict | null {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  let raw: unknown;
-  try { raw = JSON.parse(text.slice(start, end + 1)); } catch { return null; }
-  if (!raw || typeof raw !== 'object') return null;
-  const o = raw as Record<string, unknown>;
-  if (typeof o.distinct !== 'boolean') return null;
+/** Why a verdict did not read (issue 677): a fixed word the failure report carries. */
+export type DistinctParseFail = 'json' | 'verdict';
+
+/** The JSON verdict from the model's answer, names limited to the team's, or
+ *  why it holds no usable verdict. */
+export function readDistinctAnswer(text: string, teamNames: string[]): { verdict: DistinctVerdict } | { fail: DistinctParseFail } {
+  const o = readObject(text);
+  if (!o) return { fail: 'json' };
+  // "distinct" as true or false, or the same written as a word.
+  const said = typeof o.distinct === 'string' ? o.distinct.trim().toLowerCase() : o.distinct;
+  if (said !== true && said !== false && said !== 'true' && said !== 'false') return { fail: 'verdict' };
   const known = new Map(teamNames.map((n) => [n.toLowerCase(), n]));
-  const overlapsWith = Array.isArray(o.overlapsWith)
-    ? [...new Set(o.overlapsWith.filter((x): x is string => typeof x === 'string')
-      .map((x) => known.get(x.trim().toLowerCase())).filter((x): x is string => !!x))]
-    : [];
-  const distinct = o.distinct && overlapsWith.length === 0;
+  const named = Array.isArray(o.overlapsWith) ? o.overlapsWith : typeof o.overlapsWith === 'string' ? [o.overlapsWith] : [];
+  const overlapsWith = [...new Set(named.filter((x): x is string => typeof x === 'string')
+    .map((x) => known.get(x.trim().toLowerCase())).filter((x): x is string => !!x))];
+  const distinct = (said === true || said === 'true') && overlapsWith.length === 0;
   return {
-    distinct,
-    overlapsWith: distinct ? [] : overlapsWith,
-    why: typeof o.why === 'string' ? o.why.trim().slice(0, 400) : '',
-    suggestion: typeof o.suggestion === 'string' && o.suggestion.trim() ? o.suggestion.trim().slice(0, 300) : undefined,
-    source: 'ai'
+    verdict: {
+      distinct,
+      overlapsWith: distinct ? [] : overlapsWith,
+      why: typeof o.why === 'string' ? o.why.trim().slice(0, 400) : '',
+      suggestion: typeof o.suggestion === 'string' && o.suggestion.trim() ? o.suggestion.trim().slice(0, 300) : undefined,
+      source: 'ai'
+    }
   };
+}
+
+/** The verdict, or null when the answer holds none (readDistinctAnswer). */
+export function parseDistinctAnswer(text: string, teamNames: string[]): DistinctVerdict | null {
+  const r = readDistinctAnswer(text, teamNames);
+  return 'verdict' in r ? r.verdict : null;
 }

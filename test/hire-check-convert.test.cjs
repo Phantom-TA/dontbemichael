@@ -96,7 +96,7 @@ test('checkDistinct: a junk answer falls back to the rules and is logged', async
   const logs = [];
   const v = await K.checkDistinct(erinCopy, [pam, ryan], deps(logs));
   assert.deepEqual(v, { distinct: false, overlapsWith: ['Pam'], why: '', source: 'rules' });
-  assert.deepEqual(logs, [{ kind: 'hire-check-fallback', reason: 'no verdict' }]);
+  assert.deepEqual(logs, [{ kind: 'hire-check-fallback', reason: 'no verdict: json' }], 'the log names the check that failed (issue 677)');
 });
 
 test('checkDistinct: a failed call (signed out) falls back to the rules with its error', async () => {

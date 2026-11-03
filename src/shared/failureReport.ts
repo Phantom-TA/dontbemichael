@@ -66,6 +66,9 @@ export const HIDDEN_ERRORS: Readonly<Record<string, string | null>> = {
   'unreadable: home': 'answer-unasked-home',
   'empty': 'answer-unparseable',
   'no verdict': 'answer-unparseable',
+  // The hire check's answer, by the check it failed (issue 677).
+  'no verdict: json': 'answer-not-json',
+  'no verdict: verdict': 'answer-no-verdict',
   'engine unavailable': null,
   'cancelled': null,
   'hidden session timed out': null,
