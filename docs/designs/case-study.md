@@ -108,6 +108,7 @@ D2 was the review mode question (Selective expansion), an admin choice, so it ha
 | D25 (owner) | Naming the product. Owner: "instead of saying an AI Team. It should stuff Dont Be Michael as the product name as well. we should not be shy of putting our product name in the case study" | The draft is told what Don't Be Michael is and must call the team its Don't Be Michael team; a drafted subtitle or closing that doesn't name it is refused and redrafted, then built in wording that names it is used. Built in headlines read "The Don't Be Michael team at ..." (and drop the day count, which tripped the number check). The label above the headline reads "Don't Be Michael case study". Long headlines set smaller so the fullest page still fits | an unnamed "AI team" (replaced) | approved | Owner message, 2026-11-03 |
 | D26 (owner) | How long a team line may be. Owner: "why team member work descriptions are cut off? it is ok to go in multiple lines as long as it is punchy and tells how they are driving the business" | A member's line may take two lines (about 105 characters in English, 95 Arabic, 50 Chinese); the draft asks for one punchy sentence on what they handle and what it gets the owner or the customers. To keep the fullest page on one page, About, your words and why are shorter (160, 100, 100 in English) and the spacing is a little tighter | one line cut with an ellipsis (replaced) | approved | Owner message, 2026-11-03 |
 | D27 (owner) | One page as a hard rule. Owner: "the one page requirement was not a hard requirement. i can see all team is not there and it shows 4 more. it should all" | Every active member is on the page (no "and N more"; a bound of 60 only protects the draft prompt). The page is at least one sheet and grows when it needs to: the PDF prints across pages, the first full bleed and later ones with a 0.45 inch margin, and no member, section or the quote splits across a break. Save and Send are never blocked for length; the preview shows the full length with page marks. The caps trimmed for fit go back to roomier ones | one page, hard, with a fit block (replaced) | approved | Owner message, 2026-11-03 |
+| D28 (owner) | The page reads like a report or a PDF. Owner: "the idea is a marketing landing page which a visitor feel like reading and sold into the idea. see the business impact and how someone in their industry has set it up" | The case study becomes a scrolling landing page: C's setup blueprint (owner, Michael and every member as an org chart, each with role, schedule, tools and result) told inside A's story flow (outcome headline with the product named, snapshot card, numbers band, Before, the team they built, full width quote, the result with the away chart, a closing "start with this team" call to action). Every number stays measured | B impact first; A or C alone; the one sheet report (replaced) | approved | /design-shotgun, 2026-11-03 |
 
 Approval readiness: PASS. Checked D1, D3, D4, D5, D6, D7, D8, D9, D10, each against its recorded
 answer above (2026-11-03). Reviewer mechanics inside approved rows are labelled as such.
@@ -1111,6 +1112,7 @@ Pulse's tile figures and labels, the Struck M mark in `branding/`.
 | Screen/Section | Mockup Path | Direction | Notes |
 |----------------|-------------|-----------|-------|
 | Pulse entry and the case study dialog | /Users/moblizeit/.gstack/projects/agentvivekkumar-dontbemichael/designs/case-study-20261103/case-study-mockup.html | outcome first page in the logo's color, controls column on the right | screenshot mockup-shot.png in the same folder; fits Letter with 5 rows; the 8 row case sets the caps |
+| Case study as a landing page (D28) | /Users/moblizeit/.gstack/projects/agentvivekkumar-dontbemichael/designs/case-study-landing-20261103/board.html | C blueprint inside A story | variants A, B, C with desktop and phone shots in the same folder; sample office is made up |
 
 ## Implementation Tasks (design)
 
@@ -1261,6 +1263,21 @@ is now set in the headline's Sora at 700, no box, in `highlight`, a light tint o
 from `heroPalette`, checked to 3:1 on the hero. Drawn in four hero colors at
 /Users/moblizeit/.gstack/projects/agentvivekkumar-dontbemichael/designs/case-study-headline-20261103/headline-final.png.
 Pass 4 (slop) and Pass 5 (system) stay 8 and 9: one font in the headline, no decorative chip.
+
+## Landing page direction (2026-11-03)
+
+D28. /design-shotgun drew three landing pages for one made up office: A The Story (editorial),
+B Impact First (giant number hero) and C The Blueprint (org chart of how the office is set up).
+The owner picked C's blueprint inside A's story. Board:
+/Users/moblizeit/.gstack/projects/agentvivekkumar-dontbemichael/designs/case-study-landing-20261103/board.html.
+
+Open before building (behavior, owner):
+- What we receive: the page as a web page (HTML) to publish on dontbemichael.com, with the PDF
+  kept as a copy, or the PDF only.
+- New facts the blueprint needs: each member's schedules and connected tools (from Schedules and
+  connectors), and a drafted "Before" paragraph in place of "The business".
+- "A typical day" in variant C needs timed events; it ships only if the times come from measured
+  events, otherwise it is left out.
 
 ## GSTACK REVIEW REPORT
 
