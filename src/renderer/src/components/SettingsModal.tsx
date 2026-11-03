@@ -22,7 +22,7 @@ import {
 import { SkillsTab } from './SkillsTab';
 import { clearLocalState, restoreLocalState, snapshotLocalState } from '@/store/localState';
 import { plainReasonKey } from '@/store/plainReason';
-import { ALLOW_TEMP_WORKERS, SHOW_ORG_TRIGGER, COLLECT_USAGE_STATS, SHOW_VOICE, SHOW_SLACK, SHOW_MAILBOXES, SHOW_MCP_DEFAULTS, SHOW_SIMPLE_MODE_SWITCH, SHOW_ARABIC_TERMINAL_SWITCH, SHOW_LANGUAGE_PICKER } from '@shared/buildFeatures';
+import { ALLOW_TEMP_WORKERS, SHOW_ORG_TRIGGER, COLLECT_USAGE_STATS, SHOW_VOICE, SHOW_SLACK, SHOW_MAILBOXES, SHOW_MCP_DEFAULTS, SHOW_SIMPLE_MODE_SWITCH, SHOW_SKILLS, SHOW_ARABIC_TERMINAL_SWITCH, SHOW_LANGUAGE_PICKER } from '@shared/buildFeatures';
 import { WebhookSchemaEditor } from './triggers/WebhookSchemaEditor';
 import { InfoTip } from './InfoTip';
 import { KnowledgeDocList } from './KnowledgeDocList';
@@ -184,8 +184,8 @@ const group: CSSProperties = { ...panelStyle, gap: 10 };
 // the model agents run on, how much they do alone and the limits that stop them.
 export type Section = 'General' | 'Company profile' | 'Prerequisites' | 'Agents' | 'Skills' | 'Connections' | 'Research & privacy' | 'Voice' | 'Memory & Knowledge';
 const NAV_SECTIONS: Section[] = ['General', 'Company profile', 'Prerequisites', 'Agents', 'Skills', 'Connections', 'Research & privacy', 'Voice', 'Memory & Knowledge'];
-/** The tabs shown: the Voice tab is hidden while voice is off (SHOW_VOICE). */
-const VISIBLE_SECTIONS: Section[] = NAV_SECTIONS.filter((s) => s !== 'Voice' || SHOW_VOICE);
+/** The tabs shown: Voice and Skills are hidden in this build (SHOW_VOICE, SHOW_SKILLS). */
+const VISIBLE_SECTIONS: Section[] = NAV_SECTIONS.filter((s) => (s !== 'Voice' || SHOW_VOICE) && (s !== 'Skills' || SHOW_SKILLS));
 /** i18n key for each nav section's label — the Section values themselves stay
  *  as stable identifiers (tab state, deep links). */
 const NAV_SECTION_KEYS: Record<Section, string> = {
@@ -1403,7 +1403,7 @@ export function SettingsModal({ config, onClose, initialSection, place }: Settin
                       session on this Mac reads, and the bundled skills are
                       copied into every agent at spawn. No agent is passed, so
                       the installed list scans every team folder. */}
-                  {activeSection === 'Skills' && (
+                  {SHOW_SKILLS && activeSection === 'Skills' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minHeight: 0 }}>
                       <div style={group}>
                         <h3 style={groupName}>{t('settings.skills.title')}</h3>

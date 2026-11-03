@@ -47,11 +47,11 @@ test('the docked panel opens on Profile; only focus mode opens on the terminal',
  * install lands in ~/.claude/skills, which every Claude Code session on the Mac
  * reads, and bundled skills are copied into every agent at spawn.
  */
-test('Michael\'s panel has no Skills tab; Settings has a Skills section', () => {
+test('Michael\'s panel has no Skills tab; the Settings section is hidden, not gone', () => {
   assert.doesNotMatch(src, /'skills'|SkillsTab/);
   const settings = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/components/SettingsModal.tsx'), 'utf8');
   assert.match(settings, /const NAV_SECTIONS: Section\[\] = \[[^\]]*'Skills'/);
-  assert.match(settings, /activeSection === 'Skills'[\s\S]{0,900}<SkillsTab \/>/, 'no agent passed: the list covers every team folder');
+  assert.match(settings, /SHOW_SKILLS && activeSection === 'Skills'[\s\S]{0,900}<SkillsTab \/>/, 'no agent passed: the list covers every team folder');
 });
 
 test('the Settings copy is true: skills install where every agent reads them', () => {
