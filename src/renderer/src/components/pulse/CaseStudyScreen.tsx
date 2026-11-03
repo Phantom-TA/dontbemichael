@@ -308,7 +308,7 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
                   <span style={{ fontSize: 13, lineHeight: '18px', fontWeight: 600 }}>{t('caseStudy.team')}</span>
                   {facts.members.slice(0, TEAM_ROWS).map((m) => (
                     <Field key={m.id} label={<span style={{ fontWeight: 500 }}>{m.name}</span>}>
-                      <input className="cth-input" aria-label={m.name} value={current.team[m.id] ?? ''} maxLength={caps.teamLine} style={{ height: 32 }}
+                      <textarea className="cth-input" aria-label={m.name} value={current.team[m.id] ?? ''} maxLength={caps.teamLine} rows={2} style={{ ...area, minHeight: 48 }}
                         onChange={(e) => { const v = e.target.value; change((x) => ({ ...x, team: { ...x.team, [m.id]: v } })); }} />
                     </Field>
                   ))}

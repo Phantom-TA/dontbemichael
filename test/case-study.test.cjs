@@ -147,6 +147,8 @@ test('eight team rows, then "and N more"; text is escaped; zero figures are left
   const html = page(f, edits(f, { about: '<script>alert(1)</script>' }));
   assert.equal((html.match(/class="t-row"/g) || []).length, 8);
   assert.match(html, /and 3 more/);
+  assert.match(html, /\.t-row>\.t-work\{white-space:normal;[^}]*-webkit-line-clamp:2/, 'a member\'s work may take two lines, never cut to one (D26)');
+  assert.match(html, /<span class="t-work">/);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /M&lt;0&gt;/);
   assert.doesNotMatch(html, /tasks finished/);

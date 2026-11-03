@@ -143,9 +143,9 @@ export const TEAM_ROWS = 8;
 /** Length caps per language (eng pass): Chinese and Arabic set wider per
  *  character, so the worst case (8 rows, every part full) still fits a page. */
 export const CAPS: Record<CaseLang, { subtitle: number; about: number; quote: number; teamLine: number; why: number; headlineWords: number }> = {
-  en: { subtitle: 100, about: 190, quote: 120, teamLine: 50, why: 160, headlineWords: 80 },
-  ar: { subtitle: 90, about: 170, quote: 108, teamLine: 45, why: 145, headlineWords: 72 },
-  'zh-CN': { subtitle: 50, about: 90, quote: 60, teamLine: 25, why: 80, headlineWords: 40 }
+  en: { subtitle: 100, about: 160, quote: 100, teamLine: 105, why: 100, headlineWords: 80 },
+  ar: { subtitle: 90, about: 145, quote: 90, teamLine: 95, why: 90, headlineWords: 72 },
+  'zh-CN': { subtitle: 50, about: 75, quote: 50, teamLine: 50, why: 50, headlineWords: 40 }
 };
 
 // ---------------------------------------------------------------- numbers (D4)
@@ -334,7 +334,7 @@ const WORDS: Record<CaseLang, Words> = {
       check: (w) => ({ before: `The ${APP_NAME} team at ${w} ran`, after: 'scheduled checks' })
     },
     subtitle: (w) => `${w} runs its office with ${APP_NAME}.`,
-    whyText: `With ${APP_NAME}, a small business gets an office team that keeps the inbox, the books and the routine work moving, so the owner can run the business.`,
+    whyText: `With ${APP_NAME}, a small business gets an office team that keeps the work moving.`,
     stripLabel: (a, b, f, t) => `Hours the office worked each day, ${f} to ${t}; ${a} of ${b} hours while the owner was away`,
     locked: "from Pulse, can't be edited"
   },
@@ -356,7 +356,7 @@ const WORDS: Record<CaseLang, Words> = {
       check: (w) => ({ before: `أجرى فريق ${APP_NAME} لدى ${w}`, after: 'فحصًا مجدولًا' })
     },
     subtitle: (w) => `${w} يدير مكتبه مع ${APP_NAME}.`,
-    whyText: `مع ${APP_NAME} يحصل النشاط التجاري الصغير على فريق مكتب يتابع البريد والحسابات والأعمال اليومية، فيتفرغ المالك لإدارة عمله.`,
+    whyText: `مع ${APP_NAME} يحصل النشاط الصغير على فريق مكتب يُبقي العمل يسير.`,
     stripLabel: (a, b, f, t) => `ساعات عمل المكتب كل يوم من ${f} إلى ${t}؛ ${a} من ${b} ساعة أثناء غياب المالك`,
     locked: 'من Pulse، لا يمكن تعديله'
   },
@@ -378,7 +378,7 @@ const WORDS: Record<CaseLang, Words> = {
       check: (w) => ({ before: `${w}的 ${APP_NAME} 团队运行了`, after: '次定时检查' })
     },
     subtitle: (w) => `${w}用 ${APP_NAME} 打理办公室。`,
-    whyText: `有了 ${APP_NAME}，小企业就有了一支办公室团队，打理邮件、账目和日常事务，老板可以专心经营。`,
+    whyText: `有了 ${APP_NAME}，小企业就有了让工作顺畅运转的办公室团队。`,
     stripLabel: (a, b, f, t) => `${f} 至 ${t} 每天的办公室工作时长；${b} 小时中有 ${a} 小时在老板不在时`,
     locked: '来自 Pulse，不可编辑'
   }
@@ -481,7 +481,7 @@ export function draftPrompt(facts: CaseStudyFacts): string {
     ` "about": "what the business does and what office work it had, at most ${c.about} characters",`,
     ` "why": "why a small business like this should have an AI office team, at most ${c.why} characters",`,
     ` "headlines": {${figs.map((k) => `"${k}": "headline words with {n} where the measured ${k === 'away' ? 'hours while the owner was away' : `count of ${k === 'email' ? 'emails organized' : k === 'task' ? 'tasks finished' : k === 'sent' ? 'emails sent' : 'scheduled checks'}`} goes"`).join(', ')}},`,
-    ` "team": {"<id>": "what that member does for this business, at most ${c.teamLine} characters"}}`,
+    ` "team": {"<id>": "one punchy sentence on how that member drives this business: what they handle and what it gets the owner or the customers, at most ${c.teamLine} characters"}}`,
     'Each headline holds {n} exactly once and names the business as it appears in the facts (or its type and city when no name is given).'
   ].join('\n');
 }
@@ -669,7 +669,7 @@ export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: Pag
   const band = bandFigures(f).map((k) => `<div class="stat"><div class="n">${fmtCount(figureValue(f, k))}</div><div class="l">${esc(w.band[k])}</div></div>`);
   band.push(`<div class="stat"><div class="n">${fmtUsd(f.spendUsd)}</div><div class="l">${esc(w.spend(facts.range.days))}</div></div>`);
 
-  const rows = facts.members.slice(0, TEAM_ROWS).map((m) => `<div class="t-row"><span><b>${esc(m.name)}</b><span class="t-role">${esc(m.role)}</span></span><span>${esc(edits.team[m.id] ?? '')}</span><span class="t-n">${m.figure ? `${fmtCount(m.figure.count)} ${esc(w.member[m.figure.kind])}` : ''}</span></div>`);
+  const rows = facts.members.slice(0, TEAM_ROWS).map((m) => `<div class="t-row"><span><b>${esc(m.name)}</b><span class="t-role">${esc(m.role)}</span></span><span class="t-work">${esc(edits.team[m.id] ?? '')}</span><span class="t-n">${m.figure ? `${fmtCount(m.figure.count)} ${esc(w.member[m.figure.kind])}` : ''}</span></div>`);
   const more = facts.members.length - TEAM_ROWS;
   if (more > 0) rows.push(`<div class="t-more">${esc(w.more(more))}</div>`);
 
@@ -700,26 +700,26 @@ html,body{background:#fff}
 body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic",system-ui,sans-serif;color:#1E1B2E;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .mono,.t-n,.big b,.strip-x{font-family:"IBM Plex Mono",ui-monospace,monospace;letter-spacing:0}
 .page{width:${paper.w}px;height:${paper.h}px;zoom:${PAGE_ZOOM};overflow:hidden;display:flex;flex-direction:column;background:#fff}
-.hero{background:var(--hero);color:#fff;padding:26px 40px 22px}
+.hero{background:var(--hero);color:#fff;padding:24px 40px 18px}
 .hero-top{display:flex;align-items:center;gap:12px}
 .logo{width:46px;height:46px;border-radius:11px;background:#fff;display:grid;place-items:center;font-weight:700;font-size:16px;color:var(--hero);flex:none;overflow:hidden}
 .logo img{max-width:40px;max-height:40px;object-fit:contain}
 .biz{font-weight:600;font-size:14px;line-height:18px}
 .biz-meta{font-size:10.5px;line-height:14px;color:rgba(255,255,255,.82)}
-.eyebrow{margin-top:18px;font-weight:600;font-size:9px;line-height:12px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.78)}
+.eyebrow{margin-top:14px;font-weight:600;font-size:9px;line-height:12px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.78)}
 .headline{margin-top:5px;font-weight:600;font-size:26px;line-height:32px;letter-spacing:-.03em;max-width:580px}
 .headline.long{font-size:22px;line-height:28px}
 .headline.longer{font-size:19px;line-height:24px}
 /* The headline's number: its own font, no box, a light tint of the hero (D23). */
 .lock{font-weight:700;color:var(--hl);white-space:nowrap}
 .sub{margin-top:8px;font-size:11.5px;line-height:17px;color:rgba(255,255,255,.9);max-width:560px;min-height:17px}
-.band{background:var(--tint);display:grid;grid-template-columns:repeat(${band.length},1fr);padding:14px 40px 10px;border-bottom:1px solid var(--hline)}
+.band{background:var(--tint);display:grid;grid-template-columns:repeat(${band.length},1fr);padding:12px 40px 8px;border-bottom:1px solid var(--hline)}
 /* The band's numbers in the page's Sora: a mono comma left a gap ("4, 874"). */
 .stat .n{font-weight:600;font-size:26px;line-height:30px;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .stat .l{font-size:10px;line-height:13px;color:#4A4660;margin-top:2px}
 .stat+.stat{padding-inline-start:14px;border-inline-start:1px solid var(--hline)}
-.band-src{grid-column:1/-1;margin-top:8px;font-size:9px;line-height:12px;color:#5E5A76}
-.body{padding:14px 40px 10px;display:flex;flex-direction:column;gap:10px;flex:1;min-height:0}
+.band-src{grid-column:1/-1;margin-top:6px;font-size:9px;line-height:12px;color:#5E5A76}
+.body{padding:12px 40px 8px;display:flex;flex-direction:column;gap:8px;flex:1;min-height:0}
 .h{font-weight:600;font-size:9px;line-height:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--hero);margin-bottom:5px}
 .cols{display:grid;grid-template-columns:1.25fr 1fr;gap:26px;align-items:start}
 .cols.solo{grid-template-columns:1fr}
@@ -728,8 +728,10 @@ body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic
 .quote::before{content:"\\201C";position:absolute;inset-inline-start:-4px;top:-14px;font-weight:600;font-size:48px;line-height:1;color:var(--aw)}
 .quote blockquote{font-weight:500;font-size:13px;line-height:19px;letter-spacing:-.015em;min-height:19px}
 .quote figcaption{margin-top:6px;font-size:10px;line-height:14px;color:#5E5A76}
-.t-row{display:grid;grid-template-columns:128px 1fr 74px;gap:8px;align-items:baseline;padding:3px 0;border-bottom:1px solid #F0EFF5;font-size:10.5px;line-height:14.5px}
+.t-row{display:grid;grid-template-columns:128px 1fr 74px;gap:8px;align-items:baseline;padding:2px 0;border-bottom:1px solid #F0EFF5;font-size:10.5px;line-height:13.5px}
+/* Name and role on one line; the member's work may take two (owner, D26). */
 .t-row>span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-row>.t-work{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;text-overflow:clip}
 .t-row:last-child{border-bottom:none}
 .t-row b{font-weight:600}
 .t-role{color:#5E5A76;font-size:9.5px;margin-inline-start:5px}
@@ -739,7 +741,7 @@ body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic
 .away-head .h{margin:0}
 .big{font-size:11px;line-height:15px}
 .big b{font-weight:500;font-size:13px}
-.strip{display:flex;align-items:flex-end;gap:3px;height:28px;margin-top:6px;border-bottom:1px solid #DAD7EA}
+.strip{display:flex;align-items:flex-end;gap:3px;height:22px;margin-top:6px;border-bottom:1px solid #DAD7EA}
 .bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;border-radius:2px 2px 0 0;overflow:hidden;min-height:1px}
 .bar .run{background:#E4E1EC}
 .bar .aw{background:var(--aw)}
