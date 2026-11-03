@@ -26,11 +26,13 @@ app.whenReady().then(async () => {
         over: b ? b.scrollHeight - b.clientHeight : null,
         parts: Object.fromEntries(['.hero', '.band', '.cols', '.team', '.awaybox', '.why', '.foot'].map((q) => [q, document.querySelector(q)?.offsetHeight ?? 0])),
         dir: document.documentElement.dir,
+        rows: document.querySelectorAll('.t-row').length,
+        more: !!document.querySelector('.t-more'),
         firstBarRight: bars.length > 1 ? bars[0].getBoundingClientRect().left > bars[bars.length - 1].getBoundingClientRect().left : null,
         headline: kids
       };
     })()`, true);
-    const paper = name.includes('-a4') ? 'A4' : 'Letter';
+    const paper = name.includes('-a4-') ? 'A4' : 'Letter';
     const pdf = await win.webContents.printToPDF({ pageSize: paper, printBackground: true, margins: { marginType: 'none' }, preferCSSPageSize: true });
     const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) || []).length;
     out[name] = { ...layout, pages };

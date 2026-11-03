@@ -123,8 +123,8 @@ test('a timeout or an interrupted send may have gone out; a refusal shows the ma
   assert.deepEqual(await fail(new MailError('timeout', 'This email may already have gone out ... tell Michael', true)), { ok: false, kind: 'maybe-sent' });
   assert.deepEqual(await fail(new MailError('refused', 'This email may already have gone out ... tell Michael', false, true)), { ok: false, kind: 'maybe-sent' });
   assert.deepEqual(await fail(new MailError('auth', 'Not sent. The password was not accepted.')), { ok: false, kind: 'failed', reason: 'The password was not accepted.' });
-  const over = deps({ makePdf: async () => ({ ok: false, reason: 'overflow' }) });
-  assert.deepEqual(await over.svc.send(input, edits, 'ceo', true), { ok: false, kind: 'overflow' });
+  const broken = deps({ makePdf: async () => ({ ok: false, reason: 'failed' }) });
+  assert.deepEqual(await broken.svc.send(input, edits, 'ceo', true), { ok: false, kind: 'failed', reason: '' });
 });
 
 test('the mail app link carries our address, the subject and the permission line', () => {

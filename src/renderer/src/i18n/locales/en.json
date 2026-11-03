@@ -3373,7 +3373,6 @@
     "sendFrom": "Send from",
     "noMailbox": "No mailbox can send yet. Save the PDF, then attach it in your mail app to {{to}}.",
     "permission": "{{app}} may publish this on its website, and will take it down if I ask",
-    "overflow": "The page runs past one page. Shorten a part to save or send.",
     "headlineNumber": "Take the number out of the headline's words. The headline's number comes from Pulse.",
     "send": "Send to {{app}}",
     "sending": "Sending",
@@ -3402,6 +3401,7 @@
     "quote": "Your words",
     "quoteNote": "Optional. Signed with your name from the company profile.",
     "team": "What each team member does",
-    "why": "Why a small business should do this"
+    "why": "Why a small business should do this",
+    "pageN": "Page {{n}}"
   }
 }

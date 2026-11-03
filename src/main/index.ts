@@ -7523,16 +7523,15 @@ function caseLogoPaths(): { png: string; meta: string } | null {
   const dir = privateRoot(expandTilde(home));
   return { png: join(dir, 'case-study-logo.png'), meta: join(dir, 'case-study-logo.json') };
 }
-/** The page in a hidden window, printed to one page; refused when it runs over. */
-async function caseStudyPdf(html: string, paper: 'letter' | 'a4'): Promise<{ ok: true; pdf: Buffer } | { ok: false; reason: 'overflow' | 'failed' }> {
+/** The page in a hidden window, printed to PDF across as many pages as it needs. */
+async function caseStudyPdf(html: string, paper: 'letter' | 'a4'): Promise<{ ok: true; pdf: Buffer } | { ok: false; reason: 'failed' }> {
   const win = new BrowserWindow({ show: false, width: 900, height: 1200, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, offscreen: false } });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   try {
     await win.loadURL(`data:text/html;base64,${Buffer.from(html, 'utf8').toString('base64')}`);
     await win.webContents.executeJavaScript('document.fonts ? document.fonts.ready.then(() => true) : true', true);
-    const over = await win.webContents.executeJavaScript("(() => { const b = document.querySelector('.body'); return !!b && b.scrollHeight > b.clientHeight + 1; })()", true);
-    if (over) return { ok: false, reason: 'overflow' };
+    // The page may run past one (D27): it prints across as many pages as it needs.
     const pdf = await win.webContents.printToPDF({ pageSize: paper === 'letter' ? 'Letter' : 'A4', printBackground: true, margins: { marginType: 'none' }, preferCSSPageSize: true });
     return { ok: true, pdf };
   } catch (e) {

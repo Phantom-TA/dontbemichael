@@ -50,8 +50,8 @@ export interface CaseStudyDeps {
   fetchLogo: (site: string | undefined) => Promise<LogoResult>;
   decodeLogo: (bytes: Buffer) => { png: Buffer; colour: string | null } | null;
   readFile: (path: string, maxBytes: number) => Buffer | null;
-  /** Renders the page in a hidden window: null when it ran past one page. */
-  makePdf: (html: string, paper: Paper) => Promise<{ ok: true; pdf: Buffer } | { ok: false; reason: 'overflow' | 'failed' }>;
+  /** Renders the page in a hidden window, across as many pages as it needs. */
+  makePdf: (html: string, paper: Paper) => Promise<{ ok: true; pdf: Buffer } | { ok: false; reason: 'failed' }>;
   mailSend: (mailbox: string, input: { to: string; subject: string; body: string; files: Array<{ filename: string; content: Buffer; contentType: string }> }) => Promise<{ sent: boolean }>;
   senders: () => Array<{ id: string; address: string; canSend: boolean; reason?: string }>;
   log: (entry: Record<string, unknown>) => void;
@@ -241,7 +241,7 @@ export class CaseStudyService {
   }
 
   /** The page as a PDF from the owner's edits, checked the way Send checks them. */
-  async pdf(input: CaseInput, rawEdits: unknown): Promise<{ ok: true; pdf: Buffer; facts: CaseStudyFacts } | { ok: false; kind: 'overflow' | 'headline-number' | 'no-work' | 'failed' }> {
+  async pdf(input: CaseInput, rawEdits: unknown): Promise<{ ok: true; pdf: Buffer; facts: CaseStudyFacts } | { ok: false; kind: 'headline-number' | 'no-work' | 'failed' }> {
     const facts = this.facts(input);
     if (!facts || !hasWork(facts.figures)) return { ok: false, kind: 'no-work' };
     const { edits: typed, headlineNumber } = cleanEdits(facts, rawEdits);

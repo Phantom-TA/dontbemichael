@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  builtInHeadline, CAPS, caseLangOf, figureValue, fmtCount, headlineChoices, namesBusiness, pageHtml, startingEdits, TEAM_ROWS,
+  builtInHeadline, CAPS, caseLangOf, CONTINUED_MARGIN_IN, figureValue, fmtCount, headlineChoices, namesBusiness, pageHtml, startingEdits, TEAM_ROWS,
   type CaseDraft, type CaseInput, type CaseOpen, type CasePrep, type CasePeriod, type CaseStudyEdits, type HeadlineFigure, type HeroPalette
 } from '@shared/caseStudy';
 import { Dialog } from '@/shell/Dialog';
@@ -26,6 +26,15 @@ import { APP_NAME } from '@shared/appName';
 const PERIODS: CasePeriod[] = ['last-30', 'this-month'];
 /** The page at 96 px per inch. */
 const PAGE_PX = { letter: { w: 816, h: 1056 }, a4: { w: 794, h: 1123 } } as const;
+
+/** Where the PDF's pages break in a page of `total` px: the first page is a
+ *  full sheet, each later one a sheet less its two margins. */
+function pageBreaks(sheet: number, total: number): number[] {
+  const out: number[] = [];
+  const later = sheet - 2 * CONTINUED_MARGIN_IN * 96;
+  for (let y = sheet; y < total - 4; y += later) out.push(Math.round(y));
+  return out;
+}
 
 type Draft = { state: 'drafting' } | { state: 'ready'; draft: CaseDraft } | { state: 'failed' };
 type Send = { state: 'idle' } | { state: 'sending' } | { state: 'sent' } | { state: 'maybe' } | { state: 'error'; text: string };
@@ -47,7 +56,8 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   const [mailbox, setMailbox] = useState<string | null>(null);
   const [permission, setPermission] = useState(false);
   const [send, setSend] = useState<Send>({ state: 'idle' });
-  const [overflow, setOverflow] = useState(false);
+  // The page's full height: it may run past one page (D27).
+  const [pageH, setPageH] = useState(0);
   const [askRedraft, setAskRedraft] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string>('');
@@ -136,8 +146,8 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
 
   const measure = useCallback(() => {
     const doc = frame.current?.contentDocument;
-    const body = doc?.querySelector('.body') as HTMLElement | null;
-    setOverflow(!!body && body.scrollHeight > body.clientHeight + 1);
+    const page = doc?.querySelector('.page') as HTMLElement | null;
+    setPageH(page ? Math.ceil(page.getBoundingClientRect().height) : 0);
   }, []);
 
   const paint = useCallback((next: string) => {
@@ -184,11 +194,11 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
     setSend((st) => (st.state === 'error' ? { state: 'idle' } : st));
   };
 
-  // The page scaled to the room the well has.
+  // The page scaled to the well's width; a longer page scrolls in the well.
   useEffect(() => {
     const el = well.current;
     if (!el) return;
-    const fit = (): void => { const r = el.getBoundingClientRect(); setScale(Math.max(0.3, Math.min(1, (r.height - 48) / paper.h, (r.width - 48) / paper.w))); };
+    const fit = (): void => { const r = el.getBoundingClientRect(); setScale(Math.max(0.3, Math.min(1, (r.width - 48) / paper.w))); };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(el);
@@ -213,7 +223,7 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   const senders = open && open !== 'failed' ? open.senders : [];
   const anySender = senders.some((s) => s.canSend);
   const busy = send.state === 'sending' || saving;
-  const ready = !!facts && !!current && (open as CaseOpen).hasWork && draft.state !== 'drafting' && !overflow;
+  const ready = !!facts && !!current && (open as CaseOpen).hasWork && draft.state !== 'drafting';
 
   const doSend = async (): Promise<void> => {
     if (!mailbox || !current) return;
@@ -223,7 +233,6 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
     if (!r) { setSend({ state: 'error', text: t('caseStudy.failedNoReason') }); return; }
     if (r.ok) { setSend({ state: 'sent' }); return; }
     if (r.kind === 'maybe-sent') setSend({ state: 'maybe' });
-    else if (r.kind === 'overflow') { setOverflow(true); setSend({ state: 'idle' }); }
     else if (r.kind === 'headline-number') setSend({ state: 'error', text: t('caseStudy.headlineNumber') });
     else if (r.kind === 'failed' && r.reason) setSend({ state: 'error', text: t('caseStudy.failed', { reason: r.reason }) });
     else setSend({ state: 'error', text: t('caseStudy.failedNoReason') });
@@ -237,7 +246,6 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
     setSaving(false);
     if (r?.ok) setSaved(t('caseStudy.saved'));
     else if (r?.kind === 'headline-number') setSaved(t('caseStudy.headlineNumber'));
-    else if (r?.kind === 'overflow') setOverflow(true);
     else if (r?.kind !== 'cancelled') setSaved(t('caseStudy.pdfFailed'));
   };
 
@@ -252,7 +260,7 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title={t('caseStudy.title')} onClose={onClose} busy={busy} fill width={1120} label={t('caseStudy.title')}
       actions={<InfoTip text={t('caseStudy.info')} />} bodyStyle={{ padding: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 330px', minHeight: 0, flex: 1 }}>
-      <div ref={well} style={{ background: 'var(--cth-floor)', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 24 }}>
+      <div ref={well} style={{ background: 'var(--cth-floor)', position: 'relative', overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 0' }}>
         {open === null && <div style={{ ...hint, marginTop: 40 }}>{t('caseStudy.loading')}</div>}
         {open === 'failed' && <div style={{ ...hint, marginTop: 40 }}>{t('caseStudy.loadFailed')}</div>}
         {empty && (
@@ -262,9 +270,15 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
           </div>
         )}
         {!empty && srcDoc && (
-          <div style={{ width: paper.w * scale, height: paper.h * scale, flex: 'none', boxShadow: '0 2px 10px rgba(30,27,46,.16)', background: '#fff' }}>
+          <div style={{ width: paper.w * scale, height: Math.max(paper.h, pageH) * scale, flex: 'none', position: 'relative', boxShadow: '0 2px 10px rgba(30,27,46,.16)', background: '#fff' }}>
             <iframe ref={frame} title={t('caseStudy.pageLabel')} srcDoc={srcDoc} sandbox="allow-same-origin" onLoad={onFrameLoad} tabIndex={-1}
-              style={{ width: paper.w, height: paper.h, border: 0, transform: `scale(${scale})`, transformOrigin: '0 0', display: 'block' }} />
+              style={{ width: paper.w, height: Math.max(paper.h, pageH), border: 0, transform: `scale(${scale})`, transformOrigin: '0 0', display: 'block' }} />
+            {/* Where the PDF's pages break: the first page is full bleed, later ones keep a margin. */}
+            {pageBreaks(paper.h, pageH).map((y, i) => (
+              <div key={y} aria-hidden style={{ position: 'absolute', insetInline: 0, top: y * scale, borderTop: '1px dashed var(--cth-ink-4)' }}>
+                <span style={{ position: 'absolute', insetInlineEnd: 6, top: 2, fontSize: 10, color: 'var(--cth-ink-3)', background: 'var(--cth-card)', padding: '0 4px', borderRadius: 4 }}>{t('caseStudy.pageN', { n: i + 2 })}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -380,7 +394,6 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
           </label>
         </Panel>
 
-        {overflow && <div role="alert" style={{ ...status, color: 'var(--cth-amber-text)' }}>{t('caseStudy.overflow')}</div>}
 
         <div aria-live="polite" style={status}>
           {send.state === 'sent' && <span style={{ color: 'var(--cth-green-text)' }}>{t('caseStudy.sent')}</span>}

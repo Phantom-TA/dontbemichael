@@ -141,12 +141,15 @@ test('with the name switch off the page hides the name, logo and website (D8)', 
   assert.equal(cs.namesBusiness('We are a bakery', f), false);
 });
 
-test('eight team rows, then "and N more"; text is escaped; zero figures are left out', () => {
+test('every team member is on the page (D27); text is escaped; zero figures are left out', () => {
   const many = Array.from({ length: 11 }, (_, i) => ({ id: `m${i}`, name: `M<${i}>`, role: 'Role', jobs: [], figure: null, isMichael: false }));
   const f = facts({ members: many, figures: { ...facts().figures, task: 0 } });
   const html = page(f, edits(f, { about: '<script>alert(1)</script>' }));
-  assert.equal((html.match(/class="t-row"/g) || []).length, 8);
-  assert.match(html, /and 3 more/);
+  assert.equal((html.match(/class="t-row"/g) || []).length, 11);
+  assert.doesNotMatch(html, /class="t-more"/);
+  assert.match(html, /\.page\{[^}]*min-height:[^}]*\}/, 'at least a page, longer when needed');
+  assert.doesNotMatch(html, /\.page\{[^}]*overflow:hidden/, 'nothing is cut off at the page end');
+  assert.match(html, /\.t-row,[^{]*\{break-inside:avoid\}/, 'a member never splits across pages');
   assert.match(html, /\.t-row>\.t-work\{white-space:normal;[^}]*-webkit-line-clamp:2/, 'a member\'s work may take two lines, never cut to one (D26)');
   assert.match(html, /<span class="t-work">/);
   assert.doesNotMatch(html, /<script>/);

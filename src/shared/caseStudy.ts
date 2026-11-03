@@ -128,24 +128,29 @@ export type CaseSendOutcome =
   | { ok: true }
   | { ok: false; kind: 'failed'; reason: string }
   | { ok: false; kind: 'maybe-sent' }
-  | { ok: false; kind: 'overflow' | 'headline-number' | 'no-work' | 'no-permission' | 'no-mailbox' };
+  | { ok: false; kind: 'headline-number' | 'no-work' | 'no-permission' | 'no-mailbox' };
 /** The case study being prepared in main (owner, 2026-11-03: the owner never
  *  waits on an empty frame). `ready` carries what the screen opens with. */
 export type CasePrep =
   | { state: 'idle' }
   | { state: 'preparing'; input: CaseInput }
   | { state: 'ready'; input: CaseInput; draft: CaseDraft | null; logo: CaseLogo | null; hasWork: boolean };
-export type CaseSaveResult = { ok: true; path: string } | { ok: false; kind: 'overflow' | 'headline-number' | 'no-work' | 'failed' | 'cancelled' };
+export type CaseSaveResult = { ok: true; path: string } | { ok: false; kind: 'headline-number' | 'no-work' | 'failed' | 'cancelled' };
 
-/** Team rows on the page before "and N more" (D13). */
-export const TEAM_ROWS = 8;
+/** Every member is on the page (owner, D27: the page may run past one).
+ *  A bound only so a very large roster can't swamp the draft prompt. */
+export const TEAM_ROWS = 60;
+
+/** A continued page's top and bottom margin in the PDF (the first page is full bleed). */
+export const CONTINUED_MARGIN_IN = 0.45;
 
 /** Length caps per language (eng pass): Chinese and Arabic set wider per
- *  character, so the worst case (8 rows, every part full) still fits a page. */
+ *  character. The page may run past one (D27); the caps keep each part short
+ *  enough to read at a glance. */
 export const CAPS: Record<CaseLang, { subtitle: number; about: number; quote: number; teamLine: number; why: number; headlineWords: number }> = {
-  en: { subtitle: 100, about: 160, quote: 100, teamLine: 105, why: 100, headlineWords: 80 },
-  ar: { subtitle: 90, about: 145, quote: 90, teamLine: 95, why: 90, headlineWords: 72 },
-  'zh-CN': { subtitle: 50, about: 75, quote: 50, teamLine: 50, why: 50, headlineWords: 40 }
+  en: { subtitle: 100, about: 220, quote: 140, teamLine: 105, why: 200, headlineWords: 80 },
+  ar: { subtitle: 90, about: 200, quote: 125, teamLine: 95, why: 180, headlineWords: 72 },
+  'zh-CN': { subtitle: 50, about: 110, quote: 70, teamLine: 50, why: 100, headlineWords: 40 }
 };
 
 // ---------------------------------------------------------------- numbers (D4)
@@ -693,13 +698,16 @@ export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: Pag
 
   return `<!doctype html><html lang="${facts.lang}" dir="${rtl ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${esc(w.caseStudy)}</title><style>
 ${opts.fontCss}
-@page{size:${paper.css};margin:0}
+@page{size:${paper.css};margin:${CONTINUED_MARGIN_IN}in 0}
+@page :first{margin:0}
 :root{--hero:${pal.hero};--tint:${pal.tint};--hline:${pal.line};--aw:${pal.away};--hl:${pal.highlight}}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:#fff}
 body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic",system-ui,sans-serif;color:#1E1B2E;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .mono,.t-n,.big b,.strip-x{font-family:"IBM Plex Mono",ui-monospace,monospace;letter-spacing:0}
-.page{width:${paper.w}px;height:${paper.h}px;zoom:${PAGE_ZOOM};overflow:hidden;display:flex;flex-direction:column;background:#fff}
+/* At least one full page; longer when the team needs it, printed across pages (D27). */
+.page{width:${paper.w}px;min-height:${paper.h}px;zoom:${PAGE_ZOOM};display:flex;flex-direction:column;background:#fff}
+.t-row,.cols,.awaybox,.why,.quote,.band,.foot{break-inside:avoid}
 .hero{background:var(--hero);color:#fff;padding:24px 40px 18px}
 .hero-top{display:flex;align-items:center;gap:12px}
 .logo{width:46px;height:46px;border-radius:11px;background:#fff;display:grid;place-items:center;font-weight:700;font-size:16px;color:var(--hero);flex:none;overflow:hidden}
@@ -719,7 +727,7 @@ body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic
 .stat .l{font-size:10px;line-height:13px;color:#4A4660;margin-top:2px}
 .stat+.stat{padding-inline-start:14px;border-inline-start:1px solid var(--hline)}
 .band-src{grid-column:1/-1;margin-top:6px;font-size:9px;line-height:12px;color:#5E5A76}
-.body{padding:12px 40px 8px;display:flex;flex-direction:column;gap:8px;flex:1;min-height:0}
+.body{padding:12px 40px 8px;display:flex;flex-direction:column;gap:8px;flex:1}
 .h{font-weight:600;font-size:9px;line-height:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--hero);margin-bottom:5px}
 .cols{display:grid;grid-template-columns:1.25fr 1fr;gap:26px;align-items:start}
 .cols.solo{grid-template-columns:1fr}
