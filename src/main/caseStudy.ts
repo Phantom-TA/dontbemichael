@@ -234,7 +234,7 @@ export class CaseStudyService {
     if (!facts || !hasWork(facts.figures)) return { ok: false, kind: 'no-work' };
     const { edits, headlineNumber } = cleanEdits(facts, rawEdits);
     if (headlineNumber) return { ok: false, kind: 'headline-number' };
-    const out = await this.d.makePdf(pageHtml(facts, edits, { editable: false, fontCss: fontFaceCss(this.d.fonts()) }), facts.paper).catch(() => ({ ok: false as const, reason: 'failed' as const }));
+    const out = await this.d.makePdf(pageHtml(facts, edits, { fontCss: fontFaceCss(this.d.fonts()) }), facts.paper).catch(() => ({ ok: false as const, reason: 'failed' as const }));
     this.d.log({ kind: 'case-study-pdf', ok: out.ok });
     return out.ok ? { ok: true, pdf: out.pdf, facts } : { ok: false, kind: out.reason };
   }

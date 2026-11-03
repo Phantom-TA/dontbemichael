@@ -1,10 +1,11 @@
 /**
  * The case study screen (docs/designs/case-study.md; mockup approved in the
- * design review, D15 to D19): the page as it prints on the left, drawn from
- * the same pageHtml main prints, with its drafted parts editable in place;
- * the headline choice, period, name switch, mailbox, permission and Send on
- * the right. Main builds the page and the PDF itself: this screen sends only
- * the edited text, the toggles, the period and the chosen mailbox.
+ * design review, D15 to D19): the page as it prints on the left, read only,
+ * drawn from the same pageHtml main prints; on the right the headline (a
+ * drafted choice or the owner's own words), the words of every part, the
+ * period, name switch, mailbox, permission and Send (D22: nothing is typed on
+ * the page itself). Main builds the page and the PDF itself: this screen
+ * sends only the edited text, the toggles, the period and the chosen mailbox.
  *
  *   open ─► caseStudyOpen ─► facts ─┬─► caseStudyDraft ─► edits (drafting ─► ready | failed)
  *                                   └─► caseStudyLogo  ─► logo and colour (or Pick your logo)
@@ -13,11 +14,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  builtInHeadline, caseLangOf, figureValue, fmtCount, headlineChoices, namesBusiness, pageHtml, startingEdits,
+  builtInHeadline, CAPS, caseLangOf, figureValue, fmtCount, hasNumber, headlineChoices, namesBusiness, pageHtml, startingEdits, TEAM_ROWS,
   type CaseDraft, type CaseInput, type CaseOpen, type CasePrep, type CasePeriod, type CaseStudyEdits, type HeadlineFigure, type HeroPalette
 } from '@shared/caseStudy';
 import { Dialog } from '@/shell/Dialog';
-import { Panel, hint } from '../fieldText';
+import { Field, Panel, hint } from '../fieldText';
 import { InfoTip } from '../InfoTip';
 import { PixelButton } from '../PixelButton';
 import { Toggle } from '../triggers/ui';
@@ -30,24 +31,6 @@ const PAGE_PX = { letter: { w: 816, h: 1056 }, a4: { w: 794, h: 1123 } } as cons
 type Draft = { state: 'drafting' } | { state: 'ready'; draft: CaseDraft } | { state: 'failed' };
 type Send = { state: 'idle' } | { state: 'sending' } | { state: 'sent' } | { state: 'maybe' } | { state: 'error'; text: string };
 
-
-/** The page's editable parts, read back from the preview's document. */
-function readEdits(doc: Document, base: CaseStudyEdits): CaseStudyEdits {
-  const text = (part: string): string | null => {
-    const el = doc.querySelector(`[data-part="${CSS.escape(part)}"]`);
-    return el ? (el.textContent ?? '') : null;
-  };
-  const team: Record<string, string> = { ...base.team };
-  for (const id of Object.keys(team)) { const v = text(`team:${id}`); if (v !== null) team[id] = v; }
-  return {
-    headline: base.headline ? { ...base.headline, before: text('headline-before') ?? base.headline.before, after: text('headline-after') ?? base.headline.after } : null,
-    subtitle: text('subtitle') ?? base.subtitle,
-    about: text('about') ?? base.about,
-    quote: text('quote') ?? base.quote,
-    team,
-    why: text('why') ?? base.why
-  };
-}
 
 export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   const { t, i18n } = useTranslation();
@@ -67,6 +50,8 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   const [send, setSend] = useState<Send>({ state: 'idle' });
   const [overflow, setOverflow] = useState(false);
   const [askRedraft, setAskRedraft] = useState(false);
+  // "Write my own" headline: the owner's words around Pulse's number.
+  const [ownHeadline, setOwnHeadline] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string>('');
   const frame = useRef<HTMLIFrameElement | null>(null);
@@ -141,10 +126,16 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   const paper = facts ? PAGE_PX[facts.paper] : PAGE_PX.letter;
   const choices = facts ? headlineChoices(facts.figures) : [];
 
-  // The preview is redrawn only when its structure changes; typing stays in
-  // the iframe and is read back on each input.
-  const html = useMemo(() => (facts && edits ? pageHtml(facts, editsRef.current ?? edits, { editable: true, fontCss: '' }) : ''),
-    [open, logo, showName, draft, edits?.headline?.figure]);
+  // The preview: read only, redrawn from the panel's words as the owner types.
+  const html = useMemo(() => (facts && edits ? pageHtml(facts, edits, { fontCss: '' }) : ''),
+    [open, logo, showName, edits]);
+  const htmlRef = useRef(html);
+  htmlRef.current = html;
+  // The frame loads its first page once; later pages replace its contents in
+  // place, so typing never reloads the frame, flickers or drops its fonts.
+  const [srcDoc, setSrcDoc] = useState('');
+  const frameReady = useRef(false);
+  useEffect(() => { if (html && !srcDoc) setSrcDoc(html); }, [html, srcDoc]);
 
   const measure = useCallback(() => {
     const doc = frame.current?.contentDocument;
@@ -152,10 +143,24 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
     setOverflow(!!body && body.scrollHeight > body.clientHeight + 1);
   }, []);
 
+  const paint = useCallback((next: string) => {
+    const doc = frame.current?.contentDocument;
+    if (!doc || !next || !frameReady.current) return;
+    const parsed = new DOMParser().parseFromString(next, 'text/html');
+    doc.documentElement.lang = parsed.documentElement.lang;
+    doc.documentElement.dir = parsed.documentElement.dir;
+    doc.head.innerHTML = parsed.head.innerHTML;
+    doc.body.innerHTML = parsed.body.innerHTML;
+    measure();
+  }, [measure]);
+  useEffect(() => { paint(html); }, [html, paint]);
+
   const onFrameLoad = useCallback(() => {
     const doc = frame.current?.contentDocument;
     const win = frame.current?.contentWindow as (Window & { FontFace: typeof FontFace }) | null;
     if (!doc) return;
+    frameReady.current = true;
+    paint(htmlRef.current);
     // The page's faces as bytes: FontFace from bytes isn't a font fetch, so the
     // app's font-src 'self' stays as it is, and the preview measures with the
     // same fonts as the PDF.
@@ -170,17 +175,17 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
       });
       void Promise.all(loads).then(() => measure());
     }
-    doc.addEventListener('input', () => {
-      if (!editsRef.current) return;
-      editsRef.current = readEdits(doc, editsRef.current);
-      setTouched(true);
-      setSend((s) => (s.state === 'error' ? { state: 'idle' } : s));
-      measure();
-    });
-    // Plain text only, on one line, as main keeps it.
-    doc.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') e.preventDefault(); });
     measure();
-  }, [measure, open]);
+  }, [measure, open, paint]);
+
+  /** One change from the panel: the page follows, and a failed Send note clears. */
+  const change = (next: (e: CaseStudyEdits) => CaseStudyEdits): void => {
+    const base = editsRef.current;
+    if (!base) return;
+    const e = next(base);
+    editsRef.current = e; setEdits(e); setTouched(true);
+    setSend((st) => (st.state === 'error' ? { state: 'idle' } : st));
+  };
 
   // The page scaled to the room the well has.
   useEffect(() => {
@@ -193,19 +198,21 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
     return () => ro.disconnect();
   }, [paper.h, paper.w]);
 
+  /** A drafted headline's words for a figure, or the built in ones. */
+  const wordsFor = (k: HeadlineFigure): { before: string; after: string } =>
+    (draft.state === 'ready' ? draft.draft.headlines[k] : undefined) ?? (facts ? builtInHeadline(facts, k) : { before: '', after: '' });
   const pickFigure = (k: HeadlineFigure): void => {
-    if (!facts || !editsRef.current) return;
-    const d = draft.state === 'ready' ? draft.draft : { headlines: {}, team: {} };
-    const e = { ...editsRef.current, headline: { figure: k, ...(d.headlines[k] ?? builtInHeadline(facts, k)) } };
-    editsRef.current = e; setEdits(e);
+    setOwnHeadline(false);
+    change((e) => ({ ...e, headline: { figure: k, ...wordsFor(k) } }));
   };
+  const pickOwn = (): void => setOwnHeadline(true);
 
   const flipName = (): void => {
     if (touched) { setAskRedraft(true); return; }
     setShowName((v) => !v);
   };
 
-  const current = editsRef.current;
+  const current = edits;
   const nameWarn = !!facts && !showName && !!current && [current.subtitle, current.about, current.quote, current.why, current.headline?.before ?? '', current.headline?.after ?? '', ...Object.values(current.team)]
     .some((x) => namesBusiness(x, { businessName: open && open !== 'failed' ? open.facts.businessName : undefined, website: open && open !== 'failed' ? open.facts.website : undefined }));
 
@@ -260,27 +267,99 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
             <div style={hint}>{t('caseStudy.noWorkAny')}</div>
           </div>
         )}
-        {!empty && html && (
+        {!empty && srcDoc && (
           <div style={{ width: paper.w * scale, height: paper.h * scale, flex: 'none', boxShadow: '0 2px 10px rgba(30,27,46,.16)', background: '#fff' }}>
-            <iframe ref={frame} title={t('caseStudy.pageLabel')} srcDoc={html} sandbox="allow-same-origin" onLoad={onFrameLoad}
+            <iframe ref={frame} title={t('caseStudy.pageLabel')} srcDoc={srcDoc} sandbox="allow-same-origin" onLoad={onFrameLoad} tabIndex={-1}
               style={{ width: paper.w, height: paper.h, border: 0, transform: `scale(${scale})`, transformOrigin: '0 0', display: 'block' }} />
           </div>
         )}
       </div>
 
       <div style={{ borderInlineStart: '1px solid var(--cth-line)', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, overflow: 'auto' }}>
-        {facts && choices.length > 0 && (
-          <Panel title={t('caseStudy.headline')} info={t('caseStudy.headlineTip')}>
-            <div role="radiogroup" aria-label={t('caseStudy.headline')} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {choices.map((k) => (
-                <label key={k} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, lineHeight: '17px', cursor: 'pointer' }}>
-                  <input type="radio" name="cs-headline" checked={edits?.headline?.figure === k} onChange={() => pickFigure(k)} />
-                  <span>{t(`caseStudy.figure.${k}`, { n: fmtCount(figureValue(facts.figures, k)) })}</span>
+        {facts && current && choices.length > 0 && (() => {
+          const caps = CAPS[facts.lang];
+          const head = current.headline;
+          const n = head ? fmtCount(figureValue(facts.figures, head.figure)) : '';
+          const typedNumber = !!head && (hasNumber(head.before, facts.lang) || hasNumber(head.after, facts.lang));
+          const radio: CSSProperties = { display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, lineHeight: '17px', cursor: 'pointer' };
+          return (
+            <Panel title={t('caseStudy.headline')} info={t('caseStudy.headlineTip')}>
+              <div role="radiogroup" aria-label={t('caseStudy.headline')} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {choices.map((k) => {
+                  const w = wordsFor(k);
+                  return (
+                    <label key={k} style={radio}>
+                      <input type="radio" name="cs-headline" checked={!ownHeadline && head?.figure === k} onChange={() => pickFigure(k)} style={{ marginTop: 2 }} />
+                      <span>{w.before} <b style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 500 }}>{fmtCount(figureValue(facts.figures, k))}</b> {w.after}</span>
+                    </label>
+                  );
+                })}
+                <label style={radio}>
+                  <input type="radio" name="cs-headline" checked={ownHeadline} onChange={pickOwn} style={{ marginTop: 2 }} />
+                  <span>{t('caseStudy.headlineOwn')}</span>
                 </label>
-              ))}
-            </div>
-          </Panel>
-        )}
+              </div>
+              {ownHeadline && head && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                  {choices.length > 1 && (
+                    <Field label={t('caseStudy.headlineNumber2')}>
+                      <select className="cth-input" value={head.figure} style={{ height: 32 }}
+                        onChange={(e) => { const k = e.target.value as HeadlineFigure; change((x) => ({ ...x, headline: x.headline ? { ...x.headline, figure: k } : null })); }}>
+                        {choices.map((k) => <option key={k} value={k}>{t(`caseStudy.figure.${k}`, { n: fmtCount(figureValue(facts.figures, k)) })}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                  <Field label={t('caseStudy.headlineBefore')}>
+                    <input className="cth-input" value={head.before} maxLength={caps.headlineWords} style={{ height: 32 }}
+                      onChange={(e) => { const v = e.target.value; change((x) => ({ ...x, headline: x.headline ? { ...x.headline, before: v } : null })); }} />
+                  </Field>
+                  <div style={{ ...hint, fontFamily: 'var(--cth-font-mono)' }} aria-hidden>{n}</div>
+                  <Field label={t('caseStudy.headlineAfter')}>
+                    <input className="cth-input" value={head.after} maxLength={caps.headlineWords} style={{ height: 32 }}
+                      onChange={(e) => { const v = e.target.value; change((x) => ({ ...x, headline: x.headline ? { ...x.headline, after: v } : null })); }} />
+                  </Field>
+                  {typedNumber && <div role="alert" style={{ ...status, color: 'var(--cth-amber-text)' }}>{t('caseStudy.headlineNumber')}</div>}
+                </div>
+              )}
+            </Panel>
+          );
+        })()}
+
+        {facts && current && (() => {
+          const caps = CAPS[facts.lang];
+          const area: CSSProperties = { resize: 'vertical', minHeight: 64, padding: '6px 8px', fontSize: 13, lineHeight: '18px' };
+          return (
+            <Panel title={t('caseStudy.words')} info={t('caseStudy.wordsTip')}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <Field label={t('caseStudy.subtitle')}>
+                  <input className="cth-input" value={current.subtitle} maxLength={caps.subtitle} style={{ height: 32 }}
+                    onChange={(e) => { const v = e.target.value; change((x) => ({ ...x, subtitle: v })); }} />
+                </Field>
+                <Field label={t('caseStudy.about')}>
+                  <textarea className="cth-input" value={current.about} maxLength={caps.about} rows={4} style={area}
+                    onChange={(e) => { const v = e.target.value; change((x) => ({ ...x, about: v })); }} />
+                </Field>
+                <Field label={t('caseStudy.quote')} note={t('caseStudy.quoteNote')}>
+                  <textarea className="cth-input" value={current.quote} maxLength={caps.quote} rows={3} style={area}
+                    onChange={(e) => { const v = e.target.value; change((x) => ({ ...x, quote: v })); }} />
+                </Field>
+                <div role="group" aria-label={t('caseStudy.team')} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <span style={{ fontSize: 13, lineHeight: '18px', fontWeight: 600 }}>{t('caseStudy.team')}</span>
+                  {facts.members.slice(0, TEAM_ROWS).map((m) => (
+                    <Field key={m.id} label={<span style={{ fontWeight: 500 }}>{m.name}</span>}>
+                      <input className="cth-input" aria-label={m.name} value={current.team[m.id] ?? ''} maxLength={caps.teamLine} style={{ height: 32 }}
+                        onChange={(e) => { const v = e.target.value; change((x) => ({ ...x, team: { ...x.team, [m.id]: v } })); }} />
+                    </Field>
+                  ))}
+                </div>
+                <Field label={t('caseStudy.why')}>
+                  <textarea className="cth-input" value={current.why} maxLength={caps.why} rows={3} style={area}
+                    onChange={(e) => { const v = e.target.value; change((x) => ({ ...x, why: v })); }} />
+                </Field>
+              </div>
+            </Panel>
+          );
+        })()}
 
         <Panel>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 600 }}>
@@ -340,7 +419,6 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
           </label>
         </Panel>
 
-        <div style={hint}>{t('caseStudy.editHint')}</div>
         {overflow && <div role="alert" style={{ ...status, color: 'var(--cth-amber-text)' }}>{t('caseStudy.overflow')}</div>}
 
         <div aria-live="polite" style={status}>
@@ -350,7 +428,7 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
           {saved && <span>{saved}</span>}
         </div>
 
-        <div style={{ marginTop: 'auto', borderTop: '1px solid var(--cth-line)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ marginTop: 'auto', position: 'sticky', bottom: -16, background: 'var(--cth-card)', borderTop: '1px solid var(--cth-line)', padding: '14px 0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {anySender ? (
             <PixelButton size="lg" fullWidth disabled={!ready || !permission || !mailbox || busy || send.state === 'sent'} onClick={() => void doSend()}>
               {send.state === 'sending' ? t('caseStudy.sending') : t('caseStudy.send', { app: APP_NAME })}

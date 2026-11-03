@@ -29,7 +29,7 @@ function facts(over = {}) {
   };
 }
 const edits = (f, over = {}) => ({ ...cs.startingEdits(f, { headlines: {}, team: {} }), ...over });
-const page = (f, e, editable = false) => cs.pageHtml(f, e ?? edits(f), { editable, fontCss: '' });
+const page = (f, e) => cs.pageHtml(f, e ?? edits(f), { fontCss: '' });
 
 test('numbers in any script, and quantity words, count as numbers', () => {
   for (const t of ['saved 10 hours', 'twelve cafes', 'dozens of orders', 'half the inbox', '٣ طلبات']) assert.equal(cs.hasNumber(t, 'en'), true, t);
@@ -114,16 +114,13 @@ test('the prompt reads only the allowed facts; the name is out with D8 off, the 
   assert.match(hidden, /Write no numbers at all/);
 });
 
-test("the headline's number sits outside every editable part", () => {
-  const html = page(facts(), undefined, true);
+test("the page is read only, and the headline's number is Pulse's, between its words (D16, D22)", () => {
+  const typed = edits(facts(), { headline: { figure: 'email', before: 'The AI office handled', after: 'emails' } });
+  const html = page(facts(), typed);
   const h1 = html.match(/<h1 class="headline">(.*?)<\/h1>/)[1];
-  const lock = h1.match(/<span class="lock"[^>]*>1,284<\/span>/);
-  assert.ok(lock, 'the number is filled from the figures');
-  const spans = h1.split(lock[0]);
-  assert.match(spans[0], /data-part="headline-before"[^>]*>[^<]*<\/span>\s*$/, 'the words before close before the number');
-  assert.match(spans[1], /^\s*<span data-part="headline-after"/);
-  assert.doesNotMatch(lock[0], /contenteditable/);
-  assert.doesNotMatch(page(facts()), /contenteditable|data-part/, 'the PDF has nothing editable');
+  assert.match(h1, /^<span>The AI office handled<\/span> <span class="lock"[^>]*>1,284<\/span> <span>emails<\/span>$/);
+  assert.doesNotMatch(html, /contenteditable|data-part/, 'nothing on the page is editable');
+  assert.doesNotMatch(page(facts()), /<figure class="quote/, 'no quote block without the owner\'s words');
 });
 
 test('with the name switch off the page hides the name, logo and website (D8)', () => {

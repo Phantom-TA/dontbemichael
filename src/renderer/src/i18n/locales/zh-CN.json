@@ -3373,7 +3373,6 @@
     "sendFrom": "发件邮箱",
     "noMailbox": "还没有可以发信的邮箱。请先保存 PDF，再在邮件应用中附加并发送到 {{to}}。",
     "permission": "{{app}} 可以在其网站上发布此案例，并会在我要求时将其删除",
-    "editHint": "点击页面上的虚线文字即可编辑。数字来自 Pulse，不能手动输入。",
     "overflow": "内容超出一页。请缩短某一部分后再保存或发送。",
     "headlineNumber": "请删除标题文字中的数字。标题的数字来自 Pulse。",
     "send": "发送给 {{app}}",
@@ -3395,6 +3394,18 @@
     "readyTitle": "你的客户案例已准备好",
     "readyBody": "查看并修改文字，然后发送给我们。",
     "readyView": "查看",
-    "readyLater": "稍后"
+    "readyLater": "稍后",
+    "headlineOwn": "自己写",
+    "headlineNumber2": "数字",
+    "headlineBefore": "数字前的文字",
+    "headlineAfter": "数字后的文字",
+    "words": "文字",
+    "wordsTip": "根据你办公室的信息起草。在这里修改任何内容，页面会按打印效果显示。数字只来自 Pulse。",
+    "subtitle": "副标题",
+    "about": "关于这家企业",
+    "quote": "你的话",
+    "quoteNote": "可选。署名取自公司资料中的姓名。",
+    "team": "每位团队成员做什么",
+    "why": "为什么小企业应该这样做"
   }
 }

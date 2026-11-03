@@ -3373,7 +3373,6 @@
     "sendFrom": "Send from",
     "noMailbox": "No mailbox can send yet. Save the PDF, then attach it in your mail app to {{to}}.",
     "permission": "{{app}} may publish this on its website, and will take it down if I ask",
-    "editHint": "Click the dashed text on the page to edit it. Numbers come from Pulse and can't be typed.",
     "overflow": "The page runs past one page. Shorten a part to save or send.",
     "headlineNumber": "Take the number out of the headline's words. The headline's number comes from Pulse.",
     "send": "Send to {{app}}",
@@ -3395,6 +3394,18 @@
     "readyTitle": "Your case study is ready",
     "readyBody": "View it, change any words, then send it to us.",
     "readyView": "View",
-    "readyLater": "Later"
+    "readyLater": "Later",
+    "headlineOwn": "Write my own",
+    "headlineNumber2": "Number",
+    "headlineBefore": "Words before the number",
+    "headlineAfter": "Words after the number",
+    "words": "The words",
+    "wordsTip": "Drafted from your office's facts. Change anything here and the page shows it as it will print. Numbers come only from Pulse.",
+    "subtitle": "Subtitle",
+    "about": "About the business",
+    "quote": "Your words",
+    "quoteNote": "Optional. Signed with your name from the company profile.",
+    "team": "What each team member does",
+    "why": "Why a small business should do this"
   }
 }

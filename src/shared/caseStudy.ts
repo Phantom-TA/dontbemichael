@@ -580,17 +580,15 @@ function initials(s: string): string {
 const MARK = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" aria-hidden="true" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="1" y="14" width="1" height="1" fill="#FF6B6B"/><rect x="1" y="15" width="1" height="1" fill="#FF6B6B"/><rect x="2" y="3" width="1" height="1" fill="#1A1320"/><rect x="2" y="4" width="1" height="1" fill="#1A1320"/><rect x="2" y="5" width="1" height="1" fill="#1A1320"/><rect x="2" y="6" width="1" height="1" fill="#1A1320"/><rect x="2" y="7" width="1" height="1" fill="#1A1320"/><rect x="2" y="8" width="1" height="1" fill="#1A1320"/><rect x="2" y="9" width="1" height="1" fill="#1A1320"/><rect x="2" y="10" width="1" height="1" fill="#1A1320"/><rect x="2" y="11" width="1" height="1" fill="#1A1320"/><rect x="2" y="12" width="1" height="1" fill="#1A1320"/><rect x="2" y="13" width="1" height="1" fill="#FF6B6B"/><rect x="2" y="14" width="1" height="1" fill="#FF6B6B"/><rect x="3" y="3" width="1" height="1" fill="#1A1320"/><rect x="3" y="4" width="1" height="1" fill="#1A1320"/><rect x="3" y="5" width="1" height="1" fill="#1A1320"/><rect x="3" y="6" width="1" height="1" fill="#1A1320"/><rect x="3" y="7" width="1" height="1" fill="#1A1320"/><rect x="3" y="8" width="1" height="1" fill="#1A1320"/><rect x="3" y="9" width="1" height="1" fill="#1A1320"/><rect x="3" y="10" width="1" height="1" fill="#1A1320"/><rect x="3" y="11" width="1" height="1" fill="#1A1320"/><rect x="3" y="12" width="1" height="1" fill="#FF6B6B"/><rect x="3" y="13" width="1" height="1" fill="#FF6B6B"/><rect x="4" y="3" width="1" height="1" fill="#1A1320"/><rect x="4" y="4" width="1" height="1" fill="#1A1320"/><rect x="4" y="11" width="1" height="1" fill="#FF6B6B"/><rect x="4" y="12" width="1" height="1" fill="#FF6B6B"/><rect x="5" y="4" width="1" height="1" fill="#1A1320"/><rect x="5" y="5" width="1" height="1" fill="#1A1320"/><rect x="5" y="10" width="1" height="1" fill="#FF6B6B"/><rect x="5" y="11" width="1" height="1" fill="#FF6B6B"/><rect x="6" y="5" width="1" height="1" fill="#1A1320"/><rect x="6" y="6" width="1" height="1" fill="#1A1320"/><rect x="6" y="9" width="1" height="1" fill="#FF6B6B"/><rect x="6" y="10" width="1" height="1" fill="#FF6B6B"/><rect x="7" y="6" width="1" height="1" fill="#1A1320"/><rect x="7" y="7" width="1" height="1" fill="#1A1320"/><rect x="7" y="8" width="1" height="1" fill="#FF6B6B"/><rect x="7" y="9" width="1" height="1" fill="#FF6B6B"/><rect x="8" y="6" width="1" height="1" fill="#1A1320"/><rect x="8" y="7" width="1" height="1" fill="#FF6B6B"/><rect x="8" y="8" width="1" height="1" fill="#FF6B6B"/><rect x="9" y="5" width="1" height="1" fill="#1A1320"/><rect x="9" y="6" width="1" height="1" fill="#FF6B6B"/><rect x="9" y="7" width="1" height="1" fill="#FF6B6B"/><rect x="10" y="4" width="1" height="1" fill="#1A1320"/><rect x="10" y="5" width="1" height="1" fill="#FF6B6B"/><rect x="10" y="6" width="1" height="1" fill="#FF6B6B"/><rect x="11" y="3" width="1" height="1" fill="#1A1320"/><rect x="11" y="4" width="1" height="1" fill="#FF6B6B"/><rect x="11" y="5" width="1" height="1" fill="#FF6B6B"/><rect x="12" y="3" width="1" height="1" fill="#FF6B6B"/><rect x="12" y="4" width="1" height="1" fill="#FF6B6B"/><rect x="12" y="5" width="1" height="1" fill="#1A1320"/><rect x="12" y="6" width="1" height="1" fill="#1A1320"/><rect x="12" y="7" width="1" height="1" fill="#1A1320"/><rect x="12" y="8" width="1" height="1" fill="#1A1320"/><rect x="12" y="9" width="1" height="1" fill="#1A1320"/><rect x="12" y="10" width="1" height="1" fill="#1A1320"/><rect x="12" y="11" width="1" height="1" fill="#1A1320"/><rect x="12" y="12" width="1" height="1" fill="#1A1320"/><rect x="12" y="13" width="1" height="1" fill="#1A1320"/><rect x="13" y="2" width="1" height="1" fill="#FF6B6B"/><rect x="13" y="3" width="1" height="1" fill="#FF6B6B"/><rect x="13" y="4" width="1" height="1" fill="#1A1320"/><rect x="13" y="5" width="1" height="1" fill="#1A1320"/><rect x="13" y="6" width="1" height="1" fill="#1A1320"/><rect x="13" y="7" width="1" height="1" fill="#1A1320"/><rect x="13" y="8" width="1" height="1" fill="#1A1320"/><rect x="13" y="9" width="1" height="1" fill="#1A1320"/><rect x="13" y="10" width="1" height="1" fill="#1A1320"/><rect x="13" y="11" width="1" height="1" fill="#1A1320"/><rect x="13" y="12" width="1" height="1" fill="#1A1320"/><rect x="13" y="13" width="1" height="1" fill="#1A1320"/><rect x="14" y="1" width="1" height="1" fill="#FF6B6B"/><rect x="14" y="2" width="1" height="1" fill="#FF6B6B"/></svg>';
 
 export interface PageOptions {
-  /** Editable parts for the screen's preview; never in the PDF. */
-  editable: boolean;
   /** @font-face rules for Sora and IBM Plex Mono (main reads the bundled files). */
   fontCss: string;
 }
 
 /**
  * The page as one HTML document (D15 outcome first). The preview and the PDF
- * both draw this, so they match. With `editable`, the drafted parts carry
- * `data-part` and plaintext editing; the headline's number sits between two
- * editable spans, outside any editable host, so it can't be deleted (eng pass).
+ * both draw this, so they match, and both are read only: the owner changes
+ * the words in the screen's panel (D22). The headline's number is always
+ * filled from the figures, between its words (D16).
  */
 export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: PageOptions): string {
   const w = WORDS[facts.lang];
@@ -598,13 +596,12 @@ export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: Pag
   const pal = facts.showName && facts.palette ? facts.palette : INK_PALETTE;
   const rtl = facts.lang === 'ar';
   const paper = PAPER[facts.paper];
-  const ed = (part: string, label: string): string => (opts.editable ? ` data-part="${esc(part)}" contenteditable="plaintext-only" spellcheck="true" aria-label="${esc(label)}" class="ed"` : '');
   const from = dayLabel(facts.range.from, facts.lang);
   const to = dayLabel(facts.range.to, facts.lang, true);
 
   const head = edits.headline;
   const headline = head
-    ? `<h1 class="headline"><span${ed('headline-before', 'Headline, editable')}>${esc(head.before)}</span> <span class="lock" aria-label="${esc(`${fmtCount(figureValue(f, head.figure))}, ${w.locked}`)}">${fmtCount(figureValue(f, head.figure))}</span> <span${ed('headline-after', 'Headline, editable')}>${esc(head.after)}</span></h1>`
+    ? `<h1 class="headline"><span>${esc(head.before)}</span> <span class="lock" aria-label="${esc(`${fmtCount(figureValue(f, head.figure))}, ${w.locked}`)}">${fmtCount(figureValue(f, head.figure))}</span> <span>${esc(head.after)}</span></h1>`
     : '';
 
   const metaBits = facts.showName
@@ -617,7 +614,7 @@ export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: Pag
   const band = bandFigures(f).map((k) => `<div class="stat"><div class="n">${fmtCount(figureValue(f, k))}</div><div class="l">${esc(w.band[k])}</div></div>`);
   band.push(`<div class="stat"><div class="n">${fmtUsd(f.spendUsd)}</div><div class="l">${esc(w.spend(facts.range.days))}</div></div>`);
 
-  const rows = facts.members.slice(0, TEAM_ROWS).map((m) => `<div class="t-row"><span><b>${esc(m.name)}</b><span class="t-role">${esc(m.role)}</span></span><span${ed(`team:${m.id}`, `${m.name}, editable`)}>${esc(edits.team[m.id] ?? '')}</span><span class="t-n">${m.figure ? `${fmtCount(m.figure.count)} ${esc(w.member[m.figure.kind])}` : ''}</span></div>`);
+  const rows = facts.members.slice(0, TEAM_ROWS).map((m) => `<div class="t-row"><span><b>${esc(m.name)}</b><span class="t-role">${esc(m.role)}</span></span><span>${esc(edits.team[m.id] ?? '')}</span><span class="t-n">${m.figure ? `${fmtCount(m.figure.count)} ${esc(w.member[m.figure.kind])}` : ''}</span></div>`);
   const more = facts.members.length - TEAM_ROWS;
   if (more > 0) rows.push(`<div class="t-more">${esc(w.more(more))}</div>`);
 
@@ -635,8 +632,8 @@ export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: Pag
       ${awayH > 0 ? `<div class="legend"><span><i class="k-aw"></i>${esc(w.awayLegend)}</span><span><i class="k-run"></i>${esc(w.aroundLegend)}</span></div>` : ''}
     </section>` : '';
 
-  const quote = edits.quote || opts.editable
-    ? `<figure class="quote${edits.quote ? '' : ' empty'}"><blockquote${ed('quote', 'Your words, editable')}>${esc(edits.quote)}</blockquote><figcaption>${esc(quoteSignature(facts))}</figcaption></figure>`
+  const quote = edits.quote
+    ? `<figure class="quote"><blockquote>${esc(edits.quote)}</blockquote><figcaption>${esc(quoteSignature(facts))}</figcaption></figure>`
     : '';
 
   return `<!doctype html><html lang="${facts.lang}" dir="${rtl ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${esc(w.caseStudy)}</title><style>
@@ -694,25 +691,19 @@ body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic
 .why{background:var(--tint);border-radius:10px;padding:8px 14px}
 .foot{flex:none;padding:9px 40px;display:flex;align-items:center;gap:8px;font-size:9px;line-height:12px;color:#5E5A76;border-top:1px solid #E8E6F2}
 .foot .url{margin-inline-start:auto;font-family:"IBM Plex Mono",monospace;font-weight:500;color:#1E1B2E}
-.ed{outline:1px dashed #B4B1C6;outline-offset:3px;border-radius:2px;cursor:text}
-.ed:focus{outline:2px solid #6C5CE7}
-.hero .ed{outline-color:rgba(255,255,255,.55)}
-.ed:empty::before{content:"\\00a0"}
-.quote.empty::before{opacity:.35}
-@media print{.ed{outline:none}}
 </style></head><body><article class="page" aria-label="${esc(w.caseStudy)}">
 <header class="hero">
   ${facts.showName ? `<div class="hero-top">${logo}<div><div class="biz">${esc(facts.businessName ?? '')}</div><div class="biz-meta">${esc(metaBits.join(' · '))}</div></div></div>` : `<div class="biz">${esc(subjectOf(facts))}</div>`}
   <div class="eyebrow">${esc(w.caseStudy)}</div>
   ${headline}
-  <div class="sub"${ed('subtitle', 'Subtitle, editable')}>${esc(edits.subtitle)}</div>
+  <div class="sub">${esc(edits.subtitle)}</div>
 </header>
 <section class="band">${band.join('')}<div class="band-src">${esc(w.source(from, to))}</div></section>
 <div class="body">
-  <div class="cols${quote ? '' : ' solo'}"><section><div class="h">${esc(w.theBusiness)}</div><div class="p"${ed('about', 'About the business, editable')}>${esc(edits.about)}</div></section>${quote}</div>
+  <div class="cols${quote ? '' : ' solo'}"><section><div class="h">${esc(w.theBusiness)}</div><div class="p">${esc(edits.about)}</div></section>${quote}</div>
   <section><div class="h">${esc(w.theTeam)}</div><div class="team">${rows.join('')}</div></section>
   ${strip}
-  <section class="why"><div class="h">${esc(w.why)}</div><div class="p"${ed('why', 'Why a small business should do this, editable')}>${esc(edits.why)}</div></section>
+  <section class="why"><div class="h">${esc(w.why)}</div><div class="p">${esc(edits.why)}</div></section>
 </div>
 <footer class="foot">${MARK}<span>${esc(w.made)} · ${esc(w.version)} ${esc(facts.appVersion)}</span><span class="url">dontbemichael.com</span></footer>
 </article></body></html>`;

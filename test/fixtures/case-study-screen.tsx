@@ -29,6 +29,14 @@ const slow = <T,>(v: T, name = ''): Promise<T> => { calls.push(name); return new
   onCaseStudyShow: () => () => {}
 };
 (window as unknown as { screenTest: unknown }).screenTest = {
+  /** Types into a panel field the way React sees a keystroke. */
+  type: (label: string, text: string) => {
+    const field = [...document.querySelectorAll('label')].find((l) => l.textContent?.startsWith(label))?.querySelector('textarea, input') as HTMLTextAreaElement | null;
+    if (!field) return false;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, text);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  },
   state: () => {
     const frame = document.querySelector('iframe') as HTMLIFrameElement | null;
     return {
@@ -36,6 +44,8 @@ const slow = <T,>(v: T, name = ''): Promise<T> => { calls.push(name); return new
       frame: !!frame,
       headline: frame?.contentDocument?.querySelector('.headline')?.textContent ?? null,
       mailbox: document.body.innerText.includes('ceo@x.example'),
+      editableOnPage: !!frame?.contentDocument?.querySelector('[contenteditable], [data-part]'),
+      about: frame?.contentDocument?.querySelector('.cols .p')?.textContent ?? null,
       calls
     };
   }

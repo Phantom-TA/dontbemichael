@@ -45,7 +45,7 @@ function worst(lang, paper) {
     subtitle: fill(lang, c.subtitle), about: fill(lang, c.about), quote: fill(lang, c.quote), why: fill(lang, c.why),
     team: Object.fromEntries(members.map((m) => [m.id, fill(lang, c.teamLine)]))
   };
-  return cs.pageHtml(facts, edits, { editable: false, fontCss: cs.fontFaceCss(fonts()) });
+  return cs.pageHtml(facts, edits, { fontCss: cs.fontFaceCss(fonts()) });
 }
 
 test('the fullest case study prints on one page in every language and paper', { skip: process.platform === 'darwin' ? false : 'macOS only (platform scoped tests)', timeout: 120000 }, async () => {

@@ -14,7 +14,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { buildSync } = require('esbuild');
 
-test('the case study screen shows the page and mailboxes under StrictMode', { timeout: 90000 }, async () => {
+test('the case study screen shows the page and mailboxes under StrictMode, and the page follows the panel', { timeout: 90000 }, async () => {
   // Value: protects=the screen leaves its loading state; fails_when=an unmount flag is set false and never back to true; why_new=no test mounted the screen; seam=preload API faked (window.cth); no_claim=main's real answers (case-study-service.test)
   const root = path.resolve(__dirname, '..');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'case screen '));
@@ -47,6 +47,9 @@ test('the case study screen shows the page and mailboxes under StrictMode', { ti
     assert.equal(state.mailbox, true, 'the mailboxes from main are listed');
     assert.equal(state.frame, true, 'the page is drawn');
     assert.match(state.headline ?? '', /Harbor Bakery handled\s+1,284\s+emails/, 'with the prepared headline');
+    assert.equal(state.editableOnPage, false, 'nothing on the page itself is editable (D22)');
+    assert.equal(state.typed, true, 'About the business is a field in the panel');
+    assert.equal(state.aboutAfter, 'We bake bread for twelve cafes in town', 'the page shows what the owner typed');
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* temp folder */ }
   }
