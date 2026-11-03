@@ -107,7 +107,7 @@ test('the foundation card holds Not now and the box while a file is checked', ()
   const card = read('src/renderer/src/components/FoundationCard.tsx');
   assert.match(card, /const notNow = \(\): void => \{\s*if \(busy\) return;/);
   assert.match(card, /onClick=\{notNow\} disabled=\{busy\}/);
-  assert.match(card, /readOnly=\{busy\}/);
+  assert.match(card, /readOnly=\{busy \|\| \(list && !loaded\)\}/, 'held while a save runs; a list box also waits for its record');
   assert.match(card, /minWidth: 24, minHeight: 24/);
 });
 

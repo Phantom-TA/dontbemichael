@@ -232,6 +232,16 @@ Pulse counts only what the app records).
 - "Foundations 2 of 6", never a quality score; kept as is stays the quality measure.
 - The foundations and the company profile hold one set of shared facts.
 
+## Changed 3 Nov 2026: answers that can be questioned again
+
+`docs/designs/foundation-answers-stay-open.md` replaces three rules here for the eight list
+questions (what we sell, customers today, competitors, money, who owes whom, the team, systems,
+suppliers): an answer from a member is only known so far and the question stays open until the
+owner saves the whole list; cards also come from what the work saw that a list lacks and from a
+whole list past its shelf life, not only from empty questions the work hit; and a known so far
+list counts as missing in "Foundations 2 of 6". Single questions keep every rule below. The
+2 Nov rule "An answer already given stays as it is" no longer holds for a widened list question.
+
 ## Changed after the audit of 2 Nov 2026 (owner, 2026-11-02)
 
 The owner asked why Oscar never asked for the money question. An audit of all ten members for

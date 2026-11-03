@@ -24,7 +24,7 @@ import { extractDocumentTextApart } from './docTextProcess';
 import { AttachmentSaveError, handOverAttachment } from './attachmentSave';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, namedFolders, readFoldersFor, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, jobsAsking, knowledgeNoticeDue, michaelFoundations, namedFolders, readFoldersFor, sectionFor, settledAnswers, type FoundationId, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -886,8 +886,32 @@ const foundations = new Foundations({
     const team = [...(cfg.businessTeam ?? []).map((m) => m.folder),
       ...Object.values(hive.registry().agents).filter((a) => !a.isGod && !a.isAssistant && a.cwd).map((a) => a.cwd)];
     return { userHome: homedir(), business: cfg.businessFolder ? expandTilde(cfg.businessFolder) : undefined, team: team.filter((f): f is string => typeof f === 'string' && !!f).map(expandTilde) };
-  }
+  },
+  reportsFor: (id, since) => foundationReports(id, since)
 });
+/** App upkeep replies a member sends Michael, never a report (eng review,
+ *  outside voice 3): closing time and the like. */
+const UPKEEP_SUBJECT = /^(?:CLOSING-TIME|Re:\s*(?:Heartbeat|Circuit breaker|Company foundations|Office open))/i;
+/** The reports a list's change may undo (R7): every done or inform sent to
+ *  Michael since `since` by a member whose job uses the question, newest
+ *  first, from the hive log. */
+function foundationReports(id: FoundationId, since: number): Array<{ from: string; subject: string; at: number }> {
+  const team = foundationsTeam();
+  const asking = jobsAsking(id);
+  const members = new Set(Object.keys(team.jobs).filter((m) => (team.jobs[m] ?? []).some((j) => asking.includes(j))));
+  if (!members.size) return [];
+  const reg = hive.registry();
+  const godId = reg.godId ?? 'god';
+  const toMichael = (to: unknown): boolean => typeof to === 'string' && (to === godId || to === 'god' || to.toLowerCase() === 'michael' || to === 'human');
+  const out: Array<{ from: string; subject: string; at: number }> = [];
+  for (const e of hive.logTail(5000, 'message', since) as Array<Record<string, unknown>>) {
+    const from = e.from, subject = typeof e.subject === 'string' ? e.subject : '';
+    if (typeof from !== 'string' || !members.has(from) || (e.act !== 'done' && e.act !== 'inform') || !toMichael(e.to)) continue;
+    if (!subject || UPKEEP_SUBJECT.test(subject) || typeof e.ts !== 'number') continue;
+    out.push({ from, subject, at: e.ts });
+  }
+  return out.reverse();
+}
 /** The folders the owner named on a Company foundations card that this
  *  member's job uses (eng review 2026-10-26, D1): read only, even inside the
  *  business folder. Every other member keeps today's rules (D2). */
@@ -965,7 +989,8 @@ const pulse = new PulseService({
   office: pulseOffice,
   members: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived && !a.isAssistant).map(([id, a]) => ({ id, isGod: !!a.isGod })),
   memberJobs: () => foundationsTeam().jobs,
-  foundationsAnswers: () => foundations.read().answers,
+  // Only what counts as answered: a list known so far is missing (R3).
+  foundationsAnswers: () => settledAnswers(foundations.read(), Date.now()),
   godId: () => hive.registry().godId ?? null,
   tasks: () => { const t = hive.tasks() as { tasks?: unknown }; return Array.isArray(t?.tasks) ? (t.tasks as never) : []; },
   missions: () => readConfig().missions ?? [],
@@ -7373,7 +7398,9 @@ ipcMain.handle('pulse:organized', (_evt, fromMs: unknown, toMs: unknown, agentId
 // Company foundations (office-foundations.md): the foundation card reads the
 // record and writes the owner's answer, a draft request or Not now.
 ipcMain.handle('foundations:get', () => foundations.view());
-ipcMain.handle('foundations:answer', (_evt, id: unknown, text: unknown) => foundations.ownerAnswer(id, text));
+ipcMain.handle('foundations:answer', (_evt, id: unknown, text: unknown, added: unknown) => foundations.ownerAnswer(id, text, added));
+// A seen item on a list card: Not ours, Decide later and their undos.
+ipcMain.handle('foundations:seen', (_evt, id: unknown, seenId: unknown, action: unknown) => foundations.seenAction(id, seenId, action));
 // A file from a foundation card: one picked here, or dropped on the card.
 ipcMain.handle('foundations:pickFile', async (evt) => {
   const win = BrowserWindow.fromWebContents(evt.sender);
@@ -7393,8 +7420,8 @@ ipcMain.handle('foundations:pickFolder', async (evt) => {
   return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
 });
 ipcMain.handle('foundations:checkFolder', (_evt, id: unknown, path: unknown) => foundations.checkFolder(id, path));
-ipcMain.handle('foundations:answerFolder', (_evt, id: unknown, path: unknown, words: unknown) => foundations.answerFolder(id, path, words));
-ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown) => foundations.answerFile(id, docId, words));
+ipcMain.handle('foundations:answerFolder', (_evt, id: unknown, path: unknown, words: unknown, added: unknown) => foundations.answerFolder(id, path, words, added));
+ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown, added: unknown) => foundations.answerFile(id, docId, words, added));
 ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
 ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
@@ -8953,6 +8980,8 @@ function armAlwaysOnBeats(): void {
   const fleetBeat = (): void => {
     writeFleetSnapshot();
     try { silentBeat(); } catch (e) { console.error('[silent beat]', e); }
+    // Whole lists past their shelf life, at most once an hour (R5).
+    try { foundations.checkExpiry(); } catch (e) { console.error('[foundations] expiry', e); }
     try { if (hive.enabled()) hive.refreshOwnerRequests(); } catch (e) { console.error('[owner requests]', e); }
     ownerAnswerRetry.tick(Date.now());
   };

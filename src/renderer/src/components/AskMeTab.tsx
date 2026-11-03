@@ -26,7 +26,7 @@ import { refreshNeedsYou, setupCardShown, updateNeedsYouTasks, useNeedsYou } fro
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useResearchName } from '@/shell/research';
 import { FoundationCard } from './FoundationCard';
-import { foundationAsk, isSnoozed } from '@shared/foundations';
+import { foundationAsk, isSettled, isSnoozed } from '@shared/foundations';
 
 /**
  * ASK ME — first-class human feedback through the task system.
@@ -109,7 +109,7 @@ export function AskMeTab() {
   const rootRef = useRef<HTMLDivElement>(null);
   // A foundation answer just saved, sent to Michael to add, or not written:
   // one polite line, as the card leaves. `at` restarts the line for each save.
-  const [foundationSaved, setFoundationSaved] = useState<{ how: 'saved' | 'michael' | 'failed'; at: number } | null>(null);
+  const [foundationSaved, setFoundationSaved] = useState<{ how: 'saved' | 'michael' | 'failed'; at: number; list?: 'whole' | 'soFar' } | null>(null);
   useEffect(() => {
     if (!foundationSaved) return;
     const timer = setTimeout(() => setFoundationSaved(null), foundationSaved.how === 'failed' ? 10000 : 4000);
@@ -159,7 +159,8 @@ export function AskMeTab() {
   const asks = rowsOf(openAskIndexes);
   const now = Date.now();
   // A question answered another way (a member, a file, Michael) leaves the board too.
-  const foundationRows = asks.filter((r) => { const id = foundationAsk(r.ask); return !!id && !isSnoozed(foundations?.snoozed, id, now) && !foundations?.answers?.[id]; });
+  // A list stays while it is only known so far (foundation-answers-stay-open.md).
+  const foundationRows = asks.filter((r) => { const id = foundationAsk(r.ask); return !!id && !isSnoozed(foundations?.snoozed, id, now) && !(foundations && isSettled(foundations, id, now)); });
   const waiting: AskRow[] = [...asks.filter((r) => !foundationAsk(r.ask)), ...foundationRows, ...rowsOf(openReportIndexes)];
   const rowsRef = useRef<AskRow[]>(waiting);
   rowsRef.current = waiting;
@@ -275,7 +276,9 @@ export function AskMeTab() {
       {/* Always mounted, so screen readers announce the line when it fills. */}
       <div key={foundationSaved?.at} role={foundationSaved?.how === 'failed' ? 'alert' : 'status'} className={foundationSaved ? undefined : 'cth-sr-only'}
         style={foundationSaved ? { fontSize: 12, lineHeight: '17px', color: foundationSaved.how === 'failed' ? 'var(--cth-coral-text)' : 'var(--cth-ink-3)', padding: '0 2px' } : undefined}>
-        {foundationSaved?.how === 'saved' ? translate('foundations.card.saved') : foundationSaved?.how === 'michael' ? translate('foundations.card.sentToMichael', { godName }) : foundationSaved?.how === 'failed' ? translate('foundations.card.failedGone', { godName }) : ''}
+        {foundationSaved?.how === 'saved' ? translate(foundationSaved.list === 'whole' ? 'foundations.card.savedWhole' : foundationSaved.list === 'soFar' ? 'foundations.card.savedSoFar' : 'foundations.card.saved')
+          : foundationSaved?.how === 'michael' ? translate(foundationSaved.list === 'whole' ? 'foundations.card.sentToMichaelWhole' : 'foundations.card.sentToMichael', { godName })
+          : foundationSaved?.how === 'failed' ? translate('foundations.card.failedGone', { godName }) : ''}
       </div>
       {/* Nothing left (D4, D8): All clear, one light line, and what was just
           answered. The column closes on the next click outside it. */}
@@ -309,7 +312,7 @@ export function AskMeTab() {
               foundations={foundations}
               memberName={(mid) => agents.find((a) => a.id === mid)?.name}
               onAnswer={(text) => sendAnswer(row, text)}
-              onSaved={(how) => setFoundationSaved({ how, at: Date.now() })}
+              onSaved={(how, list) => setFoundationSaved({ how, at: Date.now(), ...(list ? { list } : {}) })}
             />
           );
         }

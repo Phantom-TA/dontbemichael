@@ -269,8 +269,8 @@ test('a file answer that cannot be written sends Michael the exact line with the
 test('the card runs its save through the extracted steps with window.cth', () => {
   // Value: protects=the tested steps are the ones the card runs; fails_when=FoundationCard.tsx calls window.cth for these steps itself again or stops passing its callbacks; why_new=the steps moved to shell/foundationSave.ts; seam=source pin; no_claim=rendering
   const card = read('src/renderer/src/components/FoundationCard.tsx');
-  assert.match(card, /const res = await saveTextAnswer\(id, text, window\.cth, onAnswer\);/);
-  assert.match(card, /const res = await saveFileAnswer\(id, picked, text, window\.cth, onAnswer, \{ checked: \(\) => setChecking\(false\), taken: \(\) => setFile\(null\) \}\);/);
+  assert.match(card, /const res = await saveTextAnswer\(id, text, window\.cth, onAnswer, listSave\);/);
+  assert.match(card, /const res = await saveFileAnswer\(id, picked, text, window\.cth, onAnswer, \{ checked: \(\) => setChecking\(false\), taken: \(\) => setFile\(null\) \}, listSave\);/);
   assert.doesNotMatch(card, /window\.cth\.(foundationsAddFile|foundationsAnswer|foundationsAnswerFile|kgRemove|hiveSend)\(/);
 });
 

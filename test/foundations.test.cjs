@@ -441,7 +441,9 @@ test('members check their empty questions before each report, send only whole an
   assert.match(hive, /tell the member to report it as a gap/);
   const config = read('src/main/config.ts');
   assert.match(config, /FOUNDATIONS_CHECK_FOCUS =[\s\S]*Raise nothing for a question no work has hit[\s\S]*send each team member with an empty question in its job\\'s part one message/);
-  assert.match(config, /FOUNDATIONS_CHECK_BUILT_IN_FOCUSES[\s\S]*Raise nothing for a question no work has hit, and nothing when every hit question is answered\.'\n\];/, 'the shipped text is kept word for word, so an office carrying it is updated');
+  assert.match(config, /FOUNDATIONS_CHECK_BUILT_IN_FOCUSES[\s\S]*Raise nothing for a question no work has hit, and nothing when every hit question is answered\.',\n/, 'the shipped text is kept word for word, so an office carrying it is updated');
+  // The 2 Nov text, kept word for word, so an office carrying it gets the list aware one (foundation-answers-stay-open.md).
+  assert.match(config, /FOUNDATIONS_CHECK_BUILT_IN_FOCUSES[\s\S]*'Then send each team member with an empty question in its job\\'s part one message[\s\S]*'Send none when no question is empty\.'\n\];/);
   const main = read('src/main/index.ts');
   assert.match(main, /m\.id === FOUNDATIONS_CHECK_MISSION\.id && m\.focus && FOUNDATIONS_CHECK_BUILT_IN_FOCUSES\.includes\(m\.focus\)/, 'the owner\'s own text is never replaced');
   assert.match(main, /before\.map\(standupFocus\)\.map\(foundationsFocus\)/);
@@ -469,23 +471,24 @@ test('the foundation card: evidence first, a labeled box with its hint as descri
   const cardSrc = read('src/renderer/src/components/FoundationCard.tsx');
   assert.match(cardSrc, /<FileText source=\{q\}/, 'Michael\'s evidence line');
   assert.match(cardSrc, /aria-describedby=\{hintId\}/, 'the hint describes the box (D12)');
-  assert.match(cardSrc, /maxLength=\{FOUNDATION_CAP\}/);
+  assert.match(cardSrc, /const cap = capFor\(id\);[\s\S]*maxLength=\{cap\}/, 'a list holds 1,000 characters, a single answer 300 (design review D5)');
   assert.match(read('src/renderer/src/shell/foundationSave.ts'), /onAnswer\(text\)[\s\S]*cth\.foundationsAnswer\(id, text\)[\s\S]*Add my answer to the company foundations/, 'the card first, then the foundations; Michael adds it if that fails');
-  assert.match(cardSrc, /saveTextAnswer\(id, text, window\.cth, onAnswer\)/);
+  assert.match(cardSrc, /saveTextAnswer\(id, text, window\.cth, onAnswer, listSave\)/);
   assert.match(cardSrc, /role="status"[\s\S]*foundations\.card\.drafting/, 'drafting is a polite status (D8)');
-  assert.match(cardSrc, /disabled=\{\(!text && !file\) \|\| busy\}/, 'Save stays on while a draft is pending (review, 2026-10-20), and a file alone enables it (foundation-card-upload.md)');
+  assert.match(cardSrc, /disabled=\{\(!text && !file\) \|\| busy \|\| blocked \|\| over\}/, 'Save stays on while a draft is pending (review, 2026-10-20), and a file alone enables it (foundation-card-upload.md); a list also waits for its seen items and its cap');
   assert.match(cardSrc, /const drafting = draftPending\(asked, Date\.now\(\)\)/, 'a request waits 2 days');
   assert.match(cardSrc, /flexWrap: 'wrap'[\s\S]*foundations\.card\.notNow/, 'Not now wraps at 320 px (D13)');
   const ask = read('src/renderer/src/components/AskMeTab.tsx');
   assert.match(ask, /\[\.\.\.asks\.filter\(\(r\) => !foundationAsk\(r\.ask\)\), \.\.\.foundationRows, \.\.\.rowsOf\(openReportIndexes\)\]/, 'after the decisions, before reports (D10)');
   assert.match(read('src/renderer/src/shell/useNeedsYou.ts'), /shownQuestions\(t, merged\.foundations\)/, 'Not now leaves the count too');
-  assert.match(ask, /onSaved=\{\(how\) => setFoundationSaved\(\{ how, at: Date\.now\(\) \}\)\}/, 'a saved answer says so in a polite line (states table), only once it is written; each save restarts it');
+  assert.match(ask, /onSaved=\{\(how, list\) => setFoundationSaved\(\{ how, at: Date\.now\(\), \.\.\.\(list \? \{ list \} : \{\}\) \}\)\}/, 'a saved answer says so in a polite line (states table), only once it is written; each save restarts it; a list says whether it was the whole list');
   assert.match(ask, /role=\{foundationSaved\?\.how === 'failed' \? 'alert' : 'status'\}[\s\S]*foundations\.card\.saved[\s\S]*foundations\.card\.sentToMichael[\s\S]*foundations\.card\.failedGone/);
   const card = read('src/renderer/src/components/FoundationCard.tsx');
   // The card leaves the board once it took the answer: the board reports a failure after that (pass 3 review).
   assert.match(read('src/renderer/src/shell/foundationSave.ts'), /if \(r\?\.ok\) return \{ taken: true, how: 'saved' \};[\s\S]*return \{ taken: true, how: sent\?\.ok \? 'michael' : 'failed' \};/);
-  assert.match(card, /onSaved\?\.\(res\.how\);/);
-  assert.match(ask, /!isSnoozed\(foundations\?\.snoozed, id, now\) && !foundations\?\.answers\?\.\[id\]/, 'a question answered another way leaves the board');
+  assert.match(card, /saved\(res\.how\);/);
+  assert.match(card, /onSaved\?\.\(how, list \? \(whole \? 'whole' : 'soFar'\) : undefined\);/);
+  assert.match(ask, /!isSnoozed\(foundations\?\.snoozed, id, now\) && !\(foundations && isSettled\(foundations, id, now\)\)/, 'a question answered another way leaves the board; a list stays while it is only known so far');
   // D5: no card waiting opens the document itself, read only, else where it is listed.
   assert.match(read('src/renderer/src/components/pulse/PulseView.tsx'), /docs\.find\(isFoundationsDoc\)[\s\S]{0,200}window\.cth\.kgOpen\(doc\.id\)/);
 });
@@ -565,8 +568,8 @@ test('the copy in company knowledge: a failed publish is retried, an unchanged o
   const kept = fs.readdirSync(path.dirname(file)).filter((n) => n.startsWith('foundations.json.broken-'));
   assert.equal(kept.length, 1);
   assert.equal(fs.readFileSync(path.join(path.dirname(file), kept[0]), 'utf8'), '{not json');
-  assert.deepEqual(o.w.ownerAnswer('offer', 'Pizza and salads'), { ok: true });
-  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).answers.offer.text, 'Pizza and salads', 'the next write replaces the broken file');
+  assert.deepEqual(o.w.ownerAnswer('customers', 'Pizza lovers nearby'), { ok: true });
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).answers.customers.text, 'Pizza lovers nearby', 'the next write replaces the broken file');
 
   o.w.publishNow();
   assert.equal(sent.length, 1);
@@ -947,4 +950,234 @@ test('a store that fails after the check, or no office open, adds nothing and sa
   assert.equal(reads.length, before, 'never read without an office');
   assert.deepEqual(closed.w.answerFile('voice', 'kg1', 'Warm and plain.'), { ok: false, error: 'no-office' });
   assert.deepEqual(closed.profile, {}, 'nothing reaches the profile');
+});
+
+// ---- Answers that can be questioned again (docs/designs/foundation-answers-stay-open.md) ----
+
+/** A file in the office the member cites. */
+function officeFile(o, name = 'Finance/wise-october.pdf') {
+  const p = path.join(o.office, name);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, 'statement');
+  return p;
+}
+
+test('a list stays known so far on a member\'s answer and still takes gaps; a single question closes as today', (t) => {
+  // Value: protects=a partial list never closes a list question again (Oscar's Records-Log answer closed money on 2 Nov); fails_when=a member answer to a list counts as answered, or a single question changes; why_new=R1; seam=none; no_claim=member behavior (instruction pins below)
+  const o = writer(t);
+  const file = officeFile(o);
+  assert.equal(F.isListQuestion('money'), true);
+  assert.equal(F.isListQuestion('customers'), false);
+  assert.deepEqual(['offer', 'current_customers', 'competitors', 'money', 'owed', 'team', 'tools', 'suppliers'].filter(F.isListQuestion).length, 8, 'eight lists (D1)');
+  assert.match(o.w.handle('oscar', { question: 'money', answer: 'Wise; Wells Fargo', source: { file } }), /Saved/);
+  const rec = o.w.read();
+  assert.equal(rec.answers.money.coverage, 'known');
+  assert.equal(F.isSettled(rec, 'money', Date.now()), false, 'known so far is not answered');
+  assert.equal(F.settledAnswers(rec, Date.now()).money, undefined, 'the count leaves it out (R3)');
+  assert.equal(o.w.handle('oscar', { question: 'money', gap: 'Cash flow without the cards' }), null, 'a gap on a known list is kept, not refused');
+  assert.equal(o.w.read().hits.money.count, 1);
+  // A single question: answered closes it, as today.
+  o.w.ownerAnswer('customers', 'Restaurant owners');
+  assert.match(o.w.handle('ryan', { question: 'customers', gap: 'x' }), /is answered: Restaurant owners/);
+  assert.equal(o.events.find((e) => e.attrs.q === 'money').attrs.change, 'coverage', 'a known list is never an answered event');
+});
+
+test('the owner\'s save makes a list whole; an undecided seen item holds it; a put off one keeps it known so far', (t) => {
+  // Value: protects=saving the card means the whole list only when every seen item was settled (D2, D4); fails_when=a save ignores seen items or a put off one still closes the list; why_new=design review D4; seam=none; no_claim=the card UI (source pins)
+  const o = writer(t);
+  const file = officeFile(o);
+  o.w.handle('oscar', { question: 'money', answer: 'Wise', source: { file } });
+  o.w.handle('oscar', { question: 'money', gap: 'Card bills paid from Wise', item: 'Card ending 1005', source: { file } });
+  o.w.handle('oscar', { question: 'money', gap: 'Card bills paid from Wise', item: 'Chase card', source: { file } });
+  const [a, b] = o.w.read().seen.money;
+  assert.deepEqual(o.w.ownerAnswer('money', 'Wise\nCard ending 1005', [a.id]), { ok: false, error: 'undecided' }, 'Chase is still undecided');
+  assert.deepEqual(o.w.seenAction('money', b.id, 'later'), { ok: true });
+  assert.deepEqual(o.w.ownerAnswer('money', 'Wise\nCard ending 1005', [a.id]), { ok: true, complete: false }, 'Save the list so far');
+  let rec = o.w.read();
+  assert.equal(rec.answers.money.text, 'Wise; Card ending 1005', 'one item a line in the box, "; " in the answer');
+  assert.equal(rec.answers.money.coverage, 'known');
+  assert.deepEqual(rec.seen.money.map((s) => s.item), ['Chase card'], 'the added item goes, the put off one stays');
+  assert.equal(rec.history.money.at(-1).text, 'Wise', 'the old answer is kept (part 6)');
+  assert.deepEqual(o.w.seenAction('money', b.id, 'undoLater'), { ok: true });
+  assert.deepEqual(o.w.ownerAnswer('money', 'Wise\nCard ending 1005\nChase card', [b.id]), { ok: true, complete: true });
+  rec = o.w.read();
+  assert.equal(rec.answers.money.coverage, 'complete');
+  assert.equal(rec.answers.money.completeAt, rec.answers.money.at);
+  assert.equal(rec.seen.money, undefined);
+  assert.equal(F.isSettled(rec, 'money', Date.now()), true);
+  assert.equal(o.events.filter((e) => e.attrs.q === 'money').at(-1).attrs.change, 'answered', 'Pulse sees the whole list as answered');
+  assert.deepEqual(o.w.ownerAnswer('money', 'x'.repeat(F.LIST_CAP)), { ok: true, complete: true }, 'a list holds 1,000 characters (D5)');
+  assert.deepEqual(o.w.ownerAnswer('money', 'x'.repeat(F.LIST_CAP + 1)), { ok: false, error: 'too-long' });
+  assert.deepEqual(o.w.ownerAnswer('hours', 'x'.repeat(F.FOUNDATION_CAP + 1)), { ok: false, error: 'too-long' }, 'a single answer keeps 300');
+});
+
+test('Michael makes a list whole only with "complete": true from the owner\'s own words', (t) => {
+  // Value: protects=a passing mention relayed by Michael never closes a list (eng R2); fails_when=Michael's owner relay always or never closes it; why_new=R2; seam=ownerSaid is the writer's injected owner list, as today; no_claim=Michael choosing the flag
+  const o = writer(t);
+  assert.match(o.w.handle('god', { question: 'tools', answer: 'HubSpot; QuickBooks', source: { owner: 'msg-owner-1' } }), /Saved/);
+  assert.equal(o.w.read().answers.tools.coverage, 'known', 'without the flag');
+  assert.match(o.w.handle('god', { question: 'tools', answer: 'HubSpot; QuickBooks', source: { owner: 'msg-owner-1' }, complete: true }), /Saved/);
+  assert.equal(o.w.read().answers.tools.coverage, 'complete', 'the same words, now the whole list');
+  assert.match(o.w.handle('ryan', { question: 'competitors', answer: 'Acme', source: { owner: 'msg-owner-1' }, complete: true }), /Saved/);
+  assert.equal(o.w.read().answers.competitors.coverage, 'known', 'a member cannot make a list whole');
+});
+
+test('a seen item: kept beside the answer from an office file, reopens a whole list once, outside text goes to Michael, and not ours, waiting or listed items drop', (t) => {
+  // Value: protects=the work reopens a list, the owner's words are never edited, and outside text never reaches every member unchecked (R6, eng Architecture 1, outside voice 4); fails_when=a seen item edits the answer, skips the source check, or a rejected item comes back; why_new=part 4; seam=none; no_claim=whether members send seen items (instruction pins)
+  const reports = [];
+  const o = writer(t, { deps: { reportsFor: (id, since) => { reports.push({ id, since }); return [{ from: 'oscar', subject: 'October cash flow final', at: Date.parse('2026-10-18T10:00:00Z') }]; } } });
+  const file = officeFile(o);
+  o.w.ownerAnswer('money', 'Wise; Wells Fargo');
+  assert.equal(o.w.read().answers.money.coverage, 'complete');
+  o.told.length = 0;
+  assert.match(o.w.handle('oscar', { question: 'money', gap: 'Card bills paid from Wise on 23 Oct', item: 'Amex card', source: { file } }), /Saved for the owner to check/);
+  let rec = o.w.read();
+  assert.equal(rec.answers.money.text, 'Wise; Wells Fargo', 'the owner\'s words stay as they are');
+  assert.deepEqual(rec.seen.money.map((s) => [s.item, s.by, s.ref]), [['Amex card', 'oscar', file]]);
+  assert.equal(F.listState(rec, 'money', Date.now()), 'known', 'a whole list is known so far again');
+  assert.equal(o.told.filter((x) => x.subject === 'Foundation gap').length, 1);
+  assert.match(o.told.find((x) => x.subject === 'Foundation gap').body, /saw "Amex card".*not on the list the owner saved as the whole list/);
+  assert.match(o.told.find((x) => x.subject === 'Reports that may rest on a changed answer').body, /October cash flow final/, 'Michael hears which reports used it (R7)');
+  assert.equal(reports[0].since, Date.parse('2026-10-19T10:00:00Z') - 60 * 86_400_000, 'the last 60 days');
+  assert.match(o.w.handle('oscar', { question: 'money', gap: 'x', item: 'AMEX  card!', source: { file } }), /already waiting/, 'matched on a normalized key');
+  assert.match(o.w.handle('oscar', { question: 'money', gap: 'x', item: 'wells fargo', source: { file } }), /already on the list/);
+  assert.match(o.w.handle('oscar', { question: 'money', gap: 'x', item: 'Chase card' }), /needs its source/);
+  assert.match(o.w.handle('oscar', { question: 'money', gap: 'x', item: 'Chase card', source: { outside: 'an email from the bank' } }), /to Michael to check/);
+  assert.equal(o.w.read().seen.money.length, 1, 'outside text is not kept until Michael confirms it');
+  assert.match(o.told.at(-1).subject, /Seen item to check/);
+  // Not ours, and its undo.
+  const amex = o.w.read().seen.money[0];
+  assert.deepEqual(o.w.seenAction('money', amex.id, 'notOurs'), { ok: true });
+  rec = o.w.read();
+  assert.equal(rec.seen.money, undefined);
+  assert.deepEqual(rec.notOurs.money.map((n) => n.item), ['Amex card']);
+  assert.match(o.w.handle('oscar', { question: 'money', gap: 'x', item: 'amex-card', source: { file } }), /not ours list/, 'next month\'s wording is dropped too');
+  assert.deepEqual(o.w.seenAction('money', amex.id, 'undoNotOurs'), { ok: true });
+  assert.deepEqual(o.w.read().seen.money.map((s) => s.id), [amex.id], 'Undo puts the seen item back');
+  assert.equal(o.w.read().notOurs.money, undefined);
+  assert.deepEqual(o.w.seenAction('money', 'nope', 'notOurs'), { ok: false });
+  assert.equal(o.w.handle('oscar', { question: 'customers', gap: 'x', item: 'Acme', source: { file } }), null, 'an item on a single question is an ordinary gap');
+  assert.equal(o.w.read().seen.customers, undefined);
+});
+
+test('what members and Michael read: partly known lists, seen and not ours lines with caps, open lists Michael must raise', (t) => {
+  // Value: protects=members see a list is unfinished and what to leave out, and Michael sees lists to raise (eng Code quality 2, outside voice 2); fails_when=sections list only empty questions or carry unbounded items; why_new=part 1 and R6; seam=none; no_claim=model reading
+  const o = writer(t);
+  const file = officeFile(o);
+  o.w.handle('oscar', { question: 'money', answer: 'Wise', source: { file } });
+  for (let i = 0; i < 12; i++) o.w.handle('oscar', { question: 'money', gap: 'x', item: `Card ${i} ${'z'.repeat(150)}`, source: { file } });
+  const rec = o.w.read();
+  const s = F.sectionFor(rec, ['finance'], (id) => id);
+  assert.match(s, /Partly known now: money\./);
+  assert.match(s, /\[money\]: Wise \(learned by oscar, 19 Oct\) \(known so far, may be incomplete\)/);
+  const seenLine = s.split('\n').find((l) => l.startsWith('Seen, not yet on the list [money]'));
+  assert.ok(seenLine, 'the seen line');
+  assert.match(seenLine, /; and 2 more\.$/, 'ten items at most');
+  assert.ok(rec.seen.money.every((x) => x.item.length <= F.SEEN_ITEM_MAX), 'each item one line of at most 120 characters');
+  o.w.seenAction('money', rec.seen.money[0].id, 'notOurs');
+  assert.match(F.sectionFor(o.w.read(), ['finance']), /Not ours, never send these \[money\]: Card 0/);
+  assert.match(F.michaelFoundations(o.w.read(), ['finance']), /Lists still open that the work hit or that passed their shelf life: money\./);
+  assert.doesNotMatch(F.sectionFor(o.w.read(), ['sales']), /Seen, not yet/, 'other jobs carry none of it');
+});
+
+test('upgrade day: owner lists are whole from today, member lists and the widened money question are known so far; a widened whole list reopens', (t) => {
+  // Value: protects=no burst of shelf life cards and no lost answers on upgrade, and a reworded question that asks for more gets asked again (R2, scope finding 9); fails_when=answers keep counting after a widening, or owner answers use their old dates; why_new=money widened 2 Nov; seam=a hand written pre upgrade record; no_claim=offices on other versions
+  const o = writer(t);
+  const file = path.join(o.home, 'private', 'foundations.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ version: 1, answers: {
+    money: { text: 'QuickBooks is the book', by: 'oscar', source: 'file', at: '2026-11-02T05:06:09.172Z' },
+    tools: { text: 'HubSpot; QuickBooks', by: 'owner', source: 'owner', at: '2026-01-10T10:00:00Z' },
+    offer: { text: 'Pizza', by: 'ryan', source: 'file', at: '2026-10-01T10:00:00Z' },
+    customers: { text: 'Restaurant owners', by: 'owner', source: 'owner', at: '2026-10-01T10:00:00Z' }
+  }, hits: {}, drafts: {}, snoozed: {} }));
+  o.w.seed();
+  let rec = o.w.read();
+  assert.equal(rec.answers.money.coverage, 'known');
+  assert.equal(rec.answers.tools.coverage, 'complete');
+  assert.equal(rec.answers.tools.completeAt, '2026-10-19T10:00:00.000Z', 'complete as of the upgrade day, not January');
+  assert.equal(rec.answers.offer.coverage, 'known');
+  assert.equal(rec.answers.customers.coverage, undefined, 'a single question has no coverage');
+  assert.ok(rec.listsAt);
+  assert.equal(o.told.filter((x) => /shelf life/.test(x.subject)).length, 0, 'no expiry card on upgrade');
+  // A whole list answered to an older version of a widened question reopens.
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  raw.answers.money = { ...raw.answers.money, by: 'owner', source: 'owner', coverage: 'complete', completeAt: '2026-10-19T10:00:00.000Z', v: 1 };
+  fs.writeFileSync(file, JSON.stringify(raw));
+  const o2 = writer(t);
+  fs.mkdirSync(path.join(o2.home, 'private'), { recursive: true });
+  fs.writeFileSync(path.join(o2.home, 'private', 'foundations.json'), JSON.stringify(raw));
+  o2.w.seed();
+  rec = o2.w.read();
+  assert.equal(rec.answers.money.coverage, 'known', 'answered to version 1 of a version 2 question');
+  assert.equal(rec.answers.money.text, 'QuickBooks is the book', 'its text kept');
+  assert.equal(rec.history.money.at(-1).coverage, 'complete');
+});
+
+test('a whole list past its shelf life is known so far again, once, with an expired hit and no member hit', (t) => {
+  // Value: protects=money, tools and team come back after 90 and 180 days, one card each, never per beat (R4, R5, outside voice 2); fails_when=no clock, a hit each hour, or a member hit that skews the proof; why_new=part 3; seam=the writer's clock; no_claim=Michael raising the card (instruction pin)
+  const o = writer(t);
+  o.w.ownerAnswer('tools', 'HubSpot; QuickBooks');
+  o.w.ownerAnswer('team', 'Pam; Oscar');
+  o.w.ownerAnswer('offer', 'Pizza');
+  assert.equal(o.w.checkExpiry(true), 0);
+  o.advance(91 * 86_400_000);
+  assert.equal(o.w.checkExpiry(true), 1, 'tools only: 90 days; team has 180; offer never expires');
+  let rec = o.w.read();
+  assert.equal(rec.answers.tools.coverage, 'known');
+  assert.deepEqual([rec.hits.tools.reason, rec.hits.tools.by, rec.hits.tools.told], ['expired', [], true]);
+  assert.equal(o.events.filter((e) => e.attrs.q === 'tools' && e.attrs.change === 'hit').length, 0, 'no member hit');
+  assert.equal(o.events.filter((e) => e.attrs.q === 'tools' && e.attrs.change === 'expired').length, 1);
+  assert.equal(o.told.filter((x) => x.subject === 'Foundation list past its shelf life').length, 1);
+  assert.equal(o.w.checkExpiry(), 0, 'not again within the hour');
+  o.advance(3_600_001);
+  assert.equal(o.w.checkExpiry(), 0, 'and not again once known so far');
+  o.advance(90 * 86_400_000);
+  assert.equal(o.w.checkExpiry(true), 1, 'team at 180 days');
+  rec = o.w.read();
+  assert.match(F.michaelFoundations(rec, ['it', 'people']), /tools \(past its shelf life\)/);
+  assert.equal(F.questionOf('money').shelfDays, 90);
+  assert.equal(F.questionOf('team').shelfDays, 180);
+  assert.equal(F.questionOf('tools').shelfDays, 90);
+});
+
+test('the rules: members send list items with their file and skip not ours; Michael relays "complete" and raises list cards; the weekly focus covers lists; Pulse counts only settled answers', () => {
+  // Value: protects=the agents are told the new behavior and the count reads the settled answers (parts 1 to 5, R3); fails_when=a rule or the count wiring is dropped; why_new=agent behavior changes 1 to 4; seam=source pins (index.ts needs Electron); no_claim=model compliance
+  const hive = read('src/main/hive.ts');
+  assert.match(hive, /read the "Empty now" list in your section, and the "Partly known now" line/);
+  assert.match(hive, /send a gap with "item": the thing's name, never an amount or a date, and the file you saw it in/);
+  assert.match(hive, /Never send an item on a "Not ours" line of your section, or one already on a "Seen" line/);
+  assert.match(hive, /Grow a list only with items; never send a new answer over one that is known so far/);
+  assert.match(hive, /For a list, add "complete": true only when the owner said it is the whole list/);
+  assert.match(hive, /"Foundation list past its shelf life"/);
+  assert.match(hive, /"Reports that may rest on a changed answer"[\s\S]{0,200}never redo it yourself/);
+  const config = read('src/main/config.ts');
+  assert.match(config, /FOUNDATIONS_CHECK_FOCUS =\n  'For each open question in the company foundations that the work hit, and each list past its shelf life/);
+  const main = read('src/main/index.ts');
+  assert.match(main, /foundationsAnswers: \(\) => settledAnswers\(foundations\.read\(\), Date\.now\(\)\)/);
+  assert.match(main, /try \{ foundations\.checkExpiry\(\); \} catch/);
+  assert.match(main, /reportsFor: \(id, since\) => foundationReports\(id, since\)/);
+  assert.match(main, /e\.act !== 'done' && e\.act !== 'inform'/);
+  assert.match(main, /ipcMain\.handle\('foundations:seen'/);
+  for (const loc of ['en', 'zh-CN', 'ar']) {
+    const c = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).foundations.card;
+    for (const k of ['saveWhole', 'saveSoFar', 'stillAll', 'seenAdd', 'seenNotOurs', 'seenLater', 'listHint', 'listHintUndecided', 'seenInfo', 'savedWhole', 'savedSoFar']) assert.ok(c[k], `${loc} ${k}`);
+    assert.doesNotMatch(JSON.stringify(c), /[–—]/, `${loc}: no dashes`);
+  }
+});
+
+test('the list card: one box from the saved list, seen rows with Add, Not ours and Decide later, Save held until each is settled, Draft only while empty', () => {
+  // Value: protects=the approved list card (design review D2, D4 to D7); fails_when=a seen row loses a choice, Save closes with an undecided item, or Draft shows on a list with items; why_new=design review; seam=source pins (no renderer harness); no_claim=layout and focus at 320 px (live look at /qa)
+  const card = read('src/renderer/src/components/FoundationCard.tsx');
+  assert.match(card, /const blocked = list && \(!loaded \|\| undecided\.length > 0\);/);
+  assert.match(card, /putOff\.length \? t\('foundations\.card\.saveSoFar'\) : expired && unchanged \? t\('foundations\.card\.stillAll'\) : t\('foundations\.card\.saveWhole'\)/);
+  assert.match(card, /seenDo\(s, 'notOurs'\)[\s\S]*seenDo\(s, 'later'\)/);
+  assert.match(card, /seenDo\(n\.seen!, 'undoNotOurs'\)/);
+  assert.match(card, /!\(list && known\)/, 'Draft only while a list is empty (D6)');
+  assert.match(card, /readOnly=\{busy \|\| \(list && !loaded\)\}/, 'a list box waits for its record');
+  assert.match(card, /seen\.slice\(0, SEEN_SHOWN\)/);
+  assert.match(card, /aria-label=\{t\('foundations\.card\.seenAddLabel', \{ item: s\.item \}\)\}/);
+  const save = read('src/renderer/src/shell/foundationSave.ts');
+  assert.match(save, /with "complete": true/, 'Michael\'s fallback carries the whole list flag');
+  assert.match(read('branding/DESIGN.md'), /### 7\.27b The list card/);
 });

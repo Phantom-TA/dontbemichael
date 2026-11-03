@@ -19,8 +19,8 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { privateRoot } from '../shared/agentPrivatePaths';
 import { writeFileAtomic } from './atomicFile';
 import {
-  FIT_PICTURES, FIT_TEXT_MAX, FOLDER_REF, FOUNDATION_CAP, FOUNDATION_FILE_TAG, FOUNDATION_QUESTIONS, FOUNDATIONS_TAG, FOUNDATIONS_TITLE, cleanRecord, emptyRecord, fileAnswerLine, folderAnswerLine, isFoundationId, isFoundationsDoc, oneLine, questionsFor, renderFoundations,
-  type FoundationAnswer, type FoundationId, type FoundationJob, type FoundationSourceKind, type FoundationsRecord, type FoundationsView
+  FIT_PICTURES, FIT_TEXT_MAX, FOLDER_REF, FOUNDATION_FILE_TAG, FOUNDATION_QUESTIONS, FOUNDATIONS_TAG, FOUNDATIONS_TITLE, SEEN_ITEM_MAX, SEEN_LATER_MS, capFor, cleanRecord, emptyRecord, fileAnswerLine, folderAnswerLine, isExpired, isFoundationId, isFoundationsDoc, isLater, isListQuestion, isSettled, itemKey, joinListLines, listState, oneLine, questionOf, questionVersion, questionsFor, renderFoundations,
+  type Coverage, type FoundationAnswer, type FoundationId, type FoundationJob, type FoundationPast, type FoundationSourceKind, type FoundationsRecord, type FoundationsView, type SeenItem
 } from '../shared/foundations';
 import { IMAGES, type DocExtraction } from './docText';
 import type { FileFitCheck } from './fileFitCheck';
@@ -70,7 +70,22 @@ export interface FoundationsDeps {
   folderBounds?: () => { userHome?: string; business?: string; team: string[] };
   /** Whether paths compare without case (Mac and Windows). */
   caseInsensitive?: boolean;
+  /** Reports sent to Michael since `sinceMs` by the team members whose job
+   *  uses the question, newest first (docs/designs/foundation-answers-stay-open.md, R7). */
+  reportsFor?: (id: FoundationId, sinceMs: number) => Array<{ from: string; subject: string; at: number }>;
 }
+
+/** How far back the reports note looks, and how many it lists (R7). */
+const REPORTS_WINDOW_MS = 60 * 86_400_000;
+const REPORTS_MAX = 20;
+/** Shelf lives are checked at most this often (eng review, Architecture 3). */
+const EXPIRY_CHECK_MS = 3_600_000;
+
+/** The coverage of a whole list, saved today. */
+type CoverageDecision = { ok: true; coverage: Coverage; remaining: SeenItem[] } | { ok: false };
+
+/** What the owner can do with a seen item on a list card (design review D4, D7). */
+export type SeenAction = 'notOurs' | 'undoNotOurs' | 'later' | 'undoLater';
 
 /** Why a file added on a card was not taken; each has its own card line. */
 export type AddFileError = 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'picture-engine' | 'misfit' | 'unchecked';
@@ -139,11 +154,21 @@ const CLOSE_CARD = 'If a foundation card for it is open, close it as done.';
 
 const same = (a: string, b: string): boolean => a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
 
+/** "3 Feb 2026" for a note to Michael. */
+const day = (iso: string | undefined): string => {
+  const d = new Date(iso ?? '');
+  return Number.isFinite(d.getTime()) ? `${d.getUTCDate()} ${d.toLocaleString('en', { month: 'short', timeZone: 'UTC' })} ${d.getUTCFullYear()}` : 'an earlier day';
+};
+
 /** What a member sends to `foundations`, as `"foundation": {...}`. */
 export interface FoundationPayload {
   question?: unknown;
   answer?: unknown;
   gap?: unknown;
+  /** With a gap on a list: the thing the work saw that the list does not hold. */
+  item?: unknown;
+  /** From Michael relaying the owner: the owner said it is the whole list. */
+  complete?: unknown;
   draft?: unknown;
   source?: unknown;
 }
@@ -156,6 +181,7 @@ type Level = 'owner' | 'michael' | 'taught' | 'file';
 export class Foundations {
   private cache: { home: string; rec: FoundationsRecord } | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private expiryCheckedAt = 0;
 
   constructor(private readonly d: FoundationsDeps) {}
 
@@ -198,12 +224,12 @@ export class Foundations {
     // Each name read once per document (a name is a registry read).
     const names = new Map<string, string>();
     const nameOf = (id: string): string => { let n = names.get(id); if (n === undefined) { n = this.nameOf(id); names.set(id, n); } return n; };
-    return renderFoundations(this.read(), this.d.jobs?.() ?? [], nameOf);
+    return renderFoundations(this.read(), this.d.jobs?.() ?? [], nameOf, this.now());
   }
 
   private nameOf = (id: string): string => (this.d.nameOf ? this.d.nameOf(id) : id);
 
-  private event(agentId: string | null, q: FoundationId, change: 'answered' | 'changed' | 'cleared' | 'hit', attrs: Record<string, unknown> = {}): void {
+  private event(agentId: string | null, q: FoundationId, change: 'answered' | 'changed' | 'cleared' | 'hit' | 'coverage' | 'expired', attrs: Record<string, unknown> = {}): void {
     try { this.d.record?.({ agentId, kind: 'foundation', ts: this.now(), attrs: { q, change, ...attrs } }); } catch { /* telemetry never blocks a write */ }
   }
 
@@ -216,7 +242,9 @@ export class Foundations {
     const file = this.file();
     if (!file) return;
     if (!existsSync(file)) this.save(this.read());
+    this.migrateLists();
     this.profileChanged();
+    this.checkExpiry(true);
     const rec = this.read();
     const gone = !!rec.publishedId && !!this.d.exists && !this.d.exists(rec.publishedId);
     if (rec.publishedText !== this.document() || !rec.publishedId || gone) this.publishSoon(0);
@@ -254,22 +282,135 @@ export class Foundations {
     for (const id of filled) this.toMichael('Foundation answered', `"${FOUNDATION_QUESTIONS[id].text}" (${id}) is answered now, from the company profile: ${next.answers[id]?.text ?? ''}\n\n${CLOSE_CARD}`);
   }
 
-  /** Set an answer: drafts, snoozes and the gap notice for it go, and one
-   *  telemetry event says what changed. */
-  private withAnswer(rec: FoundationsRecord, id: FoundationId, a: FoundationAnswer, agentId: string | null): FoundationsRecord {
+  /** Set an answer: drafts, snoozes and the gap notice for it go, the old
+   *  answer joins the history, and one telemetry event says what changed. A
+   *  list's event follows whether it counts as answered: answered when it
+   *  became the whole list, cleared when it stopped being one, coverage while
+   *  it stays known so far (Pulse reads answered and cleared). `seen` is the
+   *  list's seen items after this save. */
+  private withAnswer(rec: FoundationsRecord, id: FoundationId, a: FoundationAnswer, agentId: string | null, opts: { seen?: SeenItem[] } = {}): FoundationsRecord {
     const had = rec.answers[id];
+    const now = this.now();
     const next: FoundationsRecord = {
       ...rec,
       answers: { ...rec.answers, [id]: a },
       drafts: { ...rec.drafts },
       snoozed: { ...rec.snoozed },
-      hits: { ...rec.hits }
+      hits: { ...rec.hits },
+      seen: { ...rec.seen },
+      history: had ? this.withPast(rec, id, had) : rec.history
     };
+    if (opts.seen) { if (opts.seen.length) next.seen[id] = opts.seen; else delete next.seen[id]; }
     delete next.drafts[id];
     delete next.snoozed[id];
     if (next.hits[id]) next.hits[id] = { ...next.hits[id]!, told: false };
-    this.event(agentId, id, had ? 'changed' : 'answered', { by: a.by, source: a.source });
+    if (isListQuestion(id)) {
+      const was = isSettled(rec, id, now), is = isSettled(next, id, now);
+      this.event(agentId, id, is ? (was ? 'changed' : 'answered') : (was ? 'cleared' : 'coverage'), { by: a.by, source: a.source, coverage: a.coverage ?? 'known' });
+    } else this.event(agentId, id, had ? 'changed' : 'answered', { by: a.by, source: a.source });
     return next;
+  }
+
+  /** The history with `had` added as it was until now (part 6). */
+  private withPast(rec: FoundationsRecord, id: FoundationId, had: FoundationAnswer): FoundationsRecord['history'] {
+    const past: FoundationPast = { text: had.text, by: had.by, source: had.source, at: had.at, until: this.iso(), ...(had.coverage ? { coverage: had.coverage } : {}) };
+    return { ...rec.history, [id]: [...(rec.history[id] ?? []), past] };
+  }
+
+  /** A list answer's coverage fields: the whole list as of now, or known so far. */
+  private coverageFields(id: FoundationId, coverage: Coverage): Pick<FoundationAnswer, 'coverage' | 'completeAt' | 'v'> {
+    return coverage === 'complete' ? { coverage, completeAt: this.iso(), v: questionVersion(id) } : { coverage, v: questionVersion(id) };
+  }
+
+  /** What the owner's save of a list card means (design review D4): the seen
+   *  items added go; every other one must be put off, and then the list stays
+   *  known so far. One left undecided refuses the save. */
+  private ownerCoverage(rec: FoundationsRecord, id: FoundationId, added: unknown): CoverageDecision {
+    const ids = new Set(Array.isArray(added) ? added.filter((x): x is string => typeof x === 'string') : []);
+    const remaining = (rec.seen[id] ?? []).filter((s) => !ids.has(s.id));
+    const now = this.now();
+    if (remaining.some((s) => !isLater(s, now))) return { ok: false };
+    return { ok: true, remaining, coverage: remaining.length ? 'known' : 'complete' };
+  }
+
+  /**
+   * The lists' coverage at launch. The first time (the upgrade day): a list
+   * answer the owner or the profile gave becomes the whole list as of today,
+   * so no office gets a burst of shelf life cards; one from a member, or one
+   * given before its question was widened (money, 2 Nov), is known so far.
+   * Every launch: a whole list answered to an older version of a widened
+   * question is known so far again (R2), its text kept.
+   */
+  migrateLists(): void {
+    if (!this.file()) return;
+    const rec = this.read();
+    const first = !rec.listsAt;
+    const answers = { ...rec.answers };
+    let history = rec.history;
+    let changed = first;
+    for (const id of Object.keys(answers) as FoundationId[]) {
+      const a = answers[id];
+      if (!a || !isListQuestion(id)) continue;
+      if (!a.coverage) {
+        const owner = (a.source === 'owner' || a.source === 'profile') && (a.v ?? 1) >= questionVersion(id);
+        answers[id] = owner ? { ...a, ...this.coverageFields(id, 'complete') } : { ...a, coverage: 'known', v: a.v ?? 1 };
+        changed = true;
+      } else if (a.coverage === 'complete' && (a.v ?? 1) < questionVersion(id)) {
+        history = this.withPast({ ...rec, history }, id, a);
+        answers[id] = { ...a, coverage: 'known' };
+        this.event(null, id, 'cleared', { reason: 'widened' });
+        changed = true;
+      }
+    }
+    if (changed) { this.save({ ...rec, answers, history, ...(first ? { listsAt: this.iso() } : {}) }); this.publishSoon(); }
+  }
+
+  /**
+   * Whole lists past their shelf life (R4, R5) are known so far again: the
+   * record keeps an "expired" hit with no member, so Michael's own card rule
+   * raises one card per list, and telemetry writes an `expired` change, never
+   * a member's hit. Checked at launch and at most once an hour after.
+   */
+  checkExpiry(force = false): number {
+    const now = this.now();
+    if (!force && now - this.expiryCheckedAt < EXPIRY_CHECK_MS) return 0;
+    this.expiryCheckedAt = now;
+    if (!this.file()) return 0;
+    let rec = this.read();
+    const done: FoundationId[] = [];
+    for (const id of Object.keys(rec.answers) as FoundationId[]) {
+      const a = rec.answers[id];
+      if (!a || !isListQuestion(id) || !isExpired(id, a, now)) continue;
+      const was = rec.hits[id];
+      const at = this.iso();
+      rec = {
+        ...rec,
+        answers: { ...rec.answers, [id]: { ...a, coverage: 'known' } },
+        history: this.withPast(rec, id, a),
+        hits: { ...rec.hits, [id]: { first: was?.first ?? at, last: at, count: (was?.count ?? 0) + 1, by: was?.by ?? [], told: true, reason: 'expired' } }
+      };
+      this.event(null, id, 'expired', { completeAt: a.completeAt });
+      done.push(id);
+    }
+    if (!done.length) return 0;
+    this.save(rec);
+    this.publishSoon();
+    for (const id of done) {
+      const a = rec.answers[id]!;
+      this.toMichael('Foundation list past its shelf life', `"${FOUNDATION_QUESTIONS[id].text}" (${id}) was saved as the whole list on ${day(a.completeAt)}, more than ${questionOf(id).shelfDays} days ago, so it counts as partly known again. Raise one foundation card for it on Ask me unless one is open: assign it to a team member whose job uses it, and make its "q" one bold sentence asking the owner whether it is still the whole list.`);
+      this.reportsNote(id, 'passed its shelf life and is partly known again');
+    }
+    return done.length;
+  }
+
+  /** R7: when a list changes or reopens, one note to Michael naming the
+   *  reports from the last 60 days by the members whose job uses it. */
+  private reportsNote(id: FoundationId, why: string): void {
+    let reports: Array<{ from: string; subject: string; at: number }> = [];
+    try { reports = this.d.reportsFor?.(id, this.now() - REPORTS_WINDOW_MS) ?? []; } catch (e) { console.error('[foundations] reports', e); return; }
+    if (!reports.length) return;
+    const rows = reports.slice(0, REPORTS_MAX).map((r) => `- ${day(new Date(r.at).toISOString())}, ${this.nameOf(r.from)}: ${oneLine(r.subject).slice(0, 120)}`);
+    this.toMichael('Reports that may rest on a changed answer', `"${FOUNDATION_QUESTIONS[id].text}" (${id}) ${why}. These reports from the last 60 days came from team members whose job uses it, newest first, so some may rest on the old answer:\n${rows.join('\n')}\n\nDecide whether any needs redoing, and ask its member if so. Nothing reruns by itself.`);
   }
 
   /** Keep the company profile in step with an answer: the owner's words set
@@ -282,17 +423,76 @@ export class Foundations {
     if (patch) try { this.d.setProfile(patch); } catch (e) { console.error('[foundations] profile', e); }
   }
 
-  /** The owner's answer from the foundation card: it always wins. */
-  ownerAnswer(id: unknown, text: unknown): { ok: true } | { ok: false; error: 'unknown' | 'empty' | 'too-long' | 'no-office' } {
+  /** The owner's answer from the foundation card: it always wins. On a list
+   *  card a save says it is the whole list (eng review R2), unless a seen item
+   *  was put off (design review D4); `added` names the seen items the owner
+   *  added to the box, which go. */
+  ownerAnswer(id: unknown, text: unknown, added?: unknown): { ok: true; complete?: boolean } | { ok: false; error: 'unknown' | 'empty' | 'too-long' | 'no-office' | 'undecided' } {
     if (!isFoundationId(id)) return { ok: false, error: 'unknown' };
     if (!this.file()) return { ok: false, error: 'no-office' };
-    const t = typeof text === 'string' ? oneLine(text) : '';
+    const list = isListQuestion(id);
+    const t = typeof text === 'string' ? (list ? joinListLines(text) : oneLine(text)) : '';
     if (!t) return { ok: false, error: 'empty' };
-    if (t.length > FOUNDATION_CAP) return { ok: false, error: 'too-long' };
-    this.save(this.withAnswer(this.read(), id, { text: t, by: 'owner', source: 'owner', at: this.iso() }, null));
-    this.toProfile(id, t, true);
+    if (t.length > capFor(id)) return { ok: false, error: 'too-long' };
+    return this.ownerSave(id, { text: t, by: 'owner', source: 'owner', at: this.iso() }, added, t);
+  }
+
+  /** One owner save, any kind: the coverage decided, the answer written, the
+   *  profile and the copy kept in step, and Michael told which reports used a
+   *  list that changed. `typed` is what reaches the profile. */
+  private ownerSave(id: FoundationId, a: FoundationAnswer, added: unknown, typed: string): { ok: true; complete?: boolean } | { ok: false; error: 'undecided' } {
+    const rec = this.read();
+    const had = rec.answers[id];
+    if (!isListQuestion(id)) {
+      this.save(this.withAnswer(rec, id, a, null));
+      if (typed) this.toProfile(id, typed, true);
+      this.publishSoon();
+      return { ok: true };
+    }
+    const cov = this.ownerCoverage(rec, id, added);
+    if (!cov.ok) return { ok: false, error: 'undecided' };
+    this.save(this.withAnswer(rec, id, { ...a, ...this.coverageFields(id, cov.coverage) }, null, { seen: cov.remaining }));
+    if (typed) this.toProfile(id, typed, true);
     this.publishSoon();
-    return { ok: true };
+    if (!had || !same(had.text, a.text)) this.reportsNote(id, 'changed: the owner saved a new list');
+    return { ok: true, complete: cov.coverage === 'complete' };
+  }
+
+  /** What the owner did with a seen item on a list card: Not ours and Decide
+   *  later are saved at once, each with its own undo (design review D4, D7). */
+  seenAction(id: unknown, seenId: unknown, action: unknown): { ok: boolean } {
+    if (!isFoundationId(id) || typeof seenId !== 'string' || !seenId || !this.file()) return { ok: false };
+    const rec = this.read();
+    const seen = rec.seen[id] ?? [];
+    const notOurs = rec.notOurs[id] ?? [];
+    const put = (nextSeen: SeenItem[], nextNot = notOurs): void => {
+      const s2 = { ...rec.seen }, n2 = { ...rec.notOurs };
+      if (nextSeen.length) s2[id] = nextSeen; else delete s2[id];
+      if (nextNot.length) n2[id] = nextNot; else delete n2[id];
+      this.save({ ...rec, seen: s2, notOurs: n2 });
+      this.publishSoon();
+    };
+    const s = seen.find((x) => x.id === seenId);
+    if (action === 'notOurs' && s) {
+      const key = itemKey(s.item);
+      put(seen.filter((x) => x !== s), [...notOurs.filter((n) => n.key !== key), { item: s.item, key, at: this.iso(), seen: s }]);
+      return { ok: true };
+    }
+    if (action === 'undoNotOurs') {
+      const n = notOurs.find((x) => x.seen?.id === seenId);
+      if (!n) return { ok: false };
+      put(n.seen && !seen.some((x) => x.id === seenId) ? [...seen, n.seen] : seen, notOurs.filter((x) => x !== n));
+      return { ok: true };
+    }
+    if (action === 'later' && s) {
+      put(seen.map((x) => (x === s ? { ...x, later: new Date(this.now() + SEEN_LATER_MS).toISOString() } : x)));
+      return { ok: true };
+    }
+    if (action === 'undoLater' && s) {
+      put(seen.map((x) => { if (x !== s) return x; const { later: _later, ...rest } = x; return rest; }));
+      return { ok: true };
+    }
+    return { ok: false };
   }
 
   /** A file the owner adds on the card (D2, D3, D4, D5, D10): read it once;
@@ -373,31 +573,27 @@ export class Foundations {
   /** The owner's answer from a folder (D1): their words, then the folder. The
    *  members whose job uses the question read it from here on
    *  (readFoldersFor); only the words reach the company profile. */
-  answerFolder(id: unknown, path: unknown, words: unknown): { ok: true; text: string } | { ok: false; error: FolderError } {
+  answerFolder(id: unknown, path: unknown, words: unknown, added?: unknown): { ok: true; text: string } | { ok: false; error: FolderError | 'undecided' } {
     const checked = this.checkFolder(id, path);
     if (!checked.ok) return checked;
     const fid = id as FoundationId;
-    const typed = typeof words === 'string' ? oneLine(words).slice(0, FOUNDATION_CAP) : '';
-    const text = folderAnswerLine(typed, checked.path) as string;
-    this.save(this.withAnswer(this.read(), fid, { text, by: 'owner', source: 'owner', ref: `${FOLDER_REF}${checked.path}`, at: this.iso() }, null));
-    if (typed) this.toProfile(fid, typed, true);
-    this.publishSoon();
-    return { ok: true, text };
+    const typed = typeof words === 'string' ? (isListQuestion(fid) ? joinListLines(words) : oneLine(words)).slice(0, capFor(fid)) : '';
+    const text = folderAnswerLine(typed, checked.path, capFor(fid)) as string;
+    const r = this.ownerSave(fid, { text, by: 'owner', source: 'owner', ref: `${FOLDER_REF}${checked.path}`, at: this.iso() }, added, typed);
+    return r.ok ? { ok: true, text } : r;
   }
 
   /** The owner's answer from a file (D2, D8): their words, then the document
    *  members read whole; only the words reach the company profile. */
-  answerFile(id: unknown, docId: unknown, words: unknown): { ok: true; text: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-doc' } {
+  answerFile(id: unknown, docId: unknown, words: unknown, added?: unknown): { ok: true; text: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-doc' | 'undecided' } {
     if (!isFoundationId(id)) return { ok: false, error: 'unknown' };
     if (!this.file()) return { ok: false, error: 'no-office' };
     const title = typeof docId === 'string' && /^[A-Za-z0-9_-]+$/.test(docId) ? this.d.docTitle?.(docId) : undefined;
     if (!title) return { ok: false, error: 'no-doc' };
-    const typed = typeof words === 'string' ? oneLine(words).slice(0, FOUNDATION_CAP) : '';
-    const text = fileAnswerLine(typed, docId as string, title);
-    this.save(this.withAnswer(this.read(), id, { text, by: 'owner', source: 'owner', ref: `kg:${docId as string}`, at: this.iso() }, null));
-    if (typed) this.toProfile(id, typed, true);
-    this.publishSoon();
-    return { ok: true, text };
+    const typed = typeof words === 'string' ? (isListQuestion(id) ? joinListLines(words) : oneLine(words)).slice(0, capFor(id)) : '';
+    const text = fileAnswerLine(typed, docId as string, title, capFor(id));
+    const r = this.ownerSave(id, { text, by: 'owner', source: 'owner', ref: `kg:${docId as string}`, at: this.iso() }, added, typed);
+    return r.ok ? { ok: true, text } : r;
   }
 
   /** Have a member draft it (design D8): the request is noted on the record
@@ -407,7 +603,7 @@ export class Foundations {
     const rec = this.read();
     this.save({ ...rec, drafts: { ...rec.drafts, [id]: { by: memberId, requestedAt: this.iso() } } });
     this.d.tell?.(memberId, `Draft: ${FOUNDATION_QUESTIONS[id].text}`,
-      `The owner asked you to draft the company foundations answer to "${FOUNDATION_QUESTIONS[id].text}" (${id}) from what the office already holds: your files, your memory and company knowledge. Keep it under ${FOUNDATION_CAP} characters and send it to "foundations" with "foundation": {"question": "${id}", "draft": "<your draft>"}. The owner reads it on the card, edits it and saves it. If the office holds nothing to draft from, send the draft as "Nothing to draft from" and say what would answer it.`);
+      `The owner asked you to draft the company foundations answer to "${FOUNDATION_QUESTIONS[id].text}" (${id}) from what the office already holds: your files, your memory and company knowledge. Keep it under ${capFor(id)} characters${isListQuestion(id) ? ', one item after another with "; " between them' : ''} and send it to "foundations" with "foundation": {"question": "${id}", "draft": "<your draft>"}. The owner reads it on the card, edits it and saves it. If the office holds nothing to draft from, send the draft as "Nothing to draft from" and say what would answer it.`);
     return { ok: true };
   }
 
@@ -430,7 +626,7 @@ export class Foundations {
     const id = p.question;
     if (!isFoundationId(id)) return `No company foundations question "${String(id ?? '')}". Use an id from your COMPANY FOUNDATIONS context, in square brackets after each question.`;
     const q = FOUNDATION_QUESTIONS[id].text;
-    if (typeof p.gap === 'string') return this.gap(from, id, p.gap);
+    if (typeof p.gap === 'string' || typeof p.item === 'string') return this.gap(from, id, typeof p.gap === 'string' ? p.gap : '', p.item, p.source);
     // A draft comes only from the member the owner asked, or Michael (draft()).
     if (typeof p.draft === 'string') return this.draft(from, id, p.draft);
     // A member answers only its own job's questions (Michael any).
@@ -443,7 +639,7 @@ export class Foundations {
     // every member carries.
     const text = typeof p.answer === 'string' ? oneLine(p.answer) : '';
     if (!text) return `Nothing saved for "${q}": send "answer", "gap" or "draft" in "foundation".`;
-    if (text.length > FOUNDATION_CAP) return `Not saved: keep the answer to "${q}" under ${FOUNDATION_CAP} characters. For more, save it to a file in the office folders and answer with its full path.`;
+    if (text.length > capFor(id)) return `Not saved: keep the answer to "${q}" under ${capFor(id)} characters. For more, save it to a file in the office folders and answer with its full path.`;
     const src = (p.source && typeof p.source === 'object' ? p.source : {}) as Record<string, unknown>;
     const level = this.level(from, src);
     if (!level) {
@@ -455,7 +651,11 @@ export class Foundations {
     }
     const rec = this.read();
     const had = rec.answers[id];
-    if (had && same(had.text, text)) return `Already in the company foundations: "${q}".`;
+    const list = isListQuestion(id);
+    // Only Michael relaying the owner's own words makes a list whole, and only
+    // when the owner said it is all of it (eng review R2).
+    const whole = list && level === 'owner' && p.complete === true;
+    if (had && same(had.text, text) && !(whole && listState(rec, id, this.now()) !== 'complete')) return `Already in the company foundations: "${q}".`;
     const ownerWrote = had && (had.source === 'owner' || had.source === 'profile');
     if (had && level !== 'owner' && ownerWrote) {
       this.toMichael('Foundation answer suggestion', `${this.nameOf(from)} suggests a different answer to "${q}" (${id}), which the owner answered: "${had.text}". Suggested, from ${this.describe(from, src)}: ${text}\n\nThe owner's answer stands; ask the owner if it should change.`);
@@ -467,9 +667,10 @@ export class Foundations {
     }
     const source: FoundationSourceKind = level;
     const ref = typeof src.owner === 'string' ? src.owner : typeof src.file === 'string' ? src.file : undefined;
-    this.save(this.withAnswer(rec, id, { text, by: from, source, at: this.iso(), ...(ref ? { ref } : {}) }, from));
+    this.save(this.withAnswer(rec, id, { text, by: from, source, at: this.iso(), ...(ref ? { ref } : {}), ...(list ? this.coverageFields(id, whole ? 'complete' : 'known') : {}) }, from, whole ? { seen: [] } : {}));
     this.toProfile(id, text, level === 'owner');
     this.publishSoon();
+    if (list && had && !same(had.text, text)) this.reportsNote(id, `changed: ${this.nameOf(from)} saved a new list`);
     // Answered without the owner's card: Michael closes the card he raised for
     // it (told here when the answer is his own, else by a note).
     if (rec.hits[id] && isMichael) return `Saved to the company foundations: "${q}". ${CLOSE_CARD}`;
@@ -500,16 +701,18 @@ export class Foundations {
 
   /** Work hit an empty question: kept once per question; Michael is told the
    *  first time (eng finding 8). */
-  private gap(from: string, id: FoundationId, evidence: string): string | null {
+  private gap(from: string, id: FoundationId, evidence: string, item?: unknown, source?: unknown): string | null {
     const rec = this.read();
-    const answer = rec.answers[id];
-    if (answer) return `"${FOUNDATION_QUESTIONS[id].text}" is answered: ${answer.text}`;
     // A gap counts only for the member's own job (Michael's for any), so no
     // member can fill Ask me with other jobs' questions.
     const god = this.d.godId?.() ?? 'god';
     if (this.d.jobsOf && from !== god && from !== 'god' && !questionsFor(this.d.jobsOf(from)).includes(id)) {
       return `"${FOUNDATION_QUESTIONS[id].text}" is not one of your job's foundations questions. If your work needs it, tell ${this.michaelName()}.`;
     }
+    const name = typeof item === 'string' ? oneLine(item).slice(0, SEEN_ITEM_MAX) : '';
+    if (name && isListQuestion(id)) return this.seenItem(from, id, name, evidence, source);
+    const answer = rec.answers[id];
+    if (answer && isSettled(rec, id, this.now())) return `"${FOUNDATION_QUESTIONS[id].text}" is answered: ${answer.text}`;
     const at = this.iso();
     const was = rec.hits[id];
     const line = oneLine(evidence).slice(0, 200);
@@ -522,11 +725,55 @@ export class Foundations {
     return null;
   }
 
+  /**
+   * Work saw something a list does not hold (R6, outside voice 4): kept as its
+   * own item beside the answer, never in the answer's words, with a source
+   * checked as an answer's is. An item on the not ours list, already waiting,
+   * or already in the answer is dropped. A whole list is known so far again,
+   * and Michael is told as for a gap.
+   */
+  private seenItem(from: string, id: FoundationId, name: string, evidence: string, source: unknown): string | null {
+    const q = FOUNDATION_QUESTIONS[id].text;
+    const key = itemKey(name);
+    if (!key) return `Nothing saved for "${q}": name the thing you saw, such as the account, tool or supplier.`;
+    const rec = this.read();
+    if ((rec.notOurs[id] ?? []).some((n) => n.key === key)) return `"${name}" is on the not ours list for "${q}". Leave it out.`;
+    if ((rec.seen[id] ?? []).some((s) => itemKey(s.item) === key)) return `"${name}" is already waiting for the owner on "${q}".`;
+    const answer = rec.answers[id];
+    if (answer && ` ${itemKey(answer.text)} `.includes(` ${key} `)) return `"${name}" is already on the list for "${q}".`;
+    const src = (source && typeof source === 'object' ? source : {}) as Record<string, unknown>;
+    const level = this.level(from, src);
+    const line = oneLine(evidence).slice(0, 200);
+    if (!level) {
+      if (typeof src.outside !== 'string' && typeof src.taught !== 'string' && typeof src.owner !== 'string' && typeof src.confirmed !== 'string' && typeof src.file !== 'string') {
+        return `Not saved: a seen item needs its source, "source": {"file": "<full path of the office file it was seen in>"}, or {"outside": "<where it came from>"} for anything from outside the office.`;
+      }
+      this.toMichael('Seen item to check', `${this.nameOf(from)} saw "${name}" for "${q}" (${id}), from ${this.describe(from, src)}, and it is not on the list.${line ? ` What the work saw: ${line}` : ''}\n\nIt comes from outside the office or from a source the app could not check, so it waits for you. If it is real, send it to "foundations" with "foundation": {"question": "${id}", "gap": "<what the work saw>", "item": "${name}", "source": {"confirmed": "<why you trust it>"}}; otherwise leave it.`);
+      return `Sent to ${this.michaelName()} to check first, because the app could not check where it came from.`;
+    }
+    const now = this.now();
+    const wasWhole = listState(rec, id, now) === 'complete';
+    const at = this.iso();
+    const seen: SeenItem = { id: `s${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`, item: name, by: from, at, ...(typeof src.file === 'string' ? { ref: src.file } : {}) };
+    const was = rec.hits[id];
+    const told = !!was?.told;
+    const hit = { first: was?.first ?? at, last: at, count: (was?.count ?? 0) + 1, by: was?.by.includes(from) ? was.by : [...(was?.by ?? []), from], evidence: line || `Saw ${name}`, told: true };
+    this.save({ ...rec, seen: { ...rec.seen, [id]: [...(rec.seen[id] ?? []), seen] }, hits: { ...rec.hits, [id]: hit } });
+    this.event(from, id, 'hit', { seen: true });
+    if (wasWhole) this.event(from, id, 'cleared', { reason: 'seen' });
+    this.publishSoon();
+    if (!told || wasWhole) {
+      this.toMichael('Foundation gap', `${this.nameOf(from)}'s work saw "${name}" for "${q}" (${id}), and it is not on the list${wasWhole ? ' the owner saved as the whole list' : ''}.${line ? ` What the work saw: ${line}` : ''}\n\nRaise one foundation card for it on Ask me, unless one is open (see "Company foundations" in your instructions).`);
+    }
+    if (wasWhole) this.reportsNote(id, `was reopened: ${this.nameOf(from)}'s work saw "${name}", which is not on it`);
+    return `Saved for the owner to check: "${name}" on "${q}".`;
+  }
+
   private draft(from: string, id: FoundationId, text: string): string {
     const rec = this.read();
     const t = oneLine(text);
     if (!t) return 'Nothing saved: the draft was empty.';
-    if (t.length > FOUNDATION_CAP) return `Not saved: keep the draft under ${FOUNDATION_CAP} characters.`;
+    if (t.length > capFor(id)) return `Not saved: keep the draft under ${capFor(id)} characters.`;
     const asked = rec.drafts[id];
     // Only the member the owner asked (or Michael) fills the card's draft.
     const god = this.d.godId?.() ?? 'god';
@@ -568,7 +815,7 @@ export class Foundations {
   /** The record for the renderer: answers, drafts, snoozes and hits. */
   view(): FoundationsView {
     const r = this.read();
-    return { answers: r.answers, drafts: r.drafts, snoozed: r.snoozed, hits: r.hits };
+    return { answers: r.answers, drafts: r.drafts, snoozed: r.snoozed, hits: r.hits, seen: r.seen, notOurs: r.notOurs };
   }
 }
 

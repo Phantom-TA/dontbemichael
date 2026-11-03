@@ -8,7 +8,7 @@ import { stopNeedsOwner, type OfficeBreakView } from '@shared/officeBreak';
 import { openQuestions, parseTasks, type HiveTask } from '../components/hiveTasks';
 import { openReportIndexes } from '@shared/askMeRouting';
 import { silentCards, type SilentEpisode } from '@shared/silentEngine';
-import { foundationAsk, isSnoozed, type FoundationsView } from '@shared/foundations';
+import { foundationAsk, isSettled, isSnoozed, type FoundationsView } from '@shared/foundations';
 
 const POLL_MS = 5000;
 
@@ -135,7 +135,7 @@ function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests
 /** A card's open questions the board shows: a foundation card the owner put
  *  off with Not now stays out for its week (office-foundations.md, D2). */
 export function shownQuestions(t: HiveTask, f: FoundationsView | null, now = Date.now()): ReturnType<typeof openQuestions> {
-  return openQuestions(t).filter((e) => { const id = foundationAsk(e); return !id || (!isSnoozed(f?.snoozed, id, now) && !f?.answers?.[id]); });
+  return openQuestions(t).filter((e) => { const id = foundationAsk(e); return !id || (!isSnoozed(f?.snoozed, id, now) && !(f && isSettled(f, id, now))); });
 }
 
 let foundationReads = 0;
