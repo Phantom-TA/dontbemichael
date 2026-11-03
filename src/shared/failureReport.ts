@@ -106,6 +106,8 @@ export const LOG_KIND_CLASS: Readonly<Record<string, FailureClass>> = {
   'office-break': 'owner',
   // A frame without its secret is refused by design.
   'hook-frame-rejected': 'none',
+  // The case study screen shows its own outcome to the owner (docs/designs/case-study.md).
+  'case-study-draft': 'none', 'case-study-logo': 'none', 'case-study-pdf': 'none', 'case-study-send': 'none', 'case-study-sent': 'none',
   'agent-hold': 'none', 'app-start': 'none', 'archive': 'none', 'card-reopen': 'none', 'clear': 'none',
   'clear-cancelled': 'none', 'clear-handoff-asked': 'none', 'closed-by-owner': 'none', 'compact': 'none',
   'distinct-check': 'none', 'drain': 'none', 'file-handed-over': 'none', 'foundations': 'none', 'member-deleted': 'none',

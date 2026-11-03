@@ -6,6 +6,7 @@ import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
 import type { OrganizedList } from '../shared/organizedRecord';
 import type { PulseView } from '../shared/pulseView';
+import type { CaseDraftResult, CaseInput, CaseLogo, CaseOpen, CaseSaveResult, CaseSendOutcome } from '../shared/caseStudy';
 import type { FoundationsView } from '../shared/foundations';
 import type { PulseHealthView } from '../shared/pulseHealth';
 import type { ResearchConfig } from '../shared/research';
@@ -1532,6 +1533,18 @@ const api = {
   pulseUndo: (appliedId: number): Promise<{ ok: true; kind: 'schedule' } | { ok: true; kind: 'model'; agentId: string; to: string | null } | { ok: false; error: 'stale' | 'unavailable' }> =>
     ipcRenderer.invoke('pulse:undo', appliedId),
   pulseDismiss: (id: string): Promise<boolean> => ipcRenderer.invoke('pulse:dismiss', id),
+  // ─── Case study (docs/designs/case-study.md) ──────────────────────────────
+  /** The office's facts for the page, the fonts and the mailboxes; null with no office. */
+  caseStudyOpen: (input: CaseInput): Promise<CaseOpen | null> => ipcRenderer.invoke('caseStudy:open', input),
+  caseStudyDraft: (input: CaseInput): Promise<CaseDraftResult> => ipcRenderer.invoke('caseStudy:draft', input),
+  /** The kept logo, or a read of the website; `fresh` reads the site again. */
+  caseStudyLogo: (fresh: boolean): Promise<CaseLogo> => ipcRenderer.invoke('caseStudy:logo', fresh),
+  caseStudyPickLogo: (): Promise<CaseLogo> => ipcRenderer.invoke('caseStudy:pickLogo'),
+  /** Main builds the page and the PDF from these edits; `openMailApp` opens the mail app after saving. */
+  caseStudySavePdf: (input: CaseInput, edits: unknown, openMailApp: boolean): Promise<CaseSaveResult> => ipcRenderer.invoke('caseStudy:savePdf', input, edits, openMailApp),
+  /** Sends to the fixed address only; the screen names the mailbox and ticks permission. */
+  caseStudySend: (input: CaseInput, edits: unknown, mailbox: string, permission: boolean): Promise<CaseSendOutcome> => ipcRenderer.invoke('caseStudy:send', input, edits, mailbox, permission),
+  caseStudyDismissInvite: (): Promise<boolean> => ipcRenderer.invoke('caseStudy:dismissInvite'),
   /** Each of a member's jobs with its last finished run and any "Went wrong" on it (shared/runCompare.ts). */
   runCompareLastRuns: (agentId: string): Promise<Array<{ run: JobRun; suggestion: RunSuggestion | null }>> =>
     ipcRenderer.invoke('runCompare:lastRuns', agentId),

@@ -317,6 +317,10 @@ follow.
   trust layer that keeps out the kinds of data you mark private in Settings, Research & privacy,
   and their answers are cleaned of instructions before your team reads them. They see none of your
   files, and they are off until you turn them on. On Windows, they can still reach your office files.
+  The one exception: when you open your case study, the app reads your logo from your own website.
+- **A case study, only if you send it.** Pulse can build a one page case study of your office for
+  our website. It goes out only when you press Send, from your own mailbox, after you agree we may
+  publish it and take it down if you ask. See [`TELEMETRY.md`](./TELEMETRY.md#case-studies-you-send-us).
 - **No usage data.** The app sends nothing about how you use it. Failures the developers can fix
   in code (a crash, a team member stuck in a loop) are reported automatically, as fixed fields with
   no names, messages or files, so they get fixed. See [`TELEMETRY.md`](./TELEMETRY.md).

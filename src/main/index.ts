@@ -125,6 +125,9 @@ import { TelemetryCollector } from './telemetry';
 import { CostLedgerTotals } from './costLifetime';
 import { RUN_COMPARE_MODEL, RUN_COMPARE_TIMEOUT_MS, RunCompare } from './runCompare';
 import { runHiddenModel } from './hiddenModel';
+import { CASE_DRAFT_TIMEOUT_MS, CaseStudyService, caseInput } from './caseStudy';
+import { LOGO_LIMITS, imageKind, imageSize, readSiteLogo } from './siteLogo';
+import { logoColour, type CaseFont } from '../shared/caseStudy';
 import { CostLedgerStore } from './costLedger';
 import { analytics, dntSet, isRendererMessageSurface } from './analytics';
 import { createFailureReporter, FLUSH_MS } from './failureReport';
@@ -155,7 +158,7 @@ import { emailCalendarAllowed } from '../shared/mcpCatalog';
 import { agentIntegrations, fillSavedCall, hasIntegrationTools, integrationLevel, validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, withIntegrationLevel, withoutIntegration, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
 import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
-import { CHECK_FOLDERS, RUN_COMPARE_DIR, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
+import { CASE_STUDY_DIR, CHECK_FOLDERS, RUN_COMPARE_DIR, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
 import { autoMemoryFolders, eraseMemoryTargets, foldersFromRoster, gitTopOf, idsFromCostRows, idsFromRecord, memberIdsIn, memoryResetTargets } from './memoryReset';
 import { groupMembers, hardKillTree, isAlive, KILL_GRACE_MS, snapshotRemains } from './procKill';
 import { buildWorkerLaunch } from './workerLaunch';
@@ -7484,6 +7487,142 @@ const runCompare = new RunCompare({
   tellMichael: (subject, body) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body }, 'system'); },
   log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
 });
+// The case study (docs/designs/case-study.md): the owner's one page to send us.
+// Its fonts ship beside the main bundle (electron.vite.config.ts), so the
+// screen's preview and the PDF draw the same faces.
+let caseFonts: CaseFont[] | null = null;
+function caseStudyFonts(): CaseFont[] {
+  if (caseFonts) return caseFonts;
+  const face = (family: string, file: string, weight: string): CaseFont[] => {
+    try { return [{ family, weight, base64: readFileSync(join(__dirname, 'fonts', file)).toString('base64') }]; } catch { return []; }
+  };
+  caseFonts = [...face('Sora', 'sora-latin-var.woff2', '100 800'), ...face('IBM Plex Mono', 'ibm-plex-mono-regular.woff2', '400'), ...face('IBM Plex Mono', 'ibm-plex-mono-medium.woff2', '500')];
+  return caseFonts;
+}
+/** A logo's bytes as a kept PNG and its main colour: PNG, JPEG or WebP only,
+ *  its size read from the header before nativeImage decodes it (eng A3, OE6). */
+function decodeCaseLogo(bytes: Buffer): { png: Buffer; colour: string | null } | null {
+  const kind = imageKind(bytes);
+  if (kind !== 'png' && kind !== 'jpeg' && kind !== 'webp') return null;
+  const size = imageSize(bytes, kind);
+  if (!size || size.w < 16 || size.h < 16 || size.w > LOGO_LIMITS.maxSide || size.h > LOGO_LIMITS.maxSide) return null;
+  const img = nativeImage.createFromBuffer(bytes);
+  if (img.isEmpty()) return null;
+  const { width, height } = img.getSize();
+  const scale = Math.min(1, 256 / Math.max(width, height));
+  const kept = scale < 1 ? img.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: 'best' }) : img;
+  // toBitmap is BGRA; logoColour reads RGBA.
+  const bgra = img.resize({ width: 32, height: 32, quality: 'good' }).toBitmap();
+  const rgba = new Uint8Array(bgra.length);
+  for (let i = 0; i + 3 < bgra.length; i += 4) { rgba[i] = bgra[i + 2]; rgba[i + 1] = bgra[i + 1]; rgba[i + 2] = bgra[i]; rgba[i + 3] = bgra[i + 3]; }
+  return { png: kept.toPNG(), colour: logoColour(rgba) };
+}
+function caseLogoPaths(): { png: string; meta: string } | null {
+  const home = readConfig().harnessHome;
+  if (!home) return null;
+  const dir = privateRoot(expandTilde(home));
+  return { png: join(dir, 'case-study-logo.png'), meta: join(dir, 'case-study-logo.json') };
+}
+/** The page in a hidden window, printed to one page; refused when it runs over. */
+async function caseStudyPdf(html: string, paper: 'letter' | 'a4'): Promise<{ ok: true; pdf: Buffer } | { ok: false; reason: 'overflow' | 'failed' }> {
+  const win = new BrowserWindow({ show: false, width: 900, height: 1200, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, offscreen: false } });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  try {
+    await win.loadURL(`data:text/html;base64,${Buffer.from(html, 'utf8').toString('base64')}`);
+    await win.webContents.executeJavaScript('document.fonts ? document.fonts.ready.then(() => true) : true', true);
+    const over = await win.webContents.executeJavaScript("(() => { const b = document.querySelector('.body'); return !!b && b.scrollHeight > b.clientHeight + 1; })()", true);
+    if (over) return { ok: false, reason: 'overflow' };
+    const pdf = await win.webContents.printToPDF({ pageSize: paper === 'letter' ? 'Letter' : 'A4', printBackground: true, margins: { marginType: 'none' }, preferCSSPageSize: true });
+    return { ok: true, pdf };
+  } catch (e) {
+    console.error('[case-study] pdf', e);
+    return { ok: false, reason: 'failed' };
+  } finally { if (!win.isDestroyed()) win.destroy(); }
+}
+const caseStudy = new CaseStudyService({
+  config: () => readConfig(),
+  typeName: (t) => businessPackInfo(t).displayName,
+  offer: () => { try { return foundations.read().answers.offer?.text; } catch { return undefined; } },
+  roster: () => Object.entries(hive.registry().agents ?? {}).map(([id, a]) => ({ id, name: a.name, role: a.role, isGod: a.isGod, isAssistant: a.isAssistant, closedByOwner: a.closedByOwner })),
+  missions: () => readConfig().missions ?? [],
+  figures: (r) => { try { pulseTelemetry.flush(); } catch { /* the figures read what is saved */ } return pulse.caseStudyFigures(r); },
+  runModel: (prompt) => {
+    const cfg = readConfig();
+    // An empty folder only the app writes, as the run comparison's.
+    const cwd = join(app.getPath('userData'), CASE_STUDY_DIR);
+    try { mkdirSync(cwd, { recursive: true }); ensureClaudePermissionsAccepted(cwd); } catch { /* the call fails and the owner can retry */ }
+    return runHiddenModel(prompt, {
+      engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel, model: RUN_COMPARE_MODEL, cwd,
+      command: cfg.defaultCommand ?? 'claude', noTools: true, settingSources: 'user',
+      settingsJson: JSON.stringify({ disableAllHooks: true }), dropTranscript: true, isolateConfig: true, thinking: false,
+      env: memory.env(), timeoutMs: CASE_DRAFT_TIMEOUT_MS
+    });
+  },
+  readLogo: () => {
+    const p = caseLogoPaths();
+    if (!p) return null;
+    try {
+      const png = readFileSync(p.png);
+      let colour: string | null = null;
+      try { const m = JSON.parse(readFileSync(p.meta, 'utf8')) as { colour?: unknown }; colour = typeof m.colour === 'string' ? m.colour : null; } catch { colour = null; }
+      return { png, colour };
+    } catch { return null; }
+  },
+  writeLogo: (png, colour) => {
+    const p = caseLogoPaths();
+    if (!p) return;
+    try {
+      mkdirSync(dirname(p.png), { recursive: true });
+      const tmp = `${p.png}.${randomBytes(6).toString('hex')}.tmp`;
+      writeFileSync(tmp, png, { mode: 0o600 });
+      renameSync(tmp, p.png);
+      writeFileAtomic(p.meta, JSON.stringify({ colour }));
+    } catch (e) { console.error('[case-study] keep logo', e); }
+  },
+  fetchLogo: (site) => readSiteLogo(site, { decode: decodeCaseLogo }),
+  decodeLogo: decodeCaseLogo,
+  readFile: (path, max) => { try { return statSync(path).size <= max ? readFileSync(path) : null; } catch { return null; } },
+  makePdf: caseStudyPdf,
+  mailSend: (mailbox, input) => mailService.send('owner:case-study', mailbox, input),
+  senders: () => mailService.ownerSenders(),
+  log: (entry) => { try { hive.appendLog(entry); } catch { /* best-effort */ } },
+  inviteDone: () => { try { pulse.caseStudyInviteDone(); } catch (e) { console.error('[case-study] invite', e); } },
+  fonts: caseStudyFonts,
+  // Letter in the US and Canada, A4 everywhere else.
+  paper: () => (['US', 'CA'].includes(app.getLocaleCountryCode().toUpperCase()) ? 'letter' : 'a4'),
+  appVersion: app.getVersion()
+});
+ipcMain.handle('caseStudy:open', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.open(i) : null; });
+ipcMain.handle('caseStudy:draft', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.draft(i) : { ok: false, reason: 'failed' }; });
+ipcMain.handle('caseStudy:logo', (_evt, fresh: unknown) => caseStudy.logo(fresh === true));
+ipcMain.handle('caseStudy:pickLogo', async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const opts = { properties: ['openFile' as const], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] };
+  const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+  if (res.canceled || !res.filePaths[0]) return { ok: false, reason: 'cancelled' };
+  return caseStudy.pickedLogo(res.filePaths[0]);
+});
+ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, edits: unknown, openMailApp: unknown) => {
+  const i = caseInput(input);
+  if (!i) return { ok: false, kind: 'failed' };
+  const out = await caseStudy.pdf(i, edits);
+  if (!out.ok) return out;
+  const win = BrowserWindow.getFocusedWindow();
+  const opts = { defaultPath: join(app.getPath('documents'), 'case-study.pdf'), filters: [{ name: 'PDF', extensions: ['pdf'] }] };
+  const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+  if (res.canceled || !res.filePath) return { ok: false, kind: 'cancelled' };
+  try { writeFileSync(res.filePath, out.pdf); } catch { return { ok: false, kind: 'failed' }; }
+  // No mailbox can send (D1): the mail app opens with our address and the
+  // permission line, and the owner attaches the file just saved.
+  if (openMailApp === true) { const url = caseStudy.mailto(i); if (url) void shell.openExternal(url).catch(() => undefined); }
+  return { ok: true, path: res.filePath };
+});
+ipcMain.handle('caseStudy:send', (_evt, input: unknown, edits: unknown, mailbox: unknown, permission: unknown) => {
+  const i = caseInput(input);
+  return i ? caseStudy.send(i, edits, mailbox, permission) : { ok: false, kind: 'failed', reason: '' };
+});
+ipcMain.handle('caseStudy:dismissInvite', () => pulse.caseStudyInviteDone());
 ipcMain.handle('runCompare:lastRuns', (_evt, agentId: unknown) => (typeof agentId === 'string' ? runCompare.lastRuns(agentId) : []));
 ipcMain.handle('runCompare:wentWrong', async (_evt, p: unknown) => {
   const o = (p ?? {}) as { runId?: unknown; agentId?: unknown; note?: unknown; workStyle?: unknown; previousWorkStyle?: unknown; changes?: unknown };

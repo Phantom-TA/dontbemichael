@@ -159,6 +159,27 @@ config), which the app reads shortly after it starts and before it sends
 anything; the app still keeps the local file but sends nothing. Builds from source never send: the key
 is injected only in official release CI.
 
+## Case studies you send us
+
+Pulse has a **Get featured** button. It builds a one page case study from your own office: your
+business name, city and website, a short description, your team's roles and what each did, and the
+counts Pulse shows for the period, spend included. Nothing on the page is an estimate, and the app
+writes no customer names, email subjects or bodies, file names or anything from a team member's
+memory.
+
+- **Nothing leaves unless you press Send.** You see the whole page and can edit every word first.
+  Send goes from one of your own connected mailboxes to hello@dontbemichael.com, with the page
+  attached as a PDF, and only after you tick that Don't Be Michael may publish it on its website and
+  will take it down if you ask. The email is in your Sent folder like any other.
+- **Your logo is read from your own website.** When the screen opens, the app reads the home page
+  of the website in your company profile and the logo image it names, once, over HTTPS, from public
+  addresses only, and keeps the logo in your office's private folder. That website sees an ordinary
+  web request from your computer. It is the one time the app itself reads a web page; everything
+  else on the internet goes through your Research team member. Turn off **Show the business name**
+  and no logo is used.
+- A case study is a submission you choose to make, not usage data: the app does not tell us that
+  you opened the screen, and nothing is sent in the background.
+
 ## Self-hosting note
 
 PostHog is open source and self-hostable. Official builds point at PostHog

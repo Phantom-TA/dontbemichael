@@ -34,6 +34,7 @@ import { AgentAvatar } from '../AgentAvatar';
 import { InfoTip } from '../InfoTip';
 import { PixelButton } from '../PixelButton';
 import { RunSuggestions } from './RunSuggestions';
+import { CaseStudyScreen } from './CaseStudyScreen';
 import { Icon, type IconName } from '../Icon';
 import { useDialog } from '@/shell/useDialog';
 import { godNameNow } from '@/i18n';
@@ -268,6 +269,9 @@ export function PulseView() {
   const [applied, setApplied] = useState<Array<{ advice: Advice; appliedId: number; text: string }>>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>('');
+  // The case study screen, and its one time invitation (docs/designs/case-study.md, D7).
+  const [caseOpen, setCaseOpen] = useState(false);
+  const [inviteGone, setInviteGone] = useState(false);
 
   const load = useCallback(async () => {
     try { setData(await window.cth.pulseSnapshot(period, compare)); setFailed(false); } catch { setFailed(true); }
@@ -818,7 +822,23 @@ export function PulseView() {
         </span>
         <span style={{ flex: 1 }} />
         {view?.collectingSince && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.collectingSince', { day: fmtDay(view.collectingSince) })}</span>}
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <PixelButton size="md" variant="secondary" onClick={() => setCaseOpen(true)}>{t('caseStudy.getFeatured')}</PixelButton>
+          <InfoTip text={t('caseStudy.getFeaturedTip')} align="end" />
+        </span>
       </div>
+      {view?.caseStudyInvite && !inviteGone && (
+        <div role="region" aria-label={t('caseStudy.getFeatured')} style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'var(--cth-card)', border: '1px solid var(--cth-line)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'var(--cth-shadow-md)', padding: '12px 14px' }}>
+          <span aria-hidden style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--cth-indigo-soft)', display: 'grid', placeItems: 'center', flex: 'none' }}><Icon name="file" size={1.125} style={{ color: 'var(--cth-indigo-text)' }} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, lineHeight: '18px', fontWeight: 600 }}>{t('caseStudy.inviteTitle')}</div>
+            <div style={{ fontSize: 12, lineHeight: '16.5px', color: 'var(--cth-ink-2)' }}>{t('caseStudy.inviteBody')}</div>
+          </div>
+          <PixelButton size="md" onClick={() => setCaseOpen(true)}>{t('caseStudy.inviteMake')}</PixelButton>
+          <PixelButton size="md" variant="ghost" onClick={() => { setInviteGone(true); void window.cth.caseStudyDismissInvite().catch(() => undefined); }}>{t('caseStudy.inviteNotNow')}</PixelButton>
+        </div>
+      )}
+      {caseOpen && <CaseStudyScreen onClose={() => { setCaseOpen(false); void load(); }} />}
       <div aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{notice}</div>
       {body}
       {detail && view && <MemberDetail id={detail} data={view} name={nameOf(detail)} onClose={() => setDetail(null)} money={view.planLearning ? (): string => t('pulse.measuring') : money} />}

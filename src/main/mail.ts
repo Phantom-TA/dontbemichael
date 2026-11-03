@@ -97,8 +97,11 @@ export type MailErrorKind = 'auth' | 'provider-blocked' | 'network' | 'not-found
 
 export class MailError extends Error {
   /** `uncertain`: the server may have taken the email though the send failed
-   *  (issue 101), so it must not be sent again until Sent shows otherwise. */
-  constructor(readonly kind: MailErrorKind, message: string, readonly uncertain = false) { super(message); }
+   *  (issue 101), so it must not be sent again until Sent shows otherwise.
+   *  `interrupted`: an earlier identical send stopped midway and is not in Sent
+   *  yet; read only by the owner's case study send, which says it may have
+   *  gone out (eng pass C1). Members read only `uncertain`. */
+  constructor(readonly kind: MailErrorKind, message: string, readonly uncertain = false, readonly interrupted = false) { super(message); }
 }
 
 /** A connection that dropped or timed out after it was made: the server may
@@ -404,6 +407,10 @@ export interface ComposeInput {
   /** Threading headers from the member's own send record (a reply under a
    *  Send only grant): set instead of replyTo, so nothing is fetched (E1b). */
   thread?: ThreadHeaders;
+  /** Files the app itself made, such as the case study PDF
+   *  (docs/designs/case-study.md). Never set from an agent's input: the md-mail
+   *  tool builds ComposeInput field by field, so it can't reach this. */
+  files?: Array<{ filename: string; content: Buffer; contentType: string }>;
 }
 
 interface OpenBox {
@@ -1171,8 +1178,12 @@ export class MailService {
       msg.inReplyTo = input.thread.inReplyTo;
       msg.references = [...input.thread.references];
     }
+    const own = (input.files ?? []).map((f) => ({ filename: f.filename, content: f.content, contentType: f.contentType }));
     const refs = [input.replyTo, input.forward, ...(input.attachFrom ?? [])].filter(Boolean) as MailRef[];
-    if (!refs.length) return msg;
+    if (!refs.length) {
+      if (own.length) msg.attachments = own;
+      return msg;
+    }
     // Each reference is read from its own folder: a reply to sent or archived
     // mail names it by an id that says where it is.
     // Referenced mail is loaded whole, so its size is capped (one email and all
@@ -1194,7 +1205,7 @@ export class MailService {
       if (buf.length > REFERENCE_MAX_BYTES || total > REFERENCE_MAX_BYTES) throw new MailError('bad-request', REFERENCE_TOO_LARGE);
       return buf;
     };
-    const attachments: Array<Record<string, unknown>> = [];
+    const attachments: Array<Record<string, unknown>> = [...own];
     if (input.replyTo) {
       // A reply needs only the parent's Message-ID and References, so only its
       // headers are fetched: no size cap applies, however large the email.
@@ -1237,7 +1248,7 @@ export class MailService {
   async send(agentId: string, id: string, input: ComposeInput, beforeSmtp?: () => string | null): Promise<{ sent: boolean; messageId: string; repeated?: boolean }> {
     // Send once: the same agent sending the same message to the same people from
     // the same mailbox within 10 minutes gets the first result back.
-    const key = createHash('sha256').update(JSON.stringify([agentId, id, input.to, input.cc ?? '', input.subject, input.body, input.replyTo ?? null, input.forward ?? null, input.attachFrom ?? [], input.thread?.inReplyTo ?? null])).digest('hex');
+    const key = createHash('sha256').update(JSON.stringify([agentId, id, input.to, input.cc ?? '', input.subject, input.body, input.replyTo ?? null, input.forward ?? null, input.attachFrom ?? [], input.thread?.inReplyTo ?? null, ...(input.files?.length ? [input.files.map((f) => [f.filename, createHash('sha256').update(f.content).digest('hex')])] : [])])).digest('hex');
     const now = Date.now();
     let pruned = false;
     for (const [k, v] of this.sent) {
@@ -1280,9 +1291,9 @@ export class MailService {
       if (err.kind === 'network' || err.kind === 'timeout') {
         throw new MailError(err.kind, `Not sent now. Sending this email was interrupted before, and Sent could not be checked for it: ${err.message} Try again in a moment.`);
       }
-      throw new MailError('refused', mayHaveGone);
+      throw new MailError('refused', mayHaveGone, false, true);
     }
-    if (!found) throw new MailError('refused', mayHaveGone);
+    if (!found) throw new MailError('refused', mayHaveGone, false, true);
     // The repeat window starts now: the stop may have been long before.
     this.recordSent(key, Date.now(), left.messageId);
     return { sent: true, messageId: left.messageId };
@@ -1353,6 +1364,17 @@ export class MailService {
 
   /** Settings "Test and save": log in to IMAP and SMTP with the given password
    *  before anything is stored. */
+  /** Every connected mailbox, for the owner's case study send
+   *  (docs/designs/case-study.md): one that can't send yet stays listed with
+   *  its reason, never hidden (the connector rule). */
+  ownerSenders(): Array<{ id: string; address: string; canSend: boolean; reason?: string }> {
+    return (this.deps.getConfig().mailboxes ?? []).map((m) => {
+      if (m.status === 'needs-attention') return { id: m.id, address: m.address, canSend: false, reason: m.statusReason || 'This mailbox needs attention in Settings.' };
+      if (!this.deps.getPassword(m.id)) return { id: m.id, address: m.address, canSend: false, reason: 'This mailbox has no saved password. Fix it in Settings.' };
+      return { id: m.id, address: m.address, canSend: true };
+    });
+  }
+
   async test(rec: Pick<MailboxRecord, 'address' | 'imap' | 'smtp'>, password: string): Promise<{ ok: true } | { ok: false; kind: MailErrorKind; reason: string }> {
     if (isMicrosoftAddress(rec.address)) {
       return { ok: false, kind: 'unsupported', reason: 'Outlook and Microsoft 365 mailboxes stopped accepting app passwords, so they cannot be connected yet.' };
