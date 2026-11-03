@@ -123,10 +123,10 @@ test("the page is read only, and the headline's number is Pulse's, between its w
   const h1 = html.match(/<h1 class="headline[^"]*">(.*?)<\/h1>/)[1];
   assert.match(h1, /^<span>The AI office handled<\/span> <span class="lock"[^>]*>1,284<\/span> <span>emails<\/span>$/);
   assert.doesNotMatch(html, /contenteditable|data-part/, 'nothing on the page is editable');
-  assert.match(html, /\.lock\{font-weight:700;color:var\(--hl\)/, 'the number has no box, in the hero tint (D23)');
+  assert.match(html, /\.lock\{font-weight:700;color:var\(--hero\)/, 'the number has no box, in the hero colour on the light hero (D23, D28)');
   assert.doesNotMatch(html, /\.mono,\.n,|\.n,\.t-n/, 'the band numbers are not in the mono face (its comma left a gap)');
   assert.match(html, /\.stat \.n\{[^}]*tabular-nums/);
-  assert.doesNotMatch(page(facts()), /<figure class="quote/, 'no quote block without the owner\'s words');
+  assert.doesNotMatch(page(facts()), /<section class="quote"/, 'no quote block without the owner\'s words');
 });
 
 test('with the name switch off the page hides the name, logo and website (D8)', () => {
@@ -136,7 +136,8 @@ test('with the name switch off the page hides the name, logo and website (D8)', 
   assert.match(html, /The Don&#39;t Be Michael team at a bakery in Austin handled|The Don't Be Michael team at a bakery in Austin handled/);
   assert.match(html, /Bakery in Austin/);
   assert.match(html, /--hero:#1E1B2E/, 'our ink when the name, and so the logo, is hidden');
-  assert.match(html, /<figcaption>The owner<\/figcaption>/);
+  assert.match(html, /<figcaption><div class="av">[^<]*<\/div><span>The owner<\/span><\/figcaption>/);
+  assert.match(html, /Run your office like a bakery in Austin\./, 'the closing reads as a sentence with the type and city');
   assert.equal(cs.namesBusiness('We are Harbor Bakery', f), true);
   assert.equal(cs.namesBusiness('We are a bakery', f), false);
 });
@@ -145,16 +146,60 @@ test('every team member is on the page (D27); text is escaped; zero figures are 
   const many = Array.from({ length: 11 }, (_, i) => ({ id: `m${i}`, name: `M<${i}>`, role: 'Role', jobs: [], figure: null, isMichael: false }));
   const f = facts({ members: many, figures: { ...facts().figures, task: 0 } });
   const html = page(f, edits(f, { about: '<script>alert(1)</script>' }));
-  assert.equal((html.match(/class="t-row"/g) || []).length, 11);
-  assert.doesNotMatch(html, /class="t-more"/);
-  assert.match(html, /\.page\{[^}]*min-height:[^}]*\}/, 'at least a page, longer when needed');
+  assert.equal((html.match(/class="m-card[ "]/g) || []).length, 11);
   assert.doesNotMatch(html, /\.page\{[^}]*overflow:hidden/, 'nothing is cut off at the page end');
-  assert.match(html, /\.t-row,[^{]*\{break-inside:avoid\}/, 'a member never splits across pages');
-  assert.match(html, /\.t-row>\.t-work\{white-space:normal;[^}]*-webkit-line-clamp:2/, 'a member\'s work may take two lines, never cut to one (D26)');
-  assert.match(html, /<span class="t-work">/);
+  assert.match(html, /\.m-card,[^{]*\{break-inside:avoid\}/, 'a member card never splits across pages of the PDF copy');
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /M&lt;0&gt;/);
   assert.doesNotMatch(html, /tasks finished/);
+});
+
+test('the team chart shows how the office is set up: owner, Michael, then each member with jobs, tools and number (D28)', () => {
+  const f = facts({
+    members: [
+      { ...facts().members[0], schedules: [{ label: 'Morning standup', when: 'Weekdays at 08:00' }] },
+      { ...facts().members[1], tools: ['Email', 'QuickBooks'], schedules: [1, 2, 3, 4].map((i) => ({ label: `Job ${i}`, when: 'Every day at 07:00' })) }
+    ]
+  });
+  const html = page(f);
+  const org = html.match(/<div class="org">([\s\S]*?)<\/section>/)[1];
+  assert.ok(org.indexOf('Dana Reyes') < org.indexOf('Michael') && org.indexOf('Michael') < org.indexOf('Pam'), 'owner, then Michael, then the team');
+  assert.match(org, /class="m-card lead"/);
+  assert.match(org, /<b>Morning standup<\/b><span>Weekdays at 08:00<\/span>/);
+  assert.equal((org.match(/<li><b>Job /g) || []).length, cs.CARD_JOBS, 'at most three jobs on a card');
+  assert.match(org, /class="more">and 1 more</);
+  assert.match(org, /<i>Email<\/i><i>QuickBooks<\/i>/);
+  assert.match(org, /<span>emails<\/span><b>640<\/b>/);
+  assert.match(html, /<dt>Connected<\/dt><dd><span class="pills"><i>Email<\/i><i>QuickBooks<\/i><\/span><\/dd>/, 'the snapshot lists what the team is connected to');
+  assert.match(html, /<dt>Don't Be Michael team<\/dt><dd>2 members<\/dd>/);
+  assert.match(html, new RegExp(`href="${cs.SITE_URL}"`), 'the call to action goes to our site');
+});
+
+test('the Before chapter shows only with words, and chapters number in order (D28)', () => {
+  const none = page(facts(), edits(facts(), { about: '' }));
+  assert.doesNotMatch(none, /ch-before/);
+  assert.match(none, /ch-team"><div class="wrap"><div class="ch-label"><div class="num">01</);
+  const both = page(facts(), edits(facts(), { about: 'The inbox filled faster than anyone could clear it' }));
+  assert.match(both, /ch-before"><div class="wrap"><div class="ch-label"><div class="num">01<\/div><h2>Before<\/h2>/);
+  assert.match(both, /ch-result"><div class="wrap"><div class="ch-label"><div class="num">03</);
+});
+
+test('the web page goes narrow on a phone; the PDF copy is the same page zoomed to the paper (D28)', () => {
+  const web = page(facts());
+  assert.match(web, /@media \(max-width:760px\)/);
+  assert.match(web, /<meta name="viewport"/);
+  assert.doesNotMatch(web, /@page/);
+  const print = cs.pageHtml(facts(), edits(facts()), { fontCss: '', mode: 'print' });
+  assert.match(print, /@page\{size:letter;margin:0\.45in 0\}/);
+  assert.match(print, new RegExp(`\\.page\\{width:${cs.PAGE_W}px;zoom:0\\.78`));
+  assert.doesNotMatch(print, /@media/, 'print never takes the phone layout');
+});
+
+test("a job's times read in the page's language", () => {
+  assert.equal(cs.caseWhen({ intervalMs: 0, weekly: { days: [1, 2, 3, 4, 5], minute: 480 } }, 'en'), 'Weekdays at 08:00');
+  assert.equal(cs.caseWhen({ intervalMs: 7_200_000 }, 'en'), 'Every 2h');
+  assert.equal(cs.caseWhen({ intervalMs: 0, times: [{ kind: 'at', days: [0, 1, 2, 3, 4, 5, 6], minute: 420 }] }, 'zh-CN'), '每天 07:00');
+  assert.match(cs.caseWhen({ intervalMs: 0, weekly: { days: [1], minute: 540 } }, 'ar'), /الاثنين الساعة 09:00/);
 });
 
 test('Arabic mirrors the page; no away time names the strip by hours worked', () => {

@@ -161,15 +161,17 @@ is injected only in official release CI.
 
 ## Case studies you send us
 
-Pulse has a **Get featured** button. It builds a one page case study from your own office: your
-business name, city and website, a short description, your team's roles and what each did, and the
-counts Pulse shows for the period, spend included. Nothing on the page is an estimate, and the app
+Pulse has a **Get featured** button. It builds a case study page from your own office, laid out as
+a web page we can publish: your business name, city and website, a short story of how the office
+work went before, your team's roles, what each did, the names and times of their scheduled jobs and
+what each is connected to (such as Email or QuickBooks, never an address), and the counts Pulse
+shows for the period, spend included. Nothing on the page is an estimate, and the app
 writes no customer names, email subjects or bodies, file names or anything from a team member's
 memory.
 
 - **Nothing leaves unless you press Send.** You see the whole page and can edit every word first.
   Send goes from one of your own connected mailboxes to hello@dontbemichael.com, with the page
-  attached as a PDF, and only after you tick that Don't Be Michael may publish it on its website and
+  attached as a web page (HTML) and a PDF copy, and only after you tick that Don't Be Michael may publish it on its website and
   will take it down if you ask. The email is in your Sent folder like any other.
 - **Your logo is read from your own website.** When the screen opens, the app reads the home page
   of the website in your company profile and the logo image it names, once, over HTTPS, from public

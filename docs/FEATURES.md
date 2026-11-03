@@ -201,11 +201,13 @@ moving, and brings you only the decisions that need you.
   computer slept or the office was stopped (plan limit, no credit, sign in failed) doesn't count.
 - Costs are worked out at each Claude model's own list price: each Opus, Sonnet and Haiku has its
   own.
-- Get featured on our website: Pulse builds a one page case study of your office, outcome first.
-  A headline built from a number Pulse counted, a band of results with what the team cost, your
-  business, each team member's work and count, a picture of the hours the office worked while you
-  were away, and your own words. The page takes your logo's color, every word is editable, and
-  every number comes from Pulse. Send it to us from your own mailbox, or save it as a PDF. After a
+- Get featured on our website: Pulse builds a customer story page of your office, laid out like a
+  landing page. A headline built from a number Pulse counted, a snapshot of your business, a band of
+  results with what the team cost, how the work went before, a chart of how your office is set up
+  (you, Michael and every team member with their jobs, times, tools and count), your own words, the
+  hours the office worked while you were away, and a closing call to action. The page takes your
+  logo's color, every word is editable, and every number comes from Pulse. Send it to us from your
+  own mailbox as a web page with a PDF copy, or save both. After a
   month of work, Pulse invites you once.
 
 ### 8. Built for small business owners

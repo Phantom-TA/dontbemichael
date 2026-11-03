@@ -45,7 +45,7 @@ const slow = <T,>(v: T, name = ''): Promise<T> => { calls.push(name); return new
       headline: frame?.contentDocument?.querySelector('.headline')?.textContent ?? null,
       mailbox: document.body.innerText.includes('ceo@x.example'),
       editableOnPage: !!frame?.contentDocument?.querySelector('[contenteditable], [data-part]'),
-      about: frame?.contentDocument?.querySelector('.cols .p')?.textContent ?? null,
+      about: frame?.contentDocument?.querySelector('.ch-before .prose')?.textContent ?? null,
       calls
     };
   }

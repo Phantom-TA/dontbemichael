@@ -9,15 +9,15 @@
  *          ─ caseStudy:draft ─► draft()  ─► one hidden model call, a second
  *                                            for parts the first left out
  *          ─ caseStudy:logo  ─► logo()   ─► kept logo, or a read of the site
- *          ─ caseStudy:pdf   ─► savePdf()─► page ─► PDF ─► where the owner picks
- *          ─ caseStudy:send  ─► send()   ─► page ─► PDF ─► MailService.send
+ *          ─ caseStudy:pdf   ─► savePdf()─► web page + PDF copy ─► where the owner picks
+ *          ─ caseStudy:send  ─► send()   ─► web page + PDF copy ─► MailService.send
  *                                            as 'owner:case-study' ─► office log
  *
  * No Electron import: the PDF window, the image decoder and the dialogs come
  * in as deps, so the rules here test as a node module.
  */
 import {
-  builtInHeadline, CASE_STUDY_TO, caseStudyEmail, cleanEdits, draftPrompt, fontFaceCss, hasWork, heroPalette, memberFigure, mergeDrafts, missingParts, pageHtml, parseDraft,
+  builtInHeadline, CASE_STUDY_TO, caseStudyEmail, caseWhen, cleanEdits, draftPrompt, fontFaceCss, hasWork, heroPalette, memberFigure, mergeDrafts, missingParts, pageHtml, parseDraft,
   type CaseDraft, type CaseDraftResult, type CaseFont, type CasePrep, type CaseInput, type CaseLang, type CaseLogo, type CaseMember, type CaseOpen, type CasePeriod,
   type CaseSendOutcome, type CaseStudyFacts, type HeroPalette, type Paper
 } from '../shared/caseStudy';
@@ -41,7 +41,10 @@ export interface CaseStudyDeps {
   /** The foundations offer answer; never the customers answer. */
   offer: () => string | undefined;
   roster: () => Array<{ id: string; name: string; role?: string; isGod?: boolean; isAssistant?: boolean; closedByOwner?: boolean }>;
-  missions: () => Array<{ to?: string; label?: string; enabled?: boolean }>;
+  missions: () => Array<{ to?: string; label?: string; enabled?: boolean; kind?: string; intervalMs?: number; weekly?: unknown; times?: unknown }>;
+  /** What a member is connected to, in the page's words ("Email", "QuickBooks"),
+   *  by the Access tab's rules; never an address (D28). */
+  tools: (agentId: string) => string[];
   figures: (r: DayRange) => { snapshot: PulseSnapshot; days: Array<{ day: string; ms: number; awayMs: number }> } | null;
   runModel: (prompt: string) => Promise<{ ok: boolean; text?: string; error?: string }>;
   /** The kept logo and its colour, from the office's private folder. */
@@ -103,21 +106,26 @@ export class CaseStudyService {
     const p = cfg.companyProfile ?? {};
     const total = (k: 'email' | 'sent' | 'task' | 'check'): number => s.outcomes.find((o) => o.kind === k)?.total ?? 0;
     const counts = new Map(s.members.map((m) => [m.agentId, m]));
-    const jobs = new Map<string, string[]>();
-    for (const m of this.d.missions()) {
-      if (!m.to || !m.label || m.enabled === false) continue;
-      jobs.set(m.to, [...(jobs.get(m.to) ?? []), m.label]);
-    }
     // Members turned off are left out, as the floor hides them; Michael first.
     const team = this.d.roster().filter((a) => !a.isAssistant && !a.closedByOwner)
       .sort((a, b) => Number(!!b.isGod) - Number(!!a.isGod));
+    const godId = team.find((a) => a.isGod)?.id;
+    // Each member's running jobs (the owner's own, never heartbeats or
+    // compaction); Michael's say 'god' (shared/missions ownerOf).
+    const jobs = new Map<string, Array<{ label: string; when: string }>>();
+    for (const m of this.d.missions()) {
+      if (!m.to || !m.label?.trim() || m.enabled === false || (m.kind ?? 'dispatch') !== 'dispatch') continue;
+      const owner = (m.to === 'god' || m.to === 'broadcast') && godId ? godId : m.to;
+      jobs.set(owner, [...(jobs.get(owner) ?? []), { label: m.label.trim(), when: caseWhen({ intervalMs: m.intervalMs ?? 0, weekly: m.weekly, times: m.times }, input.lang) }]);
+    }
     const members: CaseMember[] = team.map((a) => {
       const { role, roleDescription } = splitAgentRole(a.role);
       const c = counts.get(a.id);
       const figure = a.isGod
         ? memberFigure({ email: 0, sent: 0, task: 0, check: 0 }, s.michael?.routed ?? 0)
         : memberFigure({ email: c?.counts.email ?? 0, sent: c?.counts.sent ?? 0, task: c?.counts.task ?? 0, check: (c?.counts.check ?? 0) + (c?.checksNothing ?? 0) }, null);
-      return { id: a.id, name: a.name, role, ...(roleDescription ? { roleDescription } : {}), jobs: jobs.get(a.id) ?? [], figure, isMichael: !!a.isGod };
+      const mine = jobs.get(a.id) ?? [];
+      return { id: a.id, name: a.name, role, ...(roleDescription ? { roleDescription } : {}), jobs: mine.map((j) => j.label), schedules: mine, tools: this.d.tools(a.id), figure, isMichael: !!a.isGod };
     });
     const kept = input.showName ? this.d.readLogo() : null;
     const ran = s.running ?? { ms: 0, awayMs: 0 };
@@ -240,8 +248,9 @@ export class CaseStudyService {
     return { ok: true, logo: toDataUrl(done.png), palette: heroPalette(done.colour) };
   }
 
-  /** The page as a PDF from the owner's edits, checked the way Send checks them. */
-  async pdf(input: CaseInput, rawEdits: unknown): Promise<{ ok: true; pdf: Buffer; facts: CaseStudyFacts } | { ok: false; kind: 'headline-number' | 'no-work' | 'failed' }> {
+  /** The page from the owner's edits, checked the way Send checks them: the
+   *  web page we publish, standalone with its fonts, and its PDF copy (D28). */
+  async pdf(input: CaseInput, rawEdits: unknown): Promise<{ ok: true; pdf: Buffer; html: Buffer; facts: CaseStudyFacts } | { ok: false; kind: 'headline-number' | 'no-work' | 'failed' }> {
     const facts = this.facts(input);
     if (!facts || !hasWork(facts.figures)) return { ok: false, kind: 'no-work' };
     const { edits: typed, headlineNumber } = cleanEdits(facts, rawEdits);
@@ -254,9 +263,10 @@ export class CaseStudyService {
     const edits = typed.headline
       ? { ...typed, headline: { figure: typed.headline.figure, ...(held?.headlines[typed.headline.figure] ?? builtInHeadline(facts, typed.headline.figure)) } }
       : typed;
-    const out = await this.d.makePdf(pageHtml(facts, edits, { fontCss: fontFaceCss(this.d.fonts()) }), facts.paper).catch(() => ({ ok: false as const, reason: 'failed' as const }));
+    const fontCss = fontFaceCss(this.d.fonts());
+    const out = await this.d.makePdf(pageHtml(facts, edits, { fontCss, mode: 'print' }), facts.paper).catch(() => ({ ok: false as const, reason: 'failed' as const }));
     this.d.log({ kind: 'case-study-pdf', ok: out.ok });
-    return out.ok ? { ok: true, pdf: out.pdf, facts } : { ok: false, kind: out.reason };
+    return out.ok ? { ok: true, pdf: out.pdf, html: Buffer.from(pageHtml(facts, edits, { fontCss }), 'utf8'), facts } : { ok: false, kind: out.reason };
   }
 
   /**
@@ -274,7 +284,10 @@ export class CaseStudyService {
     if (!page.ok) return page.kind === 'failed' ? { ok: false, kind: 'failed', reason: '' } : { ok: false, kind: page.kind };
     const mail = caseStudyEmail(page.facts);
     try {
-      await this.d.mailSend(box.id, { to: CASE_STUDY_TO, subject: mail.subject, body: mail.body, files: [{ filename: 'case-study.pdf', content: page.pdf, contentType: 'application/pdf' }] });
+      await this.d.mailSend(box.id, { to: CASE_STUDY_TO, subject: mail.subject, body: mail.body, files: [
+        { filename: 'case-study.html', content: page.html, contentType: 'text/html' },
+        { filename: 'case-study.pdf', content: page.pdf, contentType: 'application/pdf' }
+      ] });
     } catch (e) {
       if (e instanceof MailError && (e.uncertain || e.interrupted)) {
         this.d.log({ kind: 'case-study-send', ok: false, maybe: true });

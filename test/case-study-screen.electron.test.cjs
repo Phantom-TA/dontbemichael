@@ -48,7 +48,7 @@ test('the case study screen shows the page and mailboxes under StrictMode, and t
     assert.equal(state.frame, true, 'the page is drawn');
     assert.match(state.headline ?? '', /Harbor Bakery handled\s+1,284\s+emails/, 'with the prepared headline');
     assert.equal(state.editableOnPage, false, 'nothing on the page itself is editable (D22)');
-    assert.equal(state.typed, true, 'About the business is a field in the panel');
+    assert.equal(state.typed, true, 'Before is a field in the panel');
     assert.equal(state.aboutAfter, 'We bake bread for twelve cafes in town', 'the page shows what the owner typed');
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* temp folder */ }

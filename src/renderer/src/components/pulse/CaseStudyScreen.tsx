@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  builtInHeadline, CAPS, caseLangOf, CONTINUED_MARGIN_IN, figureValue, fmtCount, headlineChoices, namesBusiness, pageHtml, startingEdits, TEAM_ROWS,
+  builtInHeadline, CAPS, caseLangOf, figureValue, PAGE_W, fmtCount, headlineChoices, namesBusiness, pageHtml, startingEdits, TEAM_ROWS,
   type CaseDraft, type CaseInput, type CaseOpen, type CasePrep, type CasePeriod, type CaseStudyEdits, type HeadlineFigure, type HeroPalette
 } from '@shared/caseStudy';
 import { Dialog } from '@/shell/Dialog';
@@ -24,17 +24,8 @@ import { Toggle } from '../triggers/ui';
 import { APP_NAME } from '@shared/appName';
 
 const PERIODS: CasePeriod[] = ['last-30', 'this-month'];
-/** The page at 96 px per inch. */
-const PAGE_PX = { letter: { w: 816, h: 1056 }, a4: { w: 794, h: 1123 } } as const;
-
-/** Where the PDF's pages break in a page of `total` px: the first page is a
- *  full sheet, each later one a sheet less its two margins. */
-function pageBreaks(sheet: number, total: number): number[] {
-  const out: number[] = [];
-  const later = sheet - 2 * CONTINUED_MARGIN_IN * 96;
-  for (let y = sheet; y < total - 4; y += later) out.push(Math.round(y));
-  return out;
-}
+/** The landing page is drawn at its layout width and scaled to the well (D28). */
+const PREVIEW_MIN_H = 900;
 
 type Draft = { state: 'drafting' } | { state: 'ready'; draft: CaseDraft } | { state: 'failed' };
 type Send = { state: 'idle' } | { state: 'sending' } | { state: 'sent' } | { state: 'maybe' } | { state: 'error'; text: string };
@@ -56,7 +47,7 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   const [mailbox, setMailbox] = useState<string | null>(null);
   const [permission, setPermission] = useState(false);
   const [send, setSend] = useState<Send>({ state: 'idle' });
-  // The page's full height: it may run past one page (D27).
+  // The page's full height: a landing page scrolls (D28).
   const [pageH, setPageH] = useState(0);
   const [askRedraft, setAskRedraft] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -130,7 +121,6 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   };
 
   const facts = open && open !== 'failed' ? { ...open.facts, ...(logo && showName ? { logo: logo.logo, palette: logo.palette } : {}) } : null;
-  const paper = facts ? PAGE_PX[facts.paper] : PAGE_PX.letter;
   const choices = facts ? headlineChoices(facts.figures) : [];
 
   // The preview: read only, redrawn from the panel's words as the owner types.
@@ -198,12 +188,12 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const el = well.current;
     if (!el) return;
-    const fit = (): void => { const r = el.getBoundingClientRect(); setScale(Math.max(0.3, Math.min(1, (r.width - 48) / paper.w))); };
+    const fit = (): void => { const r = el.getBoundingClientRect(); setScale(Math.max(0.3, Math.min(1, (r.width - 48) / PAGE_W))); };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [paper.h, paper.w]);
+  }, []);
 
   /** A drafted headline's words for a figure, or the built in ones. */
   const wordsFor = (k: HeadlineFigure): { before: string; after: string } =>
@@ -270,15 +260,10 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
           </div>
         )}
         {!empty && srcDoc && (
-          <div style={{ width: paper.w * scale, height: Math.max(paper.h, pageH) * scale, flex: 'none', position: 'relative', boxShadow: '0 2px 10px rgba(30,27,46,.16)', background: '#fff' }}>
+          <div style={{ width: PAGE_W * scale, height: Math.max(PREVIEW_MIN_H, pageH) * scale, flex: 'none', position: 'relative', boxShadow: '0 2px 10px rgba(30,27,46,.16)', background: '#fff', borderRadius: 8, overflow: 'hidden' }}>
+            {/* Read only: the page's links stay put in the preview (D22). */}
             <iframe ref={frame} title={t('caseStudy.pageLabel')} srcDoc={srcDoc} sandbox="allow-same-origin" onLoad={onFrameLoad} tabIndex={-1}
-              style={{ width: paper.w, height: Math.max(paper.h, pageH), border: 0, transform: `scale(${scale})`, transformOrigin: '0 0', display: 'block' }} />
-            {/* Where the PDF's pages break: the first page is full bleed, later ones keep a margin. */}
-            {pageBreaks(paper.h, pageH).map((y, i) => (
-              <div key={y} aria-hidden style={{ position: 'absolute', insetInline: 0, top: y * scale, borderTop: '1px dashed var(--cth-ink-4)' }}>
-                <span style={{ position: 'absolute', insetInlineEnd: 6, top: 2, fontSize: 10, color: 'var(--cth-ink-3)', background: 'var(--cth-card)', padding: '0 4px', borderRadius: 4 }}>{t('caseStudy.pageN', { n: i + 2 })}</span>
-              </div>
-            ))}
+              style={{ width: PAGE_W, height: Math.max(PREVIEW_MIN_H, pageH), border: 0, transform: `scale(${scale})`, transformOrigin: '0 0', display: 'block', pointerEvents: 'none' }} />
           </div>
         )}
       </div>

@@ -34,7 +34,13 @@ function deps(over = {}) {
       { id: 'off', name: 'Kevin', role: 'Accounts', closedByOwner: true },
       { id: 'helper', name: 'Prep', isAssistant: true }
     ],
-    missions: () => [{ to: 'pam', label: 'Morning inbox', enabled: true }, { to: 'pam', label: 'Old job', enabled: false }],
+    missions: () => [
+      { to: 'pam', label: 'Morning inbox', enabled: true, intervalMs: 0, weekly: { days: [1, 2, 3, 4, 5], minute: 450 } },
+      { to: 'pam', label: 'Old job', enabled: false, intervalMs: 3_600_000 },
+      { to: 'god', label: 'Daily standup', enabled: true, intervalMs: 86_400_000 },
+      { to: 'pam', label: 'Heartbeat', enabled: true, intervalMs: 3_600_000, kind: 'heartbeat' }
+    ],
+    tools: (id) => (id === 'pam' ? ['Email', 'QuickBooks'] : []),
     figures: () => ({ snapshot: snapshot(), days: Array.from({ length: 30 }, (_, i) => ({ day: `d${i}`, ms: 0, awayMs: 0 })) }),
     runModel: async () => { calls.model++; return { ok: true, text: JSON.stringify({ subtitle: "A bakery and its Don't Be Michael team", about: 'Bakes bread', why: "Don't Be Michael frees the owner", headlines: { email: 'Harbor Bakery handled {n} emails' }, team: { pam: 'Sorts the inbox', god: 'Routes the work' } }) }; },
     readLogo: () => null, writeLogo: () => {}, fetchLogo: async () => ({ ok: false, reason: 'no-site' }), decodeLogo: () => null, readFile: () => null,
@@ -68,6 +74,9 @@ test('facts: Michael first, members turned off left out, scheduled jobs and each
   assert.equal(pam.role, 'Front desk');
   assert.equal(pam.roleDescription, 'Answers the inbox');
   assert.deepEqual(pam.jobs, ['Morning inbox']);
+  assert.deepEqual(pam.schedules, [{ label: 'Morning inbox', when: 'Weekdays at 07:30' }], 'running jobs only, never a heartbeat, with their times (D28)');
+  assert.deepEqual(pam.tools, ['Email', 'QuickBooks']);
+  assert.deepEqual(f.members[0].schedules, [{ label: 'Daily standup', when: 'Every day' }], "Michael's jobs say 'god'");
   assert.deepEqual(pam.figure, { kind: 'email', count: 640 });
   assert.deepEqual(f.members[0].figure, { kind: 'routed', count: 158 });
   assert.equal(f.figures.spendUsd, 184);
@@ -99,7 +108,10 @@ test('Send goes to our address only, logs its own kind with no member, and ends 
   assert.deepEqual(await svc.send(input, edits, 'ceo', true), { ok: true });
   assert.equal(calls.sends[0].mailbox, 'ceo');
   assert.equal(calls.sends[0].input.to, 'hello@dontbemichael.com');
-  assert.equal(calls.sends[0].input.files[0].filename, 'case-study.pdf');
+  assert.deepEqual(calls.sends[0].input.files.map((x) => [x.filename, x.contentType]), [['case-study.html', 'text/html'], ['case-study.pdf', 'application/pdf']], 'the web page to publish and its PDF copy (D28)');
+  const web = calls.sends[0].input.files[0].content.toString('utf8');
+  assert.match(web, /@media \(max-width:760px\)/, 'the attached page is the web page, not the print one');
+  assert.doesNotMatch(web, /@page/);
   assert.match(calls.sends[0].input.body, /will take it down if I ask/);
   const line = calls.log.find((e) => e.kind === 'case-study-sent');
   assert.equal(line.agentId, undefined);

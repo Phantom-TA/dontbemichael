@@ -1,12 +1,13 @@
 /**
- * The case study (docs/designs/case-study.md): one outcome first page an owner
- * can send us, built only from the office's own facts and Pulse figures.
+ * The case study (docs/designs/case-study.md): a customer story landing page
+ * (D28) an owner can send us, built only from the office's own facts and Pulse
+ * figures. We receive it as a web page to publish, with a PDF copy.
  *
  *   main gathers CaseStudyFacts ─► draftPrompt(facts) ─► runHiddenModel ─► parseDraft(reply)
  *                    │                                                        │
  *                    └──────────────► pageHtml(facts, edits) ◄────────────────┘
- *                                        │                │
- *                          screen preview (iframe)    PDF window (main)
+ *                                        │            │            │
+ *                       screen preview (iframe)   HTML file   PDF window (main)
  *
  * One renderer for the preview and the PDF (eng red flag 6), and one facts
  * type for both the page and the prompt (red flag 8): the customers answer,
@@ -17,6 +18,8 @@
  */
 import { cutText } from './cutText';
 import { APP_NAME } from './appName';
+import { formatTimes, normalizeTimes, type ScheduleLine, type WhenWords } from './scheduleTimes';
+import { normalizeWeekly } from './weeklySchedule';
 
 /** Where case studies go (D9). Main fixes the recipient; nothing else can set it. */
 export const CASE_STUDY_TO = 'hello@dontbemichael.com';
@@ -38,8 +41,14 @@ export interface CaseMember {
   role: string;
   /** The stored role description, a team line's starting point (D13). */
   roleDescription?: string;
-  /** Names of the member's scheduled jobs, for the draft only. */
+  /** Names of the member's scheduled jobs, for the draft. */
   jobs: string[];
+  /** The member's running jobs and when they run, in the page's language,
+   *  for the team chart (D28). */
+  schedules?: Array<{ label: string; when: string }>;
+  /** What the member is connected to ("Email", "QuickBooks"), by the Access
+   *  tab's own rules (agentAccessSummary); never an address (D28). */
+  tools?: string[];
   figure: { kind: MemberFigureKind; count: number } | null;
   isMichael: boolean;
 }
@@ -89,6 +98,7 @@ export interface CaseStudyFacts {
 export interface CaseStudyEdits {
   headline: { figure: HeadlineFigure; before: string; after: string } | null;
   subtitle: string;
+  /** The Before paragraph (D28): what the office work was like before the team. */
   about: string;
   quote: string;
   team: Record<string, string>;
@@ -141,16 +151,25 @@ export type CaseSaveResult = { ok: true; path: string } | { ok: false; kind: 'he
  *  A bound only so a very large roster can't swamp the draft prompt. */
 export const TEAM_ROWS = 60;
 
-/** A continued page's top and bottom margin in the PDF (the first page is full bleed). */
+/** A continued page's top and bottom margin in the PDF copy (the first page is full bleed). */
 export const CONTINUED_MARGIN_IN = 0.45;
 
+/** The landing page's layout width (D28): the preview draws it at this width,
+ *  the PDF copy zooms it to the paper, and the web page goes narrower on a phone. */
+export const PAGE_W = 1040;
+
+/** Where the page's call to action goes. */
+export const SITE_URL = 'https://dontbemichael.com';
+
+/** At most this many jobs on a member's card. */
+export const CARD_JOBS = 3;
+
 /** Length caps per language (eng pass): Chinese and Arabic set wider per
- *  character. The page may run past one (D27); the caps keep each part short
- *  enough to read at a glance. */
+ *  character. The caps keep each part short enough to read at a glance. */
 export const CAPS: Record<CaseLang, { subtitle: number; about: number; quote: number; teamLine: number; why: number; headlineWords: number }> = {
-  en: { subtitle: 100, about: 220, quote: 140, teamLine: 105, why: 200, headlineWords: 80 },
-  ar: { subtitle: 90, about: 200, quote: 125, teamLine: 95, why: 180, headlineWords: 72 },
-  'zh-CN': { subtitle: 50, about: 110, quote: 70, teamLine: 50, why: 100, headlineWords: 40 }
+  en: { subtitle: 140, about: 320, quote: 180, teamLine: 105, why: 200, headlineWords: 80 },
+  ar: { subtitle: 125, about: 290, quote: 160, teamLine: 95, why: 180, headlineWords: 72 },
+  'zh-CN': { subtitle: 70, about: 160, quote: 90, teamLine: 50, why: 100, headlineWords: 40 }
 };
 
 // ---------------------------------------------------------------- numbers (D4)
@@ -307,7 +326,7 @@ export function heroPalette(colour: string | null): HeroPalette {
 // ---------------------------------------------------------------- page words
 
 interface Words {
-  caseStudy: string; theBusiness: string; theTeam: string; away: string; worked: string; why: string;
+  caseStudy: string; before: string; theTeam: string; away: string; worked: string; result: string;
   awayLegend: string; aroundLegend: string; ofHours: (a: string, b: string) => string;
   source: (from: string, to: string) => string; made: string; version: string; more: (n: number) => string;
   band: Record<HeadlineFigure, string>; spend: (days: number) => string;
@@ -318,12 +337,22 @@ interface Words {
   subtitle: (who: string) => string; whyText: string;
   stripLabel: (a: string, b: string, from: string, to: string) => string;
   locked: string;
+  /** The landing page's own words (D28). */
+  stories: string; cta: string; platforms: string; closeTitle: (who: string) => string;
+  industry: string; location: string; aiTeam: string; members: (n: number) => string; period: string;
+  connected: string; span: (from: string, to: string) => string; runsTheOffice: string;
+  /** The schedule words a member card's times are written in. */
+  when: WhenWords;
 }
+
+const DAY_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const DAY_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 const WORDS: Record<CaseLang, Words> = {
   en: {
-    caseStudy: `${APP_NAME} case study`, theBusiness: 'The business', theTeam: 'The team', away: 'While the owner was away', worked: 'Hours the office worked',
-    why: 'Why a small business should do this', awayLegend: 'while the owner was away', aroundLegend: 'with the owner around',
+    caseStudy: `${APP_NAME} case study`, before: 'Before', theTeam: 'The team they built', away: 'While the owner was away', worked: 'Hours the office worked',
+    result: 'The result', awayLegend: 'while the owner was away', aroundLegend: 'with the owner around',
     ofHours: (a, b) => `<b>${a}</b> of <b>${b}</b> hours`,
     source: (f, t) => `Counted by the app, ${f} to ${t}. Spend is everything the team cost in that period.`,
     made: "Made with Don't Be Michael", version: 'version', more: (n) => `and ${n} more`,
@@ -341,11 +370,16 @@ const WORDS: Record<CaseLang, Words> = {
     subtitle: (w) => `${w} runs its office with ${APP_NAME}.`,
     whyText: `With ${APP_NAME}, a small business gets an office team that keeps the work moving.`,
     stripLabel: (a, b, f, t) => `Hours the office worked each day, ${f} to ${t}; ${a} of ${b} hours while the owner was away`,
-    locked: "from Pulse, can't be edited"
+    locked: "from Pulse, can't be edited",
+    stories: 'Customer stories', cta: 'Build your team', platforms: 'Free to start, on Mac and Windows', closeTitle: (w) => `Run your office like ${w}.`,
+    industry: 'Industry', location: 'Location', aiTeam: `${APP_NAME} team`, members: (n) => (n === 1 ? '1 member' : `${n} members`), period: 'Period',
+    connected: 'Connected', span: (f, t) => `${f} to ${t}`, runsTheOffice: 'Runs the office and checks every job is finished',
+    when: { day: (d) => DAY_EN[d], everyDay: 'Every day', weekdays: 'Weekdays', weekends: 'Weekends', list: (i) => i.join(', '),
+      and: (i) => (i.length > 1 ? `${i.slice(0, -1).join(', ')} and ${i[i.length - 1]}` : i[0]), at: (d, t) => `${d} at ${t}`, every: (n) => `Every ${n}`, span: (f, t) => `${f} to ${t}` }
   },
   ar: {
-    caseStudy: `دراسة حالة من ${APP_NAME}`, theBusiness: 'النشاط التجاري', theTeam: 'الفريق', away: 'أثناء غياب المالك', worked: 'ساعات عمل المكتب',
-    why: 'لماذا يناسب هذا الأعمال الصغيرة', awayLegend: 'أثناء غياب المالك', aroundLegend: 'بحضور المالك',
+    caseStudy: `دراسة حالة من ${APP_NAME}`, before: 'قبل', theTeam: 'الفريق الذي بنوه', away: 'أثناء غياب المالك', worked: 'ساعات عمل المكتب',
+    result: 'النتيجة', awayLegend: 'أثناء غياب المالك', aroundLegend: 'بحضور المالك',
     ofHours: (a, b) => `<b>${a}</b> من <b>${b}</b> ساعة`,
     source: (f, t) => `أحصاها التطبيق من ${f} إلى ${t}. الإنفاق هو كل ما كلّفه الفريق في تلك الفترة.`,
     made: 'صُنع باستخدام Don\'t Be Michael', version: 'الإصدار', more: (n) => `و${n} آخرون`,
@@ -363,11 +397,16 @@ const WORDS: Record<CaseLang, Words> = {
     subtitle: (w) => `${w} يدير مكتبه مع ${APP_NAME}.`,
     whyText: `مع ${APP_NAME} يحصل النشاط الصغير على فريق مكتب يُبقي العمل يسير.`,
     stripLabel: (a, b, f, t) => `ساعات عمل المكتب كل يوم من ${f} إلى ${t}؛ ${a} من ${b} ساعة أثناء غياب المالك`,
-    locked: 'من Pulse، لا يمكن تعديله'
+    locked: 'من Pulse، لا يمكن تعديله',
+    stories: 'قصص العملاء', cta: 'ابنِ فريقك', platforms: 'ابدأ مجانًا، على Mac وWindows', closeTitle: (w) => `أدر مكتبك مثل ${w}.`,
+    industry: 'المجال', location: 'الموقع', aiTeam: `فريق ${APP_NAME}`, members: (n) => `${n} أعضاء`, period: 'الفترة',
+    connected: 'متصل بـ', span: (f, t) => `من ${f} إلى ${t}`, runsTheOffice: 'يدير المكتب ويتأكد من إنجاز كل مهمة',
+    when: { day: (d) => DAY_AR[d], everyDay: 'كل يوم', weekdays: 'أيام العمل', weekends: 'عطلة الأسبوع', list: (i) => i.join('، '),
+      and: (i) => (i.length > 1 ? `${i.slice(0, -1).join('، ')} و${i[i.length - 1]}` : i[0]), at: (d, t) => `${d} الساعة ${t}`, every: (n) => `كل ${n}`, span: (f, t) => `من ${f} إلى ${t}` }
   },
   'zh-CN': {
-    caseStudy: `${APP_NAME} 客户案例`, theBusiness: '关于这家企业', theTeam: '团队', away: '老板不在时', worked: '办公室工作时长',
-    why: '为什么小企业应该这样做', awayLegend: '老板不在时', aroundLegend: '老板在场时',
+    caseStudy: `${APP_NAME} 客户案例`, before: '之前', theTeam: '他们组建的团队', away: '老板不在时', worked: '办公室工作时长',
+    result: '成果', awayLegend: '老板不在时', aroundLegend: '老板在场时',
     ofHours: (a, b) => `<b>${b}</b> 小时中有 <b>${a}</b> 小时`,
     source: (f, t) => `由应用统计，${f} 至 ${t}。花费为团队在此期间的全部成本。`,
     made: '使用 Don\'t Be Michael 制作', version: '版本', more: (n) => `另有 ${n} 位`,
@@ -385,9 +424,27 @@ const WORDS: Record<CaseLang, Words> = {
     subtitle: (w) => `${w}用 ${APP_NAME} 打理办公室。`,
     whyText: `有了 ${APP_NAME}，小企业就有了让工作顺畅运转的办公室团队。`,
     stripLabel: (a, b, f, t) => `${f} 至 ${t} 每天的办公室工作时长；${b} 小时中有 ${a} 小时在老板不在时`,
-    locked: '来自 Pulse，不可编辑'
+    locked: '来自 Pulse，不可编辑',
+    stories: '客户案例', cta: '组建你的团队', platforms: '免费开始，支持 Mac 和 Windows', closeTitle: (w) => `像${w}一样打理你的办公室。`,
+    industry: '行业', location: '地点', aiTeam: `${APP_NAME} 团队`, members: (n) => `${n} 位成员`, period: '时间段',
+    connected: '已连接', span: (f, t) => `${f} 至 ${t}`, runsTheOffice: '打理办公室，确保每项工作完成',
+    when: { day: (d) => DAY_ZH[d], everyDay: '每天', weekdays: '工作日', weekends: '周末', list: (i) => i.join('、'),
+      and: (i) => (i.length > 1 ? `${i.slice(0, -1).join('、')}和${i[i.length - 1]}` : i[0]), at: (d, t) => `${d} ${t}`, every: (n) => `每 ${n}`, span: (f, t) => `${f} 至 ${t}` }
   }
 };
+
+/** A job's times in the page's language (D28): its times lines, else its
+ *  weekly days and time, else its interval, as the Schedules list reads them. */
+export function caseWhen(m: { intervalMs: number; weekly?: unknown; times?: unknown }, lang: CaseLang): string {
+  const w = WORDS[lang].when;
+  const times = normalizeTimes(m.times);
+  if (times) return formatTimes(times, w);
+  const weekly = normalizeWeekly(m.weekly);
+  if (weekly) return formatTimes([{ kind: 'at', days: weekly.days, minute: weekly.minute } as ScheduleLine], w);
+  // A daily interval reads as words, not "Every 1d".
+  if (m.intervalMs === 86_400_000) return w.everyDay;
+  return formatTimes([{ kind: 'every', everyMs: m.intervalMs } as ScheduleLine], w);
+}
 
 /** Who the page is about: the name, or the type and city with D8 off. */
 export function subjectOf(facts: Pick<CaseStudyFacts, 'lang' | 'showName' | 'businessName' | 'businessType' | 'city'>): string {
@@ -468,7 +525,7 @@ export function draftPrompt(facts: CaseStudyFacts): string {
   });
   const figs = headlineChoices(facts.figures);
   return [
-    `You write short parts of a one page case study about a small business whose office runs on ${APP_NAME}, an app where an AI team led by Michael does the office work: email, books, orders, scheduling. The case study is published by ${APP_NAME}. A person will read and edit every word before anything is sent.`,
+    `You write short parts of a customer story page about a small business whose office runs on ${APP_NAME}, an app where an AI team led by Michael does the office work: email, books, orders, scheduling. The case study is published by ${APP_NAME}. A person will read and edit every word before anything is sent.`,
     `Write in ${LANG_NAME[facts.lang]}.`,
     'Rules:',
     '- Use only the facts below. Name no customer, no supplier and no person.',
@@ -483,7 +540,7 @@ export function draftPrompt(facts: CaseStudyFacts): string {
     '',
     'Reply with one JSON object and nothing else:',
     `{"subtitle": "one line about the business and its AI team, at most ${c.subtitle} characters",`,
-    ` "about": "what the business does and what office work it had, at most ${c.about} characters",`,
+    ` "about": "the Before part of the story: what the office work was like before the ${APP_NAME} team, what piled up and what it cost the owner or the customers, at most ${c.about} characters",`,
     ` "why": "why a small business like this should have an AI office team, at most ${c.why} characters",`,
     ` "headlines": {${figs.map((k) => `"${k}": "headline words with {n} where the measured ${k === 'away' ? 'hours while the owner was away' : `count of ${k === 'email' ? 'emails organized' : k === 'task' ? 'tasks finished' : k === 'sent' ? 'emails sent' : 'scheduled checks'}`} goes"`).join(', ')}},`,
     ` "team": {"<id>": "one punchy sentence on how that member drives this business: what they handle and what it gets the owner or the customers, at most ${c.teamLine} characters"}}`,
@@ -610,13 +667,10 @@ export function cleanEdits(facts: CaseStudyFacts, raw: unknown): { edits: CaseSt
 // ---------------------------------------------------------------- the page
 
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-/** The page is laid out in a box 1/1.2 of the paper and zoomed to it, so its
- *  type sits close to the approved mockup's proportions (drawn at 612 by 792
- *  for Letter) while the fullest page still fits (case-study-pdf.electron.test). */
-const PAGE_ZOOM = 1.2;
-const PAPER: Record<Paper, { w: number; h: number; css: string }> = {
-  letter: { w: 680, h: 880, css: 'letter' },
-  a4: { w: 661, h: 935, css: 'A4' }
+/** The paper at 96 px per inch: the PDF copy zooms the page to its width. */
+const PAPER: Record<Paper, { w: number; css: string }> = {
+  letter: { w: 816, css: 'letter' },
+  a4: { w: 794, css: 'A4' }
 };
 
 /** The long date of a YYYY-MM-DD day, in the page's language. */
@@ -627,7 +681,8 @@ export function dayLabel(day: string, lang: CaseLang, year = false): string {
 }
 
 function initials(s: string): string {
-  const w = s.trim().split(/\s+/).filter(Boolean);
+  // Words that start with a letter only: "Cedar & Pine" is CP, not C&.
+  const w = s.trim().split(/\s+/).filter((x) => /^\p{L}/u.test(x));
   return ((w[0]?.[0] ?? '') + (w[1]?.[0] ?? '')).toUpperCase() || 'M';
 }
 
@@ -637,11 +692,17 @@ const MARK = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" ari
 export interface PageOptions {
   /** @font-face rules for Sora and IBM Plex Mono (main reads the bundled files). */
   fontCss: string;
+  /** 'web' (the default) is the landing page we publish and the screen's
+   *  preview; 'print' is the same page zoomed to the paper for the PDF copy. */
+  mode?: 'web' | 'print';
 }
 
 /**
- * The page as one HTML document (D15 outcome first). The preview and the PDF
- * both draw this, so they match, and both are read only: the owner changes
+ * The case study as a customer story landing page (D28): the setup blueprint
+ * (owner, Michael and every member, with their jobs, tools and numbers) told
+ * inside the story (outcome headline, snapshot, numbers, Before, quote, the
+ * result, a closing call to action). The preview, the HTML file and the PDF
+ * copy all draw this, so they match, and all are read only: the owner changes
  * the words in the screen's panel (D22). The headline's number is always
  * filled from the figures, between its words (D16).
  */
@@ -650,33 +711,61 @@ export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: Pag
   const f = facts.figures;
   const pal = facts.showName && facts.palette ? facts.palette : INK_PALETTE;
   const rtl = facts.lang === 'ar';
+  const print = opts.mode === 'print';
   const paper = PAPER[facts.paper];
   const from = dayLabel(facts.range.from, facts.lang);
   const to = dayLabel(facts.range.to, facts.lang, true);
+  const who = subjectOf(facts);
+  const zh = facts.lang === 'zh-CN';
+  // Inside a sentence an English type reads "a bakery in Austin".
+  const closeWho = facts.lang === 'en' && !(facts.showName && facts.businessName?.trim()) ? lowerFirst(who, true) : who;
 
   const head = edits.headline;
-  // A long headline sets smaller so it stays on two lines (D25 names the
-  // product in it, and a long business name is common).
   const headLen = head ? [...`${head.before} ${head.after}`].length : 0;
-  const zh = facts.lang === 'zh-CN';
   const headSize = headLen > (zh ? 34 : 72) ? ' longer' : headLen > (zh ? 26 : 56) ? ' long' : '';
   const headline = head
     ? `<h1 class="headline${headSize}"><span>${esc(head.before)}</span> <span class="lock" aria-label="${esc(`${fmtCount(figureValue(f, head.figure))}, ${w.locked}`)}">${fmtCount(figureValue(f, head.figure))}</span> <span>${esc(head.after)}</span></h1>`
     : '';
 
-  const metaBits = facts.showName
-    ? [w.typeIn(facts.businessType ?? '', facts.city ?? ''), facts.website?.replace(/^https?:\/\//, '').replace(/\/$/, '')].filter(Boolean)
-    : [];
   const logo = facts.showName
     ? `<div class="logo">${facts.logo && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(facts.logo) ? `<img src="${facts.logo}" alt="">` : esc(initials(facts.businessName ?? ''))}</div>`
     : '';
+  const site = facts.showName ? facts.website?.replace(/^https?:\/\//, '').replace(/\/$/, '') : undefined;
+
+  // The snapshot: who they are and what the team is connected to.
+  const tools = [...new Set(facts.members.flatMap((m) => m.tools ?? []))];
+  const snapRows: Array<[string, string]> = [];
+  if (facts.businessType?.trim()) snapRows.push([w.industry, esc(facts.businessType.trim())]);
+  if (facts.city?.trim()) snapRows.push([w.location, esc(facts.city.trim())]);
+  snapRows.push([w.aiTeam, esc(w.members(facts.members.length))]);
+  snapRows.push([w.period, esc(w.span(from, to))]);
+  if (tools.length) snapRows.push([w.connected, `<span class="pills">${tools.map((t) => `<i>${esc(t)}</i>`).join('')}</span>`]);
+  const snapshot = `<aside class="snap">
+    <div class="snap-top">${logo}<div><b>${esc(who)}</b>${site ? `<span>${esc(site)}</span>` : ''}</div></div>
+    <dl>${snapRows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>
+  </aside>`;
 
   const band = bandFigures(f).map((k) => `<div class="stat"><div class="n">${fmtCount(figureValue(f, k))}</div><div class="l">${esc(w.band[k])}</div></div>`);
   band.push(`<div class="stat"><div class="n">${fmtUsd(f.spendUsd)}</div><div class="l">${esc(w.spend(facts.range.days))}</div></div>`);
 
-  const rows = facts.members.slice(0, TEAM_ROWS).map((m) => `<div class="t-row"><span><b>${esc(m.name)}</b><span class="t-role">${esc(m.role)}</span></span><span class="t-work">${esc(edits.team[m.id] ?? '')}</span><span class="t-n">${m.figure ? `${fmtCount(m.figure.count)} ${esc(w.member[m.figure.kind])}` : ''}</span></div>`);
-  const more = facts.members.length - TEAM_ROWS;
-  if (more > 0) rows.push(`<div class="t-more">${esc(w.more(more))}</div>`);
+  // The team as the office is set up: the owner, Michael, then every member.
+  const shown = facts.members.slice(0, TEAM_ROWS);
+  const card = (m: CaseMember): string => {
+    const jobs = (m.schedules ?? []).slice(0, CARD_JOBS);
+    const extra = (m.schedules ?? []).length - jobs.length;
+    const line = edits.team[m.id] ?? '';
+    return `<div class="m-card${m.isMichael ? ' lead' : ''}">
+      <div class="m-head"><div class="av">${esc(initials(m.name))}</div><div class="m-who"><b>${esc(m.name)}</b><span>${esc(m.role)}</span></div></div>
+      ${line ? `<p class="m-line">${esc(line)}</p>` : m.isMichael ? `<p class="m-line">${esc(w.runsTheOffice)}</p>` : ''}
+      ${jobs.length ? `<ul class="m-jobs">${jobs.map((j) => `<li><b>${esc(j.label)}</b><span>${esc(j.when)}</span></li>`).join('')}${extra > 0 ? `<li class="more">${esc(w.more(extra))}</li>` : ''}</ul>` : ''}
+      ${(m.tools ?? []).length ? `<div class="pills">${(m.tools ?? []).map((t) => `<i>${esc(t)}</i>`).join('')}</div>` : ''}
+      ${m.figure ? `<div class="m-fig"><span>${esc(w.member[m.figure.kind])}</span><b>${fmtCount(m.figure.count)}</b></div>` : ''}
+    </div>`;
+  };
+  const lead = shown.find((m) => m.isMichael);
+  const rest = shown.filter((m) => !m.isMichael);
+  const owner = `<div class="owner"><div class="av">${esc(initials(facts.showName && facts.ceoName?.trim() ? facts.ceoName : w.theOwner))}</div><div class="m-who"><b>${esc(facts.showName && facts.ceoName?.trim() ? facts.ceoName.trim() : w.theOwner)}</b>${facts.showName && facts.ceoName?.trim() ? `<span>${esc(w.theOwner)}</span>` : ''}</div></div>`;
+  const org = `<div class="org">${owner}<div class="vline"></div>${lead ? `${card(lead)}${rest.length ? '<div class="vline"></div>' : ''}` : ''}${rest.length ? `<div class="grid">${rest.map(card).join('')}</div>` : ''}</div>`;
 
   const awayH = hoursOf(f.awayMs), ranH = hoursOf(f.ranMs);
   const max = Math.max(1, ...facts.days.map((d) => d.ms));
@@ -685,96 +774,154 @@ export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: Pag
     const a = d.ms > 0 ? (d.awayMs / d.ms) * 100 : 0;
     return `<div class="bar" style="height:${h.toFixed(1)}%"><div class="run" style="flex:${(100 - a).toFixed(1)}"></div><div class="aw" style="flex:${a.toFixed(1)}"></div></div>`;
   }).join('');
-  const strip = ranH > 0 ? `<section class="awaybox">
-      <div class="away-head"><div class="h">${esc(awayH > 0 ? w.away : w.worked)}</div>${awayH > 0 ? `<div class="big">${w.ofHours(fmtCount(awayH), fmtCount(ranH))}</div>` : ''}</div>
+  const strip = ranH > 0 ? `<div class="awaybox">
+      <div class="big">${awayH > 0 ? w.ofHours(fmtCount(awayH), fmtCount(ranH)) : `<b>${fmtCount(ranH)}</b>`}</div>
+      <div class="big-l">${esc(awayH > 0 ? w.away : w.worked)}</div>
       <div class="strip" role="img" aria-label="${esc(w.stripLabel(fmtCount(awayH), fmtCount(ranH), from, to))}">${bars}</div>
       <div class="strip-x"><span>${esc(from)}</span><span>${esc(dayLabel(facts.range.to, facts.lang))}</span></div>
       ${awayH > 0 ? `<div class="legend"><span><i class="k-aw"></i>${esc(w.awayLegend)}</span><span><i class="k-run"></i>${esc(w.aroundLegend)}</span></div>` : ''}
-    </section>` : '';
+    </div>` : '';
 
+  // Numbered chapters, only the ones the page has.
+  const chapters: Array<[string, string, string]> = [];
+  if (edits.about.trim()) chapters.push(['before', w.before, `<p class="prose">${esc(edits.about)}</p>`]);
+  chapters.push(['team', w.theTeam, org]);
+  const chapter = ([id, title, body]: [string, string, string], i: number): string =>
+    `<section class="ch ch-${id}"><div class="wrap"><div class="ch-label"><div class="num">${String(i + 1).padStart(2, '0')}</div><h2>${esc(title)}</h2></div><div class="ch-body">${body}</div></div></section>`;
   const quote = edits.quote
-    ? `<figure class="quote"><blockquote>${esc(edits.quote)}</blockquote><figcaption>${esc(quoteSignature(facts))}</figcaption></figure>`
+    ? `<section class="quote"><div class="wrap"><figure><blockquote>${esc(edits.quote)}</blockquote><figcaption><div class="av">${esc(initials(facts.showName && facts.ceoName?.trim() ? facts.ceoName : w.theOwner))}</div><span>${esc(quoteSignature(facts))}</span></figcaption></figure></div></section>`
     : '';
+  const result = strip ? chapter(['result', w.result, strip], chapters.length) : '';
 
-  return `<!doctype html><html lang="${facts.lang}" dir="${rtl ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><title>${esc(w.caseStudy)}</title><style>
+  const narrow = print ? '' : `@media (max-width:760px){
+ .wrap{padding:0 16px}
+ .hero{padding:36px 0 28px}.hero .wrap,.ch .wrap,.close .wrap{grid-template-columns:1fr;gap:24px}
+ .headline,.headline.long,.headline.longer{font-size:32px;line-height:38px}
+ .sub,.prose{font-size:16px;line-height:26px}
+ .band .wrap{grid-template-columns:1fr 1fr}.stat{padding:20px 0}.stat:nth-child(odd){padding-inline-start:0;border:none}
+ .stat .n{font-size:30px;line-height:34px}
+ .ch{padding:44px 0}.grid{grid-template-columns:1fr}.lead{width:100%}
+ .quote{padding:48px 0}.quote blockquote{font-size:22px;line-height:31px}
+ .close h2{font-size:26px;line-height:32px}
+ nav .crumb{display:none}
+}`;
+
+  return `<!doctype html><html lang="${facts.lang}" dir="${rtl ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(`${who} · ${w.caseStudy}`)}</title><style>
 ${opts.fontCss}
-@page{size:${paper.css};margin:${CONTINUED_MARGIN_IN}in 0}
-@page :first{margin:0}
-:root{--hero:${pal.hero};--tint:${pal.tint};--hline:${pal.line};--aw:${pal.away};--hl:${pal.highlight}}
+${print ? `@page{size:${paper.css};margin:${CONTINUED_MARGIN_IN}in 0}
+@page :first{margin:0}` : ''}
+:root{--hero:${pal.hero};--tint:${pal.tint};--hline:${pal.line};--aw:${pal.away};--hl:${pal.highlight};--ink:#1E1B2E;--ink2:#4A4660;--ink3:#5E5A76;--line:#E8E6F2}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:#fff}
-body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic",system-ui,sans-serif;color:#1E1B2E;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.mono,.t-n,.big b,.strip-x{font-family:"IBM Plex Mono",ui-monospace,monospace;letter-spacing:0}
-/* At least one full page; longer when the team needs it, printed across pages (D27). */
-.page{width:${paper.w}px;min-height:${paper.h}px;zoom:${PAGE_ZOOM};display:flex;flex-direction:column;background:#fff}
-.t-row,.cols,.awaybox,.why,.quote,.band,.foot{break-inside:avoid}
-.hero{background:var(--hero);color:#fff;padding:24px 40px 18px}
-.hero-top{display:flex;align-items:center;gap:12px}
-.logo{width:46px;height:46px;border-radius:11px;background:#fff;display:grid;place-items:center;font-weight:700;font-size:16px;color:var(--hero);flex:none;overflow:hidden}
-.logo img{max-width:40px;max-height:40px;object-fit:contain}
-.biz{font-weight:600;font-size:14px;line-height:18px}
-.biz-meta{font-size:10.5px;line-height:14px;color:rgba(255,255,255,.82)}
-.eyebrow{margin-top:14px;font-weight:600;font-size:9px;line-height:12px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.78)}
-.headline{margin-top:5px;font-weight:600;font-size:26px;line-height:32px;letter-spacing:-.03em;max-width:580px}
-.headline.long{font-size:22px;line-height:28px}
-.headline.longer{font-size:19px;line-height:24px}
-/* The headline's number: its own font, no box, a light tint of the hero (D23). */
-.lock{font-weight:700;color:var(--hl);white-space:nowrap}
-.sub{margin-top:8px;font-size:11.5px;line-height:17px;color:rgba(255,255,255,.9);max-width:560px;min-height:17px}
-.band{background:var(--tint);display:grid;grid-template-columns:repeat(${band.length},1fr);padding:12px 40px 8px;border-bottom:1px solid var(--hline)}
+body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic",system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+a{color:inherit}
+.mono,.num,.strip-x,.src{font-family:"IBM Plex Mono",ui-monospace,monospace;letter-spacing:0}
+.page{${print ? `width:${PAGE_W}px;zoom:${(paper.w / PAGE_W).toFixed(4)}` : 'width:100%'};background:#fff}
+.wrap{max-width:${PAGE_W}px;margin:0 auto;padding:0 40px}
+.m-card,.owner,.stat,.quote,.awaybox,.close,.snap,.ch-label,.prose{break-inside:avoid}
+nav{border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;height:60px;gap:10px;font-size:13px}
+nav .mark{display:grid;place-items:center;width:26px;height:26px;border-radius:7px;background:#fff;border:1px solid var(--line)}
+nav .mark svg{width:16px;height:16px}
+nav .crumb{color:var(--ink3)}
+.btn{display:inline-block;background:var(--ink);color:#fff;text-decoration:none;font-weight:600;border-radius:999px}
+nav .btn{margin-inline-start:auto;padding:9px 16px;font-size:13px}
+.hero{padding:64px 0 52px;background:linear-gradient(180deg,var(--tint),#fff)}
+.hero .wrap{display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:end}
+.eyebrow{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--hero)}
+.headline{margin-top:14px;font-weight:600;font-size:44px;line-height:52px;letter-spacing:-.035em}
+.headline.long{font-size:38px;line-height:46px}
+.headline.longer{font-size:33px;line-height:40px}
+/* The headline's number: the hero colour, no box (D23). */
+.lock{font-weight:700;color:var(--hero);white-space:nowrap}
+.sub{margin-top:18px;font-size:18px;line-height:29px;color:var(--ink2);font-weight:300;max-width:600px}
+.snap{background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 20px 50px -30px rgba(30,27,46,.28)}
+.snap-top{display:flex;gap:12px;align-items:center;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.snap-top b{display:block;font-size:15px;line-height:20px}
+.snap-top span{display:block;font-size:12px;line-height:16px;color:var(--ink3)}
+.logo{width:46px;height:46px;border-radius:12px;background:var(--hero);display:grid;place-items:center;font-weight:700;font-size:16px;color:#fff;flex:none;overflow:hidden}
+.logo img{width:100%;height:100%;object-fit:contain;background:#fff}
+.snap dl{display:grid;grid-template-columns:auto 1fr;gap:10px 16px;margin-top:16px;font-size:13px;line-height:18px}
+.snap dt{color:var(--ink3)}
+.snap dd{font-weight:500;text-align:end}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.snap .pills{justify-content:flex-end}
+.pills i{font-style:normal;font-size:11px;line-height:16px;background:var(--tint);color:var(--hero);padding:2px 8px;border-radius:999px;font-weight:500}
+.band{border-block:1px solid var(--line)}
+.band .wrap{display:grid;grid-template-columns:repeat(${band.length},1fr)}
+.stat{padding:30px 0 22px}
+.stat+.stat{padding-inline-start:24px;border-inline-start:1px solid var(--line)}
 /* The band's numbers in the page's Sora: a mono comma left a gap ("4, 874"). */
-.stat .n{font-weight:600;font-size:26px;line-height:30px;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-.stat .l{font-size:10px;line-height:13px;color:#4A4660;margin-top:2px}
-.stat+.stat{padding-inline-start:14px;border-inline-start:1px solid var(--hline)}
-.band-src{grid-column:1/-1;margin-top:6px;font-size:9px;line-height:12px;color:#5E5A76}
-.body{padding:12px 40px 8px;display:flex;flex-direction:column;gap:8px;flex:1}
-.h{font-weight:600;font-size:9px;line-height:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--hero);margin-bottom:5px}
-.cols{display:grid;grid-template-columns:1.25fr 1fr;gap:26px;align-items:start}
-.cols.solo{grid-template-columns:1fr}
-.p{font-size:11px;line-height:16.5px;min-height:16.5px}
-.quote{position:relative;padding-top:14px}
-.quote::before{content:"\\201C";position:absolute;inset-inline-start:-4px;top:-14px;font-weight:600;font-size:48px;line-height:1;color:var(--aw)}
-.quote blockquote{font-weight:500;font-size:13px;line-height:19px;letter-spacing:-.015em;min-height:19px}
-.quote figcaption{margin-top:6px;font-size:10px;line-height:14px;color:#5E5A76}
-.t-row{display:grid;grid-template-columns:128px 1fr 74px;gap:8px;align-items:baseline;padding:2px 0;border-bottom:1px solid #F0EFF5;font-size:10.5px;line-height:13.5px}
-/* Name and role on one line; the member's work may take two (owner, D26). */
-.t-row>span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.t-row>.t-work{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;text-overflow:clip}
-.t-row:last-child{border-bottom:none}
-.t-row b{font-weight:600}
-.t-role{color:#5E5A76;font-size:9.5px;margin-inline-start:5px}
-.t-n{text-align:end;font-weight:500;font-size:10px;color:var(--hero)}
-.t-more{font-size:10px;color:#5E5A76;padding-top:3px}
-.away-head{display:flex;align-items:baseline;justify-content:space-between}
-.away-head .h{margin:0}
-.big{font-size:11px;line-height:15px}
-.big b{font-weight:500;font-size:13px}
-.strip{display:flex;align-items:flex-end;gap:3px;height:22px;margin-top:6px;border-bottom:1px solid #DAD7EA}
-.bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;border-radius:2px 2px 0 0;overflow:hidden;min-height:1px}
+.stat .n{font-weight:600;font-size:40px;line-height:44px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.stat .l{margin-top:8px;font-size:14px;line-height:20px;color:var(--ink2);max-width:210px}
+.src{grid-column:1/-1;font-size:11px;line-height:15px;color:var(--ink3);padding-bottom:14px}
+.ch{padding:72px 0}
+.ch+.ch{padding-top:8px}
+.ch .wrap{display:grid;grid-template-columns:190px 1fr;gap:40px}
+.ch-label .num{font-size:12px;color:var(--ink3)}
+.ch-label h2{margin-top:6px;font-size:21px;line-height:27px;font-weight:600;letter-spacing:-.02em}
+.prose{font-size:19px;line-height:32px;color:var(--ink2);font-weight:300;max-width:640px}
+.org{display:flex;flex-direction:column;align-items:center;background:#F6F5FA;background-image:radial-gradient(#DCD9E8 1px,transparent 1px);background-size:18px 18px;border:1px solid var(--line);border-radius:20px;padding:28px 22px}
+.vline{width:2px;height:22px;background:#CFCBE0}
+.owner{display:flex;gap:10px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 16px}
+.owner .av{background:var(--ink);color:#fff}
+.av{width:36px;height:36px;border-radius:50%;background:var(--tint);color:var(--hero);display:grid;place-items:center;font-weight:600;font-size:13px;flex:none}
+.m-who b{display:block;font-size:15px;line-height:20px;font-weight:600}
+.m-who span{display:block;font-size:12px;line-height:16px;color:var(--ink3)}
+.m-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 10px 30px -24px rgba(30,27,46,.4);display:flex;flex-direction:column;gap:10px}
+.lead{width:440px;border:2px solid var(--hero)}
+.lead .av{background:var(--hero);color:#fff}
+.m-head{display:flex;gap:10px;align-items:center}
+.m-line{font-size:13px;line-height:20px;color:var(--ink2)}
+.m-jobs{list-style:none;display:flex;flex-direction:column;gap:6px;font-size:12px;line-height:16px}
+.m-jobs li{display:flex;flex-direction:column;padding-inline-start:10px;border-inline-start:2px solid var(--hline)}
+.m-jobs b{font-weight:500}
+.m-jobs span{color:var(--ink3)}
+.m-jobs .more{color:var(--ink3);border:none;padding:0}
+.m-fig{margin-top:auto;padding-top:10px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--ink3)}
+.m-fig b{font-size:20px;line-height:24px;color:var(--ink);font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.grid{width:100%;display:grid;grid-template-columns:repeat(${rest.length >= 3 ? 3 : Math.max(1, rest.length)},1fr);gap:12px;padding-top:22px;border-top:2px solid #CFCBE0;border-radius:12px 12px 0 0}
+.quote{background:var(--hero);color:#fff;padding:80px 0}
+.quote blockquote{font-size:32px;line-height:44px;letter-spacing:-.025em;font-weight:500;max-width:820px}
+.quote blockquote::before{content:"\\201C";display:block;font-size:80px;line-height:56px;color:var(--hl)}
+.quote figcaption{margin-top:24px;display:flex;gap:12px;align-items:center;font-size:14px;color:rgba(255,255,255,.82)}
+.quote figcaption .av{background:rgba(255,255,255,.16);color:#fff}
+.big{font-size:18px;line-height:28px;color:var(--ink2)}
+.big b{font-size:34px;line-height:40px;font-weight:600;color:var(--ink);letter-spacing:-.03em}
+.big-l{font-size:15px;line-height:22px;color:var(--ink2);font-weight:300}
+.strip{display:flex;align-items:flex-end;gap:4px;height:130px;margin-top:22px;border-bottom:1px solid var(--line)}
+.bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;border-radius:3px 3px 0 0;overflow:hidden;min-height:1px}
 .bar .run{background:#E4E1EC}
 .bar .aw{background:var(--aw)}
-.strip-x{display:flex;justify-content:space-between;font-size:8.5px;line-height:11px;color:#5E5A76;margin-top:3px}
-.legend{display:flex;gap:12px;font-size:9px;line-height:12px;color:#4A4660;margin-top:4px}
-.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-inline-end:4px;vertical-align:-1px}
+.strip-x{display:flex;justify-content:space-between;font-size:11px;line-height:15px;color:var(--ink3);margin-top:6px}
+.legend{display:flex;gap:16px;font-size:12px;line-height:16px;color:var(--ink2);margin-top:12px}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-inline-end:6px}
 .k-aw{background:var(--aw)}.k-run{background:#E4E1EC}
-.why{background:var(--tint);border-radius:10px;padding:8px 14px}
-.foot{flex:none;padding:9px 40px;display:flex;align-items:center;gap:8px;font-size:9px;line-height:12px;color:#5E5A76;border-top:1px solid #E8E6F2}
-.foot .url{margin-inline-start:auto;font-family:"IBM Plex Mono",monospace;font-weight:500;color:#1E1B2E}
+.close{padding:72px 0;background:#FBFAF7;border-top:1px solid var(--line)}
+.close .wrap{display:grid;grid-template-columns:1fr auto;gap:40px;align-items:center}
+.close h2{font-size:34px;line-height:42px;letter-spacing:-.03em;font-weight:600}
+.close p{margin-top:12px;font-size:17px;line-height:27px;color:var(--ink2);font-weight:300;max-width:600px}
+.close .btn{padding:15px 26px;font-size:15px}
+.close .go{text-align:center}
+.close .go span{display:block;margin-top:10px;font-size:12px;color:var(--ink3)}
+footer .wrap{display:flex;align-items:center;gap:8px;padding-block:20px;font-size:12px;color:var(--ink3)}
+footer .url{margin-inline-start:auto;font-family:"IBM Plex Mono",monospace;font-weight:500;color:var(--ink)}
+${narrow}
 </style></head><body><article class="page" aria-label="${esc(w.caseStudy)}">
-<header class="hero">
-  ${facts.showName ? `<div class="hero-top">${logo}<div><div class="biz">${esc(facts.businessName ?? '')}</div><div class="biz-meta">${esc(metaBits.join(' · '))}</div></div></div>` : `<div class="biz">${esc(subjectOf(facts))}</div>`}
-  <div class="eyebrow">${esc(w.caseStudy)}</div>
-  ${headline}
-  <div class="sub">${esc(edits.subtitle)}</div>
-</header>
-<section class="band">${band.join('')}<div class="band-src">${esc(w.source(from, to))}</div></section>
-<div class="body">
-  <div class="cols${quote ? '' : ' solo'}"><section><div class="h">${esc(w.theBusiness)}</div><div class="p">${esc(edits.about)}</div></section>${quote}</div>
-  <section><div class="h">${esc(w.theTeam)}</div><div class="team">${rows.join('')}</div></section>
-  ${strip}
-  <section class="why"><div class="h">${esc(w.why)}</div><div class="p">${esc(edits.why)}</div></section>
-</div>
-<footer class="foot">${MARK}<span>${esc(w.made)} · ${esc(w.version)} ${esc(facts.appVersion)}</span><span class="url">dontbemichael.com</span></footer>
+<nav><div class="wrap"><span class="mark">${MARK}</span><b>${esc(APP_NAME)}</b><span class="crumb">/ ${esc(w.stories)}</span><a class="btn" href="${SITE_URL}">${esc(w.cta)}</a></div></nav>
+<header class="hero"><div class="wrap">
+  <div><div class="eyebrow">${esc([w.caseStudy, facts.businessType?.trim()].filter(Boolean).join(' · '))}</div>${headline}<p class="sub">${esc(edits.subtitle)}</p></div>
+  ${snapshot}
+</div></header>
+<section class="band"><div class="wrap">${band.join('')}<div class="src">${esc(w.source(from, to))}</div></div></section>
+${chapters.map(chapter).join('\n')}
+${quote}
+${result}
+<section class="close"><div class="wrap">
+  <div><h2>${esc(w.closeTitle(closeWho))}</h2><p>${esc(edits.why)}</p></div>
+  <div class="go"><a class="btn" href="${SITE_URL}">${esc(w.cta)}</a><span>${esc(w.platforms)}</span></div>
+</div></section>
+<footer><div class="wrap">${MARK}<span>${esc(w.made)} · ${esc(w.version)} ${esc(facts.appVersion)}</span><span class="url">dontbemichael.com</span></div></footer>
 </article></body></html>`;
 }
 
@@ -784,17 +931,17 @@ export function caseStudyEmail(facts: CaseStudyFacts): { subject: string; body: 
   if (facts.lang === 'ar') {
     return {
       subject: `دراسة حالة: ${who}`,
-      body: `مرفق دراسة حالة ${who} المعدّة باستخدام Don't Be Michael.\n\nيجوز لـ Don't Be Michael نشر هذه الدراسة على موقعه، وسيحذفها إذا طلبت ذلك. يكفي الرد على هذه الرسالة لطلب الحذف.`
+      body: `مرفق دراسة حالة ${who} المعدّة باستخدام Don't Be Michael: صفحة الويب للنشر (case-study.html) ونسخة PDF.\n\nيجوز لـ Don't Be Michael نشر هذه الدراسة على موقعه، وسيحذفها إذا طلبت ذلك. يكفي الرد على هذه الرسالة لطلب الحذف.`
     };
   }
   if (facts.lang === 'zh-CN') {
     return {
       subject: `客户案例：${who}`,
-      body: `附件是 ${who} 使用 Don't Be Michael 制作的客户案例。\n\nDon't Be Michael 可以在其网站上发布此案例，并会在我要求时将其删除。回复此邮件要求删除即可。`
+      body: `附件是 ${who} 使用 Don't Be Michael 制作的客户案例：用于发布的网页 (case-study.html) 和一份 PDF 副本。\n\nDon't Be Michael 可以在其网站上发布此案例，并会在我要求时将其删除。回复此邮件要求删除即可。`
     };
   }
   return {
     subject: `Case study: ${who}`,
-    body: `Attached is the case study for ${who}, made with Don't Be Michael.\n\nDon't Be Michael may publish this on its website, and will take it down if I ask. A reply to this email asking for removal is enough.`
+    body: `Attached is the case study for ${who}, made with Don't Be Michael: the web page to publish (case-study.html) and a PDF copy.\n\nDon't Be Michael may publish this on its website, and will take it down if I ask. A reply to this email asking for removal is enough.`
   };
 }

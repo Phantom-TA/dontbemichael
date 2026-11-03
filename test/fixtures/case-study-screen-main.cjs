@@ -17,7 +17,7 @@ app.whenReady().then(async () => {
       await new Promise((r) => setTimeout(r, 100));
     }
     // The owner types in the panel; the read only page follows.
-    const typed = await win.webContents.executeJavaScript("screenTest.type('About the business', 'We bake bread for twelve cafes in town')");
+    const typed = await win.webContents.executeJavaScript("screenTest.type('Before', 'We bake bread for twelve cafes in town')");
     let after = null;
     for (let i = 0; i < 30; i++) {
       after = await win.webContents.executeJavaScript('screenTest.state()');

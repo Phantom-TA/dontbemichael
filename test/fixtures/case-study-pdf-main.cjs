@@ -1,6 +1,8 @@
 'use strict';
 // Electron main for case-study-pdf.electron.test.cjs: prints each page the
-// test wrote and reports its page count, its fit and, for Arabic, its layout.
+// test wrote and reports its page count, its member cards and, for Arabic, its
+// layout. A phone-*.html page is the web page at phone width: it reports its
+// width only.
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -12,26 +14,25 @@ app.on('window-all-closed', () => {});
 app.whenReady().then(async () => {
   const out = {};
   for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.html'))) {
-    const win = new BrowserWindow({ show: false, width: 900, height: 1200, webPreferences: { sandbox: true } });
+    const phone = name.startsWith('phone-');
+    const win = new BrowserWindow({ show: false, width: phone ? 390 : 900, height: 1200, useContentSize: true, webPreferences: { sandbox: true } });
     // As the app loads it (index.ts caseStudyPdf): the page as a data URL.
     await win.loadURL(`data:text/html;base64,${fs.readFileSync(path.join(dir, name)).toString('base64')}`);
     await win.webContents.executeJavaScript('document.fonts.ready.then(() => true)', true);
     const layout = await win.webContents.executeJavaScript(`(() => {
-      const b = document.querySelector('.body');
       const bars = [...document.querySelectorAll('.bar')];
       const h1 = document.querySelector('.headline');
       const kids = h1 ? [...h1.children].map((c) => c.className || 'words') : [];
       return {
-        overflow: !!b && b.scrollHeight > b.clientHeight + 1,
-        over: b ? b.scrollHeight - b.clientHeight : null,
-        parts: Object.fromEntries(['.hero', '.band', '.cols', '.team', '.awaybox', '.why', '.foot'].map((q) => [q, document.querySelector(q)?.offsetHeight ?? 0])),
         dir: document.documentElement.dir,
-        rows: document.querySelectorAll('.t-row').length,
-        more: !!document.querySelector('.t-more'),
+        rows: document.querySelectorAll('.m-card').length,
+        scrollWidth: document.documentElement.scrollWidth,
+        viewWidth: window.innerWidth,
         firstBarRight: bars.length > 1 ? bars[0].getBoundingClientRect().left > bars[bars.length - 1].getBoundingClientRect().left : null,
         headline: kids
       };
     })()`, true);
+    if (phone) { out[name] = layout; win.destroy(); continue; }
     const paper = name.includes('-a4-') ? 'A4' : 'Letter';
     const pdf = await win.webContents.printToPDF({ pageSize: paper, printBackground: true, margins: { marginType: 'none' }, preferCSSPageSize: true });
     const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) || []).length;

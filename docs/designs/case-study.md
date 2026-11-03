@@ -1271,13 +1271,21 @@ B Impact First (giant number hero) and C The Blueprint (org chart of how the off
 The owner picked C's blueprint inside A's story. Board:
 /Users/moblizeit/.gstack/projects/agentvivekkumar-dontbemichael/designs/case-study-landing-20261103/board.html.
 
-Open before building (behavior, owner):
-- What we receive: the page as a web page (HTML) to publish on dontbemichael.com, with the PDF
-  kept as a copy, or the PDF only.
-- New facts the blueprint needs: each member's schedules and connected tools (from Schedules and
-  connectors), and a drafted "Before" paragraph in place of "The business".
-- "A typical day" in variant C needs timed events; it ships only if the times come from measured
-  events, otherwise it is left out.
+Built with the defaults the owner approved ("Yes, build it", 2026-11-03):
+- What we receive: the web page (case-study.html, its fonts and logo inside, phone layout below
+  760 px) and its PDF copy, both attached to the one email. Save writes both, same name.
+- The team chart: the owner (the CEO's name with the name switch on), Michael, then every member
+  as a card with the team line, up to three running jobs with their times in the page's language
+  (caseWhen; heartbeats and compaction left out), what the member is connected to by the Access
+  tab's rule (agentAccessSummary: Email, QuickBooks, Claude connectors, Web for Research while
+  research is on; never an address), and the member's Pulse number.
+- "About the business" becomes **Before**: the draft writes what the office work was like before
+  the team; the chapter shows only with words in it. The closing reads "Run your office like X."
+  above the why words and a Build your team link to dontbemichael.com.
+- "A typical day" is left out for now: the page gathers no timed events per job to measure a
+  day's timeline from, and every number on the page is measured.
+- The preview draws the page at its 1040 px layout width, scaled, with no sheet breaks; the PDF
+  copy zooms the same page to the paper and keeps cards whole across pages.
 
 ## GSTACK REVIEW REPORT
 

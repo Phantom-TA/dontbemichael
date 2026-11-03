@@ -35,6 +35,7 @@ import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
 import { sweepIsolatedLeftovers } from './isolatedSweep';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
+import { agentAccessSummary } from '../shared/agentAccess';
 import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_WORK_STYLE } from '../shared/research';
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
@@ -7523,6 +7524,20 @@ function caseLogoPaths(): { png: string; meta: string } | null {
   const dir = privateRoot(expandTilde(home));
   return { png: join(dir, 'case-study-logo.png'), meta: join(dir, 'case-study-logo.json') };
 }
+/** What a member is connected to, for the case study's team chart (D28): the
+ *  Access tab's own rule (agentAccessSummary), in plain names, never an address.
+ *  Web only for the Research member while research is on. */
+function caseStudyTools(agentId: string): string[] {
+  const out: string[] = [];
+  try {
+    for (const i of agentAccessSummary(readConfig(), agentId, booksReadRoleIds().has(agentId), memberPresent)) {
+      const name = i.kind === 'mailbox' || i.kind === 'send-only' ? 'Email' : i.kind === 'quickbooks' ? 'QuickBooks' : i.key;
+      if (!out.includes(name)) out.push(name);
+    }
+    if (agentId === RESEARCH_ID && hive.researchOn()) out.push('Web');
+  } catch (e) { console.error('[case-study] tools', e); }
+  return out;
+}
 /** The page in a hidden window, printed to PDF across as many pages as it needs. */
 async function caseStudyPdf(html: string, paper: 'letter' | 'a4'): Promise<{ ok: true; pdf: Buffer } | { ok: false; reason: 'failed' }> {
   const win = new BrowserWindow({ show: false, width: 900, height: 1200, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, offscreen: false } });
@@ -7545,6 +7560,7 @@ const caseStudy = new CaseStudyService({
   offer: () => { try { return foundations.read().answers.offer?.text; } catch { return undefined; } },
   roster: () => Object.entries(hive.registry().agents ?? {}).map(([id, a]) => ({ id, name: a.name, role: a.role, isGod: a.isGod, isAssistant: a.isAssistant, closedByOwner: a.closedByOwner })),
   missions: () => readConfig().missions ?? [],
+  tools: caseStudyTools,
   figures: (r) => { try { pulseTelemetry.flush(); } catch { /* the figures read what is saved */ } return pulse.caseStudyFigures(r); },
   runModel: (prompt) => {
     const cfg = readConfig();
@@ -7630,7 +7646,8 @@ ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, edits: unknown,
   const opts = { defaultPath: join(app.getPath('documents'), 'case-study.pdf'), filters: [{ name: 'PDF', extensions: ['pdf'] }] };
   const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
   if (res.canceled || !res.filePath) return { ok: false, kind: 'cancelled' };
-  try { writeFileSync(res.filePath, out.pdf); } catch { return { ok: false, kind: 'failed' }; }
+  // The web page we publish beside its PDF copy, same name (D28).
+  try { writeFileSync(res.filePath, out.pdf); writeFileSync(res.filePath.replace(/\.pdf$/i, '') + '.html', out.html); } catch { return { ok: false, kind: 'failed' }; }
   // No mailbox can send (D1): the mail app opens with our address and the
   // permission line, and the owner attaches the file just saved.
   if (openMailApp === true) { const url = caseStudy.mailto(i); if (url) void shell.openExternal(url).catch(() => undefined); }
