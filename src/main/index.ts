@@ -152,7 +152,7 @@ import { claudeBinFor, readClaudeMcpList } from './claudeMcpList';
 import { INTEGRATIONS_MCP_SERVER, connectorCarryOver, isEmailCalendarKey, isMailConnectorKey, isQuickBooksKey, renamedKeys, spawnConnectorPlan, usableConnectors, type SpawnConnectorPlan } from '../shared/claudeConnectors';
 import { quickbooksAccessToSave } from '../shared/quickbooks';
 import { emailCalendarAllowed } from '../shared/mcpCatalog';
-import { agentIntegrations, hasIntegrationTools, integrationLevel, validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, withIntegrationLevel, withoutIntegration, INTEGRATION_TEMPLATES } from '../shared/integrations';
+import { agentIntegrations, fillSavedCall, hasIntegrationTools, integrationLevel, validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, withIntegrationLevel, withoutIntegration, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
 import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
 import { CHECK_FOLDERS, RUN_COMPARE_DIR, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
@@ -5152,14 +5152,17 @@ ipcMain.handle('integrations:test', async (_evt, payload: unknown) => {
   // absolute URL / backslash-host / traversal in p.path can't override the origin and
   // exfiltrate the secret to an attacker host. Resolve (and reject) BEFORE the secret
   // is ever materialized, so a bad path never even decrypts it.
-  const target = resolveUpstreamUrl(rec.baseUrl, typeof p.path === 'string' ? p.path : '');
+  // A saved call is tested as an agent sends it: the base URL may answer only to it.
+  const saved = rec.call ? fillSavedCall(rec.call, 'Test message') : null;
+  if (rec.call && !saved) return { ok: false, error: 'the saved call is damaged' };
+  const target = resolveUpstreamUrl(rec.baseUrl, saved ? saved.path : typeof p.path === 'string' ? p.path : '');
   if (!target) return { ok: false, error: 'path escapes the integration baseUrl', code: 'bad_request' };
   const secret = integrations.getSecret(rec.secretRef);
-  const headers = buildAuthHeaders(rec.authType, rec.authHeader, secret);
+  const headers = { ...buildAuthHeaders(rec.authType, rec.authHeader, secret), ...(saved?.body === undefined ? {} : { 'content-type': 'application/json' }) };
   try {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 15_000);
-    const r = await fetch(target, { method: 'GET', headers, redirect: 'manual', signal: ac.signal });
+    const r = await fetch(target, { method: saved?.method ?? 'GET', headers, body: saved?.body, redirect: 'manual', signal: ac.signal });
     clearTimeout(timer);
     return { ok: r.ok, status: r.status };
   } catch (e) {

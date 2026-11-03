@@ -460,7 +460,7 @@ test('a Linear query asked twice reaches Linear twice, and the second answer is 
   assert.deepEqual(JSON.parse(first.text).data.issues.nodes.map((n) => n.title), ['Fix login']);
   assert.deepEqual(JSON.parse(again.text).data.issues.nodes.map((n) => n.title), ['Fix login', 'Ship invoices']);
   assert.equal(seen.length, 2);
-  assert.equal(seen[0].url, 'https://api.linear.app/graphql/');
+  assert.equal(seen[0].url, 'https://api.linear.app/graphql');
   assert.equal(seen[0].key, undefined, 'a read carries no Idempotency-Key');
   assert.equal(fs.existsSync(file) ? Object.keys(JSON.parse(fs.readFileSync(file, 'utf8'))).length : 0, 0, 'nothing recorded');
 });

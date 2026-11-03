@@ -55,10 +55,27 @@ export interface IntegrationRecord {
   secretRef?: string;
   /** Consent gate. A worker can reach an integration ONLY when enabled. */
   enabled: boolean;
+  /** The one request agents may make here, custom REST only. With one, an agent
+   *  sends only a message, and nothing else reaches this connection.
+   *  gstack-shortcut(dec-754058e5): one call per connection, upgrade when one
+   *  server needs two or more saved calls. */
+  call?: SavedCall;
   /** epoch ms. */
   createdAt: number;
   /** epoch ms. */
   updatedAt: number;
+}
+
+/** A request the owner saved on a connection. The agent's message goes where
+ *  {{message}} stands, in the path, the body or both. */
+export interface SavedCall {
+  method: 'GET' | 'POST';
+  /** Under baseUrl, with an optional query. Empty is the base URL itself. */
+  path?: string;
+  /** JSON text. POST only. */
+  body?: string;
+  /** The owner's words on what it is for and what to ask. Agents read this. */
+  purpose: string;
 }
 
 /** The POSTs a catalog connector only reads with (search, query, a GraphQL
@@ -105,6 +122,23 @@ export const ALL_KINDS: readonly IntegrationKind[] = ['github', 'custom-rest'];
  *  saving under it would replace that integration and its secret (`int:<id>`).
  *  The form shows its own words for it. */
 export const INTEGRATION_ID_TAKEN = 'An integration with this id already exists, so nothing was saved over it.';
+
+/** Where an agent's message goes in a saved call. */
+export const MESSAGE_PLACEHOLDER = '{{message}}';
+const PURPOSE_MAX = 300;
+
+/** Why a saved call can't be saved. The form shows its own words for each. */
+export type SavedCallProblem = 'kind' | 'method' | 'purpose' | 'path' | 'body' | 'bodyOnGet' | 'noMessage';
+
+const SAVED_CALL_ERRORS: Record<SavedCallProblem, string> = {
+  kind: 'Only a custom REST connection can hold a saved call.',
+  method: 'A saved call is GET or POST.',
+  purpose: `Say what the saved call is for, in ${PURPOSE_MAX} characters at most.`,
+  path: 'The saved call\'s path must stay under the base URL.',
+  body: 'The saved call\'s body must be a JSON object or list.',
+  bodyOnGet: 'A GET has no body.',
+  noMessage: `Put ${MESSAGE_PLACEHOLDER} in the path or body, where the agent's message goes.`
+};
 
 /** The secretRef handle for an integration id (1:1). */
 export function secretRefFor(id: string): string {
@@ -161,7 +195,82 @@ export function validateIntegrationRecord(
   const secretRef = needsSecret ? secretRefFor(id) : undefined;
   const enabled = r.enabled === true;
 
-  return { ok: true, value: { id, label, kind, baseUrl, authType, authHeader, secretRef, enabled } };
+  let call: SavedCall | undefined;
+  if (r.call != null) {
+    const checked = kind === 'custom-rest' ? validateSavedCall(r.call, baseUrl) : ({ ok: false, code: 'kind' } as const);
+    if (!checked.ok) return { ok: false, error: SAVED_CALL_ERRORS[checked.code] };
+    call = checked.value;
+  }
+
+  return { ok: true, value: { id, label, kind, baseUrl, authType, authHeader, secretRef, enabled, ...(call ? { call } : {}) } };
+}
+
+/** The owner may leave {{message}} unquoted, which isn't JSON yet. Text inside
+ *  a JSON string is left alone. */
+function quoteBarePlaceholders(text: string): string {
+  let out = '';
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      out += c;
+      if (c === '\\') out += text[++i] ?? '';
+      else if (c === '"') inString = false;
+    } else if (text.startsWith(MESSAGE_PLACEHOLDER, i)) {
+      out += `"${MESSAGE_PLACEHOLDER}"`;
+      i += MESSAGE_PLACEHOLDER.length - 1;
+    } else {
+      if (c === '"') inString = true;
+      out += c;
+    }
+  }
+  return out;
+}
+
+/** Whether any string value holds {{message}}. A key is never filled. */
+function holdsPlaceholder(value: unknown): boolean {
+  if (typeof value === 'string') return value.includes(MESSAGE_PLACEHOLDER);
+  if (Array.isArray(value)) return value.some(holdsPlaceholder);
+  return !!value && typeof value === 'object' && Object.values(value).some(holdsPlaceholder);
+}
+
+/** Check a saved call for this base URL, with its body ready to store. */
+export function validateSavedCall(raw: unknown, baseUrl: string): { ok: true; value: SavedCall } | { ok: false; code: SavedCallProblem } {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const method = r.method;
+  if (method !== 'GET' && method !== 'POST') return { ok: false, code: 'method' };
+  const purpose = typeof r.purpose === 'string' ? r.purpose.trim() : '';
+  if (!purpose || purpose.length > PURPOSE_MAX) return { ok: false, code: 'purpose' };
+  const path = typeof r.path === 'string' ? r.path.trim() : '';
+  if (path.includes('#') || !resolveUpstreamUrl(baseUrl, path.split(MESSAGE_PLACEHOLDER).join('x'))) return { ok: false, code: 'path' };
+  const text = typeof r.body === 'string' ? r.body.trim() : '';
+  if (text && method === 'GET') return { ok: false, code: 'bodyOnGet' };
+  let body: string | undefined;
+  let parsed: unknown;
+  if (text) {
+    body = quoteBarePlaceholders(text);
+    try { parsed = JSON.parse(body); } catch { return { ok: false, code: 'body' }; }
+    if (!parsed || typeof parsed !== 'object') return { ok: false, code: 'body' };
+  }
+  if (!path.includes(MESSAGE_PLACEHOLDER) && !holdsPlaceholder(parsed)) return { ok: false, code: 'noMessage' };
+  return { ok: true, value: { method, purpose, ...(path ? { path } : {}), ...(body ? { body } : {}) } };
+}
+
+/** A saved call with the agent's message in place. The body is filled after
+ *  parsing, so a quote or line break in the message can't add or change a
+ *  field. Null for a damaged saved call: nothing is sent. */
+export function fillSavedCall(call: SavedCall, message: string): { method: 'GET' | 'POST'; path: string; body?: string } | null {
+  if (call.method !== 'GET' && call.method !== 'POST') return null;
+  const path = (call.path ?? '').split(MESSAGE_PLACEHOLDER).join(encodeURIComponent(message));
+  if (call.method === 'GET' || !call.body) return { method: call.method, path };
+  const fill = (value: unknown): unknown => {
+    if (typeof value === 'string') return value.split(MESSAGE_PLACEHOLDER).join(message);
+    if (Array.isArray(value)) return value.map(fill);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, fill(v)]));
+    return value;
+  };
+  try { return { method: call.method, path, body: JSON.stringify(fill(JSON.parse(call.body))) }; }
+  catch { return null; }
 }
 
 /** Validate a baseUrl: https origin (+ optional path), no userinfo, no traversal.
@@ -239,9 +348,12 @@ export function resolveUpstreamUrl(baseUrl: string, pathAndQuery: string): URL |
   // Normalize the base path to a directory prefix, then append the worker path.
   const basePath = base.pathname.endsWith('/') ? base.pathname : base.pathname + '/';
   const rel = pathAndQuery.replace(/^\/+/, '');
+  // No path means the base URL as saved: a slash added here is a different
+  // address to many servers, and the broker follows no redirect.
+  const whole = rel === '' || rel.startsWith('?') ? base.pathname + rel : basePath + rel;
   let resolved: URL;
   try {
-    resolved = new URL(basePath + rel, base.origin);
+    resolved = new URL(whole, base.origin);
   } catch {
     return null;
   }
@@ -477,17 +589,17 @@ export function withoutIntegration<C extends { integrations?: IntegrationGrants 
 
 /** What `list_integrations` tells a member: never a key, and the address
  *  without any query or login it was saved with. */
-export interface AgentIntegration { id: string; label: string; base_url: string; access: 'read only' | 'can change'; ready: boolean }
+export interface AgentIntegration { id: string; label: string; base_url: string; access: 'read only' | 'can change'; ready: boolean; saved_call?: { purpose: string } }
 
 export function agentIntegrations(
   cfg: GrantConfig, agentId: string,
-  records: ReadonlyArray<Pick<IntegrationRecord, 'id' | 'label' | 'baseUrl' | 'authType' | 'enabled'> & { hasSecret: boolean }>
+  records: ReadonlyArray<Pick<IntegrationRecord, 'id' | 'label' | 'baseUrl' | 'authType' | 'enabled' | 'call'> & { hasSecret: boolean }>
 ): AgentIntegration[] {
   return records.flatMap((r) => {
     const level = integrationLevel(cfg, agentId, r.id);
     if (!level) return [];
     let base = '';
     try { const u = new URL(r.baseUrl); base = u.origin + u.pathname; } catch { /* a bad address shows blank */ }
-    return [{ id: r.id, label: r.label, base_url: base, access: level === 'read' ? 'read only' as const : 'can change' as const, ready: r.enabled && (!authTypeNeedsSecret(r.authType) || r.hasSecret) }];
+    return [{ id: r.id, label: r.label, base_url: base, access: level === 'read' ? 'read only' as const : 'can change' as const, ready: r.enabled && (!authTypeNeedsSecret(r.authType) || r.hasSecret), ...(r.call ? { saved_call: { purpose: r.call.purpose } } : {}) }];
   });
 }

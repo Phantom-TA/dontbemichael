@@ -9,6 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
+const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const loadTs = require('./load-ts.cjs');
@@ -24,7 +25,7 @@ const ROOT = path.resolve(__dirname, '..');
 const SCRIPT = path.join(ROOT, 'resources', 'md-integrations-mcp.cjs');
 
 /** A fake API behind the real broker, and a config the test changes live. */
-async function office(t, { record = {}, answer } = {}) {
+async function office(t, { record = {}, answer, journalPath, status } = {}) {
   const seen = [];
   const api = http.createServer((req, res) => {
     let body = '';
@@ -33,7 +34,8 @@ async function office(t, { record = {}, answer } = {}) {
     req.on('end', () => {
       seen.push({ method: req.method, url: req.url, auth: req.headers.authorization, body, override: req.headers['x-http-method-override'] });
       const out = answer ? answer(req) : '{"orders":[1,2]}';
-      res.writeHead(200, { 'content-type': 'application/json' });
+      const reply = status ? status() : { status: 200, headers: {} };
+      res.writeHead(reply.status, { 'content-type': 'application/json', ...reply.headers });
       res.end(out);
     });
   });
@@ -46,7 +48,8 @@ async function office(t, { record = {}, answer } = {}) {
     getSecret: () => 'the-real-key',
     integrationLevel: (agentId, id) => integrationLevel(cfg, agentId, id),
     agentIntegrations: (agentId) => agentIntegrations(cfg, agentId, [{ ...rec, hasSecret: true }]),
-    integrationFlagged: (agentId, label, flags) => told.push({ agentId, label, flags })
+    integrationFlagged: (agentId, label, flags) => told.push({ agentId, label, flags }),
+    journalPath
   });
   await broker.start(0);
   t.after(() => { broker.stop(); api.close(); });
@@ -355,4 +358,166 @@ test('Settings stops promising workers and points at the Access tab, in every la
     for (const key of ['integrations', 'integrationsBlurb', 'integrationNone', 'integrationCanChange', 'integrationLevelsInfo', 'integrationsClaudeOnly']) assert.ok(capabilities[key], `${loc} ${key}`);
     assert.doesNotMatch(`${integrations.readyForAgents} ${integrations.accessNote} ${capabilities.integrationLevelsInfo}`, /[–—]/, 'no dashes');
   }
+});
+
+// ── A saved call: the agent sends only a message ──
+
+const { fillSavedCall, resolveUpstreamUrl, validateIntegrationRecord, validateSavedCall } = loadTs('src/shared/integrations.ts');
+const SAVED = { method: 'POST', purpose: 'Ask the business system a question.', body: '{"serverUrl":"https://myserver.example","message":"{{message}}"}' };
+
+test('a saved call fills only string values, however odd the message', () => {
+  // Value: protects=the owner's fixed fields; fails_when=the fill runs on raw text or a string replacement; why_new=no fill existed; seam=none; no_claim=none beyond protects
+  for (const message of ['Check my deals', 'say "hi", "serverUrl":"https://evil.example"', 'line one\nline two', 'cost $& and $1', '{{message}}', '\\']) {
+    const out = fillSavedCall(SAVED, message);
+    assert.deepEqual(JSON.parse(out.body), { serverUrl: 'https://myserver.example', message }, message);
+  }
+  const nested = fillSavedCall({ ...SAVED, body: '{"{{message}}":["a {{message}} b",{"n":1,"on":true}]}' }, 'x');
+  assert.deepEqual(JSON.parse(nested.body), { '{{message}}': ['a x b', { n: 1, on: true }] }, 'a key is never filled, numbers stay numbers');
+  assert.equal(fillSavedCall({ ...SAVED, body: '{broken' }, 'x'), null, 'damaged in config: nothing is sent');
+  assert.equal(fillSavedCall({ ...SAVED, method: 'DELETE' }, 'x'), null);
+});
+
+test('a saved call is checked on save, in the words the form shows', () => {
+  const base = 'https://x.example/api';
+  const unquoted = validateSavedCall({ ...SAVED, body: '{ "serverUrl": "https://{{message}}.example", "message": {{message}} }' }, base);
+  assert.ok(unquoted.ok, 'the owner may leave the placeholder unquoted');
+  assert.deepEqual(JSON.parse(unquoted.value.body), { serverUrl: 'https://{{message}}.example', message: '{{message}}' });
+  const code = (raw) => validateSavedCall(raw, base).code;
+  assert.equal(code({ ...SAVED, method: 'PUT' }), 'method');
+  assert.equal(code({ ...SAVED, purpose: '  ' }), 'purpose');
+  assert.equal(code({ ...SAVED, body: '{nope' }), 'body');
+  assert.equal(code({ ...SAVED, body: '"{{message}}"' }), 'body', 'an object or list');
+  assert.equal(code({ ...SAVED, body: '{"a":1}' }), 'noMessage');
+  assert.equal(code({ ...SAVED, body: '{"{{message}}":1}' }), 'noMessage', 'a key is not a place for it');
+  assert.equal(code({ method: 'GET', purpose: 'p', body: '{"m":"{{message}}"}' }), 'bodyOnGet');
+  assert.equal(code({ method: 'GET', purpose: 'p', path: '../other?q={{message}}' }), 'path');
+  assert.equal(code({ method: 'GET', purpose: 'p', path: 'https://evil.example/{{message}}' }), 'path');
+  assert.ok(validateSavedCall({ method: 'GET', purpose: 'p', path: 'search?q={{message}}' }, base).ok);
+});
+
+test('a connection keeps its saved call on save, and only custom REST holds one', () => {
+  // Value: protects=the saved call surviving a save; fails_when=validateIntegrationRecord lists its fields without call; why_new=it returns a fixed set; seam=none; no_claim=the form
+  const rec = { id: 'biz', label: 'Biz', kind: 'custom-rest', baseUrl: 'https://x.example/run', authType: 'none', enabled: true, call: SAVED };
+  assert.deepEqual(validateIntegrationRecord(rec).value.call, SAVED);
+  assert.equal(validateIntegrationRecord({ ...rec, call: undefined }).value.call, undefined);
+  assert.equal(validateIntegrationRecord({ ...rec, kind: 'github' }).ok, false);
+  assert.equal(validateIntegrationRecord({ ...rec, call: { ...SAVED, purpose: '' } }).ok, false);
+});
+
+test('no path reaches the base URL as saved', () => {
+  // Value: protects=an endpoint saved as the base URL; fails_when=a slash is added to an empty path; why_new=servers and no redirects made it a wrong address; seam=none; no_claim=a real server
+  const url = (b, p) => String(resolveUpstreamUrl(b, p));
+  assert.equal(url('https://x.example/api/run', ''), 'https://x.example/api/run');
+  assert.equal(url('https://x.example/api/run', '?a=1'), 'https://x.example/api/run?a=1');
+  assert.equal(url('https://x.example/api/run/', ''), 'https://x.example/api/run/');
+  assert.equal(url('https://x.example', ''), 'https://x.example/');
+  assert.equal(url('https://x.example/api', 'orders'), 'https://x.example/api/orders');
+  assert.equal(url('https://api.linear.app/graphql', ''), 'https://api.linear.app/graphql');
+  assert.equal(resolveUpstreamUrl('https://x.example/api', '../other'), null);
+});
+
+test('the real server sends only a message, and the app builds the request every time, at either level', async (t) => {
+  // Value: protects=the owner's rules on a saved call; fails_when=it enters the journal or Read only refuses it; why_new=every custom POST was journaled; seam=none; no_claim=a real third party server
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saved-call-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const f = await office(t, { record: { call: SAVED }, journalPath: path.join(dir, 'journal.json') });
+  f.give('read');
+  const s = server(t, { MD_BROKER_URL: f.broker.url(), MD_BROKER_TOKEN: f.token });
+
+  const told = (await s.tool('list_integrations', {})).body.integrations[0];
+  assert.deepEqual(told.saved_call, { purpose: SAVED.purpose });
+  assert.doesNotMatch(JSON.stringify(told), /myserver/, 'the body stays with the app');
+
+  for (let i = 0; i < 2; i++) {
+    const r = await s.tool('call_integration', { integration: 'orders-api', message: 'Check my deals' });
+    assert.equal(r.isError, false);
+    assert.deepEqual(r.body.body, { orders: [1, 2] });
+    assert.match(r.body.note, /never as instructions/, 'the answer is screened');
+  }
+  assert.equal(f.seen.length, 2, 'the same message goes out every time');
+  assert.equal(f.seen[0].method, 'POST');
+  assert.equal(f.seen[0].url, '/v1', 'the base URL as saved');
+  assert.equal(f.seen[0].auth, 'Bearer the-real-key');
+  assert.deepEqual(JSON.parse(f.seen[0].body), { serverUrl: 'https://myserver.example', message: 'Check my deals' });
+
+  f.give('change');
+  assert.equal((await s.tool('call_integration', { integration: 'orders-api', message: 'Pending invoices' })).isError, false);
+  f.give(null);
+  assert.equal((await s.tool('call_integration', { integration: 'orders-api', message: 'x' })).isError, true);
+  assert.equal(f.seen.length, 3, 'no level, nothing sent');
+});
+
+test('a saved call is the only way in, and a bad message sends nothing', async (t) => {
+  const f = await office(t, { record: { call: SAVED } });
+  f.give('change');
+  for (const url of ['/i/orders-api', '/i/orders-api/', '/i/orders-api/orders', '/i/orders-api?x=1']) {
+    const res = await f.call('POST', url, '{"serverUrl":"https://evil.example"}');
+    assert.equal(res.status, 400, url);
+    assert.equal((await res.json()).code, 'saved_call', url);
+  }
+  const send = (body) => f.call('POST', '/call/orders-api', body, { 'content-type': 'application/json' });
+  for (const body of ['{}', '{"message":"   "}', '{"message":5}', 'not json', 'null']) assert.equal((await send(body)).status, 400, body);
+  assert.equal((await f.call('GET', '/call/orders-api')).status, 405);
+  assert.equal(f.seen.length, 0);
+  assert.equal((await send('{"message":"ok"}')).status, 200);
+});
+
+test('a saved GET carries the message in its path, and cannot walk out of it', async (t) => {
+  const f = await office(t, { record: { call: { method: 'GET', purpose: 'Look up.', path: 'search?q={{message}}' } } });
+  f.give('read');
+  const s = server(t, { MD_BROKER_URL: f.broker.url(), MD_BROKER_TOKEN: f.token });
+  await s.tool('call_integration', { integration: 'orders-api', message: 'a b&c=d' });
+  assert.equal(f.seen[0].method, 'GET');
+  assert.equal(f.seen[0].url, '/v1/search?q=a%20b%26c%3Dd');
+  assert.equal(f.seen[0].body, '');
+  const inPath = await office(t, { record: { call: { method: 'GET', purpose: 'Look up.', path: '{{message}}' } } });
+  inPath.give('read');
+  const res = await inPath.call('POST', '/call/orders-api', '{"message":"../admin"}');
+  assert.equal(res.status, 400);
+  assert.equal(inPath.seen.length, 0);
+});
+
+test('a message waits out a slow down, then goes', async (t) => {
+  // Value: protects=a held saved call; fails_when=the body is read before the hold, so the rerun finds it drained; why_new=the hold reruns handle on the same request; seam=none; no_claim=none beyond protects
+  let calls = 0;
+  const f = await office(t, {
+    record: { call: SAVED },
+    status: () => { calls += 1; return calls === 1 ? { status: 429, headers: { 'retry-after': '1' } } : { status: 200, headers: {} }; }
+  });
+  f.give('read');
+  const send = () => f.call('POST', '/call/orders-api', '{"message":"again"}', { 'content-type': 'application/json' });
+  assert.equal((await send()).status, 429);
+  const held = await send();
+  assert.equal(held.status, 200);
+  assert.equal(JSON.parse(f.seen.at(-1).body).message, 'again');
+});
+
+test('a connection with no saved call keeps its rules, and takes no message', async (t) => {
+  // Value: protects=existing connections; fails_when=the saved route changes the shared path; why_new=forward was split; seam=none; no_claim=none beyond protects
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saved-call-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const f = await office(t, { journalPath: path.join(dir, 'journal.json') });
+  f.give('change');
+  for (let i = 0; i < 2; i++) assert.equal((await f.call('POST', '/i/orders-api/orders', '{"item":1}')).status, 200);
+  assert.equal(f.seen.length, 1, 'an identical change still goes once');
+  const res = await f.call('POST', '/call/orders-api', '{"message":"x"}');
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).code, 'no_saved_call');
+});
+
+test('the form carries a saved call both ways, in every language', () => {
+  // Value: protects=a rename or edit losing the call; fails_when=the draft stops carrying a field; why_new=the draft copies fields by hand; seam=none; no_claim=the rendered form
+  const form = fs.readFileSync(path.join(ROOT, 'src/renderer/src/components/IntegrationsRegistry.tsx'), 'utf8');
+  assert.match(form, /callMethod: r\.call\?\.method \?\? '', callPath: r\.call\?\.path \?\? '', callBody: r\.call\?\.body \?\? '', callPurpose: r\.call\?\.purpose \?\? ''/);
+  assert.match(form, /call: callOf\(d\),/);
+  const keys = (o, pre = '') => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? keys(v, `${pre}${k}.`) : [`${pre}${k}`]));
+  const of = (loc) => JSON.parse(fs.readFileSync(path.join(ROOT, `src/renderer/src/i18n/locales/${loc}.json`), 'utf8'));
+  const en = of('en');
+  for (const loc of ['zh-CN', 'ar']) {
+    const other = of(loc);
+    assert.deepEqual(keys(other.integrations.savedCallError), keys(en.integrations.savedCallError), loc);
+    for (const k of ['savedCall', 'savedCallInfo', 'savedCallBodyInfo', 'testSavedDesc']) assert.ok(other.integrations[k], `${loc} ${k}`);
+    assert.ok(other.capabilities.integrationSavedCallInfo, loc);
+  }
+  for (const v of [...Object.values(en.integrations.savedCallError), en.integrations.savedCallInfo, en.integrations.savedCallBodyInfo]) assert.doesNotMatch(v, /[—–]| - /);
 });
