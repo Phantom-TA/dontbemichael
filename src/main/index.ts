@@ -128,7 +128,7 @@ import { runHiddenModel } from './hiddenModel';
 import { CostLedgerStore } from './costLedger';
 import { analytics, dntSet, isRendererMessageSurface } from './analytics';
 import { createFailureReporter, FLUSH_MS } from './failureReport';
-import { breakerArm, loopAgentContext, loopAgentDetail } from '../shared/failureReport';
+import { breakerArm, crashContextFor, loopAgentContext, loopAgentDetail } from '../shared/failureReport';
 import { createFailureSender, SEND_EVERY_MS } from './failureSender';
 
 /** The failure reports key (docs/designs/auto-report-failures.md): injected by
@@ -286,11 +286,12 @@ if (AUTO_FAILURE_REPORTS && __REPORT_KEY__ && !dntSet()) {
 // Each one is also an automatic failure report (docs/designs/auto-report-failures.md).
 process.on('uncaughtException', (err) => {
   console.error('[main] uncaughtException (kept alive):', err);
-  failures.reportFailure('main-uncaught', err);
+  failures.reportFailure('main-uncaught', err, { context: crashContextFor(err) });
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[main] unhandledRejection (kept alive):', reason);
-  failures.reportFailure('main-rejection', reason);
+  // Where it came from and what it was, so one with no app frame can be told apart (issue 675).
+  failures.reportFailure('main-rejection', reason, { context: crashContextFor(reason) });
 });
 
 const ptyManager = new PtyManager();
