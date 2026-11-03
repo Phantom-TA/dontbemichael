@@ -107,6 +107,13 @@ const PROGRESS_TOOL_WINDOW_MS = 300_000;
 /** Consecutive tripping beats the no-progress arm needs before it fires — a
  *  one-beat blip (inbox ack, statusline burst) never steers on its own. */
 const NO_PROGRESS_BEATS = 2;
+/** The beat runs every 30 s. A longer gap than three beats means the beats
+ *  stopped: the Mac slept (it can wake for two seconds, run one beat and sleep
+ *  again), or the app stalled. Beats either side of a gap are not consecutive,
+ *  and every progress window expired in the sleep, so the no-progress run
+ *  starts over (issue 674: a steer and a constrain 908 s apart, each in a dark
+ *  wake, held a member back and reported a loop). */
+const BEAT_GAP_MS = 90_000;
 /** The loop check reads each string of a call's input only up to here (see
  *  toolKey). The hook program cuts a big save's input to the same length, so
  *  a trimmed call keys exactly as the whole one would. */
@@ -150,6 +157,8 @@ interface AgentBreakerState {
   lastUserPromptAt: number;
   /** Consecutive beats the no-progress condition held (debounce counter). */
   noProgressBeats: number;
+  /** When this agent's last beat ran, 0 before its first (BEAT_GAP_MS). */
+  lastBeatAt: number;
 }
 
 export class CircuitBreaker {
@@ -182,7 +191,7 @@ export class CircuitBreaker {
         level: 'healthy', reason: '', lastSample: null, repeatKey: null, repeatCount: 0,
         errorCount: 0, compactingUntil: 0, lastDistinctToolAt: 0, lastUserPromptAt: 0,
         noProgressBeats: 0, errorRunStartedAt: 0, lastErrorAt: 0, errorCodes: [], lastApiSuccessAt: 0,
-        lastVelocity: 0
+        lastVelocity: 0, lastBeatAt: 0
       };
       this.agents.set(agentId, s);
     }
@@ -372,6 +381,8 @@ export class CircuitBreaker {
 
     for (const input of inputs) {
       const s = this.get(input.agentId);
+      if (s.lastBeatAt > 0 && nowMs - s.lastBeatAt > BEAT_GAP_MS) s.noProgressBeats = 0;
+      s.lastBeatAt = nowMs;
       const trip = this.evaluate(
         input, s, cfg, nowMs,
         input.agentId === topSpender, cfg.costCapUsd,
