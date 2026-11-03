@@ -52,6 +52,8 @@ export interface CaseStudyDeps {
   writeLogo: (png: Buffer, colour: string | null) => void;
   fetchLogo: (site: string | undefined) => Promise<LogoResult>;
   decodeLogo: (bytes: Buffer) => { png: Buffer; colour: string | null } | null;
+  /** Draws an SVG logo to PNG bytes. */
+  drawSvg?: (svg: Buffer) => Promise<Buffer | null>;
   readFile: (path: string, maxBytes: number) => Buffer | null;
   /** Renders the page in a hidden window, across as many pages as it needs. */
   makePdf: (html: string, paper: Paper) => Promise<{ ok: true; pdf: Buffer } | { ok: false; reason: 'failed' }>;
@@ -239,10 +241,12 @@ export class CaseStudyService {
     return { ok: true, logo: toDataUrl(r.png), palette: heroPalette(r.colour) };
   }
 
-  /** A logo the owner picked: PNG, JPEG or WebP, decoded and kept (D3). */
-  pickedLogo(path: string): { ok: true; logo: string; palette: HeroPalette } | { ok: false; reason: 'not-image' } {
+  /** A logo the owner picked: PNG, JPEG, WebP or SVG, decoded and kept (D3). */
+  async pickedLogo(path: string): Promise<{ ok: true; logo: string; palette: HeroPalette } | { ok: false; reason: 'not-image' }> {
     const bytes = this.d.readFile(path, PICKED_LOGO_MAX_BYTES);
-    const done = bytes ? this.d.decodeLogo(bytes) : null;
+    const isSvg = !!bytes && /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg\b/i.test(bytes.toString('utf8', 0, 2048));
+    const png = bytes && isSvg && this.d.drawSvg ? await this.d.drawSvg(bytes).catch(() => null) : bytes;
+    const done = png ? this.d.decodeLogo(png) : null;
     if (!done) return { ok: false, reason: 'not-image' };
     this.d.writeLogo(done.png, done.colour);
     return { ok: true, logo: toDataUrl(done.png), palette: heroPalette(done.colour) };
@@ -264,9 +268,11 @@ export class CaseStudyService {
       ? { ...typed, headline: { figure: typed.headline.figure, ...(held?.headlines[typed.headline.figure] ?? builtInHeadline(facts, typed.headline.figure)) } }
       : typed;
     const fontCss = fontFaceCss(this.d.fonts());
-    const out = await this.d.makePdf(pageHtml(facts, edits, { fontCss, mode: 'print' }), facts.paper).catch(() => ({ ok: false as const, reason: 'failed' as const }));
+    // The owner's brand colour, when picked, over the logo's (never with the name hidden, D8).
+    const branded = facts.showName && edits.brand ? { ...facts, palette: heroPalette(edits.brand) } : facts;
+    const out = await this.d.makePdf(pageHtml(branded, edits, { fontCss, mode: 'print' }), facts.paper).catch(() => ({ ok: false as const, reason: 'failed' as const }));
     this.d.log({ kind: 'case-study-pdf', ok: out.ok });
-    return out.ok ? { ok: true, pdf: out.pdf, html: Buffer.from(pageHtml(facts, edits, { fontCss }), 'utf8'), facts } : { ok: false, kind: out.reason };
+    return out.ok ? { ok: true, pdf: out.pdf, html: Buffer.from(pageHtml(branded, edits, { fontCss }), 'utf8'), facts } : { ok: false, kind: out.reason };
   }
 
   /**

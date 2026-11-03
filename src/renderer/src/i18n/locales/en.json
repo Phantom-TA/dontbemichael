@@ -3367,6 +3367,8 @@
     "logoChange": "Change logo",
     "logoReadAgain": "Read the website again",
     "logoFailed": "No logo found on your website. Pick a file.",
+    "brand": "Brand colour",
+    "brandTip": "Taken from your logo or website. Pick another if it looks wrong.",
     "drafting": "Writing a first draft",
     "draftFailed": "The first draft couldn't be written. Write your own words, or try again.",
     "retry": "Try again",

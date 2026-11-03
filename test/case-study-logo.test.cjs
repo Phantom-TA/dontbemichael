@@ -1,8 +1,9 @@
 'use strict';
 
 // The case study's logo read (docs/designs/case-study.md, D3, eng A3): only
-// the public internet, only the business's own site for the page, PNG, JPEG
-// or WebP only, and every failure a reason rather than a throw.
+// the public internet, only the business's own site for the page, the header's
+// logo image first, SVG only through the caller's drawSvg, the site's theme
+// colour for a logo with none, and every failure a reason rather than a throw.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -57,9 +58,29 @@ test('a stored site becomes https; www and the bare domain are one site', () => 
   assert.equal(L.siteOf('shop.bakery.co.uk'), 'bakery.co.uk');
 });
 
-test('icons are read best first, SVG left out, relative links resolved', () => {
-  const urls = L.iconUrls(`<head><link rel="icon" href="/a.svg" type="image/svg+xml"><link rel="icon" sizes="32x32" href="/i32.png"><link rel="icon" sizes="192x192" href="/i192.png"><meta property="og:image" content="https://cdn.example/og.jpg"><link rel="apple-touch-icon" href="touch.png"></head><body><link rel="icon" href="/late.png">`, new URL('https://bakery.example/home/'));
-  assert.deepEqual(urls.map((u) => u.href), ['https://bakery.example/home/touch.png', 'https://bakery.example/i192.png', 'https://bakery.example/i32.png', 'https://cdn.example/og.jpg']);
+test('the header logo first, then icons best first, SVG included, relative links resolved', () => {
+  const urls = L.iconUrls(`<head><link rel="icon" href="/a.svg" type="image/svg+xml"><link rel="icon" sizes="32x32" href="/i32.png"><link rel="icon" sizes="192x192" href="/i192.png"><meta property="og:image" content="https://cdn.example/og.jpg"><link rel="apple-touch-icon" href="touch.png"></head><body><img src="/hero.jpg" alt="Fresh bread"><img class="site-header__logo" src="/brand/logo_rect.svg" alt="Harbor Bakery"><link rel="icon" href="/late.png">`, new URL('https://bakery.example/home/'));
+  assert.deepEqual(urls.map((u) => u.href), ['https://bakery.example/brand/logo_rect.svg', 'https://bakery.example/home/touch.png', 'https://bakery.example/i192.png', 'https://bakery.example/i32.png', 'https://bakery.example/a.svg', 'https://cdn.example/og.jpg']);
+});
+
+test("the site's theme colour is read from its head", () => {
+  assert.equal(L.themeColour('<head><meta name="theme-color" content="#b08d57"></head>'), '#B08D57');
+  assert.equal(L.themeColour('<head><meta name="theme-color" content="#abc"></head>'), '#AABBCC');
+  assert.equal(L.themeColour('<head><meta name="theme-color" content="rebeccapurple"></head>'), null);
+  assert.equal(L.themeColour('<head></head><body><meta name="theme-color" content="#123456">'), null, 'the head only');
+});
+
+test('an SVG logo is drawn by the caller; a logo with no colour takes the theme colour', async () => {
+  const site = web({
+    'https://bakery.example/': { body: Buffer.from('<html><head><meta name="theme-color" content="#B08D57"></head><body><img class="logo" src="/logo.svg"></body></html>') },
+    'https://bakery.example/logo.svg': { body: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="95"></svg>') }
+  });
+  const drawn = [];
+  const r = await L.readSiteLogo('bakery.example', { decode: () => ({ png: Buffer.from('PNG'), colour: null }), drawSvg: async (b) => { drawn.push(b.toString()); return png(300, 95); }, get: site.get });
+  assert.deepEqual(r, { ok: true, png: Buffer.from('PNG'), colour: '#B08D57' });
+  assert.equal(drawn.length, 1);
+  const failed = await L.readSiteLogo('bakery.example', { decode, drawSvg: async () => null, get: site.get });
+  assert.deepEqual(failed, { ok: false, reason: 'svg' }, 'an SVG that will not draw is a reason');
 });
 
 test('the image kind comes from its bytes, and its size from the header', () => {
@@ -80,7 +101,7 @@ test('the logo is found through a same site redirect and an image on another hos
   assert.equal(asked[0], 'https://bakery.example/', 'http was tried over https');
 });
 
-test('every refusal is a reason: off site redirect, private host, SVG, too big, nothing found, no site', async () => {
+test('every refusal is a reason: off site redirect, private host, SVG with no drawer, too big, nothing found, no site', async () => {
   const off = web({ 'https://bakery.example/': { redirect: 'https://elsewhere.example/' } });
   assert.deepEqual(await L.readSiteLogo('bakery.example', { decode, get: off.get }), { ok: false, reason: 'not-found' });
   assert.deepEqual(await L.readSiteLogo('https://127.0.0.1', { decode, get: off.get }), { ok: false, reason: 'private' });

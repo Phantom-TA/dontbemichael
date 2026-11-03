@@ -1287,6 +1287,23 @@ Built with the defaults the owner approved ("Yes, build it", 2026-11-03):
 - The preview draws the page at its 1040 px layout width, scaled, with no sheet breaks; the PDF
   copy zooms the same page to the paper and keeps cards whole across pages.
 
+## Branding follow up (2026-11-03)
+
+Owner: "it should apply logo of the company and the branding as well else every case study will
+look the same." The reference office's site serves only SVG logos (an icon and a wide header logo),
+the reader refused SVG, so no logo was kept and the page fell back to our ink. Now:
+- The reader tries the header's logo image first (an `<img>` whose class, id, alt or address says
+  logo), then the icons, SVG included. An SVG is drawn to PNG in a hidden sandboxed window whose
+  page allows only data images, so the SVG runs no script and loads nothing
+  (src/main/caseLogoImage.ts). A picked SVG file is drawn the same way. Kept logos go up to 512 px
+  on the long side so a wide one stays sharp.
+- A logo with no colour of its own takes the site's `theme-color`.
+- The brand carries the page: the hero in the business's colour with white text and the logo large
+  on a white tile, the number in the hero tint (D23 again), tinted band, team board and closing,
+  and buttons in the brand colour.
+- A **Brand colour** control in the panel sets the colour over the logo's; main paints the page
+  with it (never with the name hidden, D8). A new logo clears it.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |

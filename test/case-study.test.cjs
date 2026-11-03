@@ -123,7 +123,7 @@ test("the page is read only, and the headline's number is Pulse's, between its w
   const h1 = html.match(/<h1 class="headline[^"]*">(.*?)<\/h1>/)[1];
   assert.match(h1, /^<span>The AI office handled<\/span> <span class="lock"[^>]*>1,284<\/span> <span>emails<\/span>$/);
   assert.doesNotMatch(html, /contenteditable|data-part/, 'nothing on the page is editable');
-  assert.match(html, /\.lock\{font-weight:700;color:var\(--hero\)/, 'the number has no box, in the hero colour on the light hero (D23, D28)');
+  assert.match(html, /\.lock\{font-weight:700;color:var\(--hl\)/, 'the number has no box, in the hero tint (D23)');
   assert.doesNotMatch(html, /\.mono,\.n,|\.n,\.t-n/, 'the band numbers are not in the mono face (its comma left a gap)');
   assert.match(html, /\.stat \.n\{[^}]*tabular-nums/);
   assert.doesNotMatch(page(facts()), /<section class="quote"/, 'no quote block without the owner\'s words');

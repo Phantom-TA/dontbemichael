@@ -36,6 +36,7 @@ import { sweepIsolatedLeftovers } from './isolatedSweep';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
 import { agentAccessSummary } from '../shared/agentAccess';
+import { decodeCaseLogo, drawCaseSvg } from './caseLogoImage';
 import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_WORK_STYLE } from '../shared/research';
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
@@ -127,8 +128,8 @@ import { CostLedgerTotals } from './costLifetime';
 import { RUN_COMPARE_MODEL, RUN_COMPARE_TIMEOUT_MS, RunCompare } from './runCompare';
 import { runHiddenModel } from './hiddenModel';
 import { CASE_DRAFT_TIMEOUT_MS, CaseStudyService, caseInput } from './caseStudy';
-import { LOGO_LIMITS, imageKind, imageSize, readSiteLogo } from './siteLogo';
-import { logoColour, type CaseFont } from '../shared/caseStudy';
+import { readSiteLogo } from './siteLogo';
+import type { CaseFont } from '../shared/caseStudy';
 import { CostLedgerStore } from './costLedger';
 import { analytics, dntSet, isRendererMessageSurface } from './analytics';
 import { createFailureReporter, FLUSH_MS } from './failureReport';
@@ -7500,24 +7501,6 @@ function caseStudyFonts(): CaseFont[] {
   caseFonts = [...face('Sora', 'sora-latin-var.woff2', '100 800'), ...face('IBM Plex Mono', 'ibm-plex-mono-regular.woff2', '400'), ...face('IBM Plex Mono', 'ibm-plex-mono-medium.woff2', '500')];
   return caseFonts;
 }
-/** A logo's bytes as a kept PNG and its main colour: PNG, JPEG or WebP only,
- *  its size read from the header before nativeImage decodes it (eng A3, OE6). */
-function decodeCaseLogo(bytes: Buffer): { png: Buffer; colour: string | null } | null {
-  const kind = imageKind(bytes);
-  if (kind !== 'png' && kind !== 'jpeg' && kind !== 'webp') return null;
-  const size = imageSize(bytes, kind);
-  if (!size || size.w < 16 || size.h < 16 || size.w > LOGO_LIMITS.maxSide || size.h > LOGO_LIMITS.maxSide) return null;
-  const img = nativeImage.createFromBuffer(bytes);
-  if (img.isEmpty()) return null;
-  const { width, height } = img.getSize();
-  const scale = Math.min(1, 256 / Math.max(width, height));
-  const kept = scale < 1 ? img.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: 'best' }) : img;
-  // toBitmap is BGRA; logoColour reads RGBA.
-  const bgra = img.resize({ width: 32, height: 32, quality: 'good' }).toBitmap();
-  const rgba = new Uint8Array(bgra.length);
-  for (let i = 0; i + 3 < bgra.length; i += 4) { rgba[i] = bgra[i + 2]; rgba[i + 1] = bgra[i + 1]; rgba[i + 2] = bgra[i]; rgba[i + 3] = bgra[i + 3]; }
-  return { png: kept.toPNG(), colour: logoColour(rgba) };
-}
 function caseLogoPaths(): { png: string; meta: string } | null {
   const home = readConfig().harnessHome;
   if (!home) return null;
@@ -7595,8 +7578,9 @@ const caseStudy = new CaseStudyService({
       writeFileAtomic(p.meta, JSON.stringify({ colour }));
     } catch (e) { console.error('[case-study] keep logo', e); }
   },
-  fetchLogo: (site) => readSiteLogo(site, { decode: decodeCaseLogo }),
+  fetchLogo: (site) => readSiteLogo(site, { decode: decodeCaseLogo, drawSvg: drawCaseSvg }),
   decodeLogo: decodeCaseLogo,
+  drawSvg: drawCaseSvg,
   readFile: (path, max) => { try { return statSync(path).size <= max ? readFileSync(path) : null; } catch { return null; } },
   makePdf: caseStudyPdf,
   mailSend: (mailbox, input) => mailService.send('owner:case-study', mailbox, input),
@@ -7632,7 +7616,7 @@ ipcMain.handle('caseStudy:draft', (_evt, input: unknown) => { const i = caseInpu
 ipcMain.handle('caseStudy:logo', (_evt, fresh: unknown) => caseStudy.logo(fresh === true));
 ipcMain.handle('caseStudy:pickLogo', async () => {
   const win = BrowserWindow.getFocusedWindow();
-  const opts = { properties: ['openFile' as const], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] };
+  const opts = { properties: ['openFile' as const], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }] };
   const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
   if (res.canceled || !res.filePaths[0]) return { ok: false, reason: 'cancelled' };
   return caseStudy.pickedLogo(res.filePaths[0]);

@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  builtInHeadline, CAPS, caseLangOf, figureValue, PAGE_W, fmtCount, headlineChoices, namesBusiness, pageHtml, startingEdits, TEAM_ROWS,
+  builtInHeadline, CAPS, caseLangOf, figureValue, heroPalette, PAGE_W, fmtCount, headlineChoices, namesBusiness, pageHtml, startingEdits, TEAM_ROWS,
   type CaseDraft, type CaseInput, type CaseOpen, type CasePrep, type CasePeriod, type CaseStudyEdits, type HeadlineFigure, type HeroPalette
 } from '@shared/caseStudy';
 import { Dialog } from '@/shell/Dialog';
@@ -120,7 +120,9 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
     if (r?.ok) applyDraft(o, r.draft);
   };
 
-  const facts = open && open !== 'failed' ? { ...open.facts, ...(logo && showName ? { logo: logo.logo, palette: logo.palette } : {}) } : null;
+  const facts = open && open !== 'failed'
+    ? { ...open.facts, ...(logo && showName ? { logo: logo.logo, palette: logo.palette } : {}), ...(showName && edits?.brand ? { palette: heroPalette(edits.brand) } : {}) }
+    : null;
   const choices = facts ? headlineChoices(facts.figures) : [];
 
   // The preview: read only, redrawn from the panel's words as the owner types.
@@ -241,7 +243,12 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
 
   const changeLogo = async (fresh: boolean): Promise<void> => {
     const r = fresh ? await window.cth.caseStudyLogo(true) : await window.cth.caseStudyPickLogo();
-    if (r.ok) { setLogo({ logo: r.logo, palette: r.palette }); setLogoFailed(false); } else if (r.reason !== 'cancelled') setLogoFailed(true);
+    if (r.ok) {
+      setLogo({ logo: r.logo, palette: r.palette }); setLogoFailed(false);
+      // A new logo brings its own colour.
+      const e = editsRef.current;
+      if (e?.brand) { const { brand: _drop, ...rest } = e; editsRef.current = rest; setEdits(rest); }
+    } else if (r.reason !== 'cancelled') setLogoFailed(true);
   };
 
   const status: CSSProperties = { fontSize: 12, lineHeight: '17px' };
@@ -350,6 +357,15 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
             </div>
           )}
           {showName && logoFailed && <div style={{ ...hint, marginTop: 6 }}>{t('caseStudy.logoFailed')}</div>}
+          {showName && facts && current && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+              <input type="color" value={current.brand ?? facts.palette?.hero ?? '#1E1B2E'} aria-label={t('caseStudy.brand')}
+                onChange={(e) => { const v = e.target.value.toUpperCase(); change((x) => ({ ...x, brand: v })); }}
+                style={{ width: 34, height: 26, padding: 0, border: '1px solid var(--cth-line)', borderRadius: 6, background: 'none', cursor: 'pointer' }} />
+              <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{t('caseStudy.brand')}</span>
+              <InfoTip text={t('caseStudy.brandTip')} align="end" />
+            </div>
+          )}
         </Panel>
 
         {draft.state === 'drafting' && !empty && <div style={hint} aria-live="polite">{t('caseStudy.drafting')}</div>}

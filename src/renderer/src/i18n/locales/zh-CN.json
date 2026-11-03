@@ -3367,6 +3367,8 @@
     "logoChange": "更换标志",
     "logoReadAgain": "重新读取网站",
     "logoFailed": "网站上没有找到标志。请选择一个文件。",
+    "brand": "品牌颜色",
+    "brandTip": "取自你的标志或网站。如果看起来不对，可以另选一种。",
     "drafting": "正在撰写初稿",
     "draftFailed": "无法生成初稿。请自己填写，或重试。",
     "retry": "重试",

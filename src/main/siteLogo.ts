@@ -6,12 +6,16 @@
  *   readSiteLogo(site)
  *     https only (an http:// site is tried once over https)
  *     home page ─► same site redirects only, at most 3, each hop checked
- *       └─ icon links in its head: touch icon, icon, Open Graph image
+ *       └─ the header's logo image, then the icon links in its head: touch
+ *          icon, icon, Open Graph image; and its theme colour
  *     image ─► any public https host, redirects checked the same way
  *     every connection: the address is checked in the socket's own lookup,
  *       so a name can't resolve public for the check and private for the connect
- *     PNG, JPEG or WebP only (never SVG), size read from the header before
- *       decoding, then decoded and re-encoded to PNG by the caller's `decode`
+ *     PNG, JPEG or WebP: size read from the header before decoding, then
+ *       decoded and re-encoded to PNG by the caller's `decode`
+ *     SVG (owner, 2026-11-03: many sites have no other logo): drawn to a PNG
+ *       by the caller's `drawSvg`, as an image only, so it runs no script and
+ *       loads nothing
  *
  * Plain node:https with no proxy: behind a proxy the read fails and the owner
  * picks a file (a recorded limit). No Electron import, so it tests as a node module.
@@ -39,6 +43,8 @@ export const LOGO_LIMITS: LogoLimits = { pageBytes: 1_000_000, imageBytes: 2_000
 export interface LogoDeps {
   /** Decodes, re-encodes to PNG and samples the main colour; null when it isn't an image. */
   decode: (bytes: Buffer) => { png: Buffer; colour: string | null } | null;
+  /** Draws an SVG logo to PNG bytes; absent, an SVG is refused. */
+  drawSvg?: (svg: Buffer) => Promise<Buffer | null>;
   /** For tests: the name lookup and the request. */
   lookup?: typeof dnsLookup;
   get?: (url: URL, maxBytes: number, deadline: number, lookup: GuardedLookup) => Promise<Fetched>;
@@ -124,17 +130,25 @@ const attr = (tag: string, name: string): string | null => {
   return m ? (m[2] ?? m[3] ?? m[4] ?? '') : null;
 };
 
-/** The page's own icon declarations, best first: touch icons, icons (largest
- *  first, SVG left out), then the Open Graph image. Read from the head only. */
+/** The page's own logo, best first: the header's logo image (the brand as the
+ *  site shows it), touch icons, icons (largest first), then the Open Graph
+ *  image. Icons are read from the head only; the logo image from the first
+ *  ones on the page whose class, id, alt or address says logo. */
 export function iconUrls(html: string, base: URL): URL[] {
   const head = html.slice(0, Math.max(0, html.search(/<\/head>/i)) || html.length);
+  const logos: string[] = [];
+  for (const tag of (html.match(/<img\b[^>]*>/gi) ?? []).slice(0, 40)) {
+    const src = attr(tag, 'src');
+    if (!src || /^data:/i.test(src)) continue;
+    if (/logo/i.test([attr(tag, 'class'), attr(tag, 'id'), attr(tag, 'alt'), src].join(' '))) logos.push(src);
+    if (logos.length >= 2) break;
+  }
   const touch: string[] = [], icons: Array<{ href: string; size: number }> = [], og: string[] = [];
   for (const tag of head.match(/<(link|meta)\b[^>]*>/gi) ?? []) {
     if (/^<link/i.test(tag)) {
       const rel = (attr(tag, 'rel') ?? '').toLowerCase();
       const href = attr(tag, 'href');
       if (!href) continue;
-      if ((attr(tag, 'type') ?? '').includes('svg') || /\.svg(\?|#|$)/i.test(href)) continue;
       if (rel.includes('apple-touch-icon')) touch.push(href);
       else if (/\bicon\b/.test(rel)) {
         const size = Math.max(0, ...((attr(tag, 'sizes') ?? '').match(/\d+/g) ?? ['0']).map(Number));
@@ -146,7 +160,7 @@ export function iconUrls(html: string, base: URL): URL[] {
       if (c && (p === 'og:image' || p === 'og:image:secure_url' || p === 'og:logo')) og.push(c);
     }
   }
-  const all = [...touch, ...icons.sort((a, b) => b.size - a.size).map((i) => i.href), ...og];
+  const all = [...logos, ...touch, ...icons.sort((a, b) => b.size - a.size).map((i) => i.href), ...og];
   const out: URL[] = [];
   for (const h of all) {
     try {
@@ -156,6 +170,19 @@ export function iconUrls(html: string, base: URL): URL[] {
     } catch { /* a broken href */ }
   }
   return out;
+}
+
+/** The site's own brand colour from its head (`<meta name="theme-color">`), as
+ *  #RRGGBB; null when it has none, or names it some other way. */
+export function themeColour(html: string): string | null {
+  const head = html.slice(0, Math.max(0, html.search(/<\/head>/i)) || html.length);
+  for (const tag of head.match(/<meta\b[^>]*>/gi) ?? []) {
+    if ((attr(tag, 'name') ?? '').toLowerCase() !== 'theme-color') continue;
+    const c = (attr(tag, 'content') ?? '').trim();
+    const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c);
+    if (m) return '#' + (m[1].length === 3 ? [...m[1]].map((x) => x + x).join('') : m[1]).toUpperCase();
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- images
@@ -203,7 +230,7 @@ function defaultGet(url: URL, maxBytes: number, deadline: number, lookup: Guarde
     if (left <= 0) return reject(new LogoError('timeout'));
     const req = request(url, {
       method: 'GET', agent: false, lookup: lookup as never, timeout: left,
-      headers: { 'user-agent': "Don't Be Michael case study logo", accept: 'text/html,image/png,image/jpeg,image/webp;q=0.9,*/*;q=0.1' }
+      headers: { 'user-agent': "Don't Be Michael case study logo", accept: 'text/html,image/png,image/jpeg,image/webp,image/svg+xml;q=0.9,*/*;q=0.1' }
     }, (res) => {
       const chunks: Buffer[] = [];
       let size = 0;
@@ -254,21 +281,29 @@ export async function readSiteLogo(site: string | undefined, deps: LogoDeps, lim
 
   try {
     const page = await fetchUrl(start, limits.pageBytes, true);
-    const candidates = iconUrls(page.res.body.toString('utf8'), page.url);
+    const html = page.res.body.toString('utf8');
+    const candidates = iconUrls(html, page.url);
     if (!candidates.length) return { ok: false, reason: 'not-found' };
+    // A logo with no colour of its own (black, grey) takes the site's.
+    const withTheme = (done: { png: Buffer; colour: string | null }): LogoResult => ({ ok: true, png: done.png, colour: done.colour ?? themeColour(html) });
     let last: LogoFail = 'not-found';
-    for (const u of candidates.slice(0, 4)) {
+    for (const u of candidates.slice(0, 5)) {
       try {
         const img = await fetchUrl(u, limits.imageBytes, false);
         const kind = imageKind(img.res.body);
-        if (kind === 'svg') { last = 'svg'; continue; }
+        if (kind === 'svg') {
+          const png = deps.drawSvg ? await deps.drawSvg(img.res.body).catch(() => null) : null;
+          const done = png ? deps.decode(png) : null;
+          if (!done) { last = 'svg'; continue; }
+          return withTheme(done);
+        }
         if (!kind) { last = 'not-image'; continue; }
         const size = imageSize(img.res.body, kind);
         if (!size || size.w < 16 || size.h < 16) { last = 'not-image'; continue; }
         if (size.w > limits.maxSide || size.h > limits.maxSide) { last = 'too-big'; continue; }
         const done = deps.decode(img.res.body);
         if (!done) { last = 'not-image'; continue; }
-        return { ok: true, ...done };
+        return withTheme(done);
       } catch (e) {
         if (e instanceof LogoError && (e.reason === 'timeout' || e.reason === 'private')) return { ok: false, reason: e.reason };
         last = e instanceof LogoError ? e.reason : 'failed';

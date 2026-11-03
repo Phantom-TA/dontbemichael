@@ -205,8 +205,9 @@ moving, and brings you only the decisions that need you.
   landing page. A headline built from a number Pulse counted, a snapshot of your business, a band of
   results with what the team cost, how the work went before, a chart of how your office is set up
   (you, Michael and every team member with their jobs, times, tools and count), your own words, the
-  hours the office worked while you were away, and a closing call to action. The page takes your
-  logo's color, every word is editable, and every number comes from Pulse. Send it to us from your
+  hours the office worked while you were away, and a closing call to action. The page is in your
+  brand: your logo large in a hero of your colour, read from your website (SVG logos too) or picked
+  by you, every word is editable, and every number comes from Pulse. Send it to us from your
   own mailbox as a web page with a PDF copy, or save both. After a
   month of work, Pulse invites you once.
 

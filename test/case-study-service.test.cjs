@@ -204,3 +204,23 @@ test('the headline is a drafted choice only: words sent from the screen are repl
   assert.match(page, /<span>Harbor Bakery finished<\/span> <span class="lock"[^>]*>96<\/span> <span>tasks<\/span>/);
   assert.doesNotMatch(page, /fortune|overnight/);
 });
+
+test('a picked SVG logo is drawn first and kept; the owner\'s brand colour paints the page we receive (owner, 2026-11-03)', async () => {
+  const kept = [];
+  const { svc, calls } = deps({
+    readFile: () => Buffer.from('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 10"></svg>'),
+    drawSvg: async () => Buffer.from('drawn png'),
+    decodeLogo: (b) => (b.toString() === 'drawn png' ? { png: Buffer.from('PNG'), colour: '#B08D57' } : null),
+    writeLogo: (png, colour) => kept.push(colour)
+  });
+  const r = await svc.pickedLogo('/logo.svg');
+  assert.equal(r.ok, true);
+  assert.deepEqual(kept, ['#B08D57']);
+  assert.deepEqual(await svc.send(input, { ...edits, brand: '#0a7d4f' }, 'ceo', true), { ok: true });
+  const web = calls.sends[0].input.files[0].content.toString('utf8');
+  const pal = require('./load-ts.cjs')('src/shared/caseStudy.ts').heroPalette('#0A7D4F');
+  assert.match(web, new RegExp(`--hero:${pal.hero}`), 'the picked colour, made readable');
+  const hidden = deps();
+  await hidden.svc.send({ ...input, showName: false }, { ...edits, brand: '#0a7d4f' }, 'ceo', true);
+  assert.doesNotMatch(hidden.calls.sends[0].input.files[0].content.toString('utf8'), new RegExp(`--hero:${pal.hero}`), 'never with the name hidden (D8)');
+});

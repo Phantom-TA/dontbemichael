@@ -103,6 +103,8 @@ export interface CaseStudyEdits {
   quote: string;
   team: Record<string, string>;
   why: string;
+  /** The owner's own brand colour (#RRGGBB), over the logo's (owner, 2026-11-03). */
+  brand?: string;
 }
 
 /** What the draft gave back; a part it couldn't give is left out. */
@@ -658,7 +660,8 @@ export function cleanEdits(facts: CaseStudyFacts, raw: unknown): { edits: CaseSt
       about: str(r.about, c.about),
       quote: str(r.quote, c.quote),
       team,
-      why: str(r.why, c.why)
+      why: str(r.why, c.why),
+      ...(typeof r.brand === 'string' && /^#[0-9a-f]{6}$/i.test(r.brand) ? { brand: r.brand.toUpperCase() } : {})
     },
     headlineNumber: hasNumber(before, facts.lang) || hasNumber(after, facts.lang)
   };
@@ -727,9 +730,11 @@ export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: Pag
     ? `<h1 class="headline${headSize}"><span>${esc(head.before)}</span> <span class="lock" aria-label="${esc(`${fmtCount(figureValue(f, head.figure))}, ${w.locked}`)}">${fmtCount(figureValue(f, head.figure))}</span> <span>${esc(head.after)}</span></h1>`
     : '';
 
-  const logo = facts.showName
-    ? `<div class="logo">${facts.logo && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(facts.logo) ? `<img src="${facts.logo}" alt="">` : esc(initials(facts.businessName ?? ''))}</div>`
-    : '';
+  // The business's own brand leads the page (owner, 2026-11-03): its logo
+  // large in the hero, its colour behind it; initials when it has no logo.
+  const logoImg = facts.showName && facts.logo && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(facts.logo) ? facts.logo : null;
+  const brandmark = logoImg ? `<div class="brandmark"><img src="${logoImg}" alt="${esc(facts.businessName ?? '')}"></div>` : '';
+  const logo = facts.showName && !logoImg ? `<div class="logo">${esc(initials(facts.businessName ?? ''))}</div>` : '';
   const site = facts.showName ? facts.website?.replace(/^https?:\/\//, '').replace(/\/$/, '') : undefined;
 
   // The snapshot: who they are and what the team is connected to.
@@ -795,7 +800,7 @@ export function pageHtml(facts: CaseStudyFacts, edits: CaseStudyEdits, opts: Pag
 
   const narrow = print ? '' : `@media (max-width:760px){
  .wrap{padding:0 16px}
- .hero{padding:36px 0 28px}.hero .wrap,.ch .wrap,.close .wrap{grid-template-columns:1fr;gap:24px}
+ .hero{padding:32px 0 28px}.brandmark img{height:38px;max-width:200px}.hero .wrap,.ch .wrap,.close .wrap{grid-template-columns:1fr;gap:24px}
  .headline,.headline.long,.headline.longer{font-size:32px;line-height:38px}
  .sub,.prose{font-size:16px;line-height:26px}
  .band .wrap{grid-template-columns:1fr 1fr}.stat{padding:20px 0}.stat:nth-child(odd){padding-inline-start:0;border:none}
@@ -824,18 +829,21 @@ nav .wrap{display:flex;align-items:center;height:60px;gap:10px;font-size:13px}
 nav .mark{display:grid;place-items:center;width:26px;height:26px;border-radius:7px;background:#fff;border:1px solid var(--line)}
 nav .mark svg{width:16px;height:16px}
 nav .crumb{color:var(--ink3)}
-.btn{display:inline-block;background:var(--ink);color:#fff;text-decoration:none;font-weight:600;border-radius:999px}
+/* The business's colour carries the page: hero, quote, buttons, tints (owner, 2026-11-03). */
+.btn{display:inline-block;background:var(--hero);color:#fff;text-decoration:none;font-weight:600;border-radius:999px}
 nav .btn{margin-inline-start:auto;padding:9px 16px;font-size:13px}
-.hero{padding:64px 0 52px;background:linear-gradient(180deg,var(--tint),#fff)}
+.hero{padding:56px 0 52px;background:var(--hero);color:#fff}
 .hero .wrap{display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:end}
-.eyebrow{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--hero)}
+.brandmark{display:inline-flex;align-items:center;background:#fff;border-radius:14px;padding:10px 16px;margin-bottom:26px;box-shadow:0 10px 30px -18px rgba(0,0,0,.45)}
+.brandmark img{display:block;height:48px;width:auto;max-width:260px;object-fit:contain}
+.eyebrow{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.82)}
 .headline{margin-top:14px;font-weight:600;font-size:44px;line-height:52px;letter-spacing:-.035em}
 .headline.long{font-size:38px;line-height:46px}
 .headline.longer{font-size:33px;line-height:40px}
-/* The headline's number: the hero colour, no box (D23). */
-.lock{font-weight:700;color:var(--hero);white-space:nowrap}
-.sub{margin-top:18px;font-size:18px;line-height:29px;color:var(--ink2);font-weight:300;max-width:600px}
-.snap{background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 20px 50px -30px rgba(30,27,46,.28)}
+/* The headline's number: a light tint of the hero, no box (D23). */
+.lock{font-weight:700;color:var(--hl);white-space:nowrap}
+.sub{margin-top:18px;font-size:18px;line-height:29px;color:rgba(255,255,255,.9);font-weight:300;max-width:600px}
+.snap{background:#fff;color:var(--ink);border-radius:18px;padding:22px;box-shadow:0 24px 60px -30px rgba(0,0,0,.5)}
 .snap-top{display:flex;gap:12px;align-items:center;padding-bottom:16px;border-bottom:1px solid var(--line)}
 .snap-top b{display:block;font-size:15px;line-height:20px}
 .snap-top span{display:block;font-size:12px;line-height:16px;color:var(--ink3)}
@@ -847,10 +855,10 @@ nav .btn{margin-inline-start:auto;padding:9px 16px;font-size:13px}
 .pills{display:flex;flex-wrap:wrap;gap:6px}
 .snap .pills{justify-content:flex-end}
 .pills i{font-style:normal;font-size:11px;line-height:16px;background:var(--tint);color:var(--hero);padding:2px 8px;border-radius:999px;font-weight:500}
-.band{border-block:1px solid var(--line)}
+.band{background:var(--tint);border-bottom:1px solid var(--hline)}
 .band .wrap{display:grid;grid-template-columns:repeat(${band.length},1fr)}
 .stat{padding:30px 0 22px}
-.stat+.stat{padding-inline-start:24px;border-inline-start:1px solid var(--line)}
+.stat+.stat{padding-inline-start:24px;border-inline-start:1px solid var(--hline)}
 /* The band's numbers in the page's Sora: a mono comma left a gap ("4, 874"). */
 .stat .n{font-weight:600;font-size:40px;line-height:44px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
 .stat .l{margin-top:8px;font-size:14px;line-height:20px;color:var(--ink2);max-width:210px}
@@ -858,11 +866,11 @@ nav .btn{margin-inline-start:auto;padding:9px 16px;font-size:13px}
 .ch{padding:72px 0}
 .ch+.ch{padding-top:8px}
 .ch .wrap{display:grid;grid-template-columns:190px 1fr;gap:40px}
-.ch-label .num{font-size:12px;color:var(--ink3)}
+.ch-label .num{font-size:12px;color:var(--hero);font-weight:500}
 .ch-label h2{margin-top:6px;font-size:21px;line-height:27px;font-weight:600;letter-spacing:-.02em}
 .prose{font-size:19px;line-height:32px;color:var(--ink2);font-weight:300;max-width:640px}
-.org{display:flex;flex-direction:column;align-items:center;background:#F6F5FA;background-image:radial-gradient(#DCD9E8 1px,transparent 1px);background-size:18px 18px;border:1px solid var(--line);border-radius:20px;padding:28px 22px}
-.vline{width:2px;height:22px;background:#CFCBE0}
+.org{display:flex;flex-direction:column;align-items:center;background-color:var(--tint);background-image:radial-gradient(var(--hline) 1px,transparent 1px);background-size:18px 18px;border:1px solid var(--line);border-radius:20px;padding:28px 22px}
+.vline{width:2px;height:22px;background:var(--hline)}
 .owner{display:flex;gap:10px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 16px}
 .owner .av{background:var(--ink);color:#fff}
 .av{width:36px;height:36px;border-radius:50%;background:var(--tint);color:var(--hero);display:grid;place-items:center;font-weight:600;font-size:13px;flex:none}
@@ -880,7 +888,7 @@ nav .btn{margin-inline-start:auto;padding:9px 16px;font-size:13px}
 .m-jobs .more{color:var(--ink3);border:none;padding:0}
 .m-fig{margin-top:auto;padding-top:10px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--ink3)}
 .m-fig b{font-size:20px;line-height:24px;color:var(--ink);font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.grid{width:100%;display:grid;grid-template-columns:repeat(${rest.length >= 3 ? 3 : Math.max(1, rest.length)},1fr);gap:12px;padding-top:22px;border-top:2px solid #CFCBE0;border-radius:12px 12px 0 0}
+.grid{width:100%;display:grid;grid-template-columns:repeat(${rest.length >= 3 ? 3 : Math.max(1, rest.length)},1fr);gap:12px;padding-top:22px;border-top:2px solid var(--hline);border-radius:12px 12px 0 0}
 .quote{background:var(--hero);color:#fff;padding:80px 0}
 .quote blockquote{font-size:32px;line-height:44px;letter-spacing:-.025em;font-weight:500;max-width:820px}
 .quote blockquote::before{content:"\\201C";display:block;font-size:80px;line-height:56px;color:var(--hl)}
@@ -897,7 +905,7 @@ nav .btn{margin-inline-start:auto;padding:9px 16px;font-size:13px}
 .legend{display:flex;gap:16px;font-size:12px;line-height:16px;color:var(--ink2);margin-top:12px}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-inline-end:6px}
 .k-aw{background:var(--aw)}.k-run{background:#E4E1EC}
-.close{padding:72px 0;background:#FBFAF7;border-top:1px solid var(--line)}
+.close{padding:72px 0;background:var(--tint);border-top:1px solid var(--hline)}
 .close .wrap{display:grid;grid-template-columns:1fr auto;gap:40px;align-items:center}
 .close h2{font-size:34px;line-height:42px;letter-spacing:-.03em;font-weight:600}
 .close p{margin-top:12px;font-size:17px;line-height:27px;color:var(--ink2);font-weight:300;max-width:600px}
@@ -910,7 +918,7 @@ ${narrow}
 </style></head><body><article class="page" aria-label="${esc(w.caseStudy)}">
 <nav><div class="wrap"><span class="mark">${MARK}</span><b>${esc(APP_NAME)}</b><span class="crumb">/ ${esc(w.stories)}</span><a class="btn" href="${SITE_URL}">${esc(w.cta)}</a></div></nav>
 <header class="hero"><div class="wrap">
-  <div><div class="eyebrow">${esc([w.caseStudy, facts.businessType?.trim()].filter(Boolean).join(' · '))}</div>${headline}<p class="sub">${esc(edits.subtitle)}</p></div>
+  <div>${brandmark}<div class="eyebrow">${esc([w.caseStudy, facts.businessType?.trim()].filter(Boolean).join(' · '))}</div>${headline}<p class="sub">${esc(edits.subtitle)}</p></div>
   ${snapshot}
 </div></header>
 <section class="band"><div class="wrap">${band.join('')}<div class="src">${esc(w.source(from, to))}</div></div></section>
