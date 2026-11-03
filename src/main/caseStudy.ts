@@ -17,7 +17,7 @@
  * in as deps, so the rules here test as a node module.
  */
 import {
-  CASE_STUDY_TO, caseStudyEmail, cleanEdits, draftPrompt, fontFaceCss, hasWork, heroPalette, memberFigure, mergeDrafts, missingParts, pageHtml, parseDraft,
+  builtInHeadline, CASE_STUDY_TO, caseStudyEmail, cleanEdits, draftPrompt, fontFaceCss, hasWork, heroPalette, memberFigure, mergeDrafts, missingParts, pageHtml, parseDraft,
   type CaseDraft, type CaseDraftResult, type CaseFont, type CasePrep, type CaseInput, type CaseLang, type CaseLogo, type CaseMember, type CaseOpen, type CasePeriod,
   type CaseSendOutcome, type CaseStudyFacts, type HeroPalette, type Paper
 } from '../shared/caseStudy';
@@ -165,6 +165,9 @@ export class CaseStudyService {
     if (!first) { this.d.log({ kind: 'case-study-draft', ok: false }); return { ok: false, reason: 'failed' }; }
     const out = missingParts(first, facts).length ? mergeDrafts(first, (await once()) ?? { headlines: {}, team: {} }) : first;
     this.d.log({ kind: 'case-study-draft', ok: true, missing: missingParts(out, facts).length });
+    // A retried draft becomes the one main holds, so the headline it offers is
+    // the one main prints (D24).
+    if (this.prep?.key === this.keyOf(input) && this.prep.state === 'ready') this.prep.draft = out;
     return { ok: true, draft: out };
   }
 
@@ -177,7 +180,7 @@ export class CaseStudyService {
    */
   prepare(input: CaseInput): CasePrep {
     const office = this.d.office();
-    const key = JSON.stringify([office, input.lang, input.period, input.showName]);
+    const key = this.keyOf(input);
     if (this.prep?.key === key) return this.status();
     const facts = this.facts(input);
     const work = !!facts && hasWork(facts.figures);
@@ -196,6 +199,15 @@ export class CaseStudyService {
       this.d.onReady();
     })();
     return this.status();
+  }
+
+  private keyOf(input: CaseInput): string {
+    return JSON.stringify([this.d.office(), input.lang, input.period, input.showName]);
+  }
+
+  /** The draft main holds for this case study, if any (prepared or retried). */
+  private heldDraft(input: CaseInput): CaseDraft | null {
+    return this.prep?.key === this.keyOf(input) ? this.prep.draft : null;
   }
 
   /** Where the prepared case study stands, for the open office only. */
@@ -232,8 +244,16 @@ export class CaseStudyService {
   async pdf(input: CaseInput, rawEdits: unknown): Promise<{ ok: true; pdf: Buffer; facts: CaseStudyFacts } | { ok: false; kind: 'overflow' | 'headline-number' | 'no-work' | 'failed' }> {
     const facts = this.facts(input);
     if (!facts || !hasWork(facts.figures)) return { ok: false, kind: 'no-work' };
-    const { edits, headlineNumber } = cleanEdits(facts, rawEdits);
+    const { edits: typed, headlineNumber } = cleanEdits(facts, rawEdits);
     if (headlineNumber) return { ok: false, kind: 'headline-number' };
+    // The headline is one of the drafted choices only (D24): main takes the
+    // figure the owner picked and fills in its words itself, from the draft it
+    // holds or the built in ones, so no words from the screen sit beside the
+    // number.
+    const held = this.heldDraft(input);
+    const edits = typed.headline
+      ? { ...typed, headline: { figure: typed.headline.figure, ...(held?.headlines[typed.headline.figure] ?? builtInHeadline(facts, typed.headline.figure)) } }
+      : typed;
     const out = await this.d.makePdf(pageHtml(facts, edits, { fontCss: fontFaceCss(this.d.fonts()) }), facts.paper).catch(() => ({ ok: false as const, reason: 'failed' as const }));
     this.d.log({ kind: 'case-study-pdf', ok: out.ok });
     return out.ok ? { ok: true, pdf: out.pdf, facts } : { ok: false, kind: out.reason };

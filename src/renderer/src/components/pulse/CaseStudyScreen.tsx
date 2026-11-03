@@ -1,9 +1,8 @@
 /**
  * The case study screen (docs/designs/case-study.md; mockup approved in the
  * design review, D15 to D19): the page as it prints on the left, read only,
- * drawn from the same pageHtml main prints; on the right the headline (a
- * drafted choice or the owner's own words), the words of every part, the
- * period, name switch, mailbox, permission and Send (D22: nothing is typed on
+ * drawn from the same pageHtml main prints; on the right the headline (one
+ * of the drafted choices, D24), the words of every other part, the period, name switch, mailbox, permission and Send (D22: nothing is typed on
  * the page itself). Main builds the page and the PDF itself: this screen
  * sends only the edited text, the toggles, the period and the chosen mailbox.
  *
@@ -14,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  builtInHeadline, CAPS, caseLangOf, figureValue, fmtCount, hasNumber, headlineChoices, namesBusiness, pageHtml, startingEdits, TEAM_ROWS,
+  builtInHeadline, CAPS, caseLangOf, figureValue, fmtCount, headlineChoices, namesBusiness, pageHtml, startingEdits, TEAM_ROWS,
   type CaseDraft, type CaseInput, type CaseOpen, type CasePrep, type CasePeriod, type CaseStudyEdits, type HeadlineFigure, type HeroPalette
 } from '@shared/caseStudy';
 import { Dialog } from '@/shell/Dialog';
@@ -50,8 +49,6 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   const [send, setSend] = useState<Send>({ state: 'idle' });
   const [overflow, setOverflow] = useState(false);
   const [askRedraft, setAskRedraft] = useState(false);
-  // "Write my own" headline: the owner's words around Pulse's number.
-  const [ownHeadline, setOwnHeadline] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string>('');
   const frame = useRef<HTMLIFrameElement | null>(null);
@@ -201,11 +198,8 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   /** A drafted headline's words for a figure, or the built in ones. */
   const wordsFor = (k: HeadlineFigure): { before: string; after: string } =>
     (draft.state === 'ready' ? draft.draft.headlines[k] : undefined) ?? (facts ? builtInHeadline(facts, k) : { before: '', after: '' });
-  const pickFigure = (k: HeadlineFigure): void => {
-    setOwnHeadline(false);
-    change((e) => ({ ...e, headline: { figure: k, ...wordsFor(k) } }));
-  };
-  const pickOwn = (): void => setOwnHeadline(true);
+  // Only a drafted headline: no free words beside Pulse's number (D24).
+  const pickFigure = (k: HeadlineFigure): void => change((e) => ({ ...e, headline: { figure: k, ...wordsFor(k) } }));
 
   const flipName = (): void => {
     if (touched) { setAskRedraft(true); return; }
@@ -276,54 +270,21 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
       </div>
 
       <div style={{ borderInlineStart: '1px solid var(--cth-line)', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, overflow: 'auto' }}>
-        {facts && current && choices.length > 0 && (() => {
-          const caps = CAPS[facts.lang];
-          const head = current.headline;
-          const n = head ? fmtCount(figureValue(facts.figures, head.figure)) : '';
-          const typedNumber = !!head && (hasNumber(head.before, facts.lang) || hasNumber(head.after, facts.lang));
-          const radio: CSSProperties = { display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, lineHeight: '17px', cursor: 'pointer' };
-          return (
-            <Panel title={t('caseStudy.headline')} info={t('caseStudy.headlineTip')}>
-              <div role="radiogroup" aria-label={t('caseStudy.headline')} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {choices.map((k) => {
-                  const w = wordsFor(k);
-                  return (
-                    <label key={k} style={radio}>
-                      <input type="radio" name="cs-headline" checked={!ownHeadline && head?.figure === k} onChange={() => pickFigure(k)} style={{ marginTop: 2 }} />
-                      <span>{w.before} <b style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 500 }}>{fmtCount(figureValue(facts.figures, k))}</b> {w.after}</span>
-                    </label>
-                  );
-                })}
-                <label style={radio}>
-                  <input type="radio" name="cs-headline" checked={ownHeadline} onChange={pickOwn} style={{ marginTop: 2 }} />
-                  <span>{t('caseStudy.headlineOwn')}</span>
-                </label>
-              </div>
-              {ownHeadline && head && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
-                  {choices.length > 1 && (
-                    <Field label={t('caseStudy.headlineNumber2')}>
-                      <select className="cth-input" value={head.figure} style={{ height: 32 }}
-                        onChange={(e) => { const k = e.target.value as HeadlineFigure; change((x) => ({ ...x, headline: x.headline ? { ...x.headline, figure: k } : null })); }}>
-                        {choices.map((k) => <option key={k} value={k}>{t(`caseStudy.figure.${k}`, { n: fmtCount(figureValue(facts.figures, k)) })}</option>)}
-                      </select>
-                    </Field>
-                  )}
-                  <Field label={t('caseStudy.headlineBefore')}>
-                    <input className="cth-input" value={head.before} maxLength={caps.headlineWords} style={{ height: 32 }}
-                      onChange={(e) => { const v = e.target.value; change((x) => ({ ...x, headline: x.headline ? { ...x.headline, before: v } : null })); }} />
-                  </Field>
-                  <div style={{ ...hint, fontFamily: 'var(--cth-font-mono)' }} aria-hidden>{n}</div>
-                  <Field label={t('caseStudy.headlineAfter')}>
-                    <input className="cth-input" value={head.after} maxLength={caps.headlineWords} style={{ height: 32 }}
-                      onChange={(e) => { const v = e.target.value; change((x) => ({ ...x, headline: x.headline ? { ...x.headline, after: v } : null })); }} />
-                  </Field>
-                  {typedNumber && <div role="alert" style={{ ...status, color: 'var(--cth-amber-text)' }}>{t('caseStudy.headlineNumber')}</div>}
-                </div>
-              )}
-            </Panel>
-          );
-        })()}
+        {facts && current && choices.length > 0 && (
+          <Panel title={t('caseStudy.headline')} info={t('caseStudy.headlineTip')}>
+            <div role="radiogroup" aria-label={t('caseStudy.headline')} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {choices.map((k) => {
+                const w = wordsFor(k);
+                return (
+                  <label key={k} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, lineHeight: '17px', cursor: 'pointer' }}>
+                    <input type="radio" name="cs-headline" checked={current.headline?.figure === k} onChange={() => pickFigure(k)} style={{ marginTop: 2 }} />
+                    <span>{w.before} <b style={{ fontWeight: 700 }}>{fmtCount(figureValue(facts.figures, k))}</b> {w.after}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </Panel>
+        )}
 
         {facts && current && (() => {
           const caps = CAPS[facts.lang];

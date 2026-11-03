@@ -177,3 +177,18 @@ test('after Send the next Get featured prepares a fresh case study', async () =>
   assert.deepEqual(await svc.send(input, edits, 'ceo', true), { ok: true });
   assert.deepEqual(svc.status(), { state: 'idle' });
 });
+
+test('the headline is a drafted choice only: words sent from the screen are replaced by main\'s own (D24)', async () => {
+  let page = '';
+  const { svc } = deps({
+    runModel: async () => ({ ok: true, text: JSON.stringify({ subtitle: 'A bakery', about: 'Bakes bread', why: 'Frees the owner', headlines: { email: 'Harbor Bakery handled {n} emails', task: 'Harbor Bakery finished {n} tasks', away: 'Harbor Bakery worked {n} hours while the owner was away' }, team: { pam: 'Sorts the inbox', god: 'Routes the work' } }) }),
+    makePdf: async (html) => { page = html; return { ok: true, pdf: Buffer.from('%PDF') }; }
+  });
+  svc.prepare(input);
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  const fudged = { ...edits, headline: { figure: 'task', before: 'Saved the owner a fortune and finished', after: 'tasks overnight' } };
+  assert.deepEqual(await svc.send(input, fudged, 'ceo', true), { ok: true });
+  assert.match(page, /<span>Harbor Bakery finished<\/span> <span class="lock"[^>]*>96<\/span> <span>tasks<\/span>/);
+  assert.doesNotMatch(page, /fortune|overnight/);
+});
