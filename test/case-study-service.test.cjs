@@ -43,6 +43,7 @@ function deps(over = {}) {
     senders: () => [{ id: 'ceo', address: 'ceo@x.com', canSend: true }, { id: 'old', address: 'o@x.com', canSend: false, reason: 'Sign in again.' }],
     log: (e) => calls.log.push(e),
     inviteDone: () => { calls.invite++; },
+    office: () => calls.office ?? '/office', onReady: () => { calls.ready = (calls.ready ?? 0) + 1; },
     fonts: () => [], paper: () => 'letter', appVersion: '0.3.5', now: () => NOW,
     ...over
   };
@@ -131,4 +132,48 @@ test('the mail app link carries our address, the subject and the permission line
   assert.match(url, /^mailto:hello@dontbemichael\.com\?subject=Case%20study/);
   assert.match(decodeURIComponent(url), /will take it down if I ask/);
   assert.ok(url.length <= 2000);
+});
+
+test('the case study is prepared in the background and opens complete; asking again does not redraft (owner, 2026-11-03)', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { svc, calls } = deps({
+    runModel: async () => { calls.model++; await gate; return { ok: true, text: JSON.stringify({ subtitle: 'A bakery', about: 'Bakes bread', why: 'Frees the owner', headlines: { email: 'Harbor Bakery handled {n} emails', task: 'Harbor Bakery finished {n} tasks', away: 'Harbor Bakery worked {n} hours while the owner was away' }, team: { pam: 'Sorts the inbox', god: 'Routes the work' } }) }; },
+    readLogo: () => ({ png: Buffer.from('PNG'), colour: '#8C5A2B' })
+  });
+  assert.deepEqual(svc.prepare(input), { state: 'preparing', input }, 'returns at once');
+  assert.deepEqual(svc.prepare(input), { state: 'preparing', input }, 'a second click waits for the same one');
+  assert.equal(svc.status().state, 'preparing');
+  release();
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  const p = svc.status();
+  assert.equal(p.state, 'ready');
+  assert.equal(calls.ready, 1, 'main is told once');
+  assert.equal(p.draft.subtitle, 'A bakery');
+  assert.equal(p.logo.ok, true);
+  assert.equal(calls.model, 1, 'one draft for both clicks');
+  assert.equal(svc.prepare(input).state, 'ready', 'asking again returns the prepared one');
+  calls.office = '/other';
+  assert.deepEqual(svc.status(), { state: 'idle' }, "another office never opens this office's case study");
+});
+
+test('with no measured work there is nothing to prepare: ready at once, no draft, no notice', () => {
+  const empty = snapshot({ outcomes: [{ kind: 'email', total: 0 }, { kind: 'sent', total: 0 }, { kind: 'task', total: 0 }, { kind: 'check', total: 0 }] });
+  const { svc, calls } = deps({ figures: () => ({ snapshot: empty, days: [] }) });
+  const p = svc.prepare(input);
+  assert.equal(p.state, 'ready');
+  assert.equal(p.hasWork, false);
+  assert.equal(calls.model, 0);
+  assert.equal(calls.ready, undefined);
+});
+
+test('after Send the next Get featured prepares a fresh case study', async () => {
+  const { svc } = deps();
+  svc.prepare(input);
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(svc.status().state, 'ready');
+  assert.deepEqual(await svc.send(input, edits, 'ceo', true), { ok: true });
+  assert.deepEqual(svc.status(), { state: 'idle' });
 });

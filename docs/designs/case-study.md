@@ -101,6 +101,7 @@ D2 was the review mode question (Selective expansion), an admin choice, so it ha
 | D18 (owner) | A picture of the away hours | A: one row of daily bars from Pulse's running records, the away part colored | B: numbers only (declined) | approved | Owner chose "30 day strip (recommended)" in D18, 2026-11-03 |
 | D19 (owner) | A period with no measured work | A: Save and Send off, an empty state with a button for a period with work | B: allow with a no number headline (declined) | approved | Owner chose "Off until there is work (recommended)" in D19, 2026-11-03 |
 | D20 (owner) | Numbers the owner types. D4, eng pass outside voice | A: refused only in the headline's words, checked again on Save and Send; the owner's numbers elsewhere stay | B: anywhere but the quote; C: never checked (declined) | approved | Owner chose "Headline words only (recommended)" in D20, 2026-11-03 |
+| D21 (owner) | When the owner sees the screen. Owner message after the first build | Get featured (or the invitation) prepares the case study in main in the background: the draft and the logo read run while the owner works on; Pulse's button says it is preparing; when it is ready a toast on any view (and a desktop notice when the window is in the background) opens the screen already filled in. Inside the screen, a period or name change keeps the page up while it prepares again | the screen opening first and filling in while the owner waits (replaced) | approved | Owner: "there is no point in showing user empty frame and letting him wait. probably run this in the background and notify when it is ready to view and send", 2026-11-03 |
 
 Approval readiness: PASS. Checked D1, D3, D4, D5, D6, D7, D8, D9, D10, each against its recorded
 answer above (2026-11-03). Reviewer mechanics inside approved rows are labelled as such.
@@ -179,7 +180,7 @@ and city ("a bakery in Austin"). The quote is signed "The owner", and the screen
 or a drafted box contains the business name or website. Team names stay: they are the office's own
 agent names, not people. What this switch means sits behind the screen's info icon.
 
-**The screen.** Opened from Pulse by a "Get featured on our website" button. The page is shown as
+**The screen.** Opened from Pulse by a "Get featured on our website" button, once main has prepared it in the background (D21). The page is shown as
 it will look, with the editable parts in place. Following the less verbose UI rule, the benefit
 ("we may feature your business on our website, where new customers can find you") sits behind the
 info icon beside the title; the button's own label carries it in short. Buttons: Save as PDF,

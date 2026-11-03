@@ -6,7 +6,7 @@ import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
 import type { OrganizedList } from '../shared/organizedRecord';
 import type { PulseView } from '../shared/pulseView';
-import type { CaseDraftResult, CaseInput, CaseLogo, CaseOpen, CaseSaveResult, CaseSendOutcome } from '../shared/caseStudy';
+import type { CaseDraftResult, CaseInput, CaseLogo, CaseOpen, CasePrep, CaseSaveResult, CaseSendOutcome } from '../shared/caseStudy';
 import type { FoundationsView } from '../shared/foundations';
 import type { PulseHealthView } from '../shared/pulseHealth';
 import type { ResearchConfig } from '../shared/research';
@@ -1545,6 +1545,21 @@ const api = {
   /** Sends to the fixed address only; the screen names the mailbox and ticks permission. */
   caseStudySend: (input: CaseInput, edits: unknown, mailbox: string, permission: boolean): Promise<CaseSendOutcome> => ipcRenderer.invoke('caseStudy:send', input, edits, mailbox, permission),
   caseStudyDismissInvite: (): Promise<boolean> => ipcRenderer.invoke('caseStudy:dismissInvite'),
+  /** Starts preparing the case study in the background (or says where it stands). */
+  caseStudyPrepare: (input: CaseInput): Promise<CasePrep> => ipcRenderer.invoke('caseStudy:prepare', input),
+  caseStudyStatus: (): Promise<CasePrep> => ipcRenderer.invoke('caseStudy:status'),
+  /** The prepared case study is ready. */
+  onCaseStudyReady: (cb: () => void): (() => void) => {
+    const h = (): void => cb();
+    ipcRenderer.on('caseStudy:ready', h);
+    return () => { ipcRenderer.removeListener('caseStudy:ready', h); };
+  },
+  /** The owner clicked the desktop notice: open the screen. */
+  onCaseStudyShow: (cb: () => void): (() => void) => {
+    const h = (): void => cb();
+    ipcRenderer.on('caseStudy:show', h);
+    return () => { ipcRenderer.removeListener('caseStudy:show', h); };
+  },
   /** Each of a member's jobs with its last finished run and any "Went wrong" on it (shared/runCompare.ts). */
   runCompareLastRuns: (agentId: string): Promise<Array<{ run: JobRun; suggestion: RunSuggestion | null }>> =>
     ipcRenderer.invoke('runCompare:lastRuns', agentId),

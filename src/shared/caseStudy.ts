@@ -106,6 +106,10 @@ export interface CaseDraft {
 // ---------------------------------------------------------------- the screen's calls
 
 export type CasePeriod = 'last-30' | 'this-month';
+/** The page's language from the app's (i18n) language code. */
+export function caseLangOf(code: string): CaseLang {
+  return code.startsWith('zh') ? 'zh-CN' : code.startsWith('ar') ? 'ar' : 'en';
+}
 export interface CaseInput { lang: CaseLang; period: CasePeriod; showName: boolean }
 export interface CaseSender { id: string; address: string; canSend: boolean; reason?: string }
 /** A bundled face as bytes: the PDF window loads it as @font-face; the screen's
@@ -124,6 +128,12 @@ export type CaseSendOutcome =
   | { ok: false; kind: 'failed'; reason: string }
   | { ok: false; kind: 'maybe-sent' }
   | { ok: false; kind: 'overflow' | 'headline-number' | 'no-work' | 'no-permission' | 'no-mailbox' };
+/** The case study being prepared in main (owner, 2026-11-03: the owner never
+ *  waits on an empty frame). `ready` carries what the screen opens with. */
+export type CasePrep =
+  | { state: 'idle' }
+  | { state: 'preparing'; input: CaseInput }
+  | { state: 'ready'; input: CaseInput; draft: CaseDraft | null; logo: CaseLogo | null; hasWork: boolean };
 export type CaseSaveResult = { ok: true; path: string } | { ok: false; kind: 'overflow' | 'headline-number' | 'no-work' | 'failed' | 'cancelled' };
 
 /** Team rows on the page before "and N more" (D13). */

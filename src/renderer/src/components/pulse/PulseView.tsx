@@ -35,6 +35,7 @@ import { InfoTip } from '../InfoTip';
 import { PixelButton } from '../PixelButton';
 import { RunSuggestions } from './RunSuggestions';
 import { CaseStudyScreen } from './CaseStudyScreen';
+import { caseLangOf } from '@shared/caseStudy';
 import { Icon, type IconName } from '../Icon';
 import { useDialog } from '@/shell/useDialog';
 import { godNameNow } from '@/i18n';
@@ -269,9 +270,23 @@ export function PulseView() {
   const [applied, setApplied] = useState<Array<{ advice: Advice; appliedId: number; text: string }>>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>('');
-  // The case study screen, and its one time invitation (docs/designs/case-study.md, D7).
-  const [caseOpen, setCaseOpen] = useState(false);
+  // The case study screen and its one time invitation (docs/designs/case-study.md, D7).
+  // It is prepared in main in the background; the screen opens once it is ready.
+  const caseOpen = useStore((s) => s.caseStudyOpen);
+  const setCaseOpen = useStore((s) => s.setCaseStudyOpen);
+  const casePrep = useStore((s) => s.caseStudyPrep);
+  const setCasePrep = useStore((s) => s.setCaseStudyPrep);
   const [inviteGone, setInviteGone] = useState(false);
+  const startCase = async (): Promise<void> => {
+    if (casePrep === 'ready') { setCaseOpen(true); return; }
+    if (casePrep === 'preparing') return;
+    setCasePrep('preparing');
+    const p = await window.cth.caseStudyPrepare({ lang: caseLangOf(i18n.language), period: 'last-30', showName: true }).catch(() => null);
+    if (!p) { setCasePrep('idle'); return; }
+    setCasePrep(p.state);
+    if (p.state === 'ready') setCaseOpen(true);
+    else setNotice(t('caseStudy.preparingNotice'));
+  };
 
   const load = useCallback(async () => {
     try { setData(await window.cth.pulseSnapshot(period, compare)); setFailed(false); } catch { setFailed(true); }
@@ -823,8 +838,10 @@ export function PulseView() {
         <span style={{ flex: 1 }} />
         {view?.collectingSince && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.collectingSince', { day: fmtDay(view.collectingSince) })}</span>}
         <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-          <PixelButton size="md" variant="secondary" onClick={() => setCaseOpen(true)}>{t('caseStudy.getFeatured')}</PixelButton>
-          <InfoTip text={t('caseStudy.getFeaturedTip')} align="end" />
+          <PixelButton size="md" variant="secondary" disabled={casePrep === 'preparing'} onClick={() => void startCase()}>
+            {casePrep === 'preparing' ? t('caseStudy.preparing') : casePrep === 'ready' ? t('caseStudy.viewReady') : t('caseStudy.getFeatured')}
+          </PixelButton>
+          <InfoTip text={casePrep === 'preparing' ? t('caseStudy.preparingNotice') : t('caseStudy.getFeaturedTip')} align="end" />
         </span>
       </div>
       {view?.caseStudyInvite && !inviteGone && (
@@ -834,11 +851,15 @@ export function PulseView() {
             <div style={{ fontSize: 13, lineHeight: '18px', fontWeight: 600 }}>{t('caseStudy.inviteTitle')}</div>
             <div style={{ fontSize: 12, lineHeight: '16.5px', color: 'var(--cth-ink-2)' }}>{t('caseStudy.inviteBody')}</div>
           </div>
-          <PixelButton size="md" onClick={() => setCaseOpen(true)}>{t('caseStudy.inviteMake')}</PixelButton>
-          <PixelButton size="md" variant="ghost" onClick={() => { setInviteGone(true); void window.cth.caseStudyDismissInvite().catch(() => undefined); }}>{t('caseStudy.inviteNotNow')}</PixelButton>
+          {casePrep === 'preparing'
+            ? <span style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('caseStudy.preparingNotice')}</span>
+            : (<>
+              <PixelButton size="md" onClick={() => void startCase()}>{casePrep === 'ready' ? t('caseStudy.viewReady') : t('caseStudy.inviteMake')}</PixelButton>
+              <PixelButton size="md" variant="ghost" onClick={() => { setInviteGone(true); void window.cth.caseStudyDismissInvite().catch(() => undefined); }}>{t('caseStudy.inviteNotNow')}</PixelButton>
+            </>)}
         </div>
       )}
-      {caseOpen && <CaseStudyScreen onClose={() => { setCaseOpen(false); void load(); }} />}
+      {caseOpen && <CaseStudyScreen onClose={() => { setCaseOpen(false); void load(); void window.cth.caseStudyStatus().then((p) => setCasePrep(p.state)).catch(() => undefined); }} />}
       <div aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{notice}</div>
       {body}
       {detail && view && <MemberDetail id={detail} data={view} name={nameOf(detail)} onClose={() => setDetail(null)} money={view.planLearning ? (): string => t('pulse.measuring') : money} />}

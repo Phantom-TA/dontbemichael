@@ -18,7 +18,7 @@
  */
 import {
   CASE_STUDY_TO, caseStudyEmail, cleanEdits, draftPrompt, fontFaceCss, hasWork, heroPalette, memberFigure, mergeDrafts, missingParts, pageHtml, parseDraft,
-  type CaseDraft, type CaseDraftResult, type CaseFont, type CaseInput, type CaseLang, type CaseLogo, type CaseMember, type CaseOpen, type CasePeriod,
+  type CaseDraft, type CaseDraftResult, type CaseFont, type CasePrep, type CaseInput, type CaseLang, type CaseLogo, type CaseMember, type CaseOpen, type CasePeriod,
   type CaseSendOutcome, type CaseStudyFacts, type HeroPalette, type Paper
 } from '../shared/caseStudy';
 import { dayKey, type DayRange, type PulseSnapshot } from '../shared/teamPerformance';
@@ -59,6 +59,11 @@ export interface CaseStudyDeps {
   fonts: () => CaseFont[];
   paper: () => Paper;
   appVersion: string;
+  /** The open office, so a case study prepared for one never opens in another. */
+  office: () => string | null;
+  /** A prepared case study is ready: main tells the screen, and the desktop
+   *  when the window is in the background. */
+  onReady: () => void;
   now?: () => number;
 }
 
@@ -82,6 +87,9 @@ export function caseRange(period: CasePeriod, now: number): DayRange {
 const toDataUrl = (png: Buffer): string => `data:image/png;base64,${png.toString('base64')}`;
 
 export class CaseStudyService {
+  /** At most one case study is prepared at a time; a new office, period,
+   *  language or name choice starts over. */
+  private prep: { key: string; office: string | null; input: CaseInput; state: 'preparing' | 'ready'; draft: CaseDraft | null; logo: CaseLogo | null; hasWork: boolean } | null = null;
   constructor(private readonly d: CaseStudyDeps) {}
   private now(): number { return this.d.now ? this.d.now() : Date.now(); }
 
@@ -160,6 +168,44 @@ export class CaseStudyService {
     return { ok: true, draft: out };
   }
 
+  /**
+   * Prepares a case study in the background (owner, 2026-11-03): the draft and
+   * the logo read run here while the owner works on, and onReady fires when
+   * both are done, so the screen opens complete. A period with no work needs
+   * no draft and is ready at once (D19). Asking again for the same case study
+   * returns where it stands.
+   */
+  prepare(input: CaseInput): CasePrep {
+    const office = this.d.office();
+    const key = JSON.stringify([office, input.lang, input.period, input.showName]);
+    if (this.prep?.key === key) return this.status();
+    const facts = this.facts(input);
+    const work = !!facts && hasWork(facts.figures);
+    const job = { key, office, input, state: 'preparing' as 'preparing' | 'ready', draft: null as CaseDraft | null, logo: null as CaseLogo | null, hasWork: work };
+    this.prep = job;
+    if (!work) { job.state = 'ready'; return this.status(); }
+    void (async () => {
+      const [d, l] = await Promise.all([
+        this.draft(input).catch((): CaseDraftResult => ({ ok: false, reason: 'failed' })),
+        input.showName ? this.logo(false).catch((): CaseLogo => ({ ok: false, reason: 'failed' })) : Promise.resolve(null)
+      ]);
+      if (this.prep !== job) return;
+      job.draft = d.ok ? d.draft : null;
+      job.logo = l;
+      job.state = 'ready';
+      this.d.onReady();
+    })();
+    return this.status();
+  }
+
+  /** Where the prepared case study stands, for the open office only. */
+  status(): CasePrep {
+    const p = this.prep;
+    if (!p || p.office !== this.d.office()) return { state: 'idle' };
+    if (p.state === 'preparing') return { state: 'preparing', input: p.input };
+    return { state: 'ready', input: p.input, draft: p.draft, logo: p.logo, hasWork: p.hasWork };
+  }
+
   /** The kept logo, or one read from the site; `fresh` reads the site again. */
   async logo(fresh: boolean): Promise<CaseLogo> {
     if (!fresh) {
@@ -221,6 +267,8 @@ export class CaseStudyService {
     // counts as a member's work (index.ts logObserver, pulseBackfill.ts).
     this.d.log({ kind: 'case-study-sent', mailbox: box.id, to: CASE_STUDY_TO, text: "You sent a case study to Don't Be Michael" });
     this.d.inviteDone();
+    // Sent: the next Get featured prepares a fresh one.
+    this.prep = null;
     return { ok: true };
   }
 

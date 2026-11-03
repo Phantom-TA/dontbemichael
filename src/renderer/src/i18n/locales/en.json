@@ -3388,6 +3388,13 @@
     "pdfFailed": "Couldn't make the PDF. Try again.",
     "noWork": "No measured work in the last 30 days yet.",
     "noWorkMonth": "No measured work this month yet.",
-    "noWorkAny": "Your case study opens once the team has done some work."
+    "noWorkAny": "Your case study opens once the team has done some work.",
+    "preparing": "Preparing case study",
+    "preparingNotice": "Preparing your case study. We'll let you know when it's ready.",
+    "viewReady": "View case study",
+    "readyTitle": "Your case study is ready",
+    "readyBody": "View it, change any words, then send it to us.",
+    "readyView": "View",
+    "readyLater": "Later"
   }
 }

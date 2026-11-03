@@ -13,8 +13,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  builtInHeadline, figureValue, fmtCount, headlineChoices, namesBusiness, pageHtml, startingEdits,
-  type CaseDraft, type CaseInput, type CaseLang, type CaseOpen, type CasePeriod, type CaseStudyEdits, type HeadlineFigure, type HeroPalette
+  builtInHeadline, caseLangOf, figureValue, fmtCount, headlineChoices, namesBusiness, pageHtml, startingEdits,
+  type CaseDraft, type CaseInput, type CaseOpen, type CasePrep, type CasePeriod, type CaseStudyEdits, type HeadlineFigure, type HeroPalette
 } from '@shared/caseStudy';
 import { Dialog } from '@/shell/Dialog';
 import { Panel, hint } from '../fieldText';
@@ -30,9 +30,6 @@ const PAGE_PX = { letter: { w: 816, h: 1056 }, a4: { w: 794, h: 1123 } } as cons
 type Draft = { state: 'drafting' } | { state: 'ready'; draft: CaseDraft } | { state: 'failed' };
 type Send = { state: 'idle' } | { state: 'sending' } | { state: 'sent' } | { state: 'maybe' } | { state: 'error'; text: string };
 
-function langOf(code: string): CaseLang {
-  return code.startsWith('zh') ? 'zh-CN' : code.startsWith('ar') ? 'ar' : 'en';
-}
 
 /** The page's editable parts, read back from the preview's document. */
 function readEdits(doc: Document, base: CaseStudyEdits): CaseStudyEdits {
@@ -54,7 +51,7 @@ function readEdits(doc: Document, base: CaseStudyEdits): CaseStudyEdits {
 
 export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   const { t, i18n } = useTranslation();
-  const lang = langOf(i18n.language);
+  const lang = caseLangOf(i18n.language);
   const [period, setPeriod] = useState<CasePeriod>('last-30');
   const [showName, setShowName] = useState(true);
   const input: CaseInput = useMemo(() => ({ lang, period, showName }), [lang, period, showName]);
@@ -78,42 +75,65 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
-  // The facts, then the draft (none with no work: D19) and the kept or read logo.
-  const loadDraft = useCallback(async (inp: CaseInput, facts: CaseOpen) => {
-    setDraft({ state: 'drafting' });
-    const r = await window.cth.caseStudyDraft(inp).catch(() => null);
-    if (!alive.current) return;
-    const d: CaseDraft = r?.ok ? r.draft : { headlines: {}, team: {} };
-    setDraft(r?.ok ? { state: 'ready', draft: d } : { state: 'failed' });
-    const e = startingEdits(facts.facts, d, editsRef.current?.headline?.figure);
+  const touchedRef = useRef(false);
+  useEffect(() => { touchedRef.current = touched; }, [touched]);
+  const openRef = useRef<CaseOpen | null>(null);
+  const inputRef = useRef(input);
+  inputRef.current = input;
+
+  /** Edits from a draft (or none yet): built in headline words and role
+   *  descriptions fill what the draft leaves out, so the page is never empty. */
+  const applyDraft = useCallback((o: CaseOpen, d: CaseDraft | null) => {
+    const e = startingEdits(o.facts, d ?? { headlines: {}, team: {} }, editsRef.current?.headline?.figure);
     editsRef.current = e; setEdits(e); setTouched(false);
   }, []);
 
+  /** A prepared case study for this input: its draft and logo, unless the
+   *  owner has started editing meanwhile. */
+  const takePrepared = useCallback((p: CasePrep) => {
+    const o = openRef.current;
+    if (!o || p.state !== 'ready' || JSON.stringify(p.input) !== JSON.stringify(inputRef.current)) return;
+    if (p.logo?.ok) { setLogo({ logo: p.logo.logo, palette: p.logo.palette }); setLogoFailed(false); } else if (p.logo && inputRef.current.showName) setLogoFailed(true);
+    if (!p.hasWork) return;
+    setDraft(p.draft ? { state: 'ready', draft: p.draft } : { state: 'failed' });
+    if (!touchedRef.current) applyDraft(o, p.draft);
+  }, [applyDraft]);
+
+  // The facts at once, the page drawn from them at once, and the draft and the
+  // logo from main's background preparation (owner, 2026-11-03: never an empty
+  // frame). A period or name change prepares again while the page stays up.
   useEffect(() => {
     let stop = false;
     void (async () => {
       const o = await window.cth.caseStudyOpen(input).catch(() => null);
       if (stop || !alive.current) return;
       if (!o) { setOpen('failed'); return; }
+      openRef.current = o;
       setOpen(o);
       setMailbox((m) => m ?? o.senders.find((s) => s.canSend)?.id ?? null);
-      if (o.hasWork && (!editsRef.current || !touched)) void loadDraft(input, o);
-      else if (!o.hasWork) { editsRef.current = null; setEdits(null); }
+      if (!o.hasWork) { editsRef.current = null; setEdits(null); return; }
+      if (!editsRef.current || !touchedRef.current) applyDraft(o, null);
+      const p = await window.cth.caseStudyPrepare(input).catch(() => null);
+      if (stop || !alive.current || !p) return;
+      if (p.state === 'ready') takePrepared(p); else setDraft({ state: 'drafting' });
     })();
     return () => { stop = true; };
-    // The draft is redrafted on a period or name change only when the owner
-    // hasn't edited yet; with edits, the name switch asks first.
-  }, [input, loadDraft]);
+  }, [input, applyDraft, takePrepared]);
 
-  useEffect(() => {
-    if (!showName) return;
-    let stop = false;
-    void window.cth.caseStudyLogo(false).then((r) => {
-      if (stop) return;
-      if (r.ok) { setLogo({ logo: r.logo, palette: r.palette }); setLogoFailed(false); } else setLogoFailed(true);
-    }).catch(() => { if (!stop) setLogoFailed(true); });
-    return () => { stop = true; };
-  }, [showName]);
+  // Main says a preparation finished: take it if it is this screen's.
+  useEffect(() => window.cth.onCaseStudyReady(() => {
+    void window.cth.caseStudyStatus().then((p) => { if (alive.current) takePrepared(p); }).catch(() => undefined);
+  }), [takePrepared]);
+
+  const retryDraft = async (): Promise<void> => {
+    const o = openRef.current;
+    if (!o) return;
+    setDraft({ state: 'drafting' });
+    const r = await window.cth.caseStudyDraft(input).catch(() => null);
+    if (!alive.current) return;
+    setDraft(r?.ok ? { state: 'ready', draft: r.draft } : { state: 'failed' });
+    if (r?.ok) applyDraft(o, r.draft);
+  };
 
   const facts = open && open !== 'failed' ? { ...open.facts, ...(logo && showName ? { logo: logo.logo, palette: logo.palette } : {}) } : null;
   const paper = facts ? PAGE_PX[facts.paper] : PAGE_PX.letter;
@@ -295,7 +315,7 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
         {draft.state === 'failed' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={status}>{t('caseStudy.draftFailed')}</div>
-            <div><PixelButton size="sm" variant="secondary" onClick={() => { if (open && open !== 'failed') void loadDraft(input, open); }}>{t('caseStudy.retry')}</PixelButton></div>
+            <div><PixelButton size="sm" variant="secondary" onClick={() => void retryDraft()}>{t('caseStudy.retry')}</PixelButton></div>
           </div>
         )}
 

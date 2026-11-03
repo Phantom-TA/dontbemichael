@@ -3388,6 +3388,13 @@
     "pdfFailed": "无法生成 PDF。请重试。",
     "noWork": "最近 30 天还没有统计到工作。",
     "noWorkMonth": "本月还没有统计到工作。",
-    "noWorkAny": "团队完成一些工作后，就可以制作客户案例。"
+    "noWorkAny": "团队完成一些工作后，就可以制作客户案例。",
+    "preparing": "正在准备客户案例",
+    "preparingNotice": "正在准备你的客户案例，准备好后会通知你。",
+    "viewReady": "查看客户案例",
+    "readyTitle": "你的客户案例已准备好",
+    "readyBody": "查看并修改文字，然后发送给我们。",
+    "readyView": "查看",
+    "readyLater": "稍后"
   }
 }

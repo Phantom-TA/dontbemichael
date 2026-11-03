@@ -7591,8 +7591,27 @@ const caseStudy = new CaseStudyService({
   fonts: caseStudyFonts,
   // Letter in the US and Canada, A4 everywhere else.
   paper: () => (['US', 'CA'].includes(app.getLocaleCountryCode().toUpperCase()) ? 'letter' : 'a4'),
-  appVersion: app.getVersion()
+  appVersion: app.getVersion(),
+  office: pulseOffice,
+  onReady: () => {
+    try { liveWebContents()?.send('caseStudy:ready'); } catch { /* window gone */ }
+    // A desktop notice only while the window is in the background: in front,
+    // the screen's own toast says it.
+    if (!readConfig().notifications || (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused())) return;
+    try {
+      if (!Notification.isSupported()) return;
+      // Only Michael notifies (docs/designs/michael-only-notifications.md).
+      const n = new Notification({ title: michaelName(), body: 'Your case study is ready to view and send.' });
+      n.on('click', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
+        try { liveWebContents()?.send('caseStudy:show'); } catch { /* window gone */ }
+      });
+      n.show();
+    } catch { /* unsupported platform */ }
+  }
 });
+ipcMain.handle('caseStudy:prepare', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.prepare(i) : { state: 'idle' }; });
+ipcMain.handle('caseStudy:status', () => caseStudy.status());
 ipcMain.handle('caseStudy:open', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.open(i) : null; });
 ipcMain.handle('caseStudy:draft', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.draft(i) : { ok: false, reason: 'failed' }; });
 ipcMain.handle('caseStudy:logo', (_evt, fresh: unknown) => caseStudy.logo(fresh === true));
