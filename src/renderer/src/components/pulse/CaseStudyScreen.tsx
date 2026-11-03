@@ -73,7 +73,9 @@ export function CaseStudyScreen({ onClose }: { onClose: () => void }) {
   const well = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(0.7);
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  // Set true again on every mount: StrictMode mounts, unmounts and mounts
+  // once in development, and a flag left false drops every answer from main.
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   const touchedRef = useRef(false);
   useEffect(() => { touchedRef.current = touched; }, [touched]);
