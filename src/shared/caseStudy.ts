@@ -666,7 +666,7 @@ ${opts.fontCss}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:#fff}
 body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic",system-ui,sans-serif;color:#1E1B2E;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.mono,.n,.t-n,.big b,.strip-x{font-family:"IBM Plex Mono",ui-monospace,monospace;letter-spacing:0}
+.mono,.t-n,.big b,.strip-x{font-family:"IBM Plex Mono",ui-monospace,monospace;letter-spacing:0}
 .page{width:${paper.w}px;height:${paper.h}px;zoom:${PAGE_ZOOM};overflow:hidden;display:flex;flex-direction:column;background:#fff}
 .hero{background:var(--hero);color:#fff;padding:26px 40px 22px}
 .hero-top{display:flex;align-items:center;gap:12px}
@@ -680,7 +680,8 @@ body{font-family:Sora,"PingFang SC","Noto Sans SC","SF Arabic","Noto Sans Arabic
 .lock{font-weight:700;color:var(--hl);white-space:nowrap}
 .sub{margin-top:8px;font-size:11.5px;line-height:17px;color:rgba(255,255,255,.9);max-width:560px;min-height:17px}
 .band{background:var(--tint);display:grid;grid-template-columns:repeat(${band.length},1fr);padding:14px 40px 10px;border-bottom:1px solid var(--hline)}
-.stat .n{font-weight:500;font-size:26px;line-height:30px;letter-spacing:-.06em}
+/* The band's numbers in the page's Sora: a mono comma left a gap ("4, 874"). */
+.stat .n{font-weight:600;font-size:26px;line-height:30px;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .stat .l{font-size:10px;line-height:13px;color:#4A4660;margin-top:2px}
 .stat+.stat{padding-inline-start:14px;border-inline-start:1px solid var(--hline)}
 .band-src{grid-column:1/-1;margin-top:8px;font-size:9px;line-height:12px;color:#5E5A76}
