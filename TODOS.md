@@ -136,6 +136,16 @@ Go with it: keep only the owner's own words (the answer, the edit, the note) in 
 **Priority:** P1
 **Depends on:** None
 
+### Refuse the web tools when a member's set up fails
+
+**What:** When hive set up fails for a team member other than Research (`src/main/index.ts`, `[hive] ensureAgent failed`), the member still starts, with no hooks and no deny rules, so its web page and web search tools are not refused. Either refuse the spawn, as Research already does, or pass `--disallowedTools WebFetch WebSearch` on that path.
+
+**Why:** The site and /security say the app turns off the web page tool and the web search tool for every team member but Pete. On this path it does not, on Mac or Windows. Found in the website's 2.8.1.0 ship review (2026-10-20); moved here from the site's TODOS when its guardrail item closed (site CEO review, owner D10, 2026-11-04).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ### Take the internet from team members' shells on Windows
 
 **What:** Hold team members' shell commands off the internet on Windows, where the engine has no sandbox. Until then, the Research screen says so on Windows (done 2026-10-18).

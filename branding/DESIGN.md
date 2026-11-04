@@ -1911,7 +1911,9 @@ Apply (Edit agent, since 0.2.6), and, since 0.2.7, that when a change overlaps a
 you say how they split it and Michael routes by that. Work on a schedule also says a team member with
 no jobs yet is offered starter jobs from its pack, added paused until you turn them on (since 0.2.5;
 owner, 2026-10-24), and, since 0.2.7, that you can say a run went wrong and Michael suggests a fix in
-Pulse that changes nothing until you Apply (§7.26; owner, 2026-10-26).
+Pulse that changes nothing until you Apply (§7.26; owner, 2026-10-26). Your tools, connected also says,
+since 0.3.4, that another service can be added as a Custom REST integration, given only to the teammates
+you name, Read only or Can change (§7.12; owner, 2026-11-04).
 
 ### 9.6 Footer
 
@@ -1972,7 +1974,9 @@ for changes as secondary buttons and Approve as the primary, right aligned); Dra
 reply with a "Draft" tag and "Saved in support@ Drafts". A line under the switch says what
 the chosen setting does (`aria-live="polite"`). Addresses use the story's form ("support@",
 "Northwind Cafe"), never an invented domain. Without JS the switch is hidden, the approval
-card shows and all three choices are listed in text. Two columns (5:7) at 980 px and up,
+card shows and all three choices are listed in text. A list under the frame names the three settings, and
+Send on approval ends "New mailboxes start here.": since 0.3.2 a mailbox given to a team member starts on
+Send on approval, not Draft only (§7.12; owner, 2026-11-04). Two columns (5:7) at 980 px and up,
 stacked below; under 480 px the switch is three equal columns whose labels may wrap to two
 lines, and the card's buttons wrap at 44 px tall.
 
@@ -2010,7 +2014,8 @@ under 480 px everything stacks in that order. The board never scrolls sideways.
 ### 9.14 File tabs (web)
 
 A How it works section (§9.22) after the board and before Pulse: eyebrow "Files", heading "Read the file he means, beside his question.", a lead that
-names only what opens in a tab (CSV files, notes, text and pictures; never "spreadsheets" or
+names only what opens in a tab (CSV files, notes, text and pictures, and, since 0.3.4, the words of Word,
+Excel, PowerPoint and PDF files; never "spreadsheets" or
 "in the office", owner CEO D8) and sets the picture later that morning, after the board's
 9:15, and a read only picture of a file tab (§7.2) opened from a file chip on an Ask me card (§7.8). Same
 frame as §9.13 (`card-2`, `r-2xl`, `shadow-lg`). The top bar as §7.2: Office, Tasks, Pulse,
@@ -2025,7 +2030,8 @@ right column's Ask me card, Michael's question for Oscar, asks whether that paym
 question names the file as a chip (`sheet` icon, the name without extension, "Open"), an
 answer is being typed, and it holds up 2 tasks. Under the frame, three plain notes that add
 what the lead leaves out: named files are buttons (Open, or Show in Finder, "Show in folder"
-on Windows, for anything else, §7.8, with PDF and Office files opening in their own app); the
+on Windows, for anything else, §7.8, with PDF and Office files showing their words in a tab too and Open in
+app opening the file itself, since 0.3.4); the
 question stays beside it (§7.2); and it reads what your business already has: Excel exports
 from accounting and payroll software, long PDFs and PowerPoint decks (owner, 2026-10-15; the
 five tab limit is left to the app). The frame is one `role="img"` with a full text label; nothing in it
@@ -2117,8 +2123,20 @@ does not hold; owner, 2026-10-24; and, since 0.2.7, a mailbox's password is sent
 encrypted connection, and a mail server that won't switch to one is refused; owner, 2026-10-26). Every sentence holds on Mac and Windows and for every
 engine, and the page states no limit notes: a privacy sentence says what the app gives, tells or
 passes through the app and its trust layer, never that something can't happen where the app can't
-enforce it (Windows has no sandbox, so a member's shell is not held there; owner, 2026-10-20). Send
-only says a teammate isn't given the watched inbox to read. The same rule covers the home page's
+enforce it (Windows has no sandbox, so a member's shell is not held there; owner, 2026-10-20). Only send
+email (the app's label since 0.3.2, §7.12; the site said "Send only" before) says a teammate isn't given the
+watched inbox to read.
+
+Since 0.3.2 to 0.3.5 (owner, 2026-11-04): Who is given what adds, directly after the table, that a Custom
+REST integration starts with nobody, the owner names each team member who may use it, Read only or Can
+change, and taking access away holds on its next call; the mail line ends with: attachments a member saves
+go to its own folder, marked as downloads (never "never run", which Windows does not hold); and the memory
+line ends with: files are handed over the same way, a teammate asks for one and the app copies it across
+(never "nobody opens another member's folder"). Where your data lives adds, after the no usage data
+sentence, that a case study from Pulse's Get featured is a submission the owner chooses to make, not usage
+data: it goes to us only when they press Send, from their own mailbox, and building one reads the logo from
+the website in the company profile, once (TELEMETRY.md, Case studies you send us). No publishing or take
+down promise on the site (owner, 2026-11-04). The same rule covers the home page's
 hero, meta, JSON-LD, FAQ and privacy section (§9.15) and llms.txt. Headings sit
 closer to their text than to the section above; the page never scrolls sideways at 320 px.
 ### 9.17 Pulse (web)
@@ -2144,8 +2162,10 @@ card's question, §9.18); then twelve tiles in §7.27's order, four to a row,
 every one above zero so no quiet chip is drawn: emails organized, emails sent for you, tasks
 finished, scheduled checks, questions to the internet, web answers cleaned, messages held
 (`amber` soft, "See what was held" drawn, not a link), steps blocked by your settings, what
-the team learned, questions to you, Spent with plan use (a Claude Max 20x price; Spent is
-the plan's real cost for Monday to Friday afternoon by the app's own formula, §7.27) and your
+the team learned, questions to you, Spent with plan use (a Claude Max 20x price; Spent is the
+office's own use at the plan's rate, capped at the plan's price for the days so far, by the app's own
+formula, §7.27; since 0.3.2 the picture assumes the office made all 38 meter points, no other Claude use
+that week, so Spent is $17.48, Monday to Friday afternoon) and your
 time; then Team at work with six rows, busiest first, Oscar and Dwight each with the 12 px
 `indigo` ring and "Foundations 3 of 5" and "Foundations 4 of 6" in `ink-3` 11 px under the role
 (hidden with the roles on phones), the team average dashed, Busiest and
@@ -2158,8 +2178,9 @@ save (each looks at the last 14 days, comes with the numbers behind it and chang
 puts it back; on a Claude plan the saving is counted at pay per use prices and frees plan
 use; advice starts two weeks after Pulse starts recording, and before that an Early look shows any
 patterns it already sees), Compare (this
-week beside last week, counted up to the same day, once there is a week before to compare), Real costs (on a Claude plan, what you pay
-for the plan split by each member's share of the work). The frame is one `role="img"` whose
+week beside last week, counted up to the same day, once there is a week before to compare), Real costs (on a Claude plan, only what
+the office used, at the plan's rate, split by each member's share; the owner's other Claude use is never
+charged to the office, since 0.3.2). The frame is one `role="img"` whose
 label carries every number and name in reading order; nothing in it can be clicked. As the app
 draws them: the held tile's icon square `card` with `amber-text`; the Quiet callout `neutral-soft`
 with `ink-3` and the Busiest callout `card` with `ink` and an inset 1 px `line-2` ring; from 480 px, where the chip
@@ -2248,7 +2269,8 @@ holding three columns at 980 px and up and one column below. Each column is a 40
 `w-h3` title and one or two sentences in `ink-2`: Kept on your computer (lock on `indigo` soft: the
 team's work, memory and mailbox passwords are kept on your computer, the app sends no usage data,
 and the code is open); You approve what matters (check on `neutral-soft`, never coral: no one pays a bill, promises
-a refund or posts in public without you, and emails start as drafts); Built to stop agents going rogue
+a refund or posts in public without you, and emails wait for your OK unless you say otherwise, since
+0.3.2); Built to stop agents going rogue
 (shield on `green` soft: Pete does the web research and the rest of the team is told to ask Pete,
 answers that come back through the trust layer lose any instructions aimed at AI, and email is read
 as the sender's words, never orders).
@@ -2258,8 +2280,8 @@ Every sentence follows §9.16's rule: it says what the app keeps, gives or tells
 
 The home page's second question. Three job cards (`card`, `r-xl`, `shadow-md`, padding 20) in a row
 at 980 px and up and one column below: the department avatar (36 px, as on the setup team rows, in its §3.4 colours), a `w-h3` title and one
-line in `ink-2`. The inbox (Kelly: customer emails get answered, replies wait as drafts until you say
-they can go); The books (Oscar: invoices tracked, what's unpaid chased, a warning before filing
+line in `ink-2`. The inbox (Kelly: customer emails get answered, each reply waits for your OK unless you
+let it send on its own, since 0.3.2); The books (Oscar: invoices tracked, what's unpaid chased, a warning before filing
 deadlines); The follow ups (Dwight: leads and suppliers chased on a schedule, so nothing slips). Under
 them, the flow line: pills (`card`, inset `line-2`, `w-small`) joined by arrows, "An email lands",
 "Kelly picks it up", "Michael checks it", "You answer once" (`coral` soft with `coral-text`, 600) and
@@ -2567,6 +2589,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-26 | Web: the site catches up with 0.2.7, for owners. Tiles (§9.5): Work on a schedule says a run can be marked went wrong and Michael suggests a fix in Pulse that changes nothing until you Apply; Limits in writing says how two members split work Michael routes by. Pulse lead (§9.17): Your time shows how long the office ran and how much of that you were away. /security (§9.16): each memory note says what showed it and only the owner's own answers count as theirs; a mailbox's password goes only over an encrypted connection. |
 | 2026-10-31 | File tabs show the words of Word, Excel, PowerPoint and PDF files (§7.2); a team folder named on a card is a chip (§7.8); Access gains an Integrations group (§7.12). |
 | 2026-10-26 | Web: the customer band (§9.23), businesses already running the app, between the hero and the four questions (§9.19): eyebrow "Already running at", one card per business with its own logo in a 120 x 48 box, its name, its kind of business and a link to its site. First: TalBiz Solutions. Logos are served from the site, never the business's own site; `llms.txt` and the home JSON-LD name the same businesses. |
+| 2026-11-04 | Web: the site catches up with 0.3.2 to 0.3.5, for owners. A new mailbox starts on Send on approval (§9.11, §9.20, §9.21); Office and PDF files show their words in a tab (§9.14); Real costs and the Pulse picture count only the office's own use at the plan's rate, Spent $17.48 (§9.17); Custom REST integrations given per member (§9.5, §9.16); attachments, file handover and the Get featured disclosure on /security (§9.16); the mailboxes FAQ says Only send email (§9.16). |
 
 ---
 
