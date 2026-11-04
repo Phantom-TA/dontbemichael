@@ -1458,13 +1458,18 @@ test('once Research\'s answer is sent, the app moves the question it answers to 
   send(hive, 'research', { to: 'god', in_reply_to: third, act: 'inform', subject: 'Problem', body: 'This one needs the owner.' }, 'm3.json');
   hive.routeOnce(); await tick(); hive.routeOnce();
   assert.ok(fs.existsSync(path.join(inbox, `${third}.json`)), 'only an answer to the asker clears a question');
+  // Michael's own question, answered to a name for him, is cleared.
+  const fromMichael = await askFrom(hive, 'god');
+  send(hive, 'research', { to: 'michael', in_reply_to: fromMichael, act: 'inform', subject: 'For Michael', body: 'Here it is.' }, 'm4.json');
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.ok(!fs.existsSync(path.join(inbox, `${fromMichael}.json`)), 'an answer to Michael by any of his names clears his question');
   // An id that names no delivery of the app's, or a path, moves nothing.
   for (const bad of ['../../god/inbox/x', 'nope']) {
     send(hive, 'research', { to: 'god', in_reply_to: bad, act: 'inform', subject: 'Other', body: 'Answer.' }, `m-${bad.length}.json`);
     hive.routeOnce(); await tick(); hive.routeOnce();
   }
   assert.ok(fs.existsSync(path.join(inbox, `${second}.json`)));
-  assert.deepEqual(fs.readdirSync(done).filter((f) => f.endsWith('.json')), [`${first}.json`]);
+  assert.deepEqual(fs.readdirSync(done).filter((f) => f.endsWith('.json')).sort(), [`${first}.json`, `${fromMichael}.json`].sort());
 });
 
 test('Research is told the app moves an answered message, not to move it itself', () => {

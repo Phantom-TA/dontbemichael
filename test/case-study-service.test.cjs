@@ -230,8 +230,11 @@ test('Save writes the PDF as .pdf and never replaces a file beside it with the p
   const { savePaths } = require('./load-ts.cjs')('src/main/caseStudy.ts');
   const none = () => false;
   assert.deepEqual(savePaths('/d/case-study.pdf', none), { pdf: '/d/case-study.pdf', html: '/d/case-study.html' });
-  assert.deepEqual(savePaths('/d/story', none), { pdf: '/d/story.pdf', html: '/d/story.html' }, 'a typed name gets its .pdf ending');
+  assert.deepEqual(savePaths('/d/story', none), { pdf: '/d/story', html: '/d/story.html' }, 'the PDF goes exactly where the dialog confirmed');
   assert.deepEqual(savePaths('/d/Story.PDF', none).html, '/d/Story.html');
-  const taken = new Set(['/d/case-study.html', '/d/case-study (2).html']);
-  assert.equal(savePaths('/d/case-study.pdf', (p) => taken.has(p)).html, '/d/case-study (3).html');
+  const stranger = new Set(['/d/case-study.html', '/d/case-study (2).html']);
+  assert.equal(savePaths('/d/case-study.pdf', (p) => stranger.has(p)).html, '/d/case-study (3).html', 'a page with no PDF beside it is never replaced');
+  const pair = new Set(['/d/case-study.pdf', '/d/case-study.html']);
+  assert.equal(savePaths('/d/case-study.pdf', (p) => pair.has(p)).html, '/d/case-study.html', 'saving over an earlier pair replaces its page too');
+  assert.equal(savePaths('/d/x.pdf', (p) => p !== '/d/x.pdf', () => 7).html, '/d/x 7.html', 'never overwrites, however many copies');
 });

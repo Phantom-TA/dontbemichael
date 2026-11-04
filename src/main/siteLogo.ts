@@ -231,11 +231,7 @@ export function defaultGet(url: URL, maxBytes: number, deadline: number, lookup:
   return new Promise((resolve, reject) => {
     const left = deadline - Date.now();
     if (left <= 0) return reject(new LogoError('timeout'));
-    // The one time limit holds from the request on: `timeout` below is only
-    // an idle timer, which a host sending its headers a byte at a time resets
-    // forever (ship review). Destroying the request ends the read either way.
-    const hard = setTimeout(() => { req.destroy(); reject(new LogoError('timeout')); }, left);
-    hard.unref?.();
+    let hard: ReturnType<typeof setTimeout> | undefined;
     const req = request(url, {
       method: 'GET', agent: false, lookup: lookup as never, timeout: left,
       headers: { 'user-agent': "Don't Be Michael case study logo", accept: 'text/html,image/png,image/jpeg,image/webp,image/svg+xml;q=0.9,*/*;q=0.1' }
@@ -251,6 +247,11 @@ export function defaultGet(url: URL, maxBytes: number, deadline: number, lookup:
       res.on('end', () => { clearTimeout(timer); clearTimeout(hard); resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }); });
       res.on('error', (e) => { clearTimeout(timer); clearTimeout(hard); reject(e); });
     });
+    // The one time limit holds from the request on: `timeout` above is only
+    // an idle timer, which a host sending its headers a byte at a time resets
+    // forever (ship review). Destroying the request ends the read either way.
+    hard = setTimeout(() => { req.destroy(); reject(new LogoError('timeout')); }, left);
+    hard.unref?.();
     req.on('timeout', () => { req.destroy(); reject(new LogoError('timeout')); });
     req.on('error', (e) => { clearTimeout(hard); reject((e as { code?: string }).code === 'EPRIVATE' ? new LogoError('private') : e); });
     req.end();

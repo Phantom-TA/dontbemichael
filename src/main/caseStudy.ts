@@ -75,16 +75,20 @@ export interface CaseStudyDeps {
 
 /**
  * Where Save writes the PDF and the web page beside it (ship review): the PDF
- * always ends in .pdf, and the page takes the same name ending in .html, or
- * a numbered one when that file is already there, so Save never replaces a
- * file the save dialog did not ask about.
+ * goes exactly where the save dialog confirmed, and the page takes the same
+ * name ending in .html. Saving over an earlier pair (the dialog asked about
+ * its PDF) replaces its page too; a page with that name but no PDF beside it
+ * is someone else's file, so the page takes a numbered name instead.
  */
-export function savePaths(picked: string, exists: (path: string) => boolean): { pdf: string; html: string } {
-  const pdf = /\.pdf$/i.test(picked) ? picked : `${picked}.pdf`;
-  const base = pdf.replace(/\.pdf$/i, '');
-  let html = `${base}.html`;
-  for (let n = 2; exists(html) && n < 100; n++) html = `${base} (${n}).html`;
-  return { pdf, html };
+export function savePaths(picked: string, exists: (path: string) => boolean, now: () => number = Date.now): { pdf: string; html: string } {
+  const base = picked.replace(/\.pdf$/i, '');
+  const pair = `${base}.html`;
+  if (!exists(pair) || exists(picked)) return { pdf: picked, html: pair };
+  for (let n = 2; n < 1000; n++) {
+    const html = `${base} (${n}).html`;
+    if (!exists(html)) return { pdf: picked, html };
+  }
+  return { pdf: picked, html: `${base} ${now()}.html` };
 }
 
 /** The screen's input from IPC, or null when it isn't one. */

@@ -7631,6 +7631,7 @@ ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, edits: unknown,
   const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
   if (res.canceled || !res.filePath) return { ok: false, kind: 'cancelled' };
   // The web page we publish beside its PDF copy, same name (D28).
+  // Read before the PDF is written, so an earlier pair is told from a stranger's page.
   const paths = savePaths(res.filePath, existsSync);
   try { writeFileSync(paths.pdf, out.pdf); writeFileSync(paths.html, out.html); } catch { return { ok: false, kind: 'failed' }; }
   // No mailbox can send (D1): the mail app opens with our address and the

@@ -3356,7 +3356,7 @@ export class HiveManager {
     }
     // Only an answer to the one who asked it clears the question: a note to
     // Michael about it, or a reply naming another id, leaves it waiting (ship review).
-    if (byId && back && back.from === msg.to) this.archiveResearchAnswered(msg.in_reply_to);
+    if (byId && back && back.from === (toMichael ? godId : msg.to)) this.archiveResearchAnswered(msg.in_reply_to);
     return 'sent';
   }
 
