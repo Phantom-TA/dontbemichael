@@ -254,3 +254,26 @@ test('FileText looks names up and Michael names files by full path with their en
   const hive = fs.readFileSync(path.resolve(__dirname, '../src/main/hive.ts'), 'utf8');
   assert.match(hive, /name each file by its full path, with its file ending, in backticks, so the owner can open it/);
 });
+
+test('a full folder path in a code span is a chip that shows the folder, and stays text when the office does not hold it', async (t) => {
+  // Value: protects=an ask that says where to save a file gives the owner a button to the folder, not a path to copy; fails_when=only spans with a file ending become chips, a slash command or amount becomes a chip, or a folder outside the office shows Not found instead of its path; why_new=Oscar's October statements card listed four folders as raw paths (owner, 2026-11-02); seam=none; no_claim=the rendered chip (source pins and a live look)
+  const { isFolderSpan, folderTitle } = loadTs('src/shared/askFiles.ts');
+  for (const s of ['/Users/me/Biz/Finance/2026/wise', '~/Biz/Finance', 'C:\\Biz\\Finance', '/Users/me/Harbor & Pine/Sales/']) assert.equal(isFolderSpan(s), true, s);
+  for (const s of ['/compact', '/', '~/', 'apple', 'Finance/2026/wise', '/Users/me/report.md', '$1,234.50', 'ops@example.com', 'https://example.com/a', '']) assert.equal(isFolderSpan(s), false, s);
+  assert.equal(folderTitle('/Users/me/Biz/Finance/2026/wise'), 'wise');
+  assert.equal(folderTitle('/Users/me/Clients/acme.com/'), 'acme.com', 'a dot in a folder name is not an ending');
+  const { chipPaths } = loadTs('src/renderer/src/markdown/chipPaths.ts');
+  const card = 'Save them in the same folders as September:\n\n- Wise, now: `/Users/me/Biz/Finance/2026/wise`\n- Wells Fargo: `/Users/me/Biz/Finance/2026/wellsfargo`\n- If you have them, in `apple` and `interactiveBrokers` beside those. Run `/compact` first.';
+  assert.deepEqual(chipPaths(card), ['/Users/me/Biz/Finance/2026/wise', '/Users/me/Biz/Finance/2026/wellsfargo']);
+  // Main already shows a folder inside the office in Finder, and only there.
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-askfolders-')));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const office = path.join(base, 'office');
+  fs.mkdirSync(path.join(office, 'Finance', '2026', 'wise'), { recursive: true });
+  fs.mkdirSync(path.join(base, 'outside'));
+  assert.equal((await askFileVerdict(path.join(office, 'Finance', '2026', 'wise'), [office])).verdict, 'reveal');
+  assert.equal((await askFileVerdict(path.join(base, 'outside'), [office])).verdict, 'missing');
+  const chip = read('src/renderer/src/components/FileChip.tsx');
+  assert.match(chip, /if \(folder && checks\[p\]\?\.verdict === 'missing' && !gone\[p\]\) return <code>\{p\}<\/code>;/, 'a folder the office does not hold keeps its path as text');
+  assert.match(chip, /const icon = folder \? 'folder' :/);
+});

@@ -80,6 +80,11 @@ src/
                              save, only from the owner's click; pulseBackfill.ts fills the weeks before Pulse began
                              from the office log, members' sessions and the cost ledger; checkedBackfill.ts puts
                              together, once, the privacy check lists for checks made before the lists kept words
+    caseStudy.ts             Pulse's Get featured (docs/designs/case-study.md): gathers the office's facts, drafts the
+                             words in a hidden call, prepares it in the background, makes the web page and its PDF copy
+                             and sends both from the owner's mailbox to a fixed address; siteLogo.ts reads the logo from
+                             the business's own website (https and public addresses only), caseLogoImage.ts keeps it
+                             as PNG with its main colour and draws an SVG logo to PNG
     runCompare.ts            the owner's "Went wrong" on a scheduled job's last run: picks an earlier run that went well,
                              compares both conversations in one hidden call and keeps the suggestion for Pulse in
                              harness.db (the pure parts are in shared/runCompare.ts)
@@ -185,7 +190,8 @@ src/
     roster.ts                the roster on disk: agents, notes, worktree paths, archived entries and parked message queues, one
                              JSON file beside the hive (hive identity stays in registry.json)
     officeFile.ts            <harnessHome>/office.json, the office's own record (shared/officeRecord.ts)
-    skills.ts                skills: the ones installed for each CLI on this machine, and a catalog of what could be
+    skills.ts                skills: the ones installed for each CLI on this machine, and a catalog of what could be;
+                             Settings, Skills is hidden in this build (SHOW_SKILLS), and skills keep working
     slack.ts / slack-trigger.cjs   Slack messages into Michael's queue over a bare http server that verifies every request
                              with Slack's signing secret; the mention filter is plain CommonJS so tests require it
                              directly. Off in this build (SHOW_SLACK)
@@ -209,7 +215,7 @@ src/
     freeflow.ts / groq.ts    Free Flow dictation through Groq Whisper (off in this build, SHOW_VOICE), and a Groq chat
                              helper for the VDE editor's AI assist that nothing calls today
   shared/                    code both processes use
-    buildFeatures.ts         switches for surfaces hidden in this build (git, IDE, temp workers, org trigger)
+    buildFeatures.ts         switches for surfaces hidden in this build (git, IDE, temp workers, org trigger, Skills)
     agentProvider.ts         engine presets; BUILD_ENGINES is what setup offers (Claude Code today)
     engineCapabilities.ts    what each engine can do for an office member (yes, no or unknown, per OS where it
                              differs) and engineGaps, what an engine lacks for a job (issue #531)
@@ -218,7 +224,9 @@ src/
     mailboxes.ts             mailbox and Capabilities types, providers, and mailAccess (the one mail rule,
                              Send only grants from another member's mailbox included: shared-mailboxes.md)
     attachmentKind.ts        what an attachment really is, from its bytes; only the kinds a member needs to read pass
-    integrations.ts          integration records and templates, and each member's grants (Read only or Can change)
+    integrations.ts          integration records and templates, each member's grants (Read only or Can change), and a
+                             custom REST connection's one saved call, where the member's message fills {{message}}
+                             (docs/designs/custom-rest-saved-call.md)
     quickbooks.ts            QuickBooks through the owner's Claude account: which connector tools count, read vs change,
                              and quickbooksAccess (the hook's rule: the QuickBooks row's switch in Claude connectors,
                              off by default, then per agent;
@@ -277,7 +285,12 @@ src/
                              (docs/designs/pulse-smart-view.md); heldRecord.ts and checkedRecord.ts the rows of its held list
                              and its privacy check lists (private/held.jsonl, private/checked.jsonl)
     foundations.ts           Company foundations' questions per job, the record's shape, the document, each member's
-                             part, and Pulse's count (docs/designs/office-foundations.md)
+                             part, and Pulse's count (docs/designs/office-foundations.md); the list questions, their
+                             seen items and shelf lives (docs/designs/foundation-answers-stay-open.md)
+    caseStudy.ts             the case study page (docs/designs/case-study.md): its facts, the draft prompt and its
+                             reading, and the one page renderer the preview and the PDF share; every number is a Pulse figure
+    jsonReply.ts             reads a hidden model call's JSON answer the forgiving way (issues 676, 677): the hire check
+                             and the Work style helpers use it
     silentEngine.ts          the rules for a team member whose engine stops reporting to the app, and the card's
                              shape (branding/DESIGN.md 7.6b; the watch is main/silentWatch.ts)
     claudePlan.ts            the owner's Claude plan and its monthly price, for Pulse's costs on a plan
@@ -298,8 +311,11 @@ src/
                              Report cards (cleared with Got it); AskAnswerFields draws an ask's options and
                              several questions
     pulse/PulseView,         Pulse, the office's performance and cost view (branding/DESIGN.md 7.27); pulse/RunSuggestions
-                             draws the run suggestion cards at the top of its Recommendations
-    FoundationCard,          a Company foundations question on Needs you (branding/DESIGN.md 7.27a)
+                             draws the run suggestion cards at the top of its Recommendations; pulse/CaseStudyScreen
+                             is Get featured's screen (the page read only, its words beside it, and Send), and
+                             pulse/CaseStudyToast says on any view when a case study prepared in the background is ready
+    FoundationCard,          a Company foundations question on Needs you (branding/DESIGN.md 7.27a), and a list
+                             question's card with its seen items (7.27b); shell/foundationSave.ts runs its Save
     KnowledgeDocList,        Settings > Memory & Knowledge: the company knowledge documents, each with Open
     GetMichaelReady,         setup's Ready step: the Claude Code and Claude account rows, and Use an API key;
                              EngineSetupCard puts the same rows on Ask me while Michael can't start

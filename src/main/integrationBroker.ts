@@ -3,6 +3,7 @@
  *
  * A 127.0.0.1-only HTTP proxy. An ephemeral worker calls
  *   <METHOD> http://127.0.0.1:<port>/i/<integrationId>/<path...>
+ * or, on a connection with a saved call, POST /call/<integrationId> with { message }.
  * authenticating with a PER-WORKER CAPABILITY TOKEN (a handle, NOT any secret) in the
  * `Authorization: Bearer` / `X-MD-Broker-Token` header. The broker validates the token,
  * authorizes the integration, decrypts the integration's real secret, injects it as the
@@ -31,7 +32,9 @@ import {
   type AgentIntegration,
   type IntegrationLevel,
   type IntegrationRecord,
+  type SavedCall,
   buildAuthHeaders,
+  fillSavedCall,
   resolveUpstreamUrl,
   authTypeNeedsSecret,
   isPostRead,
@@ -281,8 +284,9 @@ export class IntegrationBroker {
       void this.screen(req, res, cap.agentId);
       return;
     }
-    // 3) Parse /i/<integrationId>/<path...>.
-    const m = /^\/i\/([^/?#]+)(?:\/([^?#]*))?(\?[^#]*)?$/.exec(rawUrl);
+    // 3) Parse /i/<integrationId>/<path...> or /call/<integrationId>.
+    const savedRoute = /^\/call\/([^/?#]+)$/.exec(rawUrl);
+    const m = savedRoute ?? /^\/i\/([^/?#]+)(?:\/([^?#]*))?(\?[^#]*)?$/.exec(rawUrl);
     if (!m) return IntegrationBroker.sendError(res, 404, 'not_found', 'expected /i/<integrationId>/<path>');
     let integrationId: string;
     try {
@@ -305,6 +309,10 @@ export class IntegrationBroker {
     const rec = this.deps.getRecord(integrationId);
     if (!rec) return IntegrationBroker.sendError(res, 404, 'not_found', 'unknown integration');
     if (!rec.enabled) return IntegrationBroker.sendError(res, 403, 'forbidden', 'integration is disabled');
+    // A saved call is the only way in, and only a saved call takes the route.
+    const name = rec.label || integrationId;
+    if (rec.call && !savedRoute) return IntegrationBroker.sendError(res, 400, 'saved_call', `${name} takes only a message: call it with message, and leave out method, path and body.`);
+    if (savedRoute && !rec.call) return IntegrationBroker.sendError(res, 400, 'no_saved_call', `${name} has no saved call: use method and path, not message.`);
     // 5b) An app that asked to slow down is not called until its time is up: a
     //     short wait is held here (the call runs again then), a long one is
     //     answered now.
@@ -312,6 +320,12 @@ export class IntegrationBroker {
     if (wait > HOLD_MAX_MS) return IntegrationBroker.sendThrottled(res, rec.label || integrationId, wait);
     if (wait > 0) {
       setTimeout(() => { if (!req.destroyed && !res.writableEnded) this.handle(req, res); }, wait);
+      return;
+    }
+
+    // Read here, after any hold above: a held call runs this again on the same request.
+    if (rec.call) {
+      void this.callSaved(req, res, rec, rec.call, name);
       return;
     }
 
@@ -370,6 +384,28 @@ export class IntegrationBroker {
     }
   }
 
+  /** One saved call: the agent's message goes in, the app builds the request.
+   *  It goes out every time (owner, 2026-11-02), so it skips the write journal,
+   *  and either access level may send it. */
+  private async callSaved(req: IncomingMessage, res: ServerResponse, rec: IntegrationRecord, call: SavedCall, name: string): Promise<void> {
+    if (req.method !== 'POST') return IntegrationBroker.sendError(res, 405, 'method', 'use POST');
+    let message: unknown;
+    try { message = (JSON.parse((await readBodyCapped(req, MAIL_BODY_MAX)).toString('utf8')) as { message?: unknown } | null)?.message; }
+    catch { return IntegrationBroker.sendError(res, 400, 'bad_request', 'body must be JSON, 1 MB at most'); }
+    if (typeof message !== 'string' || !message.trim()) return IntegrationBroker.sendError(res, 400, 'bad_request', 'Send message as text, not blank.');
+    const filled = fillSavedCall(call, message);
+    if (!filled) return IntegrationBroker.sendError(res, 500, 'saved_call_damaged', `The saved call on ${name} is damaged. Tell Michael.`);
+    const upstream = resolveUpstreamUrl(rec.baseUrl, filled.path);
+    if (!upstream) return IntegrationBroker.sendError(res, 400, 'bad_request', 'This message leaves the saved address, so it was not sent.');
+    let secret: string | undefined;
+    if (authTypeNeedsSecret(rec.authType)) {
+      secret = this.deps.getSecret(rec.secretRef);
+      if (!secret) return IntegrationBroker.sendError(res, 503, 'no_secret', 'no secret configured for this integration');
+    }
+    const headers: Record<string, string> = { 'user-agent': DEFAULT_USER_AGENT, ...(filled.body === undefined ? {} : { 'content-type': 'application/json' }), ...buildAuthHeaders(rec.authType, rec.authHeader, secret) };
+    await this.streamUpstream(res, rec, upstream, filled.method, headers, filled.body === undefined ? undefined : Buffer.from(filled.body));
+  }
+
   private async forward(
     req: IncomingMessage,
     res: ServerResponse,
@@ -423,14 +459,18 @@ export class IntegrationBroker {
       await this.forwardWrite(res, upstream, outHeaders, method, body ?? Buffer.alloc(0), agentId, integrationId, pathAndQuery);
       return;
     }
+    await this.streamUpstream(res, rec, upstream, method, outHeaders, body);
+  }
 
+  /** Send once to the service and stream its answer back. */
+  private async streamUpstream(res: ServerResponse, rec: IntegrationRecord, upstream: URL, method: string, headers: Record<string, string>, body: Buffer | undefined): Promise<void> {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), this.upstreamTimeoutMs);
     let upstreamRes: Response;
     try {
       upstreamRes = await this.fetchImpl(upstream, {
         method,
-        headers: outHeaders,
+        headers,
         body: body as BodyInit | undefined,
         redirect: 'manual',
         signal: ac.signal

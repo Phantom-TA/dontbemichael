@@ -377,3 +377,35 @@ test('a breaker trip is reported with what the breaker knew', () => {
   assert.match(src, /engineVersionFor: \(agentId\) => \(failureEngineFor\(agentId\) === 'claude' \? lastClaudeCliVersion\(\) : null\)/);
   assert.match(src, /breaker\.recordError\(agentId, querySource, statusCode\)/);
 });
+
+test('a main crash or rejection with no app frame says where it came from and what it was (issue 675)', () => {
+  // Value: protects=frame-less main failures can be told apart, with nothing from the owner's folders; fails_when=origin or reason is dropped, a path outside the bundle names a package, or the handlers stop sending it; why_new=issue 675 grouped every such failure under one fingerprint with nothing to trace; seam=none
+  const F = loadTs('src/shared/failureReport.ts');
+  const asar = '/Applications/Don\'t Be Michael.app/Contents/Resources/app.asar';
+  const at = (p) => `Error: boom\n    at ${p}`;
+  assert.equal(F.errorOrigin(at('process.processTicksAndRejections (node:internal/process/task_queues:95:5)')), 'node');
+  assert.equal(F.errorOrigin(at('Object.<anonymous> (node:electron/js2c/browser_init:2:113)')), 'electron');
+  assert.equal(F.errorOrigin(at(`ImapFlow.connect (${asar}/node_modules/imapflow/lib/imap-flow.js:812:23)`)), 'pkg:imapflow');
+  assert.equal(F.errorOrigin(at(`${asar}/node_modules/@scope/Lib/x.js:1:2`)), 'pkg:@scope/lib');
+  assert.equal(F.errorOrigin(at(`run (${asar}/out/main/index.js:10:3)`)), 'app');
+  assert.equal(F.errorOrigin(at('x (/Users/bob/secret-project/node_modules/thing/a.js:1:1)')), 'other', 'outside the bundle names nothing');
+  assert.equal(F.errorOrigin('just text'), 'none');
+  assert.equal(F.errorOrigin(undefined), 'none');
+  assert.deepEqual([new Error('x'), 'x', {}, undefined, null, 5].map(F.reasonKind), ['error', 'string', 'object', 'none', 'none', 'other']);
+  const e = new Error('Connection not available');
+  e.stack = at(`ImapFlow.connect (${asar}/node_modules/imapflow/lib/imap-flow.js:812:23)`);
+  const { r, files } = make();
+  r.reportFailure('main-rejection', e, { context: F.crashContextFor(e) });
+  r.reportFailure('main-uncaught', 'thrown text', { context: { ...F.crashContextFor('thrown text'), origin: 'pkg:/Users/bob' } });
+  r.flush();
+  const rows = ledger(files);
+  const rej = rows.find((x) => x.kind === 'main-rejection');
+  assert.deepEqual([rej.frames, rej.context.origin, rej.context.reason], [[], 'pkg:imapflow', 'error']);
+  const unc = rows.find((x) => x.kind === 'main-uncaught');
+  assert.equal(unc.context.reason, 'string');
+  assert.equal('origin' in unc.context, false, 'a value outside the pattern is dropped');
+  assert.equal(F.fingerprintInput('main-rejection', 'none', 'Error', []), 'main-rejection\nnone\nError', 'the context stays out of the fingerprint, so issue 675 keeps collecting');
+  const src = read('src/main/index.ts');
+  assert.match(src, /failures\.reportFailure\('main-uncaught', err, \{ context: crashContextFor\(err\) \}\);/);
+  assert.match(src, /failures\.reportFailure\('main-rejection', reason, \{ context: crashContextFor\(reason\) \}\);/);
+});

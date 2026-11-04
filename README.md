@@ -41,9 +41,9 @@ runs on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.3.4: Give one team member access to one outside service.**
-> Team members save email attachments to their own folder and hand files over by asking. In 0.3.3,
-> Michael starts on an older Claude Code.
+> **New in 0.3.5: Get featured with a case study of your office.**
+> Pulse builds a customer story page in your own brand. In 0.3.4, one team member gets access to
+> one outside service.
 
 ## Contents
 
@@ -250,16 +250,16 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 - **Schedules.** Each team member's jobs on a clock live in the On a schedule section of its Access tab. Say when and which job ("Follow up on unpaid invoices", every weekday at 9), and the team member does it the way its Work style says. One job can have several "when" lines, like every 2 hours on weekdays plus 2 pm on weekends. A team member can ask for a schedule change; Michael decides it, and asks you on Needs you only when he can't settle it. Michael's Office schedule tab lists every job that is on.
 - **A mailbox for each team member.** Connect Gmail, Google Workspace, iCloud, Yahoo, Zoho or any other IMAP mailbox with an app password in Settings, Connections, Mailboxes. The password is tested before it is saved and stays encrypted on your computer. Then add it on a team member's Access tab to watch its inbox, and choose Can send, Send on approval or Draft only. Each mailbox has one team member watching it; others can be added to send only from it. Outlook is not supported yet.
 - **Claude connectors.** Settings, Connections, Claude connectors lists every connector on your Claude account (HubSpot, Google Drive, Gmail, QuickBooks and the rest), read from Claude by itself. Each is off until you turn it on; then give it to the team members who need it on their Access tab. QuickBooks keeps Read only or Can make changes, and Oscar starts on and Read only. Your own Claude Code servers, plugin servers included, never reach the team.
-- **Integrations.** Add an outside service with a custom REST integration in Settings. Nobody has it until you give it to a team member on its Access tab, as Read only or Can change, and taking it away holds on the next call. The app keeps the key. For team members on Claude.
+- **Integrations.** Add an outside service with a custom REST integration in Settings. Nobody has it until you give it to a team member on its Access tab, as Read only or Can change, and taking it away holds on the next call. The app keeps the key. A connection can hold one saved call: the team member sends only its words, and the app builds the request. For team members on Claude.
 - **Every team member's panel.** Profile first (the job, its folder and the instructions it works from), then Access (email, Claude connectors, integrations and schedules), Messages as a day by day history, Memory as readable notes, and Work, its session live.
-- **Office, Tasks, Pulse, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, Pulse (what the office got done and what each team member costs, with ways to save that change nothing until you click Apply), and who talks to whom. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these. Word, Excel, PowerPoint and PDF files show their words in a tab too, with Open in app for the file itself. A team folder named on a card opens that folder.
+- **Office, Tasks, Pulse, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, Pulse (what the office got done and what each team member costs, with ways to save that change nothing until you click Apply), and who talks to whom. Get featured in Pulse builds a case study page of your office in your own brand, for you to send us. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these. Word, Excel, PowerPoint and PDF files show their words in a tab too, with Open in app for the file itself. A team folder named on a card opens that folder.
 - **Webhooks.** Another app sends a webhook (set it up in Settings, Connections) and Michael picks it up; the sender can check on the work and get its result.
 - **A fresh start without losing work.** A team member that has sat idle with a long conversation writes a handoff of anything unfinished, then starts fresh. You can bring the old conversation back.
 
 **Your business, known to everyone**
 - **Company profile.** Your business name, owner, address, hours, time zone, currency and more, given to every team member. Change it in Settings.
 - **Company knowledge.** Add your documents and policies in Memory & Knowledge: Word, Excel, PowerPoint, PDF, and scans or photos (on a Mac or a Windows PC). Every team member can search them by words, and by meaning when MemPalace is installed, so "money back" finds your refund policy. Open one to read or change it in your own app; when you save, the team searches the new version.
-- **Company foundations.** One document of what each job needs to know about your business, such as who you sell to or your financial year. When a team member's work needs an answer that is still empty, Michael asks you for it on Needs you, weekly until it is answered, and what you teach the team fills it in too.
+- **Company foundations.** One document of what each job needs to know about your business, such as who you sell to or your financial year. When a team member's work needs an answer that is still empty, Michael asks you for it on Needs you, weekly until it is answered, and what you teach the team fills it in too. A list, such as your customers or every place money comes in and goes out, stays open until you save it as the whole list, and anything the team's work saw that is missing from it waits on its card for you to add, mark Not ours or decide later.
 
 **Private folders**
 - Michael works in your business folder, and each team member works in its own folder inside it.
@@ -317,6 +317,10 @@ follow.
   trust layer that keeps out the kinds of data you mark private in Settings, Research & privacy,
   and their answers are cleaned of instructions before your team reads them. They see none of your
   files, and they are off until you turn them on. On Windows, they can still reach your office files.
+  The one exception: when you start your case study, the app reads your logo from your own website.
+- **A case study, only if you send it.** Pulse can build a case study page of your office for
+  our website. It goes out only when you press Send, from your own mailbox, after you agree we may
+  publish it and take it down if you ask. See [`TELEMETRY.md`](./TELEMETRY.md#case-studies-you-send-us).
 - **No usage data.** The app sends nothing about how you use it. Failures the developers can fix
   in code (a crash, a team member stuck in a loop) are reported automatically, as fixed fields with
   no names, messages or files, so they get fixed. See [`TELEMETRY.md`](./TELEMETRY.md).
@@ -364,8 +368,8 @@ Setup offers only Claude Code, signed in with a Claude account or an Anthropic A
 still carries presets for other agent CLIs (Codex, Gemini, Antigravity, Grok, Kimi, Qwen, OpenCode, Crush, pi,
 Copilot and Cursor), API keys for other providers and local models,
 but this build doesn't offer them. Some developer features are switched off because business
-owners don't use them: git views, the built in code editor, temporary helper agents, voice, and
-opening a Terminal in an agent's folder. Each one has a switch in
+owners don't use them: git views, the built in code editor, temporary helper agents, voice, the
+Skills page in Settings (skills keep working), and opening a Terminal in an agent's folder. Each one has a switch in
 [`src/shared/buildFeatures.ts`](./src/shared/buildFeatures.ts).
 
 ## Contributing

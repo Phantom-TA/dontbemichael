@@ -1,4 +1,4 @@
-- **Give one member one service** with custom integrations.
-- **Team members save email attachments** and pass files by asking.
-- Word, Excel, PowerPoint and PDF files open in an office tab.
-- The dock folds older messages behind the latest exchange.
+- **Get featured** with a case study of your office.
+- **A saved call** for a custom REST connection.
+- Foundation lists stay open until you say that's all.
+- A first click on an email opens it.

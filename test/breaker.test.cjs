@@ -543,4 +543,32 @@ test('a trip hands the report what the breaker knew: limit, its source, the erro
   assert.equal(b.diagnosis('a', 'repeat').tool, 'Read');
 });
 
+// ── issue 674: beats the Mac's sleep spread apart are not consecutive ───────
+
+test('a sleeping Mac waking for a moment every 15 minutes never steers or holds a member', () => {
+  // Value: protects=a member is not held back, and no loop-agent report is sent, because the Mac slept; fails_when=beats far apart count as consecutive; why_new=issue 674: the steer and the constrain each ran in a 2 second dark wake, 908 s apart (pmset log, 2026-11-01); seam=none
+  const b = makeBreaker();
+  const NAP = 15 * 60_000;
+  let out = 0;
+  for (let i = 0; i < 6; i++) {
+    const now = T0 + i * NAP;
+    // Each wake finds output written since the last one, and every progress clock stale.
+    const d = beat(b, 'pam', sample('pam', now, out), false, now);
+    out += 800;
+    assert.equal(d.state.level, 'healthy', `wake ${i}: ${d.state.reason}`);
+    assert.equal(d.action, 'none');
+  }
+});
+
+test('after a gap, a member still burning tokens with no progress trips once beats run again', () => {
+  // Value: protects=the gap only starts the run over, so a member truly stuck after the Mac wakes is still caught; fails_when=a gap blinds the arm; why_new=issue 674; seam=none
+  const b = makeBreaker();
+  beat(b, 'a', sample('a', T0, 0), false, T0);
+  const woke = T0 + 20 * 60_000;
+  assert.equal(beat(b, 'a', sample('a', woke, 500), false, woke).state.level, 'healthy', 'the beat after the gap starts a new run');
+  const d = beat(b, 'a', sample('a', woke + BEAT, 1000), false, woke + BEAT);
+  assert.equal(d.state.level, 'steering', `reason: ${d.state.reason}`);
+  assert.match(d.state.reason, /no-progress/);
+});
+
 process.exit(failures ? 1 : 0);

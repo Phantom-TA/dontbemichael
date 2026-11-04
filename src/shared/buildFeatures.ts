@@ -157,6 +157,12 @@ export const SHOW_MCP_DEFAULTS = false;
  *  member is the form alone. The import code stays for when it comes back. */
 export const SHOW_IMPORT_HIRE = false;
 
+/** Settings → Skills: the installed list and the catalog. Business owners have
+ *  no known use for it from the app (owner, 2026-11-02). Bundled and installed
+ *  skills keep working for every member. To bring it back, also add `skills`
+ *  to PLACE_SECTIONS (settingsPlaces.ts). */
+export const SHOW_SKILLS = false;
+
 /** The hire wizard's engine chips and raw command line: developer options. A
  *  business owner picks only Best or Fast (hire redesign D3, owner 2026-09-27);
  *  every hire runs on the engine set in Settings. */

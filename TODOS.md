@@ -263,6 +263,22 @@ Go with it: keep only the owner's own words (the answer, the edit, the note) in 
 
 ## Company foundations (deferred from the ship of mit/file-tab-no-bottom-bar, 2026-10-20)
 
+### See and put back a foundation answer's past versions
+
+**What:** A screen, beside the owner's foundations form when it comes, listing each question's past answers (text, coverage, from when, recorded when, by whom), with a way to put one back.
+
+**Why:** The foundation answers design keeps every past answer (part 6, owner 2026-11-03), but nothing shows them, so a wrong change to a list such as the bank and card accounts cannot be spotted or undone from the app.
+
+**Pros:** The owner can check what changed, when and who changed it, and undo a bad change without asking Michael.
+
+**Cons:** A new screen with its own design and tests; it belongs with the owner's foundations form, which is itself later work.
+
+**Context:** `docs/designs/foundation-answers-stay-open.md` (part 6 and the eng review, D8). The history lives in `foundations.json`, written only by `src/main/foundations.ts`; the renderer reads `view()` today, which should not carry history to members.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P3
+**Depends on:** The foundation answers build (docs/designs/foundation-answers-stay-open.md)
+
 ### Ordinary Ask me cards take a file
 
 **What:** A member's own question in Needs you (an ordinary Ask me card) gets the same Add a file as a Company foundations card; the file goes to the asking member by path, the way a message attachment does.

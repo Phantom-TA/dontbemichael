@@ -320,7 +320,11 @@ any kind may carry `role` (`michael`, `member`, `research`) and `uptime`;
 `hardStop`, `sinceTool`, `tool` (Claude Code's own tool names, else `mcp` or
 `other`, because an MCP tool names a server that can be the owner's), and for
 an error storm `codes` (up to five HTTP statuses), `errorSpan` and
-`sinceSuccess`. Times are bands only (`under-1m`, `1-5m`, `5-15m`, `15-60m`,
+`sinceSuccess`. `main-uncaught` and `main-rejection` add `origin`, where the
+error's first stack frame is (`node`, `electron`, `app`, `pkg:<name>` for one of
+the app's packages inside the bundle, `other`, or `none` with no stack), and
+`reason`, what was thrown (`error`, `string`, `object`, `none`, `other`), so a
+failure with no app frame can be told apart (issue 675). Times are bands only (`under-1m`, `1-5m`, `5-15m`, `15-60m`,
 `1-4h`, `over-4h`, `never`). Context is rendered as `context.<key>` rows, is
 not in the fingerprint (a failure groups the same whatever its context), and a
 bad entry is dropped by the app rather than losing the report; the validator

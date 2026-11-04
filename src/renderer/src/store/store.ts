@@ -250,6 +250,12 @@ interface State {
   /** Files opened from a reply or an Ask me card, as tabs after Who talks to
    *  whom (docs/designs/open-file-tab.md). Never saved. */
   fileTabs: FileTab[];
+  /** The case study (docs/designs/case-study.md): prepared in main in the
+   *  background, and whether its screen is open over Pulse. */
+  caseStudyPrep: 'idle' | 'preparing' | 'ready';
+  caseStudyOpen: boolean;
+  setCaseStudyPrep: (state: 'idle' | 'preparing' | 'ready') => void;
+  setCaseStudyOpen: (open: boolean) => void;
   /** The file tab shown while `floorView` is 'file'. */
   activeFileTab: string | null;
   /** The fixed view the owner was on, to go back to when the last file tab closes. */
@@ -1076,6 +1082,10 @@ export const useStore = create<State>((set, get) => ({
   prefersFocusMode: initialPrefersFocusMode,
   floorView: initialFloorView,
   fileTabs: [],
+  caseStudyPrep: 'idle',
+  caseStudyOpen: false,
+  setCaseStudyPrep: (caseStudyPrep) => set({ caseStudyPrep }),
+  setCaseStudyOpen: (caseStudyOpen) => set({ caseStudyOpen }),
   activeFileTab: null,
   lastFixedView: initialFloorView === 'tasks' || initialFloorView === 'graph' || initialFloorView === 'pulse' ? initialFloorView : 'office',
   ideInitialFile: null,

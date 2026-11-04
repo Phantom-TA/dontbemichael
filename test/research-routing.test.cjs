@@ -1433,3 +1433,49 @@ test('a checked note that reached Research is never sent twice when a step after
   assert.equal(hive.researchWaiting(), 1, 'only the delivered copy waits');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'private', 'research-pending.json'), 'utf8')), []);
 });
+
+test('once Research\'s answer is sent, the app moves the question it answers to inbox/.done; nothing else moves', async (t) => {
+  // Value: protects=Research never answers the same question twice when it can't move files itself (its commands are refused on Windows, PR 517); fails_when=the app leaves an answered question in the inbox, moves one that wasn't answered, or moves a file it did not deliver; why_new=PR 517 review; seam=fake layer
+  const layer = fakeLayer({ outbound: (m) => (/blocked/.test(String(m.body)) ? { decision: 'deny', reason: 'private' } : { decision: 'pass', subject: String(m.subject), body: String(m.body), flagged: false }) });
+  const { hive } = await office(t, { layer });
+  const first = await askFrom(hive, 'pam');
+  const second = await askFrom(hive, 'god');
+  const inbox = path.join(hive.root(), 'agents', 'research', 'inbox');
+  const done = path.join(inbox, '.done');
+  assert.ok(fs.existsSync(path.join(inbox, `${first}.json`)) && fs.existsSync(path.join(inbox, `${second}.json`)));
+  send(hive, 'research', { to: 'pam', in_reply_to: first, act: 'inform', subject: 'Trends', body: 'Thin crust is up.' });
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.ok(msgsIn(hive, 'pam').some((m) => m.subject === 'Trends'), 'the answer went out');
+  assert.ok(!fs.existsSync(path.join(inbox, `${first}.json`)), 'the answered question left the inbox');
+  assert.ok(fs.existsSync(path.join(done, `${first}.json`)), 'into the handled copies');
+  assert.ok(fs.existsSync(path.join(inbox, `${second}.json`)), 'the unanswered one stays');
+  // A refused answer was not sent: its question stays for Research to try again.
+  send(hive, 'research', { to: 'god', in_reply_to: second, act: 'inform', subject: 'Trends', body: 'blocked words' }, 'm2.json');
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.ok(fs.existsSync(path.join(inbox, `${second}.json`)), 'a refused answer moves nothing');
+  // A note to Michael naming Pam's other question is sent, but leaves that question waiting.
+  const third = await askFrom(hive, 'pam');
+  send(hive, 'research', { to: 'god', in_reply_to: third, act: 'inform', subject: 'Problem', body: 'This one needs the owner.' }, 'm3.json');
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.ok(fs.existsSync(path.join(inbox, `${third}.json`)), 'only an answer to the asker clears a question');
+  // Michael's own question, answered to a name for him, is cleared.
+  const fromMichael = await askFrom(hive, 'god');
+  send(hive, 'research', { to: 'michael', in_reply_to: fromMichael, act: 'inform', subject: 'For Michael', body: 'Here it is.' }, 'm4.json');
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.ok(!fs.existsSync(path.join(inbox, `${fromMichael}.json`)), 'an answer to Michael by any of his names clears his question');
+  // An id that names no delivery of the app's, or a path, moves nothing.
+  for (const bad of ['../../god/inbox/x', 'nope']) {
+    send(hive, 'research', { to: 'god', in_reply_to: bad, act: 'inform', subject: 'Other', body: 'Answer.' }, `m-${bad.length}.json`);
+    hive.routeOnce(); await tick(); hive.routeOnce();
+  }
+  assert.ok(fs.existsSync(path.join(inbox, `${second}.json`)));
+  assert.deepEqual(fs.readdirSync(done).filter((f) => f.endsWith('.json')).sort(), [`${first}.json`, `${fromMichael}.json`].sort());
+});
+
+test('Research is told the app moves an answered message, not to move it itself', () => {
+  // Value: protects=Research isn't sent to do a move its tools can't make on Windows; fails_when=the instruction asks Research to move the file again; why_new=PR 517 review; seam=none
+  const { researchInstructions } = loadTs('src/main/hive.ts');
+  const text = researchInstructions({ name: 'Harbor Bakery' }, 'Michael', { inbox: '/r/inbox', inboxDone: '/r/inbox/.done', outbox: '/r/outbox', protocol: '/h/PROTOCOL.md', hiveRoot: '/h' });
+  assert.match(text, /once your answer to it is sent, the app moves it to \/r\/inbox\/\.done/);
+  assert.doesNotMatch(text, /then move it to/);
+});

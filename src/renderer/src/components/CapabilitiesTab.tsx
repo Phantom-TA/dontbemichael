@@ -519,7 +519,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
                       options={[{ value: 'off', label: t('capabilities.integrationNone') }, { value: 'read', label: t('capabilities.booksReadOnly') }, { value: 'change', label: t('capabilities.integrationCanChange') }]}
                       onChange={(v) => { if (v !== (level ?? 'off')) void setIntegration(r.id, v === 'off' ? null : v as IntegrationLevel); }}
                     />
-                    <InfoTip label={t('capabilities.integrations')} text={t('capabilities.integrationLevelsInfo', { name })} />
+                    <InfoTip label={t('capabilities.integrations')} text={r.call ? t('capabilities.integrationSavedCallInfo', { name }) : t('capabilities.integrationLevelsInfo', { name })} />
                   </div>
                 );
               })}

@@ -24,7 +24,7 @@ import { extractDocumentTextApart } from './docTextProcess';
 import { AttachmentSaveError, handOverAttachment } from './attachmentSave';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, namedFolders, readFoldersFor, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, jobsAsking, knowledgeNoticeDue, michaelFoundations, namedFolders, readFoldersFor, sectionFor, settledAnswers, type FoundationId, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -35,12 +35,14 @@ import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
 import { sweepIsolatedLeftovers } from './isolatedSweep';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
+import { agentAccessSummary } from '../shared/agentAccess';
+import { decodeCaseLogo, drawCaseSvg } from './caseLogoImage';
 import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_WORK_STYLE } from '../shared/research';
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
   readConfig, damagedConfigCopy, writeConfig, setAgentTokenCap, resetConfig, onConfigWritten, ensureHarnessHome, ensureClaudePermissionsAccepted, approveClaudeApiKey,
-  modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, heartbeatMessage, COMPACT_MAINTENANCE_MISSION, FOUNDATIONS_CHECK_MISSION, type HarnessConfig, type ScheduledMission
+  modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, heartbeatMessage, COMPACT_MAINTENANCE_MISSION, FOUNDATIONS_CHECK_MISSION, FOUNDATIONS_CHECK_BUILT_IN_FOCUSES, FOUNDATIONS_CHECK_FOCUS, type HarnessConfig, type ScheduledMission
 } from './config';
 import { terminalLaunches } from './terminalAtFolder';
 import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileByName, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
@@ -125,10 +127,13 @@ import { TelemetryCollector } from './telemetry';
 import { CostLedgerTotals } from './costLifetime';
 import { RUN_COMPARE_MODEL, RUN_COMPARE_TIMEOUT_MS, RunCompare } from './runCompare';
 import { runHiddenModel } from './hiddenModel';
+import { CASE_DRAFT_TIMEOUT_MS, CaseStudyService, caseInput, savePaths } from './caseStudy';
+import { readSiteLogo } from './siteLogo';
+import type { CaseFont } from '../shared/caseStudy';
 import { CostLedgerStore } from './costLedger';
 import { analytics, dntSet, isRendererMessageSurface } from './analytics';
 import { createFailureReporter, FLUSH_MS } from './failureReport';
-import { breakerArm, loopAgentContext, loopAgentDetail } from '../shared/failureReport';
+import { breakerArm, crashContextFor, loopAgentContext, loopAgentDetail } from '../shared/failureReport';
 import { createFailureSender, SEND_EVERY_MS } from './failureSender';
 
 /** The failure reports key (docs/designs/auto-report-failures.md): injected by
@@ -152,10 +157,10 @@ import { claudeBinFor, readClaudeMcpList } from './claudeMcpList';
 import { INTEGRATIONS_MCP_SERVER, connectorCarryOver, isEmailCalendarKey, isMailConnectorKey, isQuickBooksKey, renamedKeys, spawnConnectorPlan, usableConnectors, type SpawnConnectorPlan } from '../shared/claudeConnectors';
 import { quickbooksAccessToSave } from '../shared/quickbooks';
 import { emailCalendarAllowed } from '../shared/mcpCatalog';
-import { agentIntegrations, hasIntegrationTools, integrationLevel, validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, withIntegrationLevel, withoutIntegration, INTEGRATION_TEMPLATES } from '../shared/integrations';
+import { agentIntegrations, fillSavedCall, hasIntegrationTools, integrationLevel, validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, withIntegrationLevel, withoutIntegration, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
 import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
-import { CHECK_FOLDERS, RUN_COMPARE_DIR, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
+import { CASE_STUDY_DIR, CHECK_FOLDERS, RUN_COMPARE_DIR, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
 import { autoMemoryFolders, eraseMemoryTargets, foldersFromRoster, gitTopOf, idsFromCostRows, idsFromRecord, memberIdsIn, memoryResetTargets } from './memoryReset';
 import { groupMembers, hardKillTree, isAlive, KILL_GRACE_MS, snapshotRemains } from './procKill';
 import { buildWorkerLaunch } from './workerLaunch';
@@ -286,11 +291,12 @@ if (AUTO_FAILURE_REPORTS && __REPORT_KEY__ && !dntSet()) {
 // Each one is also an automatic failure report (docs/designs/auto-report-failures.md).
 process.on('uncaughtException', (err) => {
   console.error('[main] uncaughtException (kept alive):', err);
-  failures.reportFailure('main-uncaught', err);
+  failures.reportFailure('main-uncaught', err, { context: crashContextFor(err) });
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[main] unhandledRejection (kept alive):', reason);
-  failures.reportFailure('main-rejection', reason);
+  // Where it came from and what it was, so one with no app frame can be told apart (issue 675).
+  failures.reportFailure('main-rejection', reason, { context: crashContextFor(reason) });
 });
 
 const ptyManager = new PtyManager();
@@ -886,8 +892,32 @@ const foundations = new Foundations({
     const team = [...(cfg.businessTeam ?? []).map((m) => m.folder),
       ...Object.values(hive.registry().agents).filter((a) => !a.isGod && !a.isAssistant && a.cwd).map((a) => a.cwd)];
     return { userHome: homedir(), business: cfg.businessFolder ? expandTilde(cfg.businessFolder) : undefined, team: team.filter((f): f is string => typeof f === 'string' && !!f).map(expandTilde) };
-  }
+  },
+  reportsFor: (id, since) => foundationReports(id, since)
 });
+/** App upkeep replies a member sends Michael, never a report (eng review,
+ *  outside voice 3): closing time and the like. */
+const UPKEEP_SUBJECT = /^(?:CLOSING-TIME|Re:\s*(?:Heartbeat|Circuit breaker|Company foundations|Office open))/i;
+/** The reports a list's change may undo (R7): every done or inform sent to
+ *  Michael since `since` by a member whose job uses the question, newest
+ *  first, from the hive log. */
+function foundationReports(id: FoundationId, since: number): Array<{ from: string; subject: string; at: number }> {
+  const team = foundationsTeam();
+  const asking = jobsAsking(id);
+  const members = new Set(Object.keys(team.jobs).filter((m) => (team.jobs[m] ?? []).some((j) => asking.includes(j))));
+  if (!members.size) return [];
+  const reg = hive.registry();
+  const godId = reg.godId ?? 'god';
+  const toMichael = (to: unknown): boolean => typeof to === 'string' && (to === godId || to === 'god' || to.toLowerCase() === 'michael' || to === 'human');
+  const out: Array<{ from: string; subject: string; at: number }> = [];
+  for (const e of hive.logTail(5000, 'message', since) as Array<Record<string, unknown>>) {
+    const from = e.from, subject = typeof e.subject === 'string' ? e.subject : '';
+    if (typeof from !== 'string' || !members.has(from) || (e.act !== 'done' && e.act !== 'inform') || !toMichael(e.to)) continue;
+    if (!subject || UPKEEP_SUBJECT.test(subject) || typeof e.ts !== 'number') continue;
+    out.push({ from, subject, at: e.ts });
+  }
+  return out.reverse();
+}
 /** The folders the owner named on a Company foundations card that this
  *  member's job uses (eng review 2026-10-26, D1): read only, even inside the
  *  business folder. Every other member keeps today's rules (D2). */
@@ -965,7 +995,8 @@ const pulse = new PulseService({
   office: pulseOffice,
   members: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived && !a.isAssistant).map(([id, a]) => ({ id, isGod: !!a.isGod })),
   memberJobs: () => foundationsTeam().jobs,
-  foundationsAnswers: () => foundations.read().answers,
+  // Only what counts as answered: a list known so far is missing (R3).
+  foundationsAnswers: () => settledAnswers(foundations.read(), Date.now()),
   godId: () => hive.registry().godId ?? null,
   tasks: () => { const t = hive.tasks() as { tasks?: unknown }; return Array.isArray(t?.tasks) ? (t.tasks as never) : []; },
   missions: () => readConfig().missions ?? [],
@@ -2219,8 +2250,8 @@ function ensureDefaultMissions(): void {
   // The standup's focus area (schedule-focus-areas.md F6), in one pass. Once,
   // for offices made before focus areas, a standup with no focus and no prompt
   // of the owner's gets the built-in one; and a standup still carrying an
-  // earlier built-in focus word for word gets the current one. The owner's own
-  // text is never replaced.
+  // earlier built-in focus word for word gets the current one, as does the
+  // Foundations check. The owner's own text is never replaced.
   const cfg6 = readConfig();
   const seed = !cfg6.standupFocusSeeded;
   const standupFocus = (m: ScheduledMission): ScheduledMission => {
@@ -2228,8 +2259,10 @@ function ensureDefaultMissions(): void {
     if (seed && !m.focus && !(m.body ?? '').trim()) return { ...m, focus: OPS_STANDUP_FOCUS };
     return m.focus && OPS_STANDUP_BUILT_IN_FOCUSES.includes(m.focus) ? { ...m, focus: OPS_STANDUP_FOCUS } : m;
   };
+  const foundationsFocus = (m: ScheduledMission): ScheduledMission =>
+    (m.id === FOUNDATIONS_CHECK_MISSION.id && m.focus && FOUNDATIONS_CHECK_BUILT_IN_FOCUSES.includes(m.focus) ? { ...m, focus: FOUNDATIONS_CHECK_FOCUS } : m);
   const before = cfg6.missions ?? [];
-  const after = before.map(standupFocus);
+  const after = before.map(standupFocus).map(foundationsFocus);
   if (seed || after.some((m, i) => m !== before[i])) {
     writeConfig({ missions: after, ...(seed ? { standupFocusSeeded: true } : {}) });
   }
@@ -5150,14 +5183,17 @@ ipcMain.handle('integrations:test', async (_evt, payload: unknown) => {
   // absolute URL / backslash-host / traversal in p.path can't override the origin and
   // exfiltrate the secret to an attacker host. Resolve (and reject) BEFORE the secret
   // is ever materialized, so a bad path never even decrypts it.
-  const target = resolveUpstreamUrl(rec.baseUrl, typeof p.path === 'string' ? p.path : '');
+  // A saved call is tested as an agent sends it: the base URL may answer only to it.
+  const saved = rec.call ? fillSavedCall(rec.call, 'Test message') : null;
+  if (rec.call && !saved) return { ok: false, error: 'the saved call is damaged' };
+  const target = resolveUpstreamUrl(rec.baseUrl, saved ? saved.path : typeof p.path === 'string' ? p.path : '');
   if (!target) return { ok: false, error: 'path escapes the integration baseUrl', code: 'bad_request' };
   const secret = integrations.getSecret(rec.secretRef);
-  const headers = buildAuthHeaders(rec.authType, rec.authHeader, secret);
+  const headers = { ...buildAuthHeaders(rec.authType, rec.authHeader, secret), ...(saved?.body === undefined ? {} : { 'content-type': 'application/json' }) };
   try {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 15_000);
-    const r = await fetch(target, { method: 'GET', headers, redirect: 'manual', signal: ac.signal });
+    const r = await fetch(target, { method: saved?.method ?? 'GET', headers, body: saved?.body, redirect: 'manual', signal: ac.signal });
     clearTimeout(timer);
     return { ok: r.ok, status: r.status };
   } catch (e) {
@@ -7368,7 +7404,9 @@ ipcMain.handle('pulse:organized', (_evt, fromMs: unknown, toMs: unknown, agentId
 // Company foundations (office-foundations.md): the foundation card reads the
 // record and writes the owner's answer, a draft request or Not now.
 ipcMain.handle('foundations:get', () => foundations.view());
-ipcMain.handle('foundations:answer', (_evt, id: unknown, text: unknown) => foundations.ownerAnswer(id, text));
+ipcMain.handle('foundations:answer', (_evt, id: unknown, text: unknown, added: unknown) => foundations.ownerAnswer(id, text, added));
+// A seen item on a list card: Not ours, Decide later and their undos.
+ipcMain.handle('foundations:seen', (_evt, id: unknown, seenId: unknown, action: unknown) => foundations.seenAction(id, seenId, action));
 // A file from a foundation card: one picked here, or dropped on the card.
 ipcMain.handle('foundations:pickFile', async (evt) => {
   const win = BrowserWindow.fromWebContents(evt.sender);
@@ -7388,8 +7426,8 @@ ipcMain.handle('foundations:pickFolder', async (evt) => {
   return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
 });
 ipcMain.handle('foundations:checkFolder', (_evt, id: unknown, path: unknown) => foundations.checkFolder(id, path));
-ipcMain.handle('foundations:answerFolder', (_evt, id: unknown, path: unknown, words: unknown) => foundations.answerFolder(id, path, words));
-ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown) => foundations.answerFile(id, docId, words));
+ipcMain.handle('foundations:answerFolder', (_evt, id: unknown, path: unknown, words: unknown, added: unknown) => foundations.answerFolder(id, path, words, added));
+ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown, added: unknown) => foundations.answerFile(id, docId, words, added));
 ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
 ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
@@ -7451,6 +7489,161 @@ const runCompare = new RunCompare({
   tellMichael: (subject, body) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body }, 'system'); },
   log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
 });
+// The case study (docs/designs/case-study.md): the owner's one page to send us.
+// Its fonts ship beside the main bundle (electron.vite.config.ts), so the
+// screen's preview and the PDF draw the same faces.
+let caseFonts: CaseFont[] | null = null;
+function caseStudyFonts(): CaseFont[] {
+  if (caseFonts) return caseFonts;
+  const face = (family: string, file: string, weight: string): CaseFont[] => {
+    try { return [{ family, weight, base64: readFileSync(join(__dirname, 'fonts', file)).toString('base64') }]; } catch { return []; }
+  };
+  caseFonts = [...face('Sora', 'sora-latin-var.woff2', '100 800'), ...face('IBM Plex Mono', 'ibm-plex-mono-regular.woff2', '400'), ...face('IBM Plex Mono', 'ibm-plex-mono-medium.woff2', '500')];
+  return caseFonts;
+}
+function caseLogoPaths(): { png: string; meta: string } | null {
+  const home = readConfig().harnessHome;
+  if (!home) return null;
+  const dir = privateRoot(expandTilde(home));
+  return { png: join(dir, 'case-study-logo.png'), meta: join(dir, 'case-study-logo.json') };
+}
+/** What a member is connected to, for the case study's team chart (D28): the
+ *  Access tab's own rule (agentAccessSummary), in plain names, never an address.
+ *  Web only for the Research member while research is on. */
+function caseStudyTools(agentId: string): string[] {
+  const out: string[] = [];
+  try {
+    for (const i of agentAccessSummary(readConfig(), agentId, booksReadRoleIds().has(agentId), memberPresent)) {
+      const name = i.kind === 'mailbox' || i.kind === 'send-only' ? 'Email' : i.kind === 'quickbooks' ? 'QuickBooks' : i.key;
+      if (!out.includes(name)) out.push(name);
+    }
+    if (agentId === RESEARCH_ID && hive.researchOn()) out.push('Web');
+  } catch (e) { console.error('[case-study] tools', e); }
+  return out;
+}
+/** The page in a hidden window, printed to PDF across as many pages as it needs. */
+async function caseStudyPdf(html: string, paper: 'letter' | 'a4'): Promise<{ ok: true; pdf: Buffer } | { ok: false; reason: 'failed' }> {
+  const win = new BrowserWindow({ show: false, width: 900, height: 1200, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, offscreen: false } });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  try {
+    await win.loadURL(`data:text/html;base64,${Buffer.from(html, 'utf8').toString('base64')}`);
+    await win.webContents.executeJavaScript('document.fonts ? document.fonts.ready.then(() => true) : true', true);
+    // The page may run past one (D27): it prints across as many pages as it needs.
+    const pdf = await win.webContents.printToPDF({ pageSize: paper === 'letter' ? 'Letter' : 'A4', printBackground: true, margins: { marginType: 'none' }, preferCSSPageSize: true });
+    return { ok: true, pdf };
+  } catch (e) {
+    console.error('[case-study] pdf', e);
+    return { ok: false, reason: 'failed' };
+  } finally { if (!win.isDestroyed()) win.destroy(); }
+}
+const caseStudy = new CaseStudyService({
+  config: () => readConfig(),
+  typeName: (t) => businessPackInfo(t).displayName,
+  offer: () => { try { return foundations.read().answers.offer?.text; } catch { return undefined; } },
+  roster: () => Object.entries(hive.registry().agents ?? {}).map(([id, a]) => ({ id, name: a.name, role: a.role, isGod: a.isGod, isAssistant: a.isAssistant, closedByOwner: a.closedByOwner })),
+  missions: () => readConfig().missions ?? [],
+  tools: caseStudyTools,
+  figures: (r) => { try { pulseTelemetry.flush(); } catch { /* the figures read what is saved */ } return pulse.caseStudyFigures(r); },
+  runModel: (prompt) => {
+    const cfg = readConfig();
+    // An empty folder only the app writes, as the run comparison's.
+    const cwd = join(app.getPath('userData'), CASE_STUDY_DIR);
+    try { mkdirSync(cwd, { recursive: true }); ensureClaudePermissionsAccepted(cwd); } catch { /* the call fails and the owner can retry */ }
+    return runHiddenModel(prompt, {
+      engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel, model: RUN_COMPARE_MODEL, cwd,
+      command: cfg.defaultCommand ?? 'claude', noTools: true, settingSources: 'user',
+      settingsJson: JSON.stringify({ disableAllHooks: true }), dropTranscript: true, isolateConfig: true, thinking: false,
+      env: memory.env(), timeoutMs: CASE_DRAFT_TIMEOUT_MS
+    });
+  },
+  readLogo: () => {
+    const p = caseLogoPaths();
+    if (!p) return null;
+    try {
+      const png = readFileSync(p.png);
+      let colour: string | null = null;
+      try { const m = JSON.parse(readFileSync(p.meta, 'utf8')) as { colour?: unknown }; colour = typeof m.colour === 'string' ? m.colour : null; } catch { colour = null; }
+      return { png, colour };
+    } catch { return null; }
+  },
+  writeLogo: (png, colour) => {
+    const p = caseLogoPaths();
+    if (!p) return;
+    try {
+      mkdirSync(dirname(p.png), { recursive: true });
+      const tmp = `${p.png}.${randomBytes(6).toString('hex')}.tmp`;
+      writeFileSync(tmp, png, { mode: 0o600 });
+      renameSync(tmp, p.png);
+      writeFileAtomic(p.meta, JSON.stringify({ colour }));
+    } catch (e) { console.error('[case-study] keep logo', e); }
+  },
+  fetchLogo: (site) => readSiteLogo(site, { decode: decodeCaseLogo, drawSvg: drawCaseSvg }),
+  decodeLogo: decodeCaseLogo,
+  drawSvg: drawCaseSvg,
+  readFile: (path, max) => { try { return statSync(path).size <= max ? readFileSync(path) : null; } catch { return null; } },
+  makePdf: caseStudyPdf,
+  mailSend: (mailbox, input) => mailService.send('owner:case-study', mailbox, input),
+  senders: () => mailService.ownerSenders(),
+  log: (entry) => { try { hive.appendLog(entry); } catch { /* best-effort */ } },
+  inviteDone: () => { try { pulse.caseStudyInviteDone(); } catch (e) { console.error('[case-study] invite', e); } },
+  fonts: caseStudyFonts,
+  // Letter in the US and Canada, A4 everywhere else.
+  paper: () => (['US', 'CA'].includes(app.getLocaleCountryCode().toUpperCase()) ? 'letter' : 'a4'),
+  appVersion: app.getVersion(),
+  office: pulseOffice,
+  onReady: () => {
+    try { liveWebContents()?.send('caseStudy:ready'); } catch { /* window gone */ }
+    // A desktop notice only while the window is in the background: in front,
+    // the screen's own toast says it.
+    if (!readConfig().notifications || (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused())) return;
+    try {
+      if (!Notification.isSupported()) return;
+      // Only Michael notifies (docs/designs/michael-only-notifications.md).
+      const n = new Notification({ title: michaelName(), body: 'Your case study is ready to view and send.' });
+      n.on('click', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
+        try { liveWebContents()?.send('caseStudy:show'); } catch { /* window gone */ }
+      });
+      n.show();
+    } catch { /* unsupported platform */ }
+  }
+});
+ipcMain.handle('caseStudy:prepare', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.prepare(i) : { state: 'idle' }; });
+ipcMain.handle('caseStudy:status', () => caseStudy.status());
+ipcMain.handle('caseStudy:open', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.open(i) : null; });
+ipcMain.handle('caseStudy:draft', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.draft(i) : { ok: false, reason: 'failed' }; });
+ipcMain.handle('caseStudy:logo', (_evt, fresh: unknown) => caseStudy.logo(fresh === true));
+ipcMain.handle('caseStudy:pickLogo', async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const opts = { properties: ['openFile' as const], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }] };
+  const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+  if (res.canceled || !res.filePaths[0]) return { ok: false, reason: 'cancelled' };
+  return caseStudy.pickedLogo(res.filePaths[0]);
+});
+ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, edits: unknown, openMailApp: unknown) => {
+  const i = caseInput(input);
+  if (!i) return { ok: false, kind: 'failed' };
+  const out = await caseStudy.pdf(i, edits);
+  if (!out.ok) return out;
+  const win = BrowserWindow.getFocusedWindow();
+  const opts = { defaultPath: join(app.getPath('documents'), 'case-study.pdf'), filters: [{ name: 'PDF', extensions: ['pdf'] }] };
+  const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+  if (res.canceled || !res.filePath) return { ok: false, kind: 'cancelled' };
+  // The web page we publish beside its PDF copy, same name (D28).
+  // Read before the PDF is written, so an earlier pair is told from a stranger's page.
+  const paths = savePaths(res.filePath, existsSync);
+  try { writeFileSync(paths.pdf, out.pdf); writeFileSync(paths.html, out.html); } catch { return { ok: false, kind: 'failed' }; }
+  // No mailbox can send (D1): the mail app opens with our address and the
+  // permission line, and the owner attaches the file just saved.
+  if (openMailApp === true) { const url = caseStudy.mailto(i); if (url) void shell.openExternal(url).catch(() => undefined); }
+  return { ok: true, path: paths.pdf };
+});
+ipcMain.handle('caseStudy:send', (_evt, input: unknown, edits: unknown, mailbox: unknown, permission: unknown) => {
+  const i = caseInput(input);
+  return i ? caseStudy.send(i, edits, mailbox, permission) : { ok: false, kind: 'failed', reason: '' };
+});
+ipcMain.handle('caseStudy:dismissInvite', () => pulse.caseStudyInviteDone());
 ipcMain.handle('runCompare:lastRuns', (_evt, agentId: unknown) => (typeof agentId === 'string' ? runCompare.lastRuns(agentId) : []));
 ipcMain.handle('runCompare:wentWrong', async (_evt, p: unknown) => {
   const o = (p ?? {}) as { runId?: unknown; agentId?: unknown; note?: unknown; workStyle?: unknown; previousWorkStyle?: unknown; changes?: unknown };
@@ -8948,6 +9141,8 @@ function armAlwaysOnBeats(): void {
   const fleetBeat = (): void => {
     writeFleetSnapshot();
     try { silentBeat(); } catch (e) { console.error('[silent beat]', e); }
+    // Whole lists past their shelf life, at most once an hour (R5).
+    try { foundations.checkExpiry(); } catch (e) { console.error('[foundations] expiry', e); }
     try { if (hive.enabled()) hive.refreshOwnerRequests(); } catch (e) { console.error('[owner requests]', e); }
     ownerAnswerRetry.tick(Date.now());
   };

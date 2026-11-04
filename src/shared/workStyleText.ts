@@ -18,6 +18,7 @@
 
 import { ownValue } from './ownValue';
 import { cleanHandoffScope } from './jobChange';
+import { readObject } from './jsonReply';
 
 export interface WorkStyleContext {
   /** The team member's name. */
@@ -273,52 +274,89 @@ export interface ReviseParseOpts {
   handoffList?: Array<{ toId: string; scope: string }>;
 }
 
+/** Why an answer did not read (issue 676): a fixed code the failure report
+ *  carries, so the next report says which check failed, never the text. */
+export type ReviseParseFail = 'json' | 'shape' | 'opening' | 'missing-part' | 'question' | 'home';
+
+/** Typographic quotes and spacing as plain ones, for finding the house line. */
+const plainQuotes = (t: string): string => t.replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"').replace(/[ \t ]+/g, ' ');
+
 /**
- * The call's answer, checked: the instructions must open with the house line,
- * and anything else unreadable is null, a failure that saves nothing (a free
- * text change has no rules fallback; plan A1).
+ * The job's instructions from the reply, starting at this office's house line.
+ * The line found with curly quotes or odd spacing is written back exactly
+ * (issue 676). No house line, or one for another business, is refused: the
+ * line is how a reply shows it is this office's job in the house format.
  */
-export function parseRevise(answer: string, ctx: WorkStyleContext, lead = false, opts: ReviseParseOpts = {}): ReviseAnswer | null {
-  const text = cleanAnswer(answer);
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  let o: Record<string, unknown>;
-  try { o = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>; } catch { return null; }
-  if (!o || typeof o !== 'object') return null;
+function readInstructions(raw: string, opening: string): string | null {
+  const at = raw.indexOf(opening);
+  if (at >= 0) return withoutFirstTask(raw.slice(at)).trim();
+  // Same words up to quotes and spacing: that line becomes the exact house
+  // line, and what follows it on the line and below stays as written.
+  const want = plainQuotes(opening);
+  const lines = raw.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const flat = plainQuotes(lines[i]);
+    const at = flat.indexOf(want);
+    if (at < 0) continue;
+    const tail = flat.slice(at + want.length);
+    return withoutFirstTask([`${opening}${tail}`, ...lines.slice(i + 1)].join('\n')).trim();
+  }
+  return null;
+}
+
+/** A string list, or one string as a list of one. */
+const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []);
+
+/**
+ * The call's answer, checked, or the reason it did not read. The instructions
+ * open with this office's house line; anything else unreadable is a failure
+ * that saves nothing (a free text change has no rules fallback; plan A1).
+ */
+export function readRevise(answer: string, ctx: WorkStyleContext, lead = false, opts: ReviseParseOpts = {}): { answer: ReviseAnswer } | { fail: ReviseParseFail } {
+  const o = readObject(cleanAnswer(answer));
+  if (!o) return { fail: 'json' };
   if (o.kind === 'question') {
     const question = line(o.question, 400);
-    const choices = (Array.isArray(o.choices) ? o.choices : [])
-      .map((c) => (c && typeof c === 'object' ? c as Record<string, unknown> : {}))
+    // A choice may come as an object with its label, or as the label alone.
+    const choices = listOf(o.choices)
+      .map((c) => (typeof c === 'string' ? { label: c } : c && typeof c === 'object' ? c as Record<string, unknown> : {}))
       .map((c) => ({ label: line(c.label, 200), suggested: c.suggested === true }))
       .filter((c) => c.label)
       .slice(0, CHOICES_MAX);
-    if (!question || choices.length < 2) return null;
+    if (!question || choices.length < 2) return { fail: 'question' };
     // One suggestion at most; the first marked one stays.
     const first = choices.findIndex((c) => c.suggested);
-    return { kind: 'question', question, choices: choices.map((c, i) => (i === first ? c : { label: c.label })) };
+    return { answer: { kind: 'question', question, choices: choices.map((c, i) => (i === first ? c : { label: c.label })) } };
   }
   if (o.kind === 'home') {
     // Only where it was asked for: a pack update's replay never asks (eng re-run).
     const question = line(o.question, 300);
-    return opts.askHome && !lead && question ? { kind: 'home', question } : null;
+    return opts.askHome && !lead && question ? { answer: { kind: 'home', question } } : { fail: 'home' };
   }
-  if (o.kind !== 'ok') return null;
+  if (o.kind !== 'ok') return { fail: 'shape' };
   const raw = typeof o.instructions === 'string' ? o.instructions.trim() : '';
   const opening = instructionsOpening(ctx.business);
-  const at = raw.indexOf(opening);
-  const instructions = at >= 0 ? withoutFirstTask(raw.slice(at)).trim() : '';
+  const instructions = readInstructions(raw, opening);
+  if (instructions === null && raw) return { fail: 'opening' };
   const plain = typeof o.plain === 'string' ? withoutFirstTask(o.plain.trim()) : '';
   const handles = lead ? null : line(o.handles, 1500) || null;
-  const summary = (Array.isArray(o.summary) ? o.summary : []).map((s) => line(s, 300)).filter(Boolean).slice(0, SUMMARY_MAX);
+  const summary = listOf(o.summary).map((s) => line(s, 300)).filter(Boolean).slice(0, SUMMARY_MAX);
   const oneTimeTask = line(o.oneTimeTask, 1500) || undefined;
-  if (!instructions || instructions === opening || !plain || summary.length === 0) return null;
+  if (!instructions || instructions === opening || !plain || summary.length === 0) return { fail: 'missing-part' };
   const handoffs = lead ? [] : readHandoffs(o.handoffs, opts.teammates ?? []);
   const drops = lead ? [] : readDrops(o.drops, opts.handoffList ?? []);
   return {
-    kind: 'ok', instructions, plain, handles, summary, ...(oneTimeTask ? { oneTimeTask } : {}),
-    ...(handoffs.length ? { handoffs } : {}), ...(drops.length ? { drops } : {})
+    answer: {
+      kind: 'ok', instructions, plain, handles, summary, ...(oneTimeTask ? { oneTimeTask } : {}),
+      ...(handoffs.length ? { handoffs } : {}), ...(drops.length ? { drops } : {})
+    }
   };
+}
+
+/** The call's answer, checked, or null when it does not read (readRevise). */
+export function parseRevise(answer: string, ctx: WorkStyleContext, lead = false, opts: ReviseParseOpts = {}): ReviseAnswer | null {
+  const r = readRevise(answer, ctx, lead, opts);
+  return 'answer' in r ? r.answer : null;
 }
 
 /** The handoffs a run returned, kept only for a teammate the overlap check

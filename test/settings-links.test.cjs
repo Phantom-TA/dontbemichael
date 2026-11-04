@@ -25,13 +25,14 @@ test('a dbm: link names only our own places; anything else is words', () => {
   assert.deepEqual(parsePlace('dbm:settings/connections/mailboxes/add'), { kind: 'settings', section: 'Connections', group: 'mailboxes', add: true });
   assert.deepEqual(parsePlace('DBM:settings/agents'), { kind: 'settings', section: 'Agents' });
   assert.deepEqual(parsePlace('dbm:member/nick/access/email'), { kind: 'member', agentId: 'nick', card: 'email' });
-  for (const bad of ['dbm:settings/voice', 'dbm:settings/connections/slack', 'dbm:settings/agents/mailboxes', 'dbm:settings/connections/claude-connectors/add',
+  for (const bad of ['dbm:settings/voice', 'dbm:settings/skills', 'dbm:settings/connections/slack', 'dbm:settings/agents/mailboxes', 'dbm:settings/connections/claude-connectors/add',
     'dbm:settings/nope', 'dbm:member/../x/access/email', 'dbm:member/nick/access', 'dbm:elsewhere', 'https://example.com', '', null])
     assert.equal(parsePlace(bad), null, String(bad));
   for (const href of ['dbm:settings/research-privacy', 'dbm:settings/connections/claude-connectors', 'dbm:settings/connections/mailboxes/add', 'dbm:member/oscar/access/email'])
     assert.equal(placeHref(parsePlace(href)), href, 'round trip');
   assert.equal(placeWords({ kind: 'settings', section: 'Connections', group: 'mailboxes' }), 'Settings, Connections, Mailboxes');
   assert.ok(!Object.values(PLACE_SECTIONS).includes('Voice'), 'Voice is hidden in this build');
+  assert.ok(!Object.values(PLACE_SECTIONS).includes('Skills'), 'Skills is hidden in this build');
 });
 
 test('the link filter lets dbm: through and still drops every other unsafe scheme', () => {
@@ -172,6 +173,7 @@ test('Michael\'s rules: links for places, a query with Connect your email, follo
   assert.match(rule, /\[Settings, Connections, Mailboxes\]\(dbm:settings\/connections\/mailboxes\)/);
   assert.match(rule, /Mailboxes \(mailboxes\)/);
   assert.ok(!/Voice/.test(rule));
+  assert.ok(!/Skills/.test(rule));
   const hive = read('src/main/hive.ts');
   assert.equal((hive.match(/' \+ PLACE_LINK_RULE \+ '/g) ?? []).length, 2, 'Ask me and the dock rules both carry it');
   assert.doesNotMatch(hive, /\$\{PLACE_LINK_RULE\}/, 'never left as literal text in a quoted string');

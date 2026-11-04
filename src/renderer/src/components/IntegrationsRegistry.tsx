@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { authTypeNeedsSecret as needsSecret, INTEGRATION_ID_TAKEN } from '@shared/integrations';
+import { authTypeNeedsSecret as needsSecret, INTEGRATION_ID_TAKEN, MESSAGE_PLACEHOLDER, validateSavedCall, type SavedCall } from '@shared/integrations';
+import { InfoTip } from './InfoTip';
 import { PixelButton } from './PixelButton';
 import { fieldLabel, groupName, hint, panelStyle } from './fieldText';
 import {
@@ -38,6 +39,10 @@ interface Draft {
   hasSecret: boolean; // an existing stored secret (edit)
   createdAt: number;
   secret: string;     // write-only input buffer
+  callMethod: SavedCall['method'] | ''; // '' is no saved call
+  callPath: string;
+  callBody: string;
+  callPurpose: string;
 }
 
 const AUTH_LABEL: Record<IntegrationAuthType, string> = {
@@ -48,6 +53,15 @@ const AUTH_LABEL: Record<IntegrationAuthType, string> = {
 };
 // Auth types a user may pick for a custom-REST integration.
 const CUSTOM_AUTH: IntegrationAuthType[] = ['none', 'bearer', 'header'];
+
+const NO_CALL = { callMethod: '', callPath: '', callBody: '', callPurpose: '' } as const;
+const BODY_EXAMPLE = `{\n  "serverUrl": "https://example.com",\n  "message": ${MESSAGE_PLACEHOLDER}\n}`;
+
+/** The saved call a draft holds, as the form has it. */
+function callOf(d: Draft): SavedCall | undefined {
+  if (!d.callMethod) return undefined;
+  return { method: d.callMethod, path: d.callPath, body: d.callMethod === 'POST' ? d.callBody : '', purpose: d.callPurpose };
+}
 
 // UI-only brand glyphs (Jim's templates carry no glyph). Falls back to label initials.
 const GLYPH: Record<string, { mono: string; bg: string }> = {
@@ -81,14 +95,15 @@ function draftFromTemplate(t: IntegrationTemplate, now: number, takenIds: string
   return {
     isNew: true, id: slugify(t.idSuggestion || t.label, takenIds), label: t.label, kind: t.kind,
     baseUrl: t.baseUrl, authType: t.authType, authHeader: t.authHeader ?? '',
-    enabled: true, hasSecret: false, createdAt: now, secret: ''
+    enabled: true, hasSecret: false, createdAt: now, secret: '', ...NO_CALL
   };
 }
 function draftFromRecord(r: IntegrationRecordView): Draft {
   return {
     isNew: false, id: r.id, label: r.label, kind: r.kind, baseUrl: r.baseUrl,
     authType: r.authType, authHeader: r.authHeader ?? '', enabled: r.enabled,
-    hasSecret: r.hasSecret, createdAt: r.createdAt, secret: ''
+    hasSecret: r.hasSecret, createdAt: r.createdAt, secret: '',
+    callMethod: r.call?.method ?? '', callPath: r.call?.path ?? '', callBody: r.call?.body ?? '', callPurpose: r.call?.purpose ?? ''
   };
 }
 
@@ -146,6 +161,9 @@ export function IntegrationsRegistry() {
       if (!/^https:\/\//.test(u) && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/.test(u)) return tr('integrations.errBaseUrlFormat');
     }
     if (d.authType === 'header' && !/^[A-Za-z0-9-]{1,64}$/.test(d.authHeader.trim())) return tr('integrations.errHeader');
+    const call = callOf(d);
+    const checked = call ? validateSavedCall(call, d.baseUrl.trim()) : null;
+    if (checked && !checked.ok) return tr(`integrations.savedCallError.${checked.code}`, { placeholder: MESSAGE_PLACEHOLDER });
     return null;
   };
 
@@ -160,6 +178,7 @@ export function IntegrationsRegistry() {
       authHeader: d.authType === 'header' ? d.authHeader.trim() : undefined,
       secretRef: needsSecret(d.authType) ? `int:${id}` : undefined,
       enabled: d.enabled,
+      call: callOf(d),
       createdAt: d.isNew ? now : d.createdAt,
       updatedAt: now
     };
@@ -329,6 +348,38 @@ export function IntegrationsRegistry() {
           </div>
         )}
 
+        {/* Saved call: the one request agents make, custom-rest only */}
+        {draft.kind === 'custom-rest' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 5, maxWidth: 260 }}>
+              <span style={{ ...fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6 }}>{tr('integrations.savedCall')}<InfoTip label={tr('integrations.savedCall')} text={tr('integrations.savedCallInfo')} /></span>
+              <select value={draft.callMethod} onChange={(e) => patch({ callMethod: e.target.value as Draft['callMethod'] })} style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)' }}>
+                <option value="">{tr('integrations.savedCallNone')}</option>
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+              </select>
+            </label>
+            {draft.callMethod && (
+              <>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <span style={fieldLabel}>{tr('integrations.savedCallPurpose')}</span>
+                  <input value={draft.callPurpose} onChange={(e) => patch({ callPurpose: e.target.value })} maxLength={300} style={inputStyle} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <span style={fieldLabel}>{tr('integrations.savedCallPath')}</span>
+                  <input value={draft.callPath} onChange={(e) => patch({ callPath: e.target.value })} placeholder={draft.callMethod === 'GET' ? `search?q=${MESSAGE_PLACEHOLDER}` : ''} style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)' }} />
+                </label>
+                {draft.callMethod === 'POST' && (
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <span style={{ ...fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6 }}>{tr('integrations.savedCallBody')}<InfoTip label={tr('integrations.savedCallBody')} text={tr('integrations.savedCallBodyInfo', { placeholder: MESSAGE_PLACEHOLDER })} /></span>
+                    <textarea value={draft.callBody} onChange={(e) => patch({ callBody: e.target.value })} placeholder={BODY_EXAMPLE} rows={5} spellCheck={false} dir="ltr" style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)', resize: 'vertical' }} />
+                  </label>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {/* Enabled gate + worker availability */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={fieldLabel}>{tr('integrations.availability')}</span>
@@ -346,7 +397,7 @@ export function IntegrationsRegistry() {
             <PixelButton variant="secondary" size="sm" onClick={() => { void onTestCfg(); }} disabled={draft.isNew || testing}>{testing ? tr('integrations.testing') : tr('integrations.testConnection')}</PixelButton>
             {cfgTest && <span style={{ fontSize: 12, color: cfgTest.ok ? 'var(--cth-green-text)' : 'var(--cth-coral-text)' }}>{fmtTest(cfgTest)}</span>}
           </div>
-          <span style={hint}>{draft.isNew ? tr('integrations.testAfterSave') : tr('integrations.testLiveDesc')}</span>
+          <span style={hint}>{draft.isNew ? tr('integrations.testAfterSave') : records.find((r) => r.id === draft.id)?.call ? tr('integrations.testSavedDesc') : tr('integrations.testLiveDesc')}</span>
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>

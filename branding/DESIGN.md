@@ -1596,6 +1596,44 @@ D8, D10 to D13), listed after the decision cards and before reports, always open
   ("doesn't look like the answer", "Couldn't read", "Save this picture as PNG or JPEG", "Pictures
   can be checked only on Claude", "Couldn't find", "Couldn't check this file"); nothing is added.
 
+### 7.27b The list card
+
+A foundation card for a list question (what we sell, customers today, competitors, money, who
+owes whom, the team, systems, suppliers; `docs/designs/foundation-answers-stay-open.md`, design
+review 2026-11-03). Same card as §7.27a, with these changes:
+
+- **Order**: the question, the raiser chip and age, the evidence line, the box with its hint and
+  file links directly under it, then the seen rows, then the actions and the footer.
+- **Box**: labeled "The list so far" ("The list so far, from Oscar" when a member filled it;
+  "Your answer" on an empty list). It starts from the saved answer, one item a line, and holds
+  up to 1,000 characters (single questions keep 300). Read only until the record has loaded.
+  A polite line "The list changed since you started. Review it before saving." when the saved
+  list changed after the box was filled.
+- **Hint**: "Saving says this is the whole list." stays visible (the one visible line the less
+  verbose rule allows for a choice a new owner can't read); with a seen item undecided, "Add, mark
+  Not ours or Decide later for each seen item first."; within 40 characters of the cap, a counter
+  "960 of 1,000" in `ink-3`, `coral-text` once over.
+- **Seen rows** under "Seen, not on the list" with its (i) ("About seen items"): `amber-soft`,
+  `r-lg`, newest first, three shown then a quiet "Show N more". The name 12.5 px semibold,
+  clamped to two lines, `dir="auto"`; under it the app's own line in `amber-text` 11 px: the
+  member, the file it was seen in, the day. Add is a 26 px secondary button; Not ours and Decide
+  later are quiet links with 24 px targets, each named for its item.
+  - Add puts the name on a new line in the box; the row becomes a `green-soft` line "Added to the
+    list. Save to keep it." with Undo.
+  - Not ours is saved at once; the row becomes an `indigo-soft` line "Card ending 1005 is marked
+    not ours." with Undo until the card leaves the board; a failure is a `coral-text` line.
+  - Decide later is saved at once; the row becomes a `neutral-soft` line "Back next week." with
+    Undo. Focus moves to the next undecided Add, else to Save; each change is spoken politely.
+- **Primary button**: "Save as the whole list"; "Save the list so far" while an item is put off;
+  "Still all of them" on a card past its shelf life whose box matches the saved list. Held until
+  every seen item is added, not ours or put off. It never truncates.
+- **Have Oscar draft it** shows only while the list is empty; its draft reads "drafted by Oscar,
+  check it's all of them, then save".
+- **Past its shelf life**: the meta reads "Confirmed 3 Feb" instead of the age.
+- **Board line after a save**: "Saved as the whole list.", "Saved the list so far.", or "Sent to
+  Michael to save as the whole list."
+- **Pulse**: a list known so far counts as missing.
+
 ## 8. The studio illustration [Both]
 
 The studio is both the app's Office view and the website's hero. One construction, two

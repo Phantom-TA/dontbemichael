@@ -1,4 +1,4 @@
-import { FOUNDATION_QUESTIONS, fileAnswerLine, folderAnswerLine, type FoundationId } from '@shared/foundations';
+import { FOUNDATION_QUESTIONS, capFor, fileAnswerLine, folderAnswerLine, isListQuestion, joinListLines, type FoundationId } from '@shared/foundations';
 
 /**
  * The foundation card's Save, as its steps (components/FoundationCard.tsx
@@ -16,15 +16,40 @@ export type SavedHow = 'saved' | 'michael' | 'failed';
 /** Why the add step refused a file. */
 export type AddFileRefusal = Extract<Awaited<ReturnType<FoundationSaveCth['foundationsAddFile']>>, { ok: false }>['error'];
 
+/** What the owner's save of a list card says (design review D4): the seen
+ *  items added to the box, and whether it is the whole list. */
+export interface ListSave { added: string[]; whole: boolean }
+
+/** The ask Michael gets when the write fails: a list says whether it is the
+ *  whole list, so his message carries "complete": true only then. */
+function michaelAsk(id: FoundationId, line: string, list?: ListSave): string {
+  const q = `"${FOUNDATION_QUESTIONS[id].text}" (${id})`;
+  if (!isListQuestion(id) || !list) return `Please add my answer to the company foundations question ${q}: ${line}`;
+  return list?.whole
+    ? `Please save this as the whole list for the company foundations question ${q}, with "complete": true: ${line}`
+    : `Please save this as the list so far for the company foundations question ${q}, without "complete": ${line}`;
+}
+
+/** The list Michael is asked to save when the write did not take it. A save
+ *  main refused because a seen item is still undecided (one that came in after
+ *  the card loaded) goes to him as the list so far, never the whole list, so
+ *  "complete": true can't clear what the owner hasn't seen (ship review). */
+function michaelList(r: unknown, list?: ListSave): ListSave | undefined {
+  const undecided = !!r && typeof r === 'object' && (r as { error?: unknown }).error === 'undecided';
+  return list && undecided ? { ...list, whole: false } : list;
+}
+
 /** A typed answer: the card first, then the foundations, else Michael. */
-export async function saveTextAnswer(id: FoundationId, text: string, cth: FoundationSaveCth, onAnswer: CardAnswer): Promise<{ taken: false } | { taken: true; how: SavedHow }> {
+export async function saveTextAnswer(id: FoundationId, text: string, cth: FoundationSaveCth, onAnswer: CardAnswer, list?: ListSave): Promise<{ taken: false } | { taken: true; how: SavedHow }> {
   // The card first: the answer reaches Michael, who closes it.
   if (!(await onAnswer(text).catch(() => false))) return { taken: false };
   // The card took it and leaves the board: the board reports from here.
-  const r = await cth.foundationsAnswer(id, text).catch(() => null);
+  // A single question keeps its one call; a list names the seen items it added.
+  const r = await (list ? cth.foundationsAnswer(id, text, list.added) : cth.foundationsAnswer(id, text)).catch(() => null);
   if (r?.ok) return { taken: true, how: 'saved' };
   // Not written: Michael adds it, as he does any owner answer.
-  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${text}` }, 'human').catch(() => null);
+  const line = list ? joinListLines(text) : text;
+  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: michaelAsk(id, line, michaelList(r, list)) }, 'human').catch(() => null);
   return { taken: true, how: sent?.ok ? 'michael' : 'failed' };
 }
 
@@ -49,7 +74,8 @@ export async function saveFileAnswer(
   text: string,
   cth: FoundationSaveCth,
   onAnswer: CardAnswer,
-  steps: { checked?: () => void; taken?: () => void } = {}
+  steps: { checked?: () => void; taken?: () => void } = {},
+  list?: ListSave
 ): Promise<FileSaveOutcome> {
   // Read and checked first: nothing is answered or added unless it fits (D3).
   const added = await cth.foundationsAddFile(id, picked.path).catch(() => null);
@@ -65,11 +91,11 @@ export async function saveFileAnswer(
     return { kind: 'not-taken' };
   }
   steps.taken?.();
-  const r = await cth.foundationsAnswerFile(id, added.docId, text).catch(() => null);
+  const r = await (list ? cth.foundationsAnswerFile(id, added.docId, text, list.added) : cth.foundationsAnswerFile(id, added.docId, text)).catch(() => null);
   if (r?.ok) return { kind: 'taken', how: 'saved' };
   // Michael adds it: the exact line, so the document id survives (Codex 3).
-  const line = fileAnswerLine(text, added.docId, added.name);
-  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${line}` }, 'human').catch(() => null);
+  const line = list ? fileAnswerLine(joinListLines(text), added.docId, added.name, capFor(id)) : fileAnswerLine(text, added.docId, added.name);
+  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: michaelAsk(id, line, michaelList(r, list)) }, 'human').catch(() => null);
   return { kind: 'taken', how: sent?.ok ? 'michael' : 'failed' };
 }
 
@@ -94,7 +120,8 @@ export async function saveFolderAnswer(
   text: string,
   cth: FoundationSaveCth,
   onAnswer: CardAnswer,
-  steps: { checked?: () => void; taken?: () => void } = {}
+  steps: { checked?: () => void; taken?: () => void } = {},
+  list?: ListSave
 ): Promise<FolderSaveOutcome> {
   const checked = await cth.foundationsCheckFolder(id, picked.path).catch(() => null);
   steps.checked?.();
@@ -105,11 +132,11 @@ export async function saveFolderAnswer(
   const note = `I pointed the team to the folder "${checked.name}" for this (${checked.path}). Members whose job uses this question can read it now with their file tools, and with commands from their next start.`;
   if (!(await onAnswer(text ? `${text}\n\n${note}` : note).catch(() => false))) return { kind: 'not-taken' };
   steps.taken?.();
-  const r = await cth.foundationsAnswerFolder(id, checked.path, text).catch(() => null);
+  const r = await (list ? cth.foundationsAnswerFolder(id, checked.path, text, list.added) : cth.foundationsAnswerFolder(id, checked.path, text)).catch(() => null);
   if (r?.ok) return { kind: 'taken', how: 'saved' };
   // Michael adds the line; an answer he adds names the folder but opens it to
   // nobody (only the owner's own card answer does, readFoldersFor).
-  const line = folderAnswerLine(text, checked.path) ?? `Kept in the folder ${checked.path}`;
-  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${line}` }, 'human').catch(() => null);
+  const line = (list ? folderAnswerLine(joinListLines(text), checked.path, capFor(id)) : folderAnswerLine(text, checked.path)) ?? `Kept in the folder ${checked.path}`;
+  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: michaelAsk(id, line, michaelList(r, list)) }, 'human').catch(() => null);
   return { kind: 'taken', how: sent?.ok ? 'michael' : 'failed' };
 }

@@ -161,6 +161,40 @@ test('closing the tab closes that open\'s connection', async () => {
   void svc;
 });
 
+test('a connection closed while it signs in can report its error without ending the app', async () => {
+  // Value: protects=the app process; fails_when=a mail connection has no 'error' listener, so ImapFlow's late sign in error throws as an unhandled rejection; why_new=Windows CI hit it on the 0.3.5 ship when a tab remounted mid open; seam=MailService.createImap
+  const { EventEmitter } = require('node:events');
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { deps } = fakeService({ holds: { INBOX: { id: ID, uid: 1 } } });
+  const make = deps.createImap;
+  const made = [];
+  // Like ImapFlow: an emitter whose sign in, once the client is closed, fails
+  // with an 'error' event instead of through connect.
+  deps.createImap = (...a) => {
+    const c = Object.assign(new EventEmitter(), make(...a));
+    let closed = false;
+    c.close = () => { closed = true; };
+    c.connect = async () => {
+      await gate;
+      if (!closed) return;
+      setImmediate(() => c.emit('error', new Error('Already logged out')));
+      throw new Error('Connection closed');
+    };
+    made.push(c);
+    return c;
+  };
+  const svc = new MailService(deps);
+  const run = svc.original('ops', ID).catch((e) => e);
+  await new Promise((r) => setImmediate(r));
+  svc.cancelOriginal('ops', ID);
+  release();
+  assert.ok((await run) instanceof Error, 'the closed open fails');
+  await new Promise((r) => setImmediate(r));
+  assert.equal(made.length, 1);
+  assert.ok(made[0].listenerCount('error') > 0, 'the connection has an error listener');
+});
+
 test('no agent tool reaches the owner view', () => {
   for (const op of ['original', 'originalPictures', 'original_email']) assert.equal(Object.prototype.hasOwnProperty.call(MAIL_TOOL_OPS, op), false, op);
   const main = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
@@ -221,4 +255,30 @@ test('on a real IMAP server, opening the email leaves it unread, and a read give
   const read = await handleMailRequest(svc, deps, 'dwight', 'read', { mailbox: 'ops', id: '1' });
   assert.equal(read.status, 200);
   assert.match(read.body.link, /^\[Dana Ortiz, 2[67] Oct\]\(email:ops\/%3Cm1%40northwind\.example%3E\)$/);
+});
+
+test('on a real IMAP server, a tab that remounts while it opens still gets the email', { timeout: 15_000 }, async (t) => {
+  // Value: protects=the owner's first click on an email opens it; fails_when=a cancelled open is shared with the next open of the same email, which then shows Try again; why_new=every tab mount runs cleanup then a second open under React StrictMode, and returning to a tab mid open does the same; seam=real ImapFlow and a local server
+  const port = await imapServer(t);
+  const clients = [];
+  const s = { host: '127.0.0.1', port, secure: false };
+  const config = { mailboxes: [{ id: 'ops', address: USER, provider: 'other', imap: s, smtp: s, status: 'connected', createdAt: 1, updatedAt: 1 }] };
+  const deps = {
+    getConfig: () => config, getPassword: () => PASS, markStatus: () => {},
+    createImap: (srv, user, pass) => { const c = new ImapFlow({ host: srv.host, port: srv.port, secure: false, doSTARTTLS: false, auth: { user, pass }, logger: false }); clients.push(c); return c; }
+  };
+  const svc = new MailService(deps);
+  t.after(() => { svc.closeAll(); for (const c of clients) c.close(); });
+
+  const tick = () => new Promise((r) => setImmediate(r));
+  const first = svc.original('ops', ID).then((e) => e, (e) => e);
+  await tick();
+  svc.cancelOriginal('ops', ID);
+  await tick();
+  const started = Date.now();
+  const e = await svc.original('ops', ID);
+  assert.equal(e.subject, 'Re: Free scoping review');
+  assert.ok(Date.now() - started < 5000, 'the new open does not wait out the cancelled one');
+  assert.equal(clients.length, 2, 'the cancelled connection is not reused');
+  assert.ok((await first) instanceof Error, 'the cancelled open itself fails');
 });

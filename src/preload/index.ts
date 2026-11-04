@@ -6,6 +6,7 @@ import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
 import type { OrganizedList } from '../shared/organizedRecord';
 import type { PulseView } from '../shared/pulseView';
+import type { CaseDraftResult, CaseInput, CaseLogo, CaseOpen, CasePrep, CaseSaveResult, CaseSendOutcome } from '../shared/caseStudy';
 import type { FoundationsView } from '../shared/foundations';
 import type { PulseHealthView } from '../shared/pulseHealth';
 import type { ResearchConfig } from '../shared/research';
@@ -1482,7 +1483,9 @@ const api = {
   /** The record as the foundation card reads it: answers, drafts, Not now and hits. */
   foundationsGet: (): Promise<FoundationsView> => ipcRenderer.invoke('foundations:get'),
   /** The owner's answer from a foundation card; it always wins. */
-  foundationsAnswer: (id: string, text: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('foundations:answer', id, text),
+  foundationsAnswer: (id: string, text: string, added?: string[]): Promise<{ ok: boolean; error?: string; complete?: boolean }> => ipcRenderer.invoke('foundations:answer', id, text, added),
+  /** A seen item on a list card: Not ours, Decide later, or an undo of either. */
+  foundationsSeen: (id: string, seenId: string, action: 'notOurs' | 'undoNotOurs' | 'later' | 'undoLater'): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:seen', id, seenId, action),
   /** One file for a foundation card, from the OS picker. */
   foundationsPickFile: (): Promise<{ ok: true; path: string; name: string } | { ok: false; error: string }> => ipcRenderer.invoke('foundations:pickFile'),
   /** Read, check and add a card's file to company knowledge (nothing is added
@@ -1490,16 +1493,16 @@ const api = {
   foundationsAddFile: (id: string, path: string): Promise<{ ok: true; docId: string; name: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'picture-engine' | 'misfit' | 'unchecked'; reason?: string }> =>
     ipcRenderer.invoke('foundations:addFile', id, path),
   /** The owner's answer from a file added with foundationsAddFile. */
-  foundationsAnswerFile: (id: string, docId: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('foundations:answerFile', id, docId, words),
+  foundationsAnswerFile: (id: string, docId: string, words: string, added?: string[]): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('foundations:answerFile', id, docId, words, added),
   /** One folder for a foundation card, from the OS picker. */
   foundationsPickFolder: (): Promise<{ ok: true; path: string; name: string } | { ok: false; error: string }> => ipcRenderer.invoke('foundations:pickFolder'),
   /** Check a card's folder before the card is answered (nothing is written). */
   foundationsCheckFolder: (id: string, path: string): Promise<{ ok: true; path: string; name: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-folder' | 'too-wide' | 'app-folder' | 'member-folder' | 'empty' | 'too-long' }> =>
     ipcRenderer.invoke('foundations:checkFolder', id, path),
   /** The owner's answer naming a folder; the members whose job uses it read it. */
-  foundationsAnswerFolder: (id: string, path: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('foundations:answerFolder', id, path, words),
+  foundationsAnswerFolder: (id: string, path: string, words: string, added?: string[]): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('foundations:answerFolder', id, path, words, added),
   /** Have the member draft it: the draft comes back into the card. */
   foundationsDraft: (id: string, memberId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:draft', id, memberId),
   /** Not now: out of Needs you for a week. */
@@ -1530,6 +1533,33 @@ const api = {
   pulseUndo: (appliedId: number): Promise<{ ok: true; kind: 'schedule' } | { ok: true; kind: 'model'; agentId: string; to: string | null } | { ok: false; error: 'stale' | 'unavailable' }> =>
     ipcRenderer.invoke('pulse:undo', appliedId),
   pulseDismiss: (id: string): Promise<boolean> => ipcRenderer.invoke('pulse:dismiss', id),
+  // ─── Case study (docs/designs/case-study.md) ──────────────────────────────
+  /** The office's facts for the page, the fonts and the mailboxes; null with no office. */
+  caseStudyOpen: (input: CaseInput): Promise<CaseOpen | null> => ipcRenderer.invoke('caseStudy:open', input),
+  caseStudyDraft: (input: CaseInput): Promise<CaseDraftResult> => ipcRenderer.invoke('caseStudy:draft', input),
+  /** The kept logo, or a read of the website; `fresh` reads the site again. */
+  caseStudyLogo: (fresh: boolean): Promise<CaseLogo> => ipcRenderer.invoke('caseStudy:logo', fresh),
+  caseStudyPickLogo: (): Promise<CaseLogo> => ipcRenderer.invoke('caseStudy:pickLogo'),
+  /** Main builds the page and the PDF from these edits; `openMailApp` opens the mail app after saving. */
+  caseStudySavePdf: (input: CaseInput, edits: unknown, openMailApp: boolean): Promise<CaseSaveResult> => ipcRenderer.invoke('caseStudy:savePdf', input, edits, openMailApp),
+  /** Sends to the fixed address only; the screen names the mailbox and ticks permission. */
+  caseStudySend: (input: CaseInput, edits: unknown, mailbox: string, permission: boolean): Promise<CaseSendOutcome> => ipcRenderer.invoke('caseStudy:send', input, edits, mailbox, permission),
+  caseStudyDismissInvite: (): Promise<boolean> => ipcRenderer.invoke('caseStudy:dismissInvite'),
+  /** Starts preparing the case study in the background (or says where it stands). */
+  caseStudyPrepare: (input: CaseInput): Promise<CasePrep> => ipcRenderer.invoke('caseStudy:prepare', input),
+  caseStudyStatus: (): Promise<CasePrep> => ipcRenderer.invoke('caseStudy:status'),
+  /** The prepared case study is ready. */
+  onCaseStudyReady: (cb: () => void): (() => void) => {
+    const h = (): void => cb();
+    ipcRenderer.on('caseStudy:ready', h);
+    return () => { ipcRenderer.removeListener('caseStudy:ready', h); };
+  },
+  /** The owner clicked the desktop notice: open the screen. */
+  onCaseStudyShow: (cb: () => void): (() => void) => {
+    const h = (): void => cb();
+    ipcRenderer.on('caseStudy:show', h);
+    return () => { ipcRenderer.removeListener('caseStudy:show', h); };
+  },
   /** Each of a member's jobs with its last finished run and any "Went wrong" on it (shared/runCompare.ts). */
   runCompareLastRuns: (agentId: string): Promise<Array<{ run: JobRun; suggestion: RunSuggestion | null }>> =>
     ipcRenderer.invoke('runCompare:lastRuns', agentId),

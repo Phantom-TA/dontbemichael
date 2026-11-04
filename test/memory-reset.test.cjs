@@ -434,6 +434,7 @@ test('every reader of handled messages has its after reset behavior stated here'
       drainForStop: 'prompt text naming the folder; unchanged',
       injectedPrompt: 'prompt text naming the folders; unchanged',
       makeResearchFolderSafe: 'makes Research\'s inbox/.done again, empty',
+      archiveResearchAnswered: 'moves an answered question into a fresh inbox/.done',
       mailFolderKind: 'classifies a path; unchanged',
       quarantine: 'files a refused message into a fresh folder',
       routeOnce: 'files routed messages into a fresh folder',

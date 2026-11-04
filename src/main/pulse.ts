@@ -80,6 +80,24 @@ export function earliest(all: Advice[]): Advice[] {
   return [...all].sort((a, b) => weight(b) - weight(a)).slice(0, EARLY_MAX);
 }
 
+/** The case study invitation's row in telemetry_dismissed, and its day count (D7). */
+export const CASE_STUDY_INVITE = 'case-study-invite';
+export const CASE_STUDY_INVITE_DAYS = 30;
+
+interface MeasureSource {
+  now: number;
+  days: ReturnType<TelemetryProcessor['days']>;
+  cards: ReturnType<TelemetryProcessor['cards']>;
+  decisions: ReturnType<TelemetryProcessor['decisions']>;
+  asks: AskFact[];
+  ids: string[];
+  gapDays: string[];
+  running: ReturnType<TelemetryProcessor['running']>;
+  godId: string | null;
+  price: PlanPrice | null;
+  rate: number | null;
+}
+
 export class PulseService {
   /** Every live usage window from the last status line that had one (E6). */
   private readings: PlanReading[] = [];
@@ -268,21 +286,8 @@ export class PulseService {
     // the owner's other Claude use, never the office's.
     const price = billing === 'account' ? this.planPrice() : null;
     const rate = price ? this.planRate(office, price) : null;
-    const measure = (r: DayRange): { snapshot: PulseSnapshot; keptSafe: KeptSafe; periodCost: number; payPerUse: number } => {
-      const raw = pulseSnapshot({
-        period, now, range: r, days, cards, decisions, asks, members: ids, gapDays, running,
-        sentAsWritten: decisions.filter((x) => x.decision === 'approve' && x.at >= r.fromMs && x.at <= r.toMs).length,
-        ...(godId ? { michael: { agentId: godId, ...this.d.processor.michaelCounts(office, godId, r.fromMs, r.toMs) } } : {})
-      });
-      // Never more than the whole plan for the days so far.
-      const periodCost = rate !== null && price ? Math.min(raw.totalUsd * rate, planCostFor(price.monthly, r.fromMs, r.toMs, now)) : 0;
-      return {
-        snapshot: rate !== null && raw.totalUsd > 0 ? scaleSnapshot(raw, periodCost / raw.totalUsd) : raw,
-        keptSafe: keptSafe(this.d.processor.safetyRows(office, r.from, r.to)),
-        periodCost,
-        payPerUse: raw.totalUsd
-      };
-    };
+    const src: MeasureSource = { now, days, cards, decisions, asks, ids, gapDays, running, godId, price, rate };
+    const measure = (r: DayRange) => this.measureRange(office, period, r, src);
     const cur = measure(range);
     const prev = before ? measure(before) : null;
     const plan = price && rate !== null ? { label: price.label, monthly: price.monthly, source: price.source, periodCost: cur.periodCost, payPerUse: cur.payPerUse } : null;
@@ -310,7 +315,8 @@ export class PulseService {
       ...(price && rate === null ? { planLearning: true } : {}),
       compare: prev ? { snapshot: prev.snapshot, keptSafe: prev.keptSafe } : null,
       compareReady,
-      compareFrom: readyFrom
+      compareFrom: readyFrom,
+      caseStudyInvite: this.caseStudyInvite(office)
     };
   }
 
@@ -374,6 +380,85 @@ export class PulseService {
       const perPoint = usdPerMeterPoint(meter, costs, seed);
       return perPoint === null ? null : planRate(price.monthly, perPoint);
     } catch { return null; }
+  }
+
+  /** One span measured the way Pulse shows it: the tiles, and on a plan the
+   *  dollars scaled to the plan (Compare and the case study use it too). */
+  private measureRange(office: string, period: Period, r: DayRange, src: MeasureSource): { snapshot: PulseSnapshot; keptSafe: KeptSafe; periodCost: number; payPerUse: number } {
+    const { now, days, cards, decisions, asks, ids, gapDays, running, godId, price, rate } = src;
+    const raw = pulseSnapshot({
+      period, now, range: r, days, cards, decisions, asks, members: ids, gapDays, running,
+      sentAsWritten: decisions.filter((x) => x.decision === 'approve' && x.at >= r.fromMs && x.at <= r.toMs).length,
+      ...(godId ? { michael: { agentId: godId, ...this.d.processor.michaelCounts(office, godId, r.fromMs, r.toMs) } } : {})
+    });
+    // Never more than the whole plan for the days so far.
+    const periodCost = rate !== null && price ? Math.min(raw.totalUsd * rate, planCostFor(price.monthly, r.fromMs, r.toMs, now)) : 0;
+    return {
+      snapshot: rate !== null && raw.totalUsd > 0 ? scaleSnapshot(raw, periodCost / raw.totalUsd) : raw,
+      keptSafe: keptSafe(this.d.processor.safetyRows(office, r.from, r.to)),
+      periodCost,
+      payPerUse: raw.totalUsd
+    };
+  }
+
+  /**
+   * The case study's figures for a span (docs/designs/case-study.md, eng A6):
+   * Pulse's own measure, plan scaled spend included, and the office's running
+   * hours per local day (D18). Running points are already split at local
+   * midnight and stamped inside their day (telemetryStore.add), so each sums
+   * by its own day. Null with no office or store.
+   */
+  caseStudyFigures(r: DayRange): { snapshot: PulseSnapshot; days: Array<{ day: string; ms: number; awayMs: number }> } | null {
+    const office = this.d.office();
+    const db = this.d.db();
+    if (!office || !db) return null;
+    const billing = this.d.billing();
+    const price = billing === 'account' ? this.planPrice() : null;
+    const src: MeasureSource = {
+      now: this.now(),
+      days: this.d.processor.days(office, r.from),
+      cards: this.d.processor.cards(office, r.fromMs),
+      decisions: this.d.processor.decisions(office, r.fromMs),
+      asks: this.asks(),
+      ids: this.d.members().map((m) => m.id),
+      gapDays: this.d.store.failureDays(office),
+      running: this.d.processor.running(office, r.fromMs),
+      godId: this.d.godId(),
+      price,
+      rate: price ? this.planRate(office, price) : null
+    };
+    const { snapshot } = this.measureRange(office, 'this-month', r, src);
+    const byDay = new Map<string, { ms: number; awayMs: number }>();
+    for (let t = r.fromMs; dayKey(t) <= r.to; t += 86_400_000) if (!byDay.has(dayKey(t))) byDay.set(dayKey(t), { ms: 0, awayMs: 0 });
+    for (const p of src.running.points) {
+      if (p.ts < r.fromMs || p.ts > r.toMs) continue;
+      const d = byDay.get(dayKey(p.ts));
+      if (d) { d.ms += p.ms; d.awayMs += p.awayMs; }
+    }
+    return { snapshot, days: [...byDay].map(([day, v]) => ({ day, ...v })) };
+  }
+
+  /** The case study invitation (D7): once the office has 30 distinct days
+   *  with an outcome, until dismissed or sent. Kept in the Pulse store per
+   *  office, never in office.json, which is rewritten from the config (eng A1). */
+  caseStudyInvite(office: string): boolean {
+    const db = this.d.db();
+    if (!db) return false;
+    try {
+      if (db.prepare('SELECT 1 FROM telemetry_dismissed WHERE office = ? AND advice_id = ?').get(office, CASE_STUDY_INVITE)) return false;
+      const row = db.prepare('SELECT COUNT(DISTINCT day) AS n FROM telemetry_daily WHERE office = ? AND emails + sent + tasks + checks > 0').get(office) as { n: number } | undefined;
+      return (row?.n ?? 0) >= CASE_STUDY_INVITE_DAYS;
+    } catch { return false; }
+  }
+
+  /** Dismissed or sent: the invitation never shows again for this office. */
+  caseStudyInviteDone(): boolean {
+    const office = this.d.office();
+    const db = this.d.db();
+    if (!office || !db) return false;
+    db.prepare(`INSERT INTO telemetry_dismissed (office, advice_id, band, at) VALUES (?, ?, 0, ?)
+      ON CONFLICT(office, advice_id) DO UPDATE SET at = excluded.at`).run(office, CASE_STUDY_INVITE, this.now());
+    return true;
   }
 
   /** Learning for the period and, with Compare, the span before. */

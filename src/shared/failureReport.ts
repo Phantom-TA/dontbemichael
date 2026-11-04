@@ -57,8 +57,18 @@ export const HIDDEN_ERRORS: Readonly<Record<string, string | null>> = {
   'empty prompt': 'empty-prompt',
   // The callers' own words for an answer that came back but did not parse.
   'unreadable': 'answer-unparseable',
+  // A Work style change's answer, by the check it failed (issue 676).
+  'unreadable: json': 'answer-not-json',
+  'unreadable: shape': 'answer-wrong-shape',
+  'unreadable: opening': 'answer-wrong-opening',
+  'unreadable: missing-part': 'answer-missing-part',
+  'unreadable: question': 'answer-bad-question',
+  'unreadable: home': 'answer-unasked-home',
   'empty': 'answer-unparseable',
   'no verdict': 'answer-unparseable',
+  // The hire check's answer, by the check it failed (issue 677).
+  'no verdict: json': 'answer-not-json',
+  'no verdict: verdict': 'answer-no-verdict',
   'engine unavailable': null,
   'cancelled': null,
   'hidden session timed out': null,
@@ -106,6 +116,8 @@ export const LOG_KIND_CLASS: Readonly<Record<string, FailureClass>> = {
   'office-break': 'owner',
   // A frame without its secret is refused by design.
   'hook-frame-rejected': 'none',
+  // The case study screen shows its own outcome to the owner (docs/designs/case-study.md).
+  'case-study-draft': 'none', 'case-study-logo': 'none', 'case-study-pdf': 'none', 'case-study-send': 'none', 'case-study-sent': 'none',
   'agent-hold': 'none', 'app-start': 'none', 'archive': 'none', 'card-reopen': 'none', 'clear': 'none',
   'clear-cancelled': 'none', 'clear-handoff-asked': 'none', 'closed-by-owner': 'none', 'compact': 'none',
   'distinct-check': 'none', 'drain': 'none', 'file-handed-over': 'none', 'foundations': 'none', 'member-deleted': 'none',
@@ -262,7 +274,21 @@ const CONTEXT_ANY: Readonly<Record<string, (v: string) => boolean>> = {
 };
 
 /** Keys per kind, each with the only values it may hold. */
+/** Where a main process error came from, read from its first stack frame
+ *  (issue 675): `node` or `electron` internals, the app's own bundle, one of
+ *  its packages as `pkg:<name>`, `other` for anything else, `none` with no
+ *  stack. A package name counts only inside the app bundle, so no folder of
+ *  the owner's can reach a report. */
+export const ORIGIN_RE = /^(node|electron|app|other|none|pkg:(@[a-z0-9][a-z0-9._-]{0,40}\/)?[a-z0-9][a-z0-9._-]{0,60})$/;
+const crashContext: Readonly<Record<string, (v: string) => boolean>> = {
+  origin: (v) => ORIGIN_RE.test(v),
+  // What was thrown or rejected: a real Error, a string, another object, nothing.
+  reason: oneOf('error', 'string', 'object', 'none', 'other')
+};
+
 const CONTEXT: Partial<Record<FailureKind, Readonly<Record<string, (v: string) => boolean>>>> = {
+  'main-uncaught': crashContext,
+  'main-rejection': crashContext,
   'loop-agent': {
     // The limit the arm tripped at, and where it came from: `invalid` is a
     // value Settings kept that the breaker cannot use (0 or below).
@@ -280,6 +306,36 @@ const CONTEXT: Partial<Record<FailureKind, Readonly<Record<string, (v: string) =
     sinceSuccess: ago
   }
 };
+
+/** What kind of thing was thrown or rejected. */
+export function reasonKind(reason: unknown): 'error' | 'string' | 'object' | 'none' | 'other' {
+  if (reason instanceof Error) return 'error';
+  if (typeof reason === 'string') return 'string';
+  if (reason === null || reason === undefined) return 'none';
+  return typeof reason === 'object' ? 'object' : 'other';
+}
+
+/** Where an error came from, by its first stack frame (ORIGIN_RE). */
+export function errorOrigin(stack: unknown): string {
+  if (typeof stack !== 'string') return 'none';
+  for (const raw of stack.split('\n')) {
+    const m = raw.match(/^\s*at (?:.+? \()?(.+?)(?::\d+:\d+)?\)?\s*$/);
+    if (!m) continue;
+    const path = m[1].replace(/\\/g, '/');
+    if (/^node:electron\b|\/electron\.asar\/|electron\/js2c\//.test(path)) return 'electron';
+    if (/^(node:|internal\/)/.test(path) || !path.includes('/')) return 'node';
+    const pkg = /\/app\.asar(?:\.unpacked)?\/node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(path);
+    if (pkg) { const v = `pkg:${pkg[1].toLowerCase()}`; return ORIGIN_RE.test(v) ? v : 'other'; }
+    return path.includes('/out/') ? 'app' : 'other';
+  }
+  return 'none';
+}
+
+/** The context of a main process crash or unhandled rejection (issue 675). */
+export function crashContextFor(err: unknown): Record<string, string> {
+  const stack = err && typeof err === 'object' ? (err as { stack?: unknown }).stack : undefined;
+  return { origin: errorOrigin(stack), reason: reasonKind(err) };
+}
 
 /** What the breaker knows when it trips one arm (CircuitBreaker.diagnosis).
  *  Times are epoch ms, 0 when it never happened. */

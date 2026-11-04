@@ -68,5 +68,7 @@ export interface PulseView {
   compareReady: boolean;
   /** The first day this period can compare, for the switch's (i); null with no live records. */
   compareFrom: string | null;
+  /** The one time case study invitation shows (docs/designs/case-study.md, D7). */
+  caseStudyInvite?: boolean;
 }
 

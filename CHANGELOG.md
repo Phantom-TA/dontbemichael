@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [0.3.5] (2026-11-03)
+
+### Added
+- **Get featured: a case study of your office.** Pulse builds a customer story page in your own brand: your logo and colour, how the work went before, a chart of how your office is set up (you, Michael and every team member with their jobs, times and tools), and the hours the team worked while you were away. Every number comes from Pulse. It is prepared in the background, every word can be changed, and you send it to us from your own mailbox as a web page with a PDF copy.
+- **A custom REST connection can hold a saved call.** You save one request with a place for the team member's words; the team member sends only the words, and the fixed parts stay fixed.
+- **List answers in company foundations stay open until you say that's all.** Eight questions are now lists, such as where money moves and who owes whom. What a team member's work sees that the list lacks waits beside your answer for you to decide.
+
+### Changed
+- Team members check each foundation answer before they report, send a partial answer as a gap, and hand in what they already know.
+- Research's answered questions are cleared from its inbox by the app once the answer is sent.
+- Settings no longer shows Skills. Bundled and installed skills keep working.
+
+### Fixed
+- A first click on an email opens it, instead of showing Try again.
+- A sleeping Mac no longer holds a team member back or reports a loop.
+- A folder an ask names is a chip that shows the folder.
+- A Work style change and a hire check read past small slips in the model's answer, and a failure report says which check failed (#676, #677).
+- A crash report with no app frame says where it came from (#675).
+
 ## [0.3.4] (2026-11-01)
 
 ### Added

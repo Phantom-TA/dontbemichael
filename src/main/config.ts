@@ -100,12 +100,33 @@ export const OPS_STANDUP_MISSION: ScheduledMission = {
 };
 
 /** Company foundations check (office-foundations.md, eng D3): once a week,
- *  Michael brings each empty question the work hit back to the owner. Its how
- *  is in his instructions ("Company foundations"); the focus says this run. */
+ *  Michael brings each empty question the work hit back to the owner, and has
+ *  each member send what it holds for its empty questions. Its how is in his
+ *  instructions ("Company foundations"); the focus says this run. */
 export const FOUNDATIONS_CHECK_FOCUS =
+  'For each open question in the company foundations that the work hit, and each list past its shelf life (your foundations context lists both): ' +
+  'if its foundation card is open, set its ask\'s askedAt to now so it comes back to the top of Ask me; if none is open, raise one. ' +
+  'Raise nothing for a question no work has hit, and nothing when every hit question is answered. ' +
+  'Then send each team member with an empty or partly known question in its job\'s part one message, "act": "inform", naming those questions ' +
+  'and asking it to check what it holds in its memory and files and send each whole answer to "foundations", and for a list each item it holds that is not on it. No reply is needed. ' +
+  'Send none when no question is empty or partly known.';
+
+/** Foundations check focus texts the app shipped before. An office still
+ *  carrying one word for word gets the current one at launch; the owner's own
+ *  text stays. */
+export const FOUNDATIONS_CHECK_BUILT_IN_FOCUSES: readonly string[] = [
+  // 2026-10-20 to 2026-11-02: cards only, so an answer a member held stayed unsent.
   'For each empty question in the company foundations that the work hit: if its foundation card is open, ' +
   'set its ask\'s askedAt to now so it comes back to the top of Ask me; if none is open, raise one. ' +
-  'Raise nothing for a question no work has hit, and nothing when every hit question is answered.';
+  'Raise nothing for a question no work has hit, and nothing when every hit question is answered.',
+  // 2026-11-02 to 2026-11-03: before list questions stayed open while known so far.
+  'For each empty question in the company foundations that the work hit: if its foundation card is open, ' +
+  'set its ask\'s askedAt to now so it comes back to the top of Ask me; if none is open, raise one. ' +
+  'Raise nothing for a question no work has hit, and nothing when every hit question is answered. ' +
+  'Then send each team member with an empty question in its job\'s part one message, "act": "inform", naming those questions ' +
+  'and asking it to check what it holds in its memory and files and send each whole answer to "foundations". No reply is needed. ' +
+  'Send none when no question is empty.'
+];
 
 export const FOUNDATIONS_CHECK_MISSION: ScheduledMission = {
   id: 'foundations-check',
