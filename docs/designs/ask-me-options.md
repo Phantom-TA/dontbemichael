@@ -523,3 +523,7 @@ my changes. Note: ..."), but nothing said so. Decided (owner, /investigate, A): 
 `"note": "<a short question>"`. Picking it shows that question in the box, and Reply waits until the
 owner writes something. Michael adds it to any option that needs the owner's own words (the changes
 to make, a date, a name). Asks written before keep the old box.
+
+Update 2026-11-04 (docs/designs/ask-me-changes-come-back.md): the example label is now "Change it,
+show me again", and house rule 10 brings any changed email, post or quote back for another look
+before it goes.

@@ -18,7 +18,7 @@ require.cache[electron] = {
   exports: { Notification: class { show() {} static isSupported() { return false; } } }
 };
 
-const { HiveManager, HOUSE_RULES } = loadTs('src/main/hive.ts');
+const { HiveManager, HOUSE_RULES, CHANGES_COME_BACK_HOUSE_RULE, michaelInstructions } = loadTs('src/main/hive.ts');
 
 const promptOf = (inj) => inj.args[inj.args.indexOf('--append-system-prompt') + 1];
 
@@ -96,9 +96,9 @@ test('a resumed agent is told the house rules that changed, once; a fresh one is
   const inbox = (id) => fs.readdirSync(path.join(hive.root(), 'agents', id, 'inbox')).filter((f) => f.endsWith('.json'))
     .map((f) => JSON.parse(fs.readFileSync(path.join(hive.root(), 'agents', id, 'inbox', f), 'utf8')))
     .filter((m) => m.subject === N.HOUSE_RULES_CHANGED_SUBJECT);
-  // Every office's rules, rule 9 included (owner, ship 2 D16).
+  // Every office's rules, rule 9 (owner, ship 2 D16) and rule 10 (CEO review D1 A, 2026-11-04) included.
   const all = N.houseRuleLines(hive.houseRules());
-  assert.equal(all.length, 9);
+  assert.equal(all.length, 10);
 
   assert.deepEqual(hive.tellHouseRules('oscar', false), [], 'a fresh conversation reads them in its instructions');
   assert.equal(inbox('oscar').length, 0);
@@ -161,4 +161,34 @@ test('team members file once in the triage folder, Michael alone writes the boar
   assert.doesNotMatch(hive, /numbered list|numbered options|"1\." number|bullet or/);
   assert.match(hive, /Only the owner takes a card out of Done, to correct one marked done by mistake/);
   assert.doesNotMatch(hive, /never add a different question to a card that already has one open/);
+});
+
+// Owner, 2026-11-04 (docs/designs/ask-me-changes-come-back.md): Dwight's card
+// offered "Send with my changes", copied from Michael's own example, and Dwight
+// may send without asking, so the changed email would have gone out unseen.
+test('a change the owner asks for comes back before it goes, for Michael and every member', async () => {
+  // Value: protects=the owner sees a changed email, post or quote before it leaves; fails_when=rule 10 is missing from a prompt or a resumed member is never told; why_new=CEO review D1 A; seam=none
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-rules-back-'));
+  const hive = new HiveManager(() => home);
+  const god = promptOf(await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true }));
+  const dwight = promptOf(await hive.ensureAgent({ id: 'dwight', name: 'Dwight', provider: 'claude', cwd: home, role: 'Sales' }));
+  for (const [who, p] of [['Michael', god], ['a team member', dwight]]) assert.ok(p.includes(CHANGES_COME_BACK_HOUSE_RULE), who);
+  assert.match(CHANGES_COME_BACK_HOUSE_RULE, /^10\. /);
+  assert.match(CHANGES_COME_BACK_HOUSE_RULE, /the owner sees the changed version before it goes/);
+  assert.match(CHANGES_COME_BACK_HOUSE_RULE, /on Send on approval, your new proposal is that look/, 'the app email card is the look, not a second card (D2 A)');
+  assert.match(CHANGES_COME_BACK_HOUSE_RULE, /A yes covers only the version the owner saw/);
+  assert.match(CHANGES_COME_BACK_HOUSE_RULE, /names a new time/);
+  assert.match(CHANGES_COME_BACK_HOUSE_RULE, /only when the owner says so in their own words/);
+  assert.doesNotMatch(CHANGES_COME_BACK_HOUSE_RULE, /[\u2013\u2014]| - /);
+  assert.doesNotMatch(CHANGES_COME_BACK_HOUSE_RULE, /\b(MUST|NEVER|ALWAYS|CRITICAL)\b/);
+});
+
+test("Michael's change option says the new version comes back, never that it goes out", () => {
+  // Value: protects=Michael copies his example label onto live cards; fails_when=the example says it sends with the changes; why_new=the live card copied the old example word for word; seam=none
+  const paths = { inbox: 'i', inboxDone: 'd', outbox: 'o', protocol: 'p', hiveRoot: 'h' };
+  const text = michaelInstructions('Michael', { name: 'Northwind Cafe', city: 'Austin' }, paths);
+  assert.match(text, /\{"label": "Change it, show me again", "note": "What should change\?"\}/);
+  assert.doesNotMatch(text, /Send with my changes/);
+  assert.match(text, /never that it goes out with the changes \(house rule 10\)/);
+  assert.match(text, /route any answer asking for changes the same way, on older cards too/);
 });

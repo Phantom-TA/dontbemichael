@@ -140,6 +140,8 @@ moving, and brings you only the decisions that need you.
   lists come back to be confirmed after a while.
 
 ### 6. You stay in charge
+- When you ask for changes to an email, a post or a quote, you see the changed version before it
+  goes. The choice reads "Change it, show me again", and a yes covers only the version you saw.
 - Pulse counts only the office's own share of a Claude plan: its work at the plan's rate, learned
   from the plan's weekly usage meter, so your other Claude use is never charged to the office.
 - Opening the app is clear: a team member counts as in as soon as they have started, and the card
@@ -249,6 +251,12 @@ moving, and brings you only the decisions that need you.
   as a picture, and a part you select pastes as clean as the whole, in light or dark mode.
 
 ## Part 2: Every change, release by release
+
+### 0.3.6 (not yet released)
+- Asking for changes on an approval no longer sends the changed version unseen. The choice now
+  reads "Change it, show me again": the team member makes the changes and brings them back, on
+  the email card for a member on Send on approval and as a new approval for anyone else. Before,
+  a team member allowed to send without asking edited and sent at the planned time.
 
 ### 0.3.5 (2026-11-03)
 

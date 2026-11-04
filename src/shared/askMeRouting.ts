@@ -195,7 +195,7 @@ export function mergeHumanQA(onDisk: unknown[], incoming: unknown[], only?: numb
 /* ───────────────── Options and several questions (ask-me-options.md) ───────────────── */
 
 /** One option Michael wrote on an ask. `note` is set on an option that needs
- *  the owner's own words ("Send with my changes"): a short question the box
+ *  the owner's own words ("Change it, show me again"): a short question the box
  *  asks once it is picked, and Reply waits for an answer to it. */
 export interface AskOption { label: string; recommended?: boolean; note?: string }
 
