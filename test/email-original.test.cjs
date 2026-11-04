@@ -161,6 +161,40 @@ test('closing the tab closes that open\'s connection', async () => {
   void svc;
 });
 
+test('a connection closed while it signs in can report its error without ending the app', async () => {
+  // Value: protects=the app process; fails_when=a mail connection has no 'error' listener, so ImapFlow's late sign in error throws as an unhandled rejection; why_new=Windows CI hit it on the 0.3.5 ship when a tab remounted mid open; seam=MailService.createImap
+  const { EventEmitter } = require('node:events');
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { deps } = fakeService({ holds: { INBOX: { id: ID, uid: 1 } } });
+  const make = deps.createImap;
+  const made = [];
+  // Like ImapFlow: an emitter whose sign in, once the client is closed, fails
+  // with an 'error' event instead of through connect.
+  deps.createImap = (...a) => {
+    const c = Object.assign(new EventEmitter(), make(...a));
+    let closed = false;
+    c.close = () => { closed = true; };
+    c.connect = async () => {
+      await gate;
+      if (!closed) return;
+      setImmediate(() => c.emit('error', new Error('Already logged out')));
+      throw new Error('Connection closed');
+    };
+    made.push(c);
+    return c;
+  };
+  const svc = new MailService(deps);
+  const run = svc.original('ops', ID).catch((e) => e);
+  await new Promise((r) => setImmediate(r));
+  svc.cancelOriginal('ops', ID);
+  release();
+  assert.ok((await run) instanceof Error, 'the closed open fails');
+  await new Promise((r) => setImmediate(r));
+  assert.equal(made.length, 1);
+  assert.ok(made[0].listenerCount('error') > 0, 'the connection has an error listener');
+});
+
 test('no agent tool reaches the owner view', () => {
   for (const op of ['original', 'originalPictures', 'original_email']) assert.equal(Object.prototype.hasOwnProperty.call(MAIL_TOOL_OPS, op), false, op);
   const main = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');

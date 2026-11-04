@@ -442,7 +442,17 @@ export class MailService {
   private readonly resolveMx: NonNullable<MailDeps['resolveMx']>;
 
   constructor(private readonly deps: MailDeps) {
-    this.createImap = deps.createImap ?? defaultImap;
+    const createImap = deps.createImap ?? defaultImap;
+    // Every connection gets an error listener. ImapFlow emits 'error' when its
+    // sign in fails after connect was already given up (an open closed while it
+    // signed in), and an emitter with no listener throws, which ends the app
+    // process on an unhandled rejection (seen on the Windows runner, 0.3.5 ship).
+    // A failure that matters still rejects the command that was waiting on it.
+    this.createImap = (...a) => {
+      const client = createImap(...a);
+      client.on?.('error', () => { /* reported through the command that failed */ });
+      return client;
+    };
     this.createSmtp = deps.createSmtp ?? defaultSmtp;
     this.resolveMx = deps.resolveMx ?? resolveMx;
     this.loadJournal();
