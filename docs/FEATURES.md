@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.3.4). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.3.5). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -134,6 +134,10 @@ moving, and brings you only the decisions that need you.
   sell to, how you sound, your financial year), filled by you, the company profile and what the
   team learns. When work needs an empty answer, a card on Needs you asks you once; answer it in
   words or with a file, which the app checks fits the question before the team can read it.
+  Lists (what you sell, customers, competitors, where money moves, who owes whom, the team,
+  systems, suppliers) stay open until you save the whole list. What the team's work saw that a list
+  lacks waits on its card to add, mark Not ours or decide later, and the money, systems and team
+  lists come back to be confirmed after a while.
 
 ### 6. You stay in charge
 - Pulse counts only the office's own share of a Claude plan: its work at the plan's rate, learned
@@ -146,7 +150,8 @@ moving, and brings you only the decisions that need you.
   else can reach it, and your own Claude Code servers stay yours.
 - Give one team member access to one outside service: a custom REST integration reaches only the
   members you name on their Access tab, at Read only or Can change. A new one starts with nobody,
-  taking access away holds on the next call, and the app keeps the key. For members on Claude.
+  taking access away holds on the next call, and the app keeps the key. A connection can hold one
+  saved call, so the member sends only its words. For members on Claude.
 - Email goes only through the mailboxes you connect in the app. Gmail, Outlook and other mail on
   your Claude account never show as connectors, and no team member can use them.
 - Spending money, deleting things and anything public come to you first, on the Needs you board.
@@ -244,6 +249,22 @@ moving, and brings you only the decisions that need you.
   as a picture, and a part you select pastes as clean as the whole, in light or dark mode.
 
 ## Part 2: Every change, release by release
+
+### 0.3.5 (2026-11-03)
+
+- Get featured: Pulse builds a customer story page of the office in the business's own brand (its
+  logo, SVG ones too, and its colour, or one the owner picks), with how the work went before, a chart
+  of the office's setup (every member's jobs, times and tools) and the hours worked while the owner
+  was away. It is prepared in the background, every number comes from Pulse, and it goes to us from
+  the owner's own mailbox as a web page with a PDF copy.
+- A custom REST connection can hold one saved call; the member sends only its words.
+- Eight foundation questions are lists that stay open until the owner says that's all. Items a
+  member's work saw wait beside the answer for the owner, and money, systems and the team expire.
+- Members check each foundation answer before reporting and hand in what they hold; Research's
+  answered questions are cleared by the app; Settings no longer shows Skills.
+- Fixed: a first click on an email opens it; a sleeping Mac no longer holds a member back; a folder an
+  ask names is a chip; Work style changes and hire checks read past small slips in the model's answer
+  and report which check failed (#676, #677); a crash with no app frame says where it came from (#675).
 
 ### 0.3.4 (2026-11-01)
 
