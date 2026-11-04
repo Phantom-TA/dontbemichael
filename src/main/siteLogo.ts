@@ -64,7 +64,9 @@ for (const [net, bits] of [
   ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24],
   ['224.0.0.0', 4], ['240.0.0.0', 4]
 ] as const) blocked.addSubnet(net, bits, 'ipv4');
-for (const [net, bits] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8], ['2001:db8::', 32], ['100::', 64]] as const) blocked.addSubnet(net, bits, 'ipv6');
+// IPv4 compatible (::/96), 6to4 (2002::/16) and local NAT64 (64:ff9b:1::/48)
+// can wrap a private IPv4 address, so none of them is public here (ship review).
+for (const [net, bits] of [['::', 96], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8], ['2001:db8::', 32], ['100::', 64], ['2002::', 16], ['64:ff9b:1::', 48]] as const) blocked.addSubnet(net, bits, 'ipv6');
 
 /** The IPv4 address inside an IPv4 mapped or NAT64 IPv6 address, if any. */
 function embeddedV4(ip: string): string | null {
@@ -224,10 +226,16 @@ export function imageSize(b: Buffer, kind: ImageKind): { w: number; h: number } 
 
 // ---------------------------------------------------------------- the read
 
-function defaultGet(url: URL, maxBytes: number, deadline: number, lookup: GuardedLookup): Promise<Fetched> {
+/** One request, inside the total time limit (exported for its test). */
+export function defaultGet(url: URL, maxBytes: number, deadline: number, lookup: GuardedLookup): Promise<Fetched> {
   return new Promise((resolve, reject) => {
     const left = deadline - Date.now();
     if (left <= 0) return reject(new LogoError('timeout'));
+    // The one time limit holds from the request on: `timeout` below is only
+    // an idle timer, which a host sending its headers a byte at a time resets
+    // forever (ship review). Destroying the request ends the read either way.
+    const hard = setTimeout(() => { req.destroy(); reject(new LogoError('timeout')); }, left);
+    hard.unref?.();
     const req = request(url, {
       method: 'GET', agent: false, lookup: lookup as never, timeout: left,
       headers: { 'user-agent': "Don't Be Michael case study logo", accept: 'text/html,image/png,image/jpeg,image/webp,image/svg+xml;q=0.9,*/*;q=0.1' }
@@ -237,14 +245,14 @@ function defaultGet(url: URL, maxBytes: number, deadline: number, lookup: Guarde
       const timer = setTimeout(() => { req.destroy(); reject(new LogoError('timeout')); }, Math.max(1, deadline - Date.now()));
       res.on('data', (c: Buffer) => {
         size += c.length;
-        if (size > maxBytes) { clearTimeout(timer); req.destroy(); reject(new LogoError('too-big')); return; }
+        if (size > maxBytes) { clearTimeout(timer); clearTimeout(hard); req.destroy(); reject(new LogoError('too-big')); return; }
         chunks.push(c);
       });
-      res.on('end', () => { clearTimeout(timer); resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }); });
-      res.on('error', (e) => { clearTimeout(timer); reject(e); });
+      res.on('end', () => { clearTimeout(timer); clearTimeout(hard); resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }); });
+      res.on('error', (e) => { clearTimeout(timer); clearTimeout(hard); reject(e); });
     });
     req.on('timeout', () => { req.destroy(); reject(new LogoError('timeout')); });
-    req.on('error', (e) => reject((e as { code?: string }).code === 'EPRIVATE' ? new LogoError('private') : e));
+    req.on('error', (e) => { clearTimeout(hard); reject((e as { code?: string }).code === 'EPRIVATE' ? new LogoError('private') : e); });
     req.end();
   });
 }

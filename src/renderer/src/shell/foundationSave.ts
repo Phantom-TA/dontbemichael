@@ -30,6 +30,15 @@ function michaelAsk(id: FoundationId, line: string, list?: ListSave): string {
     : `Please save this as the list so far for the company foundations question ${q}, without "complete": ${line}`;
 }
 
+/** The list Michael is asked to save when the write did not take it. A save
+ *  main refused because a seen item is still undecided (one that came in after
+ *  the card loaded) goes to him as the list so far, never the whole list, so
+ *  "complete": true can't clear what the owner hasn't seen (ship review). */
+function michaelList(r: unknown, list?: ListSave): ListSave | undefined {
+  const undecided = !!r && typeof r === 'object' && (r as { error?: unknown }).error === 'undecided';
+  return list && undecided ? { ...list, whole: false } : list;
+}
+
 /** A typed answer: the card first, then the foundations, else Michael. */
 export async function saveTextAnswer(id: FoundationId, text: string, cth: FoundationSaveCth, onAnswer: CardAnswer, list?: ListSave): Promise<{ taken: false } | { taken: true; how: SavedHow }> {
   // The card first: the answer reaches Michael, who closes it.
@@ -40,7 +49,7 @@ export async function saveTextAnswer(id: FoundationId, text: string, cth: Founda
   if (r?.ok) return { taken: true, how: 'saved' };
   // Not written: Michael adds it, as he does any owner answer.
   const line = list ? joinListLines(text) : text;
-  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: michaelAsk(id, line, list) }, 'human').catch(() => null);
+  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: michaelAsk(id, line, michaelList(r, list)) }, 'human').catch(() => null);
   return { taken: true, how: sent?.ok ? 'michael' : 'failed' };
 }
 
@@ -86,7 +95,7 @@ export async function saveFileAnswer(
   if (r?.ok) return { kind: 'taken', how: 'saved' };
   // Michael adds it: the exact line, so the document id survives (Codex 3).
   const line = list ? fileAnswerLine(joinListLines(text), added.docId, added.name, capFor(id)) : fileAnswerLine(text, added.docId, added.name);
-  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: michaelAsk(id, line, list) }, 'human').catch(() => null);
+  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: michaelAsk(id, line, michaelList(r, list)) }, 'human').catch(() => null);
   return { kind: 'taken', how: sent?.ok ? 'michael' : 'failed' };
 }
 
@@ -128,6 +137,6 @@ export async function saveFolderAnswer(
   // Michael adds the line; an answer he adds names the folder but opens it to
   // nobody (only the owner's own card answer does, readFoldersFor).
   const line = (list ? folderAnswerLine(joinListLines(text), checked.path, capFor(id)) : folderAnswerLine(text, checked.path)) ?? `Kept in the folder ${checked.path}`;
-  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: michaelAsk(id, line, list) }, 'human').catch(() => null);
+  const sent = await cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: michaelAsk(id, line, michaelList(r, list)) }, 'human').catch(() => null);
   return { kind: 'taken', how: sent?.ok ? 'michael' : 'failed' };
 }

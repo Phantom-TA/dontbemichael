@@ -219,6 +219,19 @@ test('a typed answer the card refuses writes nothing to the foundations', async 
   assert.deepEqual(fallback.log.at(-1), ['hiveSend', { to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS.prices.text}" (prices): Bread is 5 dollars` }, 'human']);
 });
 
+test('a whole list save main refuses as undecided reaches Michael as the list so far, never "complete" (ship review)', async () => {
+  // Value: protects=a seen item that came in after the card loaded is never cleared by a "complete": true relay the owner did not mean; fails_when=the fallback asks Michael for the whole list after main refused it as undecided; why_new=ship review of 0.3.5 found the fallback routed around main's refusal; seam=injected cth; no_claim=Michael's own handling of the request
+  const whole = { added: [], whole: true };
+  const refused = fakeCth({ foundationsAnswer: { ok: false, error: 'undecided' } });
+  assert.deepEqual(await FS.saveTextAnswer('money', 'Chase checking', refused.cth, refused.onAnswer, whole), { taken: true, how: 'michael' });
+  const body = refused.log.at(-1)[1].body;
+  assert.match(body, /as the list so far/);
+  assert.doesNotMatch(body, /with "complete": true/);
+  const other = fakeCth({ foundationsAnswer: { ok: false, error: 'no-office' } });
+  await FS.saveTextAnswer('money', 'Chase checking', other.cth, other.onAnswer, whole);
+  assert.match(other.log.at(-1)[1].body, /whole list .*"complete": true/, 'any other failure still asks for the whole list');
+});
+
 test('a file answer the card refuses removes its document and never writes the answer', async () => {
   // Value: protects=a file the card did not take leaves nothing in company knowledge and no answer naming it; fails_when=kgRemove is skipped or foundationsAnswerFile still runs; why_new=the removal was only a source regex; seam=injected cth; no_claim=the knowledge store's own removal
   const f = fakeCth({ onAnswer: false });

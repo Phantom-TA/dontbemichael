@@ -127,7 +127,7 @@ import { TelemetryCollector } from './telemetry';
 import { CostLedgerTotals } from './costLifetime';
 import { RUN_COMPARE_MODEL, RUN_COMPARE_TIMEOUT_MS, RunCompare } from './runCompare';
 import { runHiddenModel } from './hiddenModel';
-import { CASE_DRAFT_TIMEOUT_MS, CaseStudyService, caseInput } from './caseStudy';
+import { CASE_DRAFT_TIMEOUT_MS, CaseStudyService, caseInput, savePaths } from './caseStudy';
 import { readSiteLogo } from './siteLogo';
 import type { CaseFont } from '../shared/caseStudy';
 import { CostLedgerStore } from './costLedger';
@@ -7631,11 +7631,12 @@ ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, edits: unknown,
   const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
   if (res.canceled || !res.filePath) return { ok: false, kind: 'cancelled' };
   // The web page we publish beside its PDF copy, same name (D28).
-  try { writeFileSync(res.filePath, out.pdf); writeFileSync(res.filePath.replace(/\.pdf$/i, '') + '.html', out.html); } catch { return { ok: false, kind: 'failed' }; }
+  const paths = savePaths(res.filePath, existsSync);
+  try { writeFileSync(paths.pdf, out.pdf); writeFileSync(paths.html, out.html); } catch { return { ok: false, kind: 'failed' }; }
   // No mailbox can send (D1): the mail app opens with our address and the
   // permission line, and the owner attaches the file just saved.
   if (openMailApp === true) { const url = caseStudy.mailto(i); if (url) void shell.openExternal(url).catch(() => undefined); }
-  return { ok: true, path: res.filePath };
+  return { ok: true, path: paths.pdf };
 });
 ipcMain.handle('caseStudy:send', (_evt, input: unknown, edits: unknown, mailbox: unknown, permission: unknown) => {
   const i = caseInput(input);

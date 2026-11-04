@@ -39,6 +39,8 @@ test('only public addresses pass, mapped and NAT64 forms included', () => {
     assert.equal(L.isPublicAddress(ip), false, ip);
   }
   for (const ip of ['93.184.216.34', '2606:4700::1111', '::ffff:93.184.216.34']) assert.equal(L.isPublicAddress(ip), true, ip);
+  // Forms that can wrap a private IPv4 address (ship review).
+  for (const ip of ['::7f00:1', '::a00:1', '2002:7f00:1::1', '2002:c0a8:101::1', '64:ff9b:1::a00:1']) assert.equal(L.isPublicAddress(ip), false, ip);
 });
 
 test('the socket lookup refuses a name with any private address', async () => {
@@ -124,4 +126,39 @@ test('a redirect loop stops after three hops', async () => {
   const loop = web({ 'https://bakery.example/': { redirect: 'https://bakery.example/a' }, 'https://bakery.example/a': { redirect: 'https://bakery.example/' } });
   assert.deepEqual(await L.readSiteLogo('bakery.example', { decode, get: loop.get }), { ok: false, reason: 'not-found' });
   assert.equal(loop.asked.length, 4);
+});
+
+test('a host that trickles its headers still ends at the total time limit (ship review)', async (t) => {
+  // Value: protects=a slow or hostile site can't leave the case study on Preparing forever; fails_when=the limit only starts once headers arrive, so a host sending its headers a byte at a time is never cut off; why_new=ship review of 0.3.5; seam=a local TLS server with a throwaway certificate, and a lookup that allows it; no_claim=the public address guard (tested above)
+  const { execFileSync } = require('node:child_process');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const tls = require('node:tls');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'logo-tls-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  try {
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=localhost', '-days', '1', '-keyout', path.join(dir, 'k.pem'), '-out', path.join(dir, 'c.pem')], { stdio: 'ignore' });
+  } catch { t.skip('openssl is not available'); return; }
+  const socks = new Set();
+  const server = tls.createServer({ key: fs.readFileSync(path.join(dir, 'k.pem')), cert: fs.readFileSync(path.join(dir, 'c.pem')) }, (sock) => {
+    socks.add(sock);
+    sock.write('HTTP/1.1 200 OK\r\nX-Slow: ');
+    const tick = setInterval(() => { try { sock.write('a'); } catch { /* closed */ } }, 40);
+    sock.on('close', () => clearInterval(tick));
+    sock.on('error', () => clearInterval(tick));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const prev = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  t.after(() => { if (prev === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED; else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev; for (const s of socks) s.destroy(); server.close(); });
+  const { port } = server.address();
+  const lookup = (_h, opts, cb) => (opts && opts.all ? cb(null, [{ address: '127.0.0.1', family: 4 }]) : cb(null, '127.0.0.1', 4));
+  const started = Date.now();
+  const outcome = await Promise.race([
+    L.defaultGet(new URL(`https://localhost:${port}/`), 100000, Date.now() + 300, lookup).then(() => 'resolved', (e) => (e && e.reason) || String(e)),
+    new Promise((r) => setTimeout(() => r('still waiting'), 3000))
+  ]);
+  assert.equal(outcome, 'timeout', 'the request ends at its limit');
+  assert.ok(Date.now() - started < 1500, `it ended near the limit (${Date.now() - started} ms)`);
 });

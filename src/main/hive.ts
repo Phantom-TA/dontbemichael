@@ -3354,7 +3354,9 @@ export class HiveManager {
           : `${n}'s answer to ${toName} ("${out.subject.slice(0, 80)}") read like it was trying to steer its reader. It was delivered as written, labelled as information only. Look at it if the work matters.`
       }, PRIVACY_CHECK_SENDER), godId);
     }
-    this.archiveResearchAnswered(msg.in_reply_to);
+    // Only an answer to the one who asked it clears the question: a note to
+    // Michael about it, or a reply naming another id, leaves it waiting (ship review).
+    if (byId && back && back.from === msg.to) this.archiveResearchAnswered(msg.in_reply_to);
     return 'sent';
   }
 

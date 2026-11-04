@@ -1453,6 +1453,11 @@ test('once Research\'s answer is sent, the app moves the question it answers to 
   send(hive, 'research', { to: 'god', in_reply_to: second, act: 'inform', subject: 'Trends', body: 'blocked words' }, 'm2.json');
   hive.routeOnce(); await tick(); hive.routeOnce();
   assert.ok(fs.existsSync(path.join(inbox, `${second}.json`)), 'a refused answer moves nothing');
+  // A note to Michael naming Pam's other question is sent, but leaves that question waiting.
+  const third = await askFrom(hive, 'pam');
+  send(hive, 'research', { to: 'god', in_reply_to: third, act: 'inform', subject: 'Problem', body: 'This one needs the owner.' }, 'm3.json');
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.ok(fs.existsSync(path.join(inbox, `${third}.json`)), 'only an answer to the asker clears a question');
   // An id that names no delivery of the app's, or a path, moves nothing.
   for (const bad of ['../../god/inbox/x', 'nope']) {
     send(hive, 'research', { to: 'god', in_reply_to: bad, act: 'inform', subject: 'Other', body: 'Answer.' }, `m-${bad.length}.json`);

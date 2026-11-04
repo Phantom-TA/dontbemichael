@@ -224,3 +224,14 @@ test('a picked SVG logo is drawn first and kept; the owner\'s brand colour paint
   await hidden.svc.send({ ...input, showName: false }, { ...edits, brand: '#0a7d4f' }, 'ceo', true);
   assert.doesNotMatch(hidden.calls.sends[0].input.files[0].content.toString('utf8'), new RegExp(`--hero:${pal.hero}`), 'never with the name hidden (D8)');
 });
+
+test('Save writes the PDF as .pdf and never replaces a file beside it with the page (ship review)', () => {
+  // Value: protects=an earlier page or another file with the same name is never overwritten without being asked; fails_when=Save writes <name>.html over an existing file, or the PDF under a name without .pdf; why_new=ship review of 0.3.5; seam=an injected exists check
+  const { savePaths } = require('./load-ts.cjs')('src/main/caseStudy.ts');
+  const none = () => false;
+  assert.deepEqual(savePaths('/d/case-study.pdf', none), { pdf: '/d/case-study.pdf', html: '/d/case-study.html' });
+  assert.deepEqual(savePaths('/d/story', none), { pdf: '/d/story.pdf', html: '/d/story.html' }, 'a typed name gets its .pdf ending');
+  assert.deepEqual(savePaths('/d/Story.PDF', none).html, '/d/Story.html');
+  const taken = new Set(['/d/case-study.html', '/d/case-study (2).html']);
+  assert.equal(savePaths('/d/case-study.pdf', (p) => taken.has(p)).html, '/d/case-study (3).html');
+});

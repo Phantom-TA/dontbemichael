@@ -73,6 +73,20 @@ export interface CaseStudyDeps {
 }
 
 
+/**
+ * Where Save writes the PDF and the web page beside it (ship review): the PDF
+ * always ends in .pdf, and the page takes the same name ending in .html, or
+ * a numbered one when that file is already there, so Save never replaces a
+ * file the save dialog did not ask about.
+ */
+export function savePaths(picked: string, exists: (path: string) => boolean): { pdf: string; html: string } {
+  const pdf = /\.pdf$/i.test(picked) ? picked : `${picked}.pdf`;
+  const base = pdf.replace(/\.pdf$/i, '');
+  let html = `${base}.html`;
+  for (let n = 2; exists(html) && n < 100; n++) html = `${base} (${n}).html`;
+  return { pdf, html };
+}
+
 /** The screen's input from IPC, or null when it isn't one. */
 export function caseInput(v: unknown): CaseInput | null {
   const r = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
