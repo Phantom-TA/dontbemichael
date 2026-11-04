@@ -69,6 +69,8 @@ export interface CaseStudyDeps {
   /** A prepared case study is ready: main tells the screen, and the desktop
    *  when the window is in the background. */
   onReady: () => void;
+  /** Whether a prepared case study waits for the owner changed (Ask me). */
+  onWaitingChange?: () => void;
   now?: () => number;
 }
 
@@ -112,7 +114,7 @@ const toDataUrl = (png: Buffer): string => `data:image/png;base64,${png.toString
 export class CaseStudyService {
   /** At most one case study is prepared at a time; a new office, period,
    *  language or name choice starts over. */
-  private prep: { key: string; office: string | null; input: CaseInput; state: 'preparing' | 'ready'; draft: CaseDraft | null; logo: CaseLogo | null; hasWork: boolean } | null = null;
+  private prep: { key: string; office: string | null; input: CaseInput; state: 'preparing' | 'ready'; draft: CaseDraft | null; logo: CaseLogo | null; hasWork: boolean; waiting?: boolean } | null = null;
   constructor(private readonly d: CaseStudyDeps) {}
   private now(): number { return this.d.now ? this.d.now() : Date.now(); }
 
@@ -173,6 +175,8 @@ export class CaseStudyService {
   }
 
   open(input: CaseInput): CaseOpen | null {
+    // The owner is looking at it: Michael's ready card leaves Ask me.
+    this.seen();
     const facts = this.facts(input);
     if (!facts) return null;
     return { facts, fonts: this.d.fonts(), senders: this.d.senders(), hasWork: hasWork(facts.figures), to: CASE_STUDY_TO };
@@ -212,8 +216,11 @@ export class CaseStudyService {
     if (this.prep?.key === key) return this.status();
     const facts = this.facts(input);
     const work = !!facts && hasWork(facts.figures);
-    const job = { key, office, input, state: 'preparing' as 'preparing' | 'ready', draft: null as CaseDraft | null, logo: null as CaseLogo | null, hasWork: work };
+    const job = { key, office, input, state: 'preparing' as 'preparing' | 'ready', draft: null as CaseDraft | null, logo: null as CaseLogo | null, hasWork: work, waiting: false };
+    const waited = !!this.prep?.waiting;
     this.prep = job;
+    // A new one replaces the one that waited on Ask me.
+    if (waited) this.d.onWaitingChange?.();
     if (!work) { job.state = 'ready'; return this.status(); }
     void (async () => {
       const [d, l] = await Promise.all([
@@ -224,7 +231,10 @@ export class CaseStudyService {
       job.draft = d.ok ? d.draft : null;
       job.logo = l;
       job.state = 'ready';
+      // It waits on Ask me until the owner opens it or chooses Later.
+      job.waiting = true;
       this.d.onReady();
+      this.d.onWaitingChange?.();
     })();
     return this.status();
   }
@@ -243,7 +253,15 @@ export class CaseStudyService {
     const p = this.prep;
     if (!p || p.office !== this.d.office()) return { state: 'idle' };
     if (p.state === 'preparing') return { state: 'preparing', input: p.input };
-    return { state: 'ready', input: p.input, draft: p.draft, logo: p.logo, hasWork: p.hasWork };
+    return { state: 'ready', input: p.input, draft: p.draft, logo: p.logo, hasWork: p.hasWork, ...(p.waiting ? { waiting: true } : {}) };
+  }
+
+  /** The prepared case study no longer waits on Ask me: the owner opened it,
+   *  chose Later, or had the screen open when it got ready. */
+  seen(): void {
+    if (!this.prep?.waiting) return;
+    this.prep.waiting = false;
+    this.d.onWaitingChange?.();
   }
 
   /** The kept logo, or one read from the site; `fresh` reads the site again. */
@@ -325,7 +343,9 @@ export class CaseStudyService {
     this.d.log({ kind: 'case-study-sent', mailbox: box.id, to: CASE_STUDY_TO, text: "You sent a case study to Don't Be Michael" });
     this.d.inviteDone();
     // Sent: the next Get featured prepares a fresh one.
+    const waited = !!this.prep?.waiting;
     this.prep = null;
+    if (waited) this.d.onWaitingChange?.();
     return { ok: true };
   }
 

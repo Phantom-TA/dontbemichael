@@ -48,9 +48,13 @@ export interface NeedsYouFeed {
   update: UpdateNeed | null;
   /** The version the owner put off with Later, until the app starts again. */
   updateLater: string | null;
+  /** A case study prepared in the background waits for the owner to open it:
+   *  Michael's card on Ask me (CaseStudyCard), until opened or put off. */
+  caseStudyWaiting: boolean;
   /** Open asks, passed-on schedule requests, job description offers, emails to
    *  approve, one for an engine Michael cannot start on, one for a stop only
-   *  the owner can fix (out of credit, sign in), and one for an update. */
+   *  the owner can fix (out of credit, sign in), one for an update, and one for a
+   *  case study ready to view. */
   count: number;
   /** Reports Michael put on Ask me (michael-replies.md, 14A): never coral, never in `count`. */
   reports: number;
@@ -63,7 +67,7 @@ export interface NeedsYouFeed {
   foundations: FoundationsView | null;
 }
 
-let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, silent: [], update: null, updateLater: null, count: 0, reports: 0, researchNotice: false, knowledgeNotice: false, foundations: null };
+let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, silent: [], update: null, updateLater: null, caseStudyWaiting: false, count: 0, reports: 0, researchNotice: false, knowledgeNotice: false, foundations: null };
 // The offers need the team and the packs, which this module does not import;
 // the app hands it the reader at start (App.tsx).
 let offersSource: (() => Promise<WorkStyleOffer[]>) | null = null;
@@ -110,7 +114,7 @@ let taskReads = 0;
 let requestReads = 0;
 let ownerReads = 0;
 
-function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'silent' | 'researchNotice' | 'knowledgeNotice' | 'foundations' | 'update' | 'updateLater'>>): void {
+function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'silent' | 'researchNotice' | 'knowledgeNotice' | 'foundations' | 'update' | 'updateLater' | 'caseStudyWaiting'>>): void {
   // A poll that brings nothing new changes nothing, so nobody re-renders.
   const changed = (Object.keys(next) as Array<keyof typeof next>).some((k) => JSON.stringify(next[k]) !== JSON.stringify(feed[k]));
   if (!changed) return;
@@ -130,6 +134,7 @@ function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests
   const silent = silentCards(merged.silent).length;
   if (silent) feed = { ...feed, count: feed.count + silent };
   if (updateCardShown(merged.update, merged.updateLater)) feed = { ...feed, count: feed.count + 1 };
+  if (merged.caseStudyWaiting) feed = { ...feed, count: feed.count + 1 };
   for (const l of [...listeners]) l();
   // Ready after Michael could not start: hand the terminals that could not
   // start to useHive, which restarts exactly those (agents at work keep going).
@@ -225,6 +230,15 @@ let offStop: (() => void) | null = null;
 let offSilent: (() => void) | null = null;
 let offFoundations: (() => void) | null = null;
 let offUpdate: (() => void) | null = null;
+let offCaseStudy: (() => void) | null = null;
+let caseStudyReads = 0;
+/** Whether main holds a prepared case study the owner has not opened yet. */
+function readCaseStudy(): void {
+  const mine = ++caseStudyReads;
+  void window.cth.caseStudyStatus?.()
+    .then((p) => { if (mine === caseStudyReads) publish({ caseStudyWaiting: p?.state === 'ready' && p.waiting === true }); })
+    .catch(() => { /* keep the last value */ });
+}
 /** Only a status the owner acts on replaces the card's: a re-check or a
  *  download error pushed after it must not take it off Ask me. */
 function takeUpdate(s: unknown): void {
@@ -264,6 +278,8 @@ export function subscribeNeedsYou(listener: () => void): () => void {
     // over the read, which may be older.
     offUpdate = window.cth.onUpdateStatus?.(takeUpdate) ?? null;
     void window.cth.updateCurrent?.().then((cur) => { if (!feed.update) takeUpdate(cur); }).catch(() => { /* nothing to show */ });
+    readCaseStudy();
+    offCaseStudy = window.cth.onCaseStudyWaiting?.(readCaseStudy) ?? null;
   }
   return () => {
     listeners.delete(listener);
@@ -284,6 +300,8 @@ export function subscribeNeedsYou(listener: () => void): () => void {
       offFoundations = null;
       offUpdate?.();
       offUpdate = null;
+      offCaseStudy?.();
+      offCaseStudy = null;
     }
   };
 }

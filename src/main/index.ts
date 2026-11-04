@@ -7592,6 +7592,7 @@ const caseStudy = new CaseStudyService({
   paper: () => (['US', 'CA'].includes(app.getLocaleCountryCode().toUpperCase()) ? 'letter' : 'a4'),
   appVersion: app.getVersion(),
   office: pulseOffice,
+  onWaitingChange: () => { try { liveWebContents()?.send('caseStudy:waiting'); } catch { /* window gone */ } },
   onReady: () => {
     try { liveWebContents()?.send('caseStudy:ready'); } catch { /* window gone */ }
     // A desktop notice only while the window is in the background: in front,
@@ -7611,6 +7612,7 @@ const caseStudy = new CaseStudyService({
 });
 ipcMain.handle('caseStudy:prepare', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.prepare(i) : { state: 'idle' }; });
 ipcMain.handle('caseStudy:status', () => caseStudy.status());
+ipcMain.handle('caseStudy:seen', () => { caseStudy.seen(); return true; });
 ipcMain.handle('caseStudy:open', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.open(i) : null; });
 ipcMain.handle('caseStudy:draft', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.draft(i) : { ok: false, reason: 'failed' }; });
 ipcMain.handle('caseStudy:logo', (_evt, fresh: unknown) => caseStudy.logo(fresh === true));

@@ -29,6 +29,7 @@ import { FoundationCard } from './FoundationCard';
 import { foundationAsk, isSettled, isSnoozed } from '@shared/foundations';
 import { updateCardShown } from '@shared/updateState';
 import { UpdateCard } from './UpdateCard';
+import { CaseStudyCard } from './pulse/CaseStudyCard';
 
 /**
  * ASK ME — first-class human feedback through the task system.
@@ -80,9 +81,12 @@ export function AskMeTab() {
   const agents = useStore((s) => s.agents);
   const restorable = useStore((s) => s.restorableAgents);
   // One shared read with the pill, the strip and the chips (D3, eng R4).
-  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice, knowledgeNotice, silent, foundations, update, updateLater } = useNeedsYou();
+  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice, knowledgeNotice, silent, foundations, update, updateLater, caseStudyWaiting } = useNeedsYou();
   // Michael's card for a new version (UpdateCard) keeps All clear away too.
   const updateShown = updateCardShown(update, updateLater);
+  // And a case study ready to view (CaseStudyCard).
+  const caseScreenOpen = useStore((s) => s.caseStudyOpen);
+  const caseShown = caseStudyWaiting && !caseScreenOpen;
   // Members whose engine isn't reporting (issue #326): their cards keep All clear away.
   const silentShown = silentCards(silent).length > 0;
   // A sign in stop already asks the owner to sign in: one card (eng R3).
@@ -275,6 +279,7 @@ export function AskMeTab() {
       <SilentEngineCards />
       <EngineSetupCard status={engineCard ? engineSetup : null} />
       <UpdateCard update={update} later={updateLater} />
+      <CaseStudyCard waiting={caseStudyWaiting} />
       <ScheduleRequestCards requests={scheduleRequests} refresh={refreshScheduleRequests} />
       <WorkStyleUpdateCards offers={offers} />
       <MailProposalCards proposals={proposals} refresh={refreshNeedsYou} />
@@ -287,13 +292,13 @@ export function AskMeTab() {
       </div>
       {/* Nothing left (D4, D8): All clear, one light line, and what was just
           answered. The column closes on the next click outside it. */}
-      {!engineCard && !updateShown && !onBreak && !researchNotice && !knowledgeNotice && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
+      {!engineCard && !updateShown && !caseShown && !onBreak && !researchNotice && !knowledgeNotice && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
         <div style={{ padding: '4px 2px 2px' }}>
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--cth-ink)' }}>{translate('shell.allClear')}</div>
           <div style={{ marginTop: 4, fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink-3)' }}>{translate(`shell.allClearLine${line}`, { godName })}</div>
         </div>
       )}
-      {!engineCard && !updateShown && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && answeredHere.map((x) => (
+      {!engineCard && !updateShown && !caseShown && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && answeredHere.map((x) => (
         <section key={x.id} aria-label={askTitle(x.title)} style={card}>
           <div style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px', letterSpacing: '-0.01em', color: 'var(--cth-ink)' }}>{askTitle(x.title)}</div>
           {x.who && <div style={{ marginTop: 6 }}><span style={personChip}><AgentAvatar id={x.whoId} name={x.who} size={16} />{x.who}</span></div>}

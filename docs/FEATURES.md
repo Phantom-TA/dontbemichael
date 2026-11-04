@@ -260,6 +260,9 @@ moving, and brings you only the decisions that need you.
 - A new version of the app arrives as a card from Michael on Ask me, with Later and Restart to
   update (or Download, for an install that can't update itself), in place of the popup in the
   corner of the office. Later puts it off for that version until the app starts again.
+- A case study prepared in the background says it is ready as a card from Michael on Ask me, with
+  View and Later, and stays until you open it or choose Later. Before, a popup in the corner left
+  after 15 seconds.
 
 ### 0.3.5 (2026-11-03)
 

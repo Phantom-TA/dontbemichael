@@ -24,7 +24,7 @@ import { ClosingTimeBar, type ClosingTimeState } from '@/components/ClosingTimeB
 import { CompletionToast } from '@/realtime/CompletionToast';
 import { UpdateToast } from '@/components/UpdateToast';
 import { CliUpdateToast } from '@/components/CliUpdateNotice';
-import { CaseStudyToast } from '@/components/pulse/CaseStudyToast';
+import { CaseStudyEvents } from '@/components/pulse/CaseStudyEvents';
 import { SettingsModal, type Section as SettingsSection, type SettingsPlace } from '@/components/SettingsModal';
 import type { PlaceGroup } from '@shared/settingsPlaces';
 import { MichaelStopped } from '@/components/MichaelStopped';
@@ -520,7 +520,7 @@ export function App() {
           positions itself and renders null until it has something to say. */}
       <CompletionToast />
       <UpdateToast />
-      <CaseStudyToast />
+      <CaseStudyEvents />
       <CliUpdateToast onCloseAndReopen={closeOfficeAndReopen} />
 
       {/* Design v2 shell (branding/DESIGN.md 5.2): top bar, the stage with the

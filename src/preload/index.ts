@@ -1554,6 +1554,14 @@ const api = {
     ipcRenderer.on('caseStudy:ready', h);
     return () => { ipcRenderer.removeListener('caseStudy:ready', h); };
   },
+  /** A prepared case study no longer waits on Ask me (opened, Later, or the screen was open). */
+  caseStudySeen: (): Promise<boolean> => ipcRenderer.invoke('caseStudy:seen'),
+  /** Whether a prepared case study waits on Ask me changed: read the status again. */
+  onCaseStudyWaiting: (cb: () => void): (() => void) => {
+    const h = (): void => cb();
+    ipcRenderer.on('caseStudy:waiting', h);
+    return () => { ipcRenderer.removeListener('caseStudy:waiting', h); };
+  },
   /** The owner clicked the desktop notice: open the screen. */
   onCaseStudyShow: (cb: () => void): (() => void) => {
     const h = (): void => cb();

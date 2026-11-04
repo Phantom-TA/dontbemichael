@@ -238,3 +238,36 @@ test('Save writes the PDF as .pdf and never replaces a file beside it with the p
   assert.equal(savePaths('/d/case-study.pdf', (p) => pair.has(p)).html, '/d/case-study.html', 'saving over an earlier pair replaces its page too');
   assert.equal(savePaths('/d/x.pdf', (p) => p !== '/d/x.pdf', () => 7).html, '/d/x 7.html', 'never overwrites, however many copies');
 });
+
+test('a case study prepared in the background waits on Ask me until it is opened or put off (owner, 2026-11-04)', async () => {
+  // Value: protects=the ready case study stays in front of the owner instead of a toast that leaves after 15 seconds, and leaves once seen; fails_when=ready never waits, opening or Later leaves it waiting, Send or a new one leaves a stale card, or the card is never told; why_new=new behavior; seam=none
+  const settle = async () => { await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r)); };
+  let changes = 0;
+  const { svc } = deps({ onWaitingChange: () => { changes++; } });
+  svc.prepare(input);
+  assert.equal(svc.status().waiting, undefined, 'nothing waits while it prepares');
+  await settle();
+  assert.equal(svc.status().waiting, true, 'ready: it waits for the owner');
+  assert.equal(changes, 1);
+  svc.open(input);
+  assert.equal(svc.status().waiting, undefined, 'opening the screen takes it off Ask me');
+  assert.equal(changes, 2);
+  svc.seen();
+  assert.equal(changes, 2, 'nothing to tell twice');
+
+  const later = deps({ onWaitingChange: () => { changes++; } });
+  later.svc.prepare(input);
+  await settle();
+  later.svc.seen();
+  assert.equal(later.svc.status().waiting, undefined, 'Later takes it off Ask me');
+
+  const sent = deps();
+  sent.svc.prepare(input);
+  await settle();
+  assert.deepEqual(await sent.svc.send(input, edits, 'ceo', true), { ok: true });
+  assert.deepEqual(sent.svc.status(), { state: 'idle' }, 'a sent one waits for nothing');
+
+  const empty = snapshot({ outcomes: [{ kind: 'email', total: 0 }, { kind: 'sent', total: 0 }, { kind: 'task', total: 0 }, { kind: 'check', total: 0 }] });
+  const none = deps({ figures: () => ({ snapshot: empty, days: [] }) });
+  assert.equal(none.svc.prepare(input).waiting, undefined, 'ready at once, on the screen already: no card');
+});

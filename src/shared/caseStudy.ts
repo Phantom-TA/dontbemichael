@@ -146,7 +146,10 @@ export type CaseSendOutcome =
 export type CasePrep =
   | { state: 'idle' }
   | { state: 'preparing'; input: CaseInput }
-  | { state: 'ready'; input: CaseInput; draft: CaseDraft | null; logo: CaseLogo | null; hasWork: boolean };
+  | { state: 'ready'; input: CaseInput; draft: CaseDraft | null; logo: CaseLogo | null; hasWork: boolean;
+      /** Prepared in the background and not yet opened or put off with Later:
+       *  Michael's card on Ask me says it is ready (owner, 2026-11-04). */
+      waiting?: boolean };
 export type CaseSaveResult = { ok: true; path: string } | { ok: false; kind: 'headline-number' | 'no-work' | 'failed' | 'cancelled' };
 
 /** Every member is on the page (owner, D27: the page may run past one).

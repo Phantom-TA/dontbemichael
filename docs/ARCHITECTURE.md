@@ -313,7 +313,7 @@ src/
     pulse/PulseView,         Pulse, the office's performance and cost view (branding/DESIGN.md 7.27); pulse/RunSuggestions
                              draws the run suggestion cards at the top of its Recommendations; pulse/CaseStudyScreen
                              is Get featured's screen (the page read only, its words beside it, and Send), and
-                             pulse/CaseStudyToast says on any view when a case study prepared in the background is ready
+                             pulse/CaseStudyCard is Michael's Ask me card when a case study prepared in the background is ready
     FoundationCard,          a Company foundations question on Needs you (branding/DESIGN.md 7.27a), and a list
                              question's card with its seen items (7.27b); shell/foundationSave.ts runs its Save
     KnowledgeDocList,        Settings > Memory & Knowledge: the company knowledge documents, each with Open
