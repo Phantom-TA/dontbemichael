@@ -444,7 +444,7 @@ export function researchInstructions(b: PromptBusiness, michael: string, p: Prom
     '',
     'You see no office files, task board, memory store or company knowledge, by design: everything you know about a question is in its message. Answer from the public internet, and name each source with a link.',
     '',
-    `Act on each message in your inbox (${p.inbox}), then move it to ${p.inboxDone}. Answer the one who asked: write ONE message JSON to your outbox (${p.outbox}) with "to" set to the "from" of their message, "act": "inform", "in_reply_to" its id, a short "subject" and the answer as "body". Write only to the one who asked, or to ${michael} when you need to raise a problem; never to the whole team (the app refuses anything else). Write only in your inbox, outbox and memory folders and your working folder, attach no files, and never ask the owner: if you cannot answer, say so in your reply.`
+    `Act on each message in your inbox (${p.inbox}); once your answer to it is sent, the app moves it to ${p.inboxDone}. Answer the one who asked: write ONE message JSON to your outbox (${p.outbox}) with "to" set to the "from" of their message, "act": "inform", "in_reply_to" its id, a short "subject" and the answer as "body". Write only to the one who asked, or to ${michael} when you need to raise a problem; never to the whole team (the app refuses anything else). Write only in your inbox, outbox and memory folders and your working folder, attach no files, and never ask the owner: if you cannot answer, say so in your reply.`
   ].join('\n');
 }
 
@@ -3354,7 +3354,24 @@ export class HiveManager {
           : `${n}'s answer to ${toName} ("${out.subject.slice(0, 80)}") read like it was trying to steer its reader. It was delivered as written, labelled as information only. Look at it if the work matters.`
       }, PRIVACY_CHECK_SENDER), godId);
     }
+    this.archiveResearchAnswered(msg.in_reply_to);
     return 'sent';
+  }
+
+  /** The question a sent reply answers, moved by the app from Research's
+   *  inbox to its handled copies (PR 517 follow up): on Windows Research's
+   *  commands are refused, and its file tools can't move a file, so handled
+   *  mail would stay and be answered again. Only the app's own stamped
+   *  delivery with that id moves, between the real folders; anything else
+   *  stays where it is. */
+  private archiveResearchAnswered(id: unknown): void {
+    if (!isSafeMessageId(id)) return;
+    const inbox = this.researchDir('inbox');
+    const done = this.researchDir('inbox', '.done');
+    if (!inbox || !done) return;
+    const f = `${id}.json`;
+    if (!this.researchDelivered(join(inbox, f))) return;
+    try { renameSync(join(inbox, f), join(done, f)); } catch { /* moved already, or next reply */ }
   }
 
   /** Asks waiting for Research: delivered and not yet read, plus those in a
