@@ -162,6 +162,24 @@ export function shouldShowReleaseDrop(previous: string | null, current: string):
   return !isNewer(previous, current);
 }
 
+/** A new version the owner has to act on: a restart for one already
+ *  downloaded, a download for one this install can't apply itself. It reaches
+ *  the owner as Michael's card on Ask me (UpdateCard), never a popup over the
+ *  office (owner, 2026-11-04). */
+export type UpdateNeed = Extract<UpdateStatus, { state: 'downloaded' | 'available-manual' }>;
+
+/** The status as an update the owner acts on, or null for any other state. */
+export function updateNeed(s: UpdateStatus | null | undefined): UpdateNeed | null {
+  return s && (s.state === 'downloaded' || s.state === 'available-manual') ? s : null;
+}
+
+/** Whether Michael's update card is on Ask me: a new version waits and the
+ *  owner has not put it off with Later. Later holds for that version only, so a
+ *  newer one asks again; a new start of the app asks again too. */
+export function updateCardShown(need: UpdateNeed | null, laterFor: string | null): boolean {
+  return !!need && need.version !== laterFor;
+}
+
 /** Download percentages arrive as floats and, on a resumed/differential
  *  download, occasionally out of range. Clamp so the UI can't render `-0%`
  *  or `104%`. */

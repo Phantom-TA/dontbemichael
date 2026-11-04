@@ -257,6 +257,9 @@ moving, and brings you only the decisions that need you.
   reads "Change it, show me again": the team member makes the changes and brings them back, on
   the email card for a member on Send on approval and as a new approval for anyone else. Before,
   a team member allowed to send without asking edited and sent at the planned time.
+- A new version of the app arrives as a card from Michael on Ask me, with Later and Restart to
+  update (or Download, for an install that can't update itself), in place of the popup in the
+  corner of the office. Later puts it off for that version until the app starts again.
 
 ### 0.3.5 (2026-11-03)
 

@@ -2011,8 +2011,8 @@ const api = {
   /** DEV ONLY — fabricate an update status so the toast can be inspected without
    *  cutting a release. Refused (`{ok:false}`) in a packaged build; see the
    *  handler in updater.ts. Call it from the devtools console:
-   *    await window.cth.updateSimulate()                       // notify-only digest toast
-   *    await window.cth.updateSimulate({ state: 'downloaded' }) // restart-to-update toast
+   *    await window.cth.updateSimulate()                       // Michael's Download card on Ask me
+   *    await window.cth.updateSimulate({ state: 'downloaded' }) // Michael's Restart card on Ask me
    *    await window.cth.updateSimulate({ drop: true })          // the centered release page
    *    await window.cth.updateSimulate({ notes: '<!-- drop -->…' }) // your own drop */
   updateSimulate: (opts?: {

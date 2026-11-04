@@ -441,8 +441,8 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
     fetchReleaseBody(version, (notes) => resolve({ version, notes, url: `https://github.com/${REPO}/releases/tag/v${version}` }));
   }));
   /**
-   * DEV ONLY — push a synthetic status so the update toast can be seen without a
-   * real release. The toast renders for exactly two states ('downloaded' and
+   * DEV ONLY — push a synthetic status so Michael's update card on Ask me can be seen without a
+   * real release. The card shows for exactly two states ('downloaded' and
    * 'available-manual'), and a dev build can reach NEITHER: the whole polling
    * block below is behind `app.isPackaged`, and checkNow/download refuse above.
    * So the one UI that only ever appears at release time was the one UI nobody
@@ -456,7 +456,7 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
     const o = (opts ?? {}) as { state?: string; version?: string; notes?: string; drop?: boolean };
     const version = typeof o.version === 'string' && o.version ? o.version : '9.9.9';
     // `drop: true` previews the centered release page built from the default
-    // template; without it you get the corner digest toast. Both paths ship, so
+    // template; without it you get Michael's update card on Ask me. Both paths ship, so
     // both need to be previewable — defaulting to one would leave the other
     // only ever seen by users.
     const notes = typeof o.notes === 'string'
