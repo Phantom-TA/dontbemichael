@@ -1,4 +1,4 @@
-- **Get featured** with a case study of your office.
-- **A saved call** for a custom REST connection.
-- Foundation lists stay open until you say that's all.
-- A first click on an email opens it.
+- **Needs you** shows what only you can do.
+- **Open questions** come back when they matter.
+- Documents link the file and email they came from.
+- Word documents keep headings, lists and tables.

@@ -41,9 +41,9 @@ runs on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.3.5: Get featured with a case study of your office.**
-> Pulse builds a customer story page in your own brand. In 0.3.4, one team member gets access to
-> one outside service.
+> **New in 0.3.6: Anything your team finds for you reaches Needs you.**
+> A question you leave open comes back when it matters. In 0.3.5, Pulse builds a case study of
+> your office.
 
 ## Contents
 

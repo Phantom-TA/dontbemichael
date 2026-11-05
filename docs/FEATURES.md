@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.3.5). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.3.6). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -272,7 +272,7 @@ moving, and brings you only the decisions that need you.
 
 ## Part 2: Every change, release by release
 
-### 0.3.6 (not yet released)
+### 0.3.6 (2026-11-05)
 - Asking for changes on an approval no longer sends the changed version unseen. The choice now
   reads "Change it, show me again": the team member makes the changes and brings them back, on
   the email card for a member on Send on approval and as a new approval for anyone else. Before,
