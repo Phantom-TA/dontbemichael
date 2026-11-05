@@ -3324,6 +3324,11 @@
     "openMailboxes": "Open Mailboxes",
     "frameTitle": "Email from {{sender}}",
     "replyingTo": "Replying to",
+    "attachmentOpen": "Open {{name}}",
+    "attachmentOpening": "Opening",
+    "attachmentKind": "This kind of file only opens from your mail app.",
+    "attachmentTooBig": "Too big to open here. Open it from your mail app.",
+    "attachmentFailed": "Couldn't open it. Try again.",
     "failed": {
       "broken": "This email link is broken.",
       "mailbox": "This mailbox isn't in the office anymore.",

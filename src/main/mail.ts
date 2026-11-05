@@ -191,6 +191,25 @@ function attachmentSize(n: BodyNode): number {
   return n.encoding === 'base64' ? Math.floor((size - 2 * Math.floor(size / 78)) * 3 / 4) : size;
 }
 
+/** The email tab's attachments of a whole parsed message, with their bytes,
+ *  in its order, and the inline pictures it draws in the body instead. An
+ *  inline picture the body shows is not listed. */
+function listedAttachments(parsed: Awaited<ReturnType<typeof simpleParser>>): { listed: Array<{ name: string; size: number; content: Buffer }>; inline: Record<string, string> } {
+  const inline: Record<string, string> = {};
+  let inlineBytes = 0;
+  const listed: Array<{ name: string; size: number; content: Buffer }> = [];
+  for (const a of parsed.attachments ?? []) {
+    const cid = a.cid ? a.cid.replace(/^<|>$/g, '') : '';
+    if (cid && /^image\//i.test(a.contentType ?? '') && a.size <= INLINE_PICTURE_MAX && inlineBytes + a.size <= INLINE_PICTURES_TOTAL) {
+      inline[cid] = `data:${a.contentType};base64,${a.content.toString('base64')}`;
+      inlineBytes += a.size;
+      if (a.contentDisposition === 'inline' || a.related) continue;
+    }
+    listed.push({ name: a.filename ?? 'attachment', size: a.size, content: a.content });
+  }
+  return { listed, inline };
+}
+
 /** The attachments in a message, in the order `read` lists them. */
 function attachmentNodes(root: BodyNode): BodyNode[] {
   const out: BodyNode[] = [];
@@ -945,22 +964,27 @@ export class MailService {
       const nodes = m.bodyStructure ? attachmentNodes(m.bodyStructure) : [];
       const node = nodes[position - 1];
       if (!node) throw new MailError('bad-request', `That email has ${nodes.length} attachment${nodes.length === 1 ? '' : 's'}; there is no number ${position}.`);
-      if (node.type === 'message/rfc822') throw new MailError('refused', 'That attachment is a whole email, which is not saved. Read the email instead.');
-      if (attachmentSize(node) > ATTACHMENT_MAX_BYTES) throw new MailError('refused', `That attachment is over ${ATTACHMENT_MAX_BYTES / (1024 * 1024)} MB, so it was not saved.`);
-      if (!c.download) throw new MailError('unsupported', 'This mail server does not offer attachments one at a time.');
-      const { content } = await c.download(uid, node.part || '1', { uid: true, maxBytes: ATTACHMENT_MAX_BYTES + 1, chunkSize: ATTACHMENT_CHUNK_BYTES });
-      const chunks: Buffer[] = [];
-      let size = 0;
-      if (content) {
-        for await (const chunk of content) {
-          const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          size += b.length;
-          if (size > ATTACHMENT_MAX_BYTES) throw new MailError('refused', `That attachment is over ${ATTACHMENT_MAX_BYTES / (1024 * 1024)} MB, so it was not saved.`);
-          chunks.push(b);
-        }
-      }
-      return { name: attachmentName(node), bytes: Buffer.concat(chunks) };
+      return { name: attachmentName(node), bytes: await MailService.downloadAttachment(c, uid, node) };
     }, 'Fetching the attachment', false, ATTACHMENT_TIMEOUT_MS);
+  }
+
+  /** One attachment part's bytes, size checked before and while it downloads. */
+  private static async downloadAttachment(c: ImapLike, uid: string, node: BodyNode): Promise<Buffer> {
+    if (node.type === 'message/rfc822') throw new MailError('refused', 'That attachment is a whole email, which is not saved. Read the email instead.');
+    if (attachmentSize(node) > ATTACHMENT_MAX_BYTES) throw new MailError('refused', `That attachment is over ${ATTACHMENT_MAX_BYTES / (1024 * 1024)} MB, so it was not saved.`);
+    if (!c.download) throw new MailError('unsupported', 'This mail server does not offer attachments one at a time.');
+    const { content } = await c.download(uid, node.part || '1', { uid: true, maxBytes: ATTACHMENT_MAX_BYTES + 1, chunkSize: ATTACHMENT_CHUNK_BYTES });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    if (content) {
+      for await (const chunk of content) {
+        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        size += b.length;
+        if (size > ATTACHMENT_MAX_BYTES) throw new MailError('refused', `That attachment is over ${ATTACHMENT_MAX_BYTES / (1024 * 1024)} MB, so it was not saved.`);
+        chunks.push(b);
+      }
+    }
+    return Buffer.concat(chunks);
   }
 
   /** The body parts decoded to UTF-8 and joined the way mailparser joins them,
@@ -1059,6 +1083,45 @@ export class MailService {
   }
 
   private async originalNow(key: string, mailboxId: string, messageId: string): Promise<OriginalEmail> {
+    return this.withOriginalMessage(key, mailboxId, messageId, 'Opening the email', (client, uid, address) => this.originalOf(client, uid, address));
+  }
+
+  /**
+   * One attachment of an email the owner opened, by its place in the email
+   * tab's list (from 0), for the owner to open (docs/designs/source-attachments.md).
+   * Found the way the tab finds the email and listed by the same rule, so the
+   * file is the one the owner clicked; size capped as save_attachment's.
+   */
+  async originalAttachment(mailboxId: string, messageId: string, index: number): Promise<{ name: string; bytes: Buffer }> {
+    if (!Number.isInteger(index) || index < 0) throw new MailError('bad-request', 'attachment');
+    const key = `${MailService.originalKey(mailboxId, messageId)}\nattachment ${index}`;
+    return this.withOriginalMessage(key, mailboxId, messageId, 'Fetching the attachment', async (client, uid) => {
+      const id = String(uid);
+      const head = await client.fetchOne(id, { uid: true, size: true, envelope: true, bodyStructure: true }, { uid: true });
+      if (!head) throw new MailError('not-found', 'message');
+      if (MailService.listedPartByPart(head, client)) {
+        const node = attachmentNodes(head.bodyStructure!)[index];
+        if (!node) throw new MailError('bad-request', 'attachment');
+        return { name: attachmentName(node), bytes: await MailService.downloadAttachment(client, id, node) };
+      }
+      const parsed = await simpleParser(await this.source(client, id, 'archive'));
+      const a = listedAttachments(parsed).listed[index];
+      if (!a) throw new MailError('bad-request', 'attachment');
+      if (a.content.length > ATTACHMENT_MAX_BYTES) throw new MailError('refused', 'too-big');
+      return { name: a.name, bytes: a.content };
+    }, ATTACHMENT_TIMEOUT_MS);
+  }
+
+  /** Whether the email tab lists this message part by part (past the 25 MB
+   *  cap), rather than from a whole parse. One rule for the tab and the open. */
+  private static listedPartByPart(head: { size?: number; bodyStructure?: BodyNode; envelope?: unknown }, c: ImapLike): boolean {
+    return typeof head.size === 'number' && head.size > REFERENCE_MAX_BYTES && !!c.download && !!head.bodyStructure && !!head.envelope;
+  }
+
+  /** Connect to the owner's mailbox, find the message, and run `fn` on it in a
+   *  read only folder; cancel and errors as the email tab's read. */
+  private async withOriginalMessage<T>(key: string, mailboxId: string, messageId: string, label: string,
+    fn: (client: ImapLike, uid: number, address: string) => Promise<T>, timeoutMs = CALL_TIMEOUT_MS): Promise<T> {
     let rec: MailboxRecord;
     try { rec = this.record(mailboxId); } catch { throw new MailError('not-found', 'mailbox'); }
     const client = this.createImap(rec.imap, rec.address, this.password(mailboxId));
@@ -1073,8 +1136,8 @@ export class MailService {
         const hit = await this.findOriginal(client, list, messageId);
         if (!hit) throw new MailError('not-found', 'message');
         const lock = await client.getMailboxLock(hit.path, { readOnly: true });
-        try { return await this.originalOf(client, hit.uid, rec.address); } finally { lock.release(); }
-      })()]), CALL_TIMEOUT_MS, 'Opening the email');
+        try { return await fn(client, hit.uid, rec.address); } finally { lock.release(); }
+      })()]), timeoutMs, label);
     } catch (e) {
       if (e instanceof MailError && e.kind === 'not-found') throw e;
       const err = classifyMailError(e);
@@ -1129,7 +1192,7 @@ export class MailService {
     const id = String(uid);
     const head = await c.fetchOne(id, { uid: true, size: true, envelope: true, bodyStructure: true }, { uid: true });
     if (!head) throw new MailError('not-found', 'message');
-    if (typeof head.size === 'number' && head.size > REFERENCE_MAX_BYTES && c.download && head.bodyStructure && head.envelope) {
+    if (MailService.listedPartByPart(head, c) && head.bodyStructure && head.envelope) {
       const body = await this.bodyText(c, id, bodyPartsOf(head.bodyStructure));
       const e = head.envelope;
       const from = Array.isArray(e.from) ? e.from[0] : undefined;
@@ -1143,18 +1206,8 @@ export class MailService {
     }
     const parsed = await simpleParser(await this.source(c, id, 'archive'));
     const from = parsed.from?.value?.[0];
-    const inline: Record<string, string> = {};
-    let inlineBytes = 0;
-    const attachments: Array<{ name: string; size: number }> = [];
-    for (const a of parsed.attachments ?? []) {
-      const cid = a.cid ? a.cid.replace(/^<|>$/g, '') : '';
-      if (cid && /^image\//i.test(a.contentType ?? '') && a.size <= INLINE_PICTURE_MAX && inlineBytes + a.size <= INLINE_PICTURES_TOTAL) {
-        inline[cid] = `data:${a.contentType};base64,${a.content.toString('base64')}`;
-        inlineBytes += a.size;
-        if (a.contentDisposition === 'inline' || a.related) continue;
-      }
-      attachments.push({ name: a.filename ?? 'attachment', size: a.size });
-    }
+    const { listed, inline } = listedAttachments(parsed);
+    const attachments = listed.map((a) => ({ name: a.name, size: a.size }));
     return {
       mailboxAddress: address, fromName: from?.name ?? '', fromAddress: from?.address ?? '',
       to: addrText(parsed.to), cc: addrText(parsed.cc), subject: parsed.subject ?? '',

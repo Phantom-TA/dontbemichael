@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { OPEN_EXTENSIONS, extensionOf } from '@shared/askFiles';
-import { MarkdownPreview } from '@/markdown/MarkdownPreview';
+import { FileText } from './FileChip';
 import { useStore } from '@/store/store';
 import type { FileTab } from '@/store/fileTabs';
 import { PixelButton } from './PixelButton';
@@ -174,10 +174,12 @@ function FileTabBody({ tab }: { tab: FileTab }) {
   else if (read.kind === 'image') {
     body = <img ref={picture} src={read.url} alt={tab.title} style={{ display: 'block', maxWidth: '100%', height: 'auto', borderRadius: 'var(--cth-r-md)' }} />;
   } else if (read.kind === 'markdown') {
-    // Pictures beside the report show, read inside its own folder; links to
-    // local files stay inert (E2 not taken).
+    // Pictures beside the report show, read inside its own folder. A full path
+    // in it (a Source line's original, source-attachments.md) is a file chip,
+    // with Ask me's folder check by who raised the tab; relative links between
+    // documents stay inert (open-file-tab.md E2, owner 2026-10-10).
     const slash = Math.max(tab.id.lastIndexOf('/'), tab.id.lastIndexOf('\\'));
-    body = <MarkdownPreview source={read.text ?? ''} root={tab.id.slice(0, slash)} baseRel={tab.id.slice(slash + 1)} />;
+    body = <FileText source={read.text ?? ''} who={tab.who} variant="document" root={tab.id.slice(0, slash)} baseRel={tab.id.slice(slash + 1)} />;
   } else if (read.kind === 'csv') {
     const rows = parseDelimited(read.text ?? '', extensionOf(tab.id) === 'tsv' ? '\t' : ',');
     body = rows && rows.length ? <CsvTable rows={rows} /> : <Mono text={read.text ?? ''} />;

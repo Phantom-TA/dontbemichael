@@ -14,7 +14,7 @@ import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { OfficeRecord } from '../shared/officeRecord';
 import type { MailboxRecord, AgentCapabilities, MailProvider, MailServer } from '../shared/mailboxes';
-import type { OriginalResult } from '../shared/emailLink';
+import type { OpenAttachmentResult, OriginalResult } from '../shared/emailLink';
 import type { ClaudeConnectorsState } from '../shared/claudeConnectors';
 import type { ScheduledMission, ScheduleRequest } from '../shared/missions';
 import type { MailProposal, ProposalDecision, StandingApproval } from '../shared/mailProposals';
@@ -1048,6 +1048,8 @@ const api = {
   /** The owner's email tab (docs/designs/original-email-view.md): the email an
    *  `email:` link names, as it came, from the owner's own mailbox. */
   mailOriginal: (href: string): Promise<OriginalResult> => ipcRenderer.invoke('mail:original', href),
+  /** Open one of an email's attachments in its own app (source-attachments.md); index from 0 in the tab's list. */
+  mailOpenAttachment: (href: string, index: number): Promise<OpenAttachmentResult> => ipcRenderer.invoke('mail:openAttachment', href, index),
   /** Its pictures from the web, fetched by main, as data URIs. */
   mailOriginalPictures: (href: string): Promise<{ pictures: Record<string, string>; failed: number }> => ipcRenderer.invoke('mail:originalPictures', href),
   /** The tab closed: stop an open still running. */

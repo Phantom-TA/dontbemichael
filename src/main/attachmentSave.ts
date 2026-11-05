@@ -6,7 +6,7 @@
  * operating system puts on a download. The app never launches it by itself.
  */
 
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, rmSync, writeFileSync, type Stats } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 import { attachmentKind } from '../shared/attachmentKind';
@@ -37,6 +37,16 @@ export function markFromOutside(path: string): void {
   } else if (process.platform === 'win32') {
     try { writeFileSync(`${path}:Zone.Identifier`, '[ZoneTransfer]\r\nZoneId=3\r\n'); } catch (e) { console.warn('[mail] attachment mark:', e); }
   }
+}
+
+/** The same mark, written before it returns: for a file opened at once (the
+ *  owner's attachment open, source-attachments.md), so its app sees it as from
+ *  outside (Office's Protected View, Gatekeeper) from the first moment. */
+export function markFromOutsideNow(path: string): void {
+  if (process.platform === 'darwin') {
+    const value = `0081;${Math.floor(Date.now() / 1000).toString(16)};Don't Be Michael;`;
+    try { execFileSync('xattr', ['-w', 'com.apple.quarantine', value, path]); } catch (e) { console.warn('[mail] attachment mark:', e instanceof Error ? e.message : e); }
+  } else markFromOutside(path);
 }
 
 /** The file's name without its ending, safe on every system. */

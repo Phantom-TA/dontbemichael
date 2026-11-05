@@ -3324,6 +3324,11 @@
     "openMailboxes": "打开邮箱设置",
     "frameTitle": "来自 {{sender}} 的邮件",
     "replyingTo": "回复给",
+    "attachmentOpen": "打开 {{name}}",
+    "attachmentOpening": "正在打开",
+    "attachmentKind": "这类文件只能在邮件应用中打开。",
+    "attachmentTooBig": "文件太大，无法在此打开。请在邮件应用中打开。",
+    "attachmentFailed": "无法打开，请重试。",
     "failed": {
       "broken": "这个邮件链接已损坏。",
       "mailbox": "这个邮箱已不在办公室中。",

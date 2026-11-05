@@ -616,6 +616,9 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-pill-slot[data-hidden] .cth-pill-face { opacity: 0; transform: translateX(14px) scale(.94);
   transition-duration: 340ms; transition-delay: 0ms; }
 @media (prefers-reduced-motion: reduce) { .cth-pill-slot, .cth-pill-face { transition: none; } }
+/* An email's attachment the owner can open (docs/designs/source-attachments.md). */
+.cth-email-attachment:hover:not(:disabled) { background: var(--cth-neutral-soft); }
+.cth-email-attachment:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 1px; }
 /* The wide panel (wide panel WD2, WD8): its text at most 720 px across and
    centered, the terminal across the whole panel; the office dims behind it.
    Padding, not a max width, so a tab's own ground still fills the panel; it

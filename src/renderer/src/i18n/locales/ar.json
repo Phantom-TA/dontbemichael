@@ -3324,6 +3324,11 @@
     "openMailboxes": "افتح صناديق البريد",
     "frameTitle": "بريد من {{sender}}",
     "replyingTo": "ردًّا على",
+    "attachmentOpen": "فتح {{name}}",
+    "attachmentOpening": "جارٍ الفتح",
+    "attachmentKind": "هذا النوع من الملفات يُفتح من تطبيق البريد فقط.",
+    "attachmentTooBig": "أكبر من أن يُفتح هنا. افتحه من تطبيق البريد.",
+    "attachmentFailed": "تعذّر فتحه. حاول مرة أخرى.",
     "failed": {
       "broken": "رابط هذا البريد معطّل.",
       "mailbox": "صندوق البريد هذا لم يعد في المكتب.",

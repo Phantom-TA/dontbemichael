@@ -440,6 +440,8 @@ Go with it: keep only the owner's own words (the answer, the edit, the note) in 
 
 ### Open or save an email's attachments from the email tab
 
+**Status (2026-11-05):** Open is done (docs/designs/source-attachments.md): a click opens an attachment in its own app, held to save_attachment's kind check and size cap, marked as from outside, from the app's own folder cleared at quit. Save to a folder the owner picks is still open.
+
 **What:** The email tab lists attachment names and sizes; add Save to a folder the owner picks, and Open in the office for safe kinds (PDF, pictures).
 
 **Why:** The owner still needs the mailbox to open what was attached to the email an ask is built on.

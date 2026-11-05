@@ -21,7 +21,8 @@ import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath, 
 import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { extractDocumentTextApart } from './docTextProcess';
-import { AttachmentSaveError, handOverAttachment } from './attachmentSave';
+import { AttachmentSaveError, handOverAttachment, markFromOutsideNow, saveAttachmentFile } from './attachmentSave';
+import { attachmentKind } from '../shared/attachmentKind';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
 import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, jobsAsking, knowledgeNoticeDue, michaelFoundations, namedFolders, readFoldersFor, sectionFor, settledAnswers, type FoundationId, type FoundationJob } from '../shared/foundations';
@@ -144,7 +145,7 @@ import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
 import * as integrations from './integrations';
 import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, classifyMailError, type AddMailboxInput } from './mail';
-import { EMAIL_IPC, gmailMessageUrl, parseEmailHref, type OriginalFailure, type OriginalResult } from '../shared/emailLink';
+import { EMAIL_IPC, gmailMessageUrl, parseEmailHref, type OpenAttachmentResult, type OriginalFailure, type OriginalResult } from '../shared/emailLink';
 import { fetchableUrl, frameNavigationAllowed, remotePictureUrls } from '../shared/emailFrame';
 import { fetchPictures } from './emailPictures';
 import { MailApprovals } from './mailApprovals';
@@ -7744,6 +7745,39 @@ ipcMain.handle(EMAIL_IPC.pictures, async (evt, href: unknown): Promise<{ picture
   const email = mailService.keptOriginal(ref.mailbox, ref.messageId);
   if (!email?.html) return { pictures: {}, failed: 0 };
   return fetchPictures(remotePictureUrls(email.html).map((raw) => ({ raw, url: fetchableUrl(raw) })));
+});
+/** Where the owner's opened attachments land: the app's own folder, never the
+ *  office, so no team member reads them; cleared when the app quits
+ *  (docs/designs/source-attachments.md, E4). */
+const openedAttachmentsDir = (): string => join(app.getPath('userData'), 'opened-attachments');
+app.on('will-quit', () => { try { rmSync(openedAttachmentsDir(), { recursive: true, force: true }); } catch { /* next quit */ } });
+/** The owner opens one of an email's attachments from its tab: fetched as the
+ *  tab fetched the email, held to save_attachment's size cap and kind check,
+ *  written with its safe write (marked as from outside) and opened in its own
+ *  app. Anything else stays in the mail app (E3). */
+ipcMain.handle(EMAIL_IPC.openAttachment, async (evt, href: unknown, index: unknown): Promise<OpenAttachmentResult> => {
+  const ref = typeof href === 'string' ? parseEmailHref(href) : null;
+  if (!ref || !fromAppPage(evt) || typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index > 500) {
+    return { ok: false, reason: 'broken', gmailUrl: null };
+  }
+  const gmailUrl = gmailUrlFor(ref.mailbox, ref.messageId);
+  try {
+    const got = await mailService.originalAttachment(ref.mailbox, ref.messageId, index);
+    const kind = attachmentKind(got.bytes, got.name);
+    // No name or Message-ID in the log (the office log rule, D14).
+    if (!kind) { console.log(`[mail] owner-attachment ${ref.mailbox} kind`); return { ok: false, reason: 'kind', gmailUrl }; }
+    mkdirSync(openedAttachmentsDir(), { recursive: true });
+    // Marked as from outside before it opens, so Word or Excel open it in Protected View.
+    const path = saveAttachmentFile({ folder: openedAttachmentsDir(), name: got.name, ending: kind.ending, bytes: got.bytes }, markFromOutsideNow);
+    const opened = await shell.openPath(path);
+    console.log(`[mail] owner-attachment ${ref.mailbox} ${kind.id} ${got.bytes.length} ${opened ? 'open-failed' : 'ok'}`);
+    return opened ? { ok: false, reason: 'failed', gmailUrl } : { ok: true };
+  } catch (e) {
+    const err = classifyMailError(e);
+    const tooBig = err.kind === 'refused' && /over|too-big/.test(err.message);
+    console.log(`[mail] owner-attachment ${ref.mailbox} ${tooBig ? 'too-big' : 'failed'}`);
+    return { ok: false, reason: tooBig ? 'too-big' : 'failed', gmailUrl };
+  }
 });
 ipcMain.handle(EMAIL_IPC.cancel, (evt, href: unknown): void => {
   const ref = typeof href === 'string' ? parseEmailHref(href) : null;
