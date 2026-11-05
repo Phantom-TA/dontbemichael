@@ -1633,6 +1633,12 @@ export class HiveManager {
     }
     const args: string[] = [];
     if (!claudeProvider) return { args, env };
+    // Claude in Chrome off (owner, 2026-11-04): the team never uses it (the
+    // connector gate refuses its tools), and with no saved setting Claude Code
+    // looks for its extension in Chrome's own folder at each start, which macOS
+    // blocks with "Data Access Blocked" in the app's name. An env var, not
+    // --no-chrome, so an older Claude Code that lacks the flag still starts.
+    env.CLAUDE_CODE_ENABLE_CFC = '0';
 
     const claudePrompt = this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business);
     this._injectedPrompts.set(meta.id, claudePrompt);
@@ -1673,7 +1679,7 @@ export class HiveManager {
       // a PowerShell agent (Windows without Git Bash) is not covered yet.
       if (shell.shell === 'bash') {
         const envFile = settingsPath.replace(/\.json$/, '.env.sh');
-        writeFileSync(envFile, 'export ENABLE_CLAUDEAI_MCP_SERVERS=false\n');
+        writeFileSync(envFile, 'export ENABLE_CLAUDEAI_MCP_SERVERS=false\nexport CLAUDE_CODE_ENABLE_CFC=0\n');
         env.CLAUDE_ENV_FILE = envFile;
       }
     }

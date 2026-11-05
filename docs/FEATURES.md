@@ -263,6 +263,10 @@ moving, and brings you only the decisions that need you.
 - A case study prepared in the background says it is ready as a card from Michael on Ask me, with
   View and Later, and stays until you open it or choose Later. Before, a popup in the corner left
   after 15 seconds.
+- No more "Data Access Blocked" notice from macOS when you make a case study or the office starts.
+  Claude Code's Claude in Chrome is now off for the team and the app's background checks. With
+  no saved setting it looked for its browser extension in Chrome's folder, which macOS blocks. The
+  team could not use Claude in Chrome before either.
 
 ### 0.3.5 (2026-11-03)
 

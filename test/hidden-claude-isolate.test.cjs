@@ -29,7 +29,7 @@ const path = require('path');
 const id = process.argv[process.argv.indexOf('--session-id') + 1];
 const cfg = process.env.CLAUDE_CONFIG_DIR;
 fs.writeFileSync(process.env.FAKE_REPORT, JSON.stringify({
-  cfg, secure: process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR, market: process.env.CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL,
+  cfg, secure: process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR, market: process.env.CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL, chrome: process.env.CLAUDE_CODE_ENABLE_CFC,
   claudeJson: JSON.parse(fs.readFileSync(path.join(cfg, '.claude.json'), 'utf8')),
   settings: JSON.parse(fs.readFileSync(path.join(cfg, 'settings.json'), 'utf8'))
 }));
@@ -62,7 +62,7 @@ test('an isolated check answers from its own folder and leaves nothing behind', 
   const r = await runHiddenClaude('Does this file fit?', {
     model: 'haiku', cwd, command: bin, noTools: true, timeoutMs: 30_000, isolateConfig: true, dropTranscript: true,
     // Something passed in can not point the check back at the shared folder.
-    env: { FAKE_REPORT: report, FAKE_CWD: cwd, CLAUDE_CONFIG_DIR: realCfg }
+    env: { FAKE_REPORT: report, FAKE_CWD: cwd, CLAUDE_CONFIG_DIR: realCfg, CLAUDE_CODE_ENABLE_CFC: '1' }
   });
   assert.deepEqual(r, { ok: true, text: 'FITS' });
   const seen = JSON.parse(fs.readFileSync(report, 'utf8'));
@@ -70,6 +70,10 @@ test('an isolated check answers from its own folder and leaves nothing behind', 
   assert.ok(path.basename(seen.cfg).startsWith('dbm-check-'));
   assert.equal(seen.secure, '', 'the sign in stays the default ~/.claude one');
   assert.equal(seen.market, '1');
+  // Claude in Chrome off (2026-11-04): a fresh settings folder made Claude Code
+  // look for its browser extension in Chrome's own folder, and macOS showed the
+  // owner "Data Access Blocked" for it on Make my case study.
+  assert.equal(seen.chrome, '0', 'Claude in Chrome is off, whatever the caller passed');
   assert.equal(seen.claudeJson.hasCompletedOnboarding, true);
   assert.equal(seen.claudeJson.projects[cwd].hasTrustDialogAccepted, true);
   assert.equal(seen.settings.skipDangerousModePermissionPrompt, true);
