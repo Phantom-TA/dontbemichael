@@ -153,7 +153,11 @@ export class TelemetryCollector {
   private readonly usageSubs = new Set<(s: AgentUsageSample) => void>();
   /** api_error subscribers — feeds Lane A's breaker error-storm trip (#6), which
    *  has no input source of its own (hook payloads don't expose api errors). */
-  private readonly apiErrorSubs = new Set<(agentId: string) => void>();
+  private readonly apiErrorSubs = new Set<(agentId: string, querySource?: string, statusCode?: number) => void>();
+  /** api_request subscribers: a request that completed, which shows the
+   *  session recovered from the api_errors before it from the same
+   *  query_source (breaker.recordApiSuccess). */
+  private readonly apiSuccessSubs = new Set<(agentId: string, querySource?: string) => void>();
   /** token → the agent it speaks for. In memory only, minted by tokenFor. Usage
    *  feeds the cost cap, so a batch counts only for the agent whose token sent
    *  it: not for another agent it names, and not from a process holding none. */
@@ -225,12 +229,29 @@ export class TelemetryCollector {
     return () => this.usageSubs.delete(cb);
   }
 
-  /** In-process api_error feed for Lane A's breaker (#6). At integration:
-   *  `telemetry.onApiError((agentId) => breaker.recordError(agentId))`. Returns
-   *  an unsubscribe fn. */
-  onApiError(cb: (agentId: string) => void): () => void {
+  /** In-process api_error feed for Lane A's breaker (#6), with the record's
+   *  query_source and HTTP status (the status only for a failure report's
+   *  context). At integration:
+   *  `telemetry.onApiError((agentId, querySource) => breaker.recordError(agentId, querySource))`.
+   *  Returns an unsubscribe fn. */
+  onApiError(cb: (agentId: string, querySource?: string, statusCode?: number) => void): () => void {
     this.apiErrorSubs.add(cb);
     return () => this.apiErrorSubs.delete(cb);
+  }
+
+  /** In-process api_request feed: fires when a request completes. Claude Code
+   *  logs a single api_error only after it gives up on a request (retries in
+   *  between are not logged), and a later api_request is how the docs tell a
+   *  recovered session from a stalled one. A request re-issued after a
+   *  streaming failure starts `attempt` again at 1, so one turn can log several
+   *  api_errors and then succeed. Do not read the error count as per retry.
+   *  Passes the record's query_source, so only a success from the calls that
+   *  were failing ends the run. At integration:
+   *  `telemetry.onApiSuccess((agentId, querySource) => breaker.recordApiSuccess(agentId, querySource))`.
+   *  Returns an unsubscribe fn. */
+  onApiSuccess(cb: (agentId: string, querySource?: string) => void): () => void {
+    this.apiSuccessSubs.add(cb);
+    return () => this.apiSuccessSubs.delete(cb);
   }
 
   /** Drop an agent's live usage so a respawn starts with a fresh counter.
@@ -380,6 +401,8 @@ export class TelemetryCollector {
           const name = str(attrs['event.name']) || str(lr.body?.stringValue);
           const agentId = str(attrs['agent.id']) || str(resAttrs['agent.id']);
           const sessionId = str(attrs['session.id']);
+          // repl_main_thread for the main loop; compaction, a subagent or a side call otherwise.
+          const querySource = str(attrs['query_source']) || undefined;
           if (agentId !== sender) continue;
           if (name === 'tool_result') {
             const span: ToolSpan = {
@@ -398,9 +421,16 @@ export class TelemetryCollector {
             const decision = str(attrs['decision']) === 'reject' ? 'reject' : 'accept';
             const ring = this.spans.get(agentId);
             if (ring?.length) ring[ring.length - 1].decision = decision;
+          } else if (name === 'api_request' || name === 'claude_code.api_request') {
+            // event.name carries the bare name; the body fallback carries the
+            // claude_code. prefix, so accept both.
+            for (const cb of this.apiSuccessSubs) { try { cb(agentId, querySource); } catch { /* subscriber threw */ } }
           } else if (name === 'api_error' || (name && name.includes('error'))) {
             const error = str(attrs['error']) || str(attrs['message']) || name;
-            for (const cb of this.apiErrorSubs) { try { cb(agentId); } catch { /* subscriber threw */ } }
+            // Only a real HTTP status, never the error text.
+            const status = Number(attrs['status_code']);
+            const statusCode = Number.isInteger(status) && status >= 100 && status <= 599 ? status : undefined;
+            for (const cb of this.apiErrorSubs) { try { cb(agentId, querySource, statusCode); } catch { /* subscriber threw */ } }
             this.emit?.('telemetry:event', { kind: 'api_error', agentId, sessionId, ts: Date.now(), error } satisfies TelemetryEvent);
           }
         }
@@ -514,10 +544,13 @@ interface ResourceLogs { resource?: { attributes?: OtelKV[] }; scopeLogs?: { log
 
 /** Allowlist of attribute keys we ever read — anything else (notably the PII:
  *  user.email, user.account_id/uuid, organization.id, user.id) is ignored, so
- *  nothing this module emits can carry identity. */
+ *  nothing this module emits can carry identity. query_source names which part
+ *  of Claude Code made a call (repl_main_thread, compact, a subagent), not who;
+ *  status_code is an api_error's HTTP status. */
 const ATTR_ALLOWLIST = new Set([
   'agent.id', 'agent.name', 'session.id', 'model', 'type',
-  'tool_name', 'success', 'duration_ms', 'decision', 'event.name', 'error', 'message'
+  'tool_name', 'success', 'duration_ms', 'decision', 'event.name', 'error', 'message',
+  'query_source', 'status_code'
 ]);
 
 /** Flatten an OTLP KeyValue[] to a plain object, keeping only allowlisted keys. */

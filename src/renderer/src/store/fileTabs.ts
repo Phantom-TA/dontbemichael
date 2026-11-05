@@ -6,6 +6,7 @@
  * restarts on the last fixed view. Pure, so the rules test without a window.
  */
 import type { AskFileKind } from '@shared/askFiles';
+import type { EmailRef } from '@shared/emailLink';
 
 export const MAX_FILE_TABS = 5;
 
@@ -14,7 +15,10 @@ export interface FileTab {
   id: string;
   /** The name shown: the file name without folder or extension. */
   title: string;
-  kind: AskFileKind;
+  kind: AskFileKind | 'email';
+  /** An email's tab (docs/designs/original-email-view.md): the email it shows,
+   *  and its id is `emailTabId` of it. */
+  email?: EmailRef;
   /** Who raised the question or reply, which decides the folders searched. */
   who: { raisedBy?: string; assignee?: string };
   openedAt: number;
@@ -39,13 +43,23 @@ export function openTab(s: FileTabState, tab: FileTab): FileTabState {
   return { fileTabs: tabs, activeFileTab: tab.id };
 }
 
+/** Give an open tab a new name (an email's tab takes its subject once read). */
+export function retitleTab(s: FileTabState, id: string, title: string): FileTabState {
+  const at = s.fileTabs.findIndex((f) => f.id === id);
+  if (at < 0 || !title || s.fileTabs[at].title === title) return s;
+  const tabs = [...s.fileTabs];
+  tabs[at] = { ...tabs[at], title };
+  return { fileTabs: tabs, activeFileTab: s.activeFileTab };
+}
+
 /** Close a tab. Closing the selected one selects the file tab to its left, or,
- *  for the first file tab, the view the owner opened files from. */
+ *  for the first file tab, the view the owner opened files from. Closing another
+ *  tab leaves the owner on the file they are reading. */
 export function closeTab(s: FileTabState, id: string): FileTabState & { select: 'file' | null } {
   const i = s.fileTabs.findIndex((f) => f.id === id);
   if (i < 0) return { ...s, select: null };
   const tabs = s.fileTabs.filter((f) => f.id !== id);
-  if (s.activeFileTab !== id) return { fileTabs: tabs, activeFileTab: s.activeFileTab, select: null };
+  if (s.activeFileTab !== id) return { fileTabs: tabs, activeFileTab: s.activeFileTab, select: s.activeFileTab ? 'file' : null };
   const left = i > 0 ? tabs[i - 1] : null;
   return left
     ? { fileTabs: tabs, activeFileTab: left.id, select: 'file' }

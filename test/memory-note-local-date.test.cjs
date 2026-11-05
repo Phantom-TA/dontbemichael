@@ -60,8 +60,9 @@ test('the owner\'s answer is dated with the local day', async (t) => {
   const hive = new HiveManager(() => home);
   await hive.ensureAgent({ id: 'oscar', name: 'Oscar', provider: 'claude', cwd: home });
   assert.equal(hive.rememberOwnerAnswer('oscar', 'Pay the supplier', 'Pay now?', 'Yes.'), true);
-  const [note] = mi.parseInbox(fs.readFileSync(path.join(home, 'hive', 'agents', 'oscar', 'memory', 'inbox.md'), 'utf8'));
-  assert.match(note, /^From the owner \(2026-10-10\), /);
+  const [note] = hive.ownerNoteStore().pending('oscar');
+  assert.match(note.text, /^From the owner \(2026-10-10\), /);
+  assert.match(note.why, /, 2026-10-10$/);
 });
 
 test('the tidy-up dates an entry with the local day', async (t) => {

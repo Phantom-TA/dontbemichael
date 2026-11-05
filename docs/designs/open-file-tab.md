@@ -60,6 +60,7 @@ owner did not ask for.
 | R4 tab lifecycle (store, ViewTabs) | View tabs are a fixed list of three, persisted in `cth.floorView` | n/a | one closable tab per file after Who talks to whom; reopening selects it; at most 5, a sixth closes the oldest; not kept across restarts | approved | D6 answer A (owner, 2026-10-10): tab lifecycle only |
 | E1 live refresh (main watcher, file view) | Michael rewrites reports in place | n/a | an open tab re-reads its file when it changes on disk; one watcher per open tab, stopped on close | approved | D7 answer A (owner, 2026-10-10): added to scope |
 | E2 links inside an opened file (file view) | `MarkdownPreview` has `onOpenMarkdownLink` | n/a | links inside opened files stay inert | declined | D8 answer C (owner, 2026-10-10): skipped |
+| R3a documents in a tab (owner, 2026-10-31: "it should open in the office") | A Word file a member saved opened in Word | default app | Word, Excel, PowerPoint and PDF open as an office tab showing their words, pulled out in a process of their own by the document reader. Layout, pictures and formatting are not shown; Open in app reaches the file itself and is the way on when no words come out | built | Replaces R3 for these four kinds |
 | E3 CSV/TSV as a table (file view) | CSV is a readable kind (R3) | n/a | CSV/TSV render as a table with a sticky header row, first 1,000 rows, a note when more | approved | D9 answer A (owner, 2026-10-10): added to scope |
 | E4 Michael names files as backticked full paths (prompt) | R1 cuts a plain path at its first space | n/a | the conversation rule (hive.ts:328) says to name each file by its full path in backticks | approved | D10 answer A (owner, 2026-10-10): added to scope |
 | E4b report rule backticks (hive.ts:332) | spec review 1: report rule asks for unbackticked paths | n/a | the Ask me report rule also says full paths in backticks | approved | D12 answer A (owner, 2026-10-10): added to scope |
@@ -121,7 +122,8 @@ owner did not ask for.
    stays on the right; opening the column while on a file tab stays on the tab. Closing the selected tab selects the
    tab to its left.
 4. **File view.** Header: file name, its folder in `ink-3` (tooltip full path), and two
-   `sm` buttons, "Open in app" and "Show in Finder". "Open in app" shows only for kinds on `OPEN_EXTENSIONS` (not JSON, per the
+   `sm` buttons, "Open in app" and "Show in Finder" (a Copy button comes first since
+   2026-10-26: docs/designs/copy-document.md). "Open in app" shows only for kinds on `OPEN_EXTENSIONS` (not JSON, per the
    2026-10-04 eng allowlist). Body by kind: Markdown through `MarkdownPreview`, its
    images loaded through a new `loadImage(rel)` prop that resolves against the file's
    folder and calls `fs:readAskFile` (the same check) (shown only when inside the folders, else their

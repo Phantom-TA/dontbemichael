@@ -5,9 +5,10 @@
  * No electron or node imports.
  */
 import type { PulseSnapshot } from './teamPerformance';
-import type { Advice } from './teamAdvice';
+import type { Advice, EarlyWatch } from './teamAdvice';
 import type { KeptSafe } from './pulseSafety';
 import type { Learning } from './teamLearning';
+import type { FoundationsPulse } from './foundations';
 
 export interface AppliedChange { id: number; adviceId: string; agentId: string; kind: string; before: unknown; after: unknown; at: number; undoneAt: number | null }
 
@@ -27,6 +28,17 @@ export interface PulseView {
   liveSince: string | null;
   snapshot: PulseSnapshot;
   advice: Advice[];
+  /** Before advice can show: what the advice rules see in the live days so far,
+   *  at half their evidence, shown as facts with nothing to apply (owner,
+   *  2026-10-19). Empty once advice can show. Missing from an older main. */
+  early?: Advice[];
+  /** Each rule's count of early patterns and the member closest to a cheaper
+   *  model, so the Early look shows all it watches (owner, 2026-10-26).
+   *  Only while early patterns show; missing from an older main. */
+  earlyWatch?: EarlyWatch;
+  /** Company foundations (office-foundations.md): the strip's jobs and each
+   *  member's count, from harness.db. Missing from an older main. */
+  foundations?: FoundationsPulse;
   /** When suggestions start (14 days after the first record), or null once they can show. */
   adviceFrom: string | null;
   saved: { state: 'none' } | { state: 'measuring'; firstAt: number } | { state: 'measured'; usd: number; since: number };
@@ -39,11 +51,16 @@ export interface PulseView {
   /** What the team learned and asked in the period (and the span before with
    *  Compare), plus what it holds in all. */
   learning: Learning;
-  /** On a Claude plan with a known price: every dollar above is the member's
-   *  part of the plan's real cost for the period, split by share of the work;
+  /** On a Claude plan with a known price and a learned rate: every dollar
+   *  above is what the member's own work cost of the plan, at the plan's rate
+   *  (owner, 2026-10-29: never the whole plan, which the owner also uses);
    *  `payPerUse` is what the same work would cost per use. Null on an API key
-   *  (dollars are what was spent) or a plan with no known price. */
+   *  (dollars are what was spent), a plan with no known price, or while the
+   *  rate is still being learned. */
   plan: { label: string | null; monthly: number; source: 'owner' | 'detected'; periodCost: number; payPerUse: number } | null;
+  /** On a priced plan whose rate the weekly meter has not shown yet: the
+   *  dollars above are pay per use value. */
+  planLearning?: true;
   /** The span before, when Compare is on and ready; else null. */
   compare: PulseCompare | null;
   /** Whether this period can compare: its span before starts on or after the
@@ -51,5 +68,7 @@ export interface PulseView {
   compareReady: boolean;
   /** The first day this period can compare, for the switch's (i); null with no live records. */
   compareFrom: string | null;
+  /** The one time case study invitation shows (docs/designs/case-study.md, D7). */
+  caseStudyInvite?: boolean;
 }
 

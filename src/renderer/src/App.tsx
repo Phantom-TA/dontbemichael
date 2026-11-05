@@ -24,7 +24,10 @@ import { ClosingTimeBar, type ClosingTimeState } from '@/components/ClosingTimeB
 import { CompletionToast } from '@/realtime/CompletionToast';
 import { UpdateToast } from '@/components/UpdateToast';
 import { CliUpdateToast } from '@/components/CliUpdateNotice';
-import { SettingsModal, type Section as SettingsSection } from '@/components/SettingsModal';
+import { CaseStudyToast } from '@/components/pulse/CaseStudyToast';
+import { SettingsModal, type Section as SettingsSection, type SettingsPlace } from '@/components/SettingsModal';
+import type { PlaceGroup } from '@shared/settingsPlaces';
+import { MichaelStopped } from '@/components/MichaelStopped';
 import { PixelButton } from '@/components/PixelButton';
 import { SidebarSplitter } from '@/components/SidebarSplitter';
 import { acquireTerminal } from '@/components/terminalPool';
@@ -89,7 +92,10 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Which tab Settings opens on. Set by a `cth:open-settings` deep link, reset
    *  to undefined (→ General) whenever the modal is opened the normal way. */
-  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
+  // A deep link can also name a group in the section and ask for its Add form
+  // (docs/designs/settings-links-in-replies.md); seq lets the same place be
+  // asked for twice.
+  const [settingsPlace, setSettingsPlace] = useState<SettingsPlace | undefined>(undefined);
   // Closing time on the floor (ClosingTimeBar): shown from the quit request
   // until the office closes or the owner goes back to work.
   const [closingOpen, setClosingOpen] = useState(false);
@@ -105,8 +111,8 @@ export function App() {
   // between, matching the existing `cth:` CustomEvent convention.
   useEffect(() => {
     const onOpenSettings = (e: Event): void => {
-      const section = (e as CustomEvent<{ section?: SettingsSection }>).detail?.section;
-      setSettingsSection(section);
+      const d = (e as CustomEvent<{ section?: SettingsSection; group?: PlaceGroup; add?: boolean }>).detail;
+      setSettingsPlace((p) => ({ section: d?.section, group: d?.group, add: d?.add, seq: (p?.seq ?? 0) + 1 }));
       setSettingsOpen(true);
     };
     window.addEventListener('cth:open-settings', onOpenSettings);
@@ -364,6 +370,14 @@ export function App() {
   // While wide the office and the bottom bar are out of reach (WD13). The
   // wide 1:1 leaves the right column live beside it (owner, 2026-10-17).
   useEffect(() => { stageRef.current?.toggleAttribute('inert', wide || dockWide); }, [wide, dockWide]);
+  // The floor and the right column wait while the office opens at launch
+  // (owner, 2026-10-30). The floor alone, not stageRef: the Clocking in card
+  // lives beside it there, and inert would hide it from a screen reader. Top
+  // bar, Settings and the message box stay usable, so a stuck launch is fixable.
+  const launchLock = useStore((s) => s.launchLock);
+  const floorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { floorRef.current?.toggleAttribute('inert', launchLock); }, [launchLock]);
+  useEffect(() => { columnRef.current?.toggleAttribute('inert', launchLock); }, [launchLock, columnOpen]);
   // The move (WD9): the column takes its new place at once and a transform
   // carries it there from the old one over 320 ms. Boxes are read without
   // transforms (offset*), kept current as the column is dragged or the window
@@ -506,21 +520,25 @@ export function App() {
           positions itself and renders null until it has something to say. */}
       <CompletionToast />
       <UpdateToast />
+      <CaseStudyToast />
       <CliUpdateToast onCloseAndReopen={closeOfficeAndReopen} />
 
       {/* Design v2 shell (branding/DESIGN.md 5.2): top bar, the stage with the
           bottom bar floating over it, and the right column. No agent strip and
           no permanent Command Center: people live on the stage. */}
-      <TopBar onOpenSettings={() => { setSettingsSection(undefined); setSettingsOpen(true); }} />
+      <TopBar onOpenSettings={() => { setSettingsPlace(undefined); setSettingsOpen(true); }} />
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
         <div ref={stageRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', background: 'var(--cth-bg)' }}>
-          <StudioStage config={config} bleed={columnShown ? sidebarWidth + 10 : 0} />
+          <div ref={floorRef} style={{ display: 'contents' }}>
+            <StudioStage config={config} bleed={columnShown ? sidebarWidth + 10 : 0} />
+          </div>
           {/* Over the office only, never over Tasks or the graph (DESIGN.md 7.6). */}
           {floorView === 'office' && <RestoreTeamBanner config={config} />}
           {agentCount === 0 && godStatus === 'booting' && <MichaelBooting />}
           {/* The office opening runs on every view; its card shows on the floor (7.24). */}
           <TeamClockingIn show={floorView === 'office'} />
+          <MichaelStopped show={floorView === 'office'} />
           {agentCount === 0 && godStatus !== 'booting' && (
             <div style={{
               position: 'absolute', inset: 0,
@@ -652,8 +670,9 @@ export function App() {
       {settingsOpen && (
         <SettingsModal
           config={config}
-          initialSection={settingsSection}
-          onClose={() => { setSettingsOpen(false); setSettingsSection(undefined); }}
+          initialSection={settingsPlace?.section}
+          place={settingsPlace}
+          onClose={() => { setSettingsOpen(false); setSettingsPlace(undefined); }}
         />
       )}
 

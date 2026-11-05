@@ -4,7 +4,7 @@ import { request as httpsRequest } from 'node:https';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_DROP_HTML } from '../shared/releaseDrop';
-import { reduceStatus, clampPercent, isNewerRelease, installerUrl, shouldShowReleaseDrop, REPO, type UpdateStatus } from '../shared/updateState';
+import { reduceStatus, clampPercent, isNewerRelease, installerUrl, isInstallRefusal, shouldShowReleaseDrop, REPO, type UpdateStatus } from '../shared/updateState';
 
 /**
  * Auto-update from GitHub releases.
@@ -573,6 +573,20 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
           return;
         }
         logLine(`native updater error: ${message}`);
+        // The install refused the staged update (a code signature this install
+        // does not accept): every restart would fail the same way, so the
+        // update moves to the manual download, and the restart offer ends.
+        if (pendingRestart && lastStatus?.state === 'downloaded' && isInstallRefusal(message)) {
+          const { version, notes } = lastStatus;
+          logLine(`install refused for ${version}; offering the manual download`);
+          emit({
+            state: 'available-manual', version, notes, reason: message, installFailed: true,
+            url: `https://github.com/${REPO}/releases/tag/v${version}`,
+            downloadUrl: installerUrl(version, process.platform, process.arch)
+          });
+          failPendingRestart(message);
+          return;
+        }
         emit({ state: 'error', message });
         // A restart-to-install that failed reports here, not as a throw. Settle
         // the pending restart (no-op if none) so the handler stops awaiting and

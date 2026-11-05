@@ -41,6 +41,15 @@ test('cursor addressing, erases, and private modes are control, not content', ()
   assert.equal(stripAnsi('up\x1b[2A\x1b[5Ddown'), 'updown');
 });
 
+test('CSI with < = > parameters is control too (keyboard protocol, device queries)', () => {
+  assert.equal(stripAnsi('Read\x1b[>1u foo.ts'), 'Read foo.ts', 'keyboard mode push');
+  assert.equal(stripAnsi('Read\x1b[<u foo.ts'), 'Read foo.ts', 'keyboard mode pop');
+  assert.equal(stripAnsi('Read\x1b[>4;2m foo.ts'), 'Read foo.ts', 'modifyOtherKeys');
+  assert.equal(stripAnsi('Read\x1b[>c foo.ts'), 'Read foo.ts', 'secondary device query');
+  const strip = createAnsiStripper();
+  assert.equal(strip('Read\x1b[>') + strip('1u foo.ts'), 'Read foo.ts', 'split right after the >');
+});
+
 test('OSC strings (window title, hyperlinks) vanish entirely', () => {
   assert.equal(stripAnsi('\x1b]0;my title\x07text'), 'text');
   assert.equal(stripAnsi('\x1b]8;;https://x.dev\x1b\\link\x1b]8;;\x1b\\'), 'link');

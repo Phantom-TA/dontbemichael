@@ -13,11 +13,12 @@
  *  not counted. `impostor` is a hook frame with no secret or another member's
  *  secret; a frame with an old secret is a process left from an earlier start
  *  shutting down, so it is refused but not counted (2026-10-15: Research's
- *  status line sent 20 such frames at each restart). */
+ *  status line sent 20 such frames at each restart). `turn-cap` is the call
+ *  past Max turns per run (turnCap.ts), which also stops the run. */
 export type RefusalGate =
   | 'paused' | 'connector' | 'quickbooks' | 'mail' | 'sandbox' | 'internet'
-  | 'office-files' | 'folder' | 'impostor';
-export const REFUSAL_GATES: readonly RefusalGate[] = ['connector', 'quickbooks', 'mail', 'internet', 'sandbox', 'folder', 'office-files', 'paused', 'impostor'];
+  | 'office-files' | 'folder' | 'impostor' | 'turn-cap';
+export const REFUSAL_GATES: readonly RefusalGate[] = ['connector', 'quickbooks', 'mail', 'internet', 'sandbox', 'folder', 'office-files', 'paused', 'turn-cap', 'impostor'];
 
 /** A trust layer log line as trustLayer.ts writes it. */
 export interface TrustDecision { way?: unknown; decision?: unknown; by?: unknown; flagged?: unknown; v?: unknown }

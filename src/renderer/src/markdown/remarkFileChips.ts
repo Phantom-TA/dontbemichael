@@ -11,7 +11,7 @@
  * node's position and found in the parsed text by its unescaped form. Runs
  * before remarkSoftBreaks, whose split text nodes carry no position.
  */
-import { fileTitle, isAbsolutePathText, isFileSpan, plainFilePaths, unescapeMarkdown } from '@shared/askFiles';
+import { fileTitle, folderTitle, isAbsolutePathText, isFileSpan, isFolderSpan, plainFilePaths, unescapeMarkdown } from '@shared/askFiles';
 
 interface MdNode {
   type: string;
@@ -24,7 +24,7 @@ interface MdNode {
 
 const chip = (path: string): MdNode => ({
   type: 'inlineCode',
-  value: fileTitle(path),
+  value: isFolderSpan(path) ? folderTitle(path) : fileTitle(path),
   data: { hName: 'cth-file', hProperties: { dataPath: path } }
 });
 
@@ -88,7 +88,7 @@ function walk(node: MdNode, source: string): void {
     if (child.type === 'text') {
       const parts = splitText(child, source);
       if (parts) { out.push(...parts); continue; }
-    } else if (child.type === 'inlineCode' && typeof child.value === 'string' && isFileSpan(child.value)) {
+    } else if (child.type === 'inlineCode' && typeof child.value === 'string' && (isFileSpan(child.value) || isFolderSpan(child.value))) {
       out.push(chip(child.value.trim()));
       continue;
     } else if (child.type === 'link' && typeof child.url === 'string' && isAbsolutePathText(child.url) && isFileSpan(child.url)) {

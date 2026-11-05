@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mailbox Choice Options</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cth-bg:#F7F7FB;--cth-card:#FFFFFF;--cth-ink:#1E1B2E;--cth-ink-3:#6C6884;--cth-line:#E8E6F2;--cth-line-input:#8F8AA6;
+  --cth-neutral-soft:#F0EFF5;--cth-amber-soft:#FFF4DF;--cth-amber-text:#8F5C07;--cth-indigo:#6C5CE7;--cth-indigo-soft:#EEEBFD;--cth-indigo-text:#4338CA;
+  --cth-mint:#1FB872;--cth-r-sm:6px;--cth-r-md:9px;--cth-r-lg:12px;--cth-paper-200:#FAFAFD;
+  --ui:"Sora",-apple-system,system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --cth-bg:#14131C;--cth-card:#1F1E2B;--cth-ink:#ECEAF4;--cth-ink-3:#A5A2B8;--cth-line:rgba(255,255,255,.09);--cth-line-input:#76728C;
+  --cth-neutral-soft:#2A2938;--cth-amber-soft:rgba(242,180,90,.15);--cth-amber-text:#F2B45A;--cth-indigo-soft:rgba(157,144,255,.16);--cth-indigo-text:#A99FFF;--cth-paper-200:#24233A;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cth-bg);color:var(--cth-ink);font-family:var(--ui);padding:24px 16px 48px}
+h1{font-size:18px;margin:0 0 4px}
+.lead{color:var(--cth-ink-3);font-size:13px;margin:0 0 24px;max-width:70ch;line-height:19px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:28px;max-width:1180px}
+.opt h2{font-size:14px;margin:0 0 4px}
+.opt p.why{font-size:12.5px;color:var(--cth-ink-3);margin:0 0 12px;line-height:18px}
+.tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:var(--cth-indigo-soft);color:var(--cth-indigo-text);margin-left:6px;vertical-align:2px}
+.pane{background:var(--cth-paper-200);border:1px solid var(--cth-line);border-radius:var(--cth-r-lg);padding:14px}
+.tabs{display:flex;gap:22px;font-size:15px;color:var(--cth-ink-3);border-bottom:1px solid var(--cth-line);margin:-2px -14px 12px;padding:0 14px}
+.tabs span{padding:6px 0 9px}.tabs .on{color:var(--cth-ink);font-weight:600;border-bottom:3px solid var(--cth-ink)}
+.card{background:var(--cth-card);border:1px solid var(--cth-line);border-radius:var(--cth-r-lg);overflow:hidden}
+.head{display:flex;gap:10px;padding:12px 14px;align-items:flex-start}
+.head b{font-size:15px}.head .blurb{font-size:12.5px;color:var(--cth-ink-3);margin-top:2px;line-height:18px}
+.chip{margin-left:auto;font-size:11.5px;color:var(--cth-ink-3);background:var(--cth-neutral-soft);border-radius:99px;padding:3px 9px;white-space:nowrap}
+.body{border-top:1px solid var(--cth-line);padding:4px 14px 12px}
+.mb{padding:10px 0;border-top:1px solid var(--cth-line)}.mb:first-child{border-top:none}
+.mbtop{display:flex;align-items:center;gap:8px}
+.addr{font-family:var(--mono);font-size:12.5px;font-weight:500}
+.mini{margin-left:auto;font-family:var(--ui);font-size:11.5px;border:1px solid var(--cth-line-input);background:transparent;color:var(--cth-ink);border-radius:var(--cth-r-sm);padding:3px 8px}
+.kv{display:grid;grid-template-columns:62px 1fr;gap:6px 10px;margin-top:8px;font-size:12.5px;align-items:center}
+.k{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--cth-ink-3)}
+.seg{display:inline-flex;border:1px solid var(--cth-line-input);border-radius:var(--cth-r-sm);overflow:hidden}
+.seg span{font-size:11.5px;padding:4px 9px;border-left:1px solid var(--cth-line)}.seg span:first-child{border-left:none}
+.seg .sel{background:var(--cth-ink);color:var(--cth-card);font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--cth-mint)}.dot.soft{background:var(--cth-line-input)}
+.muted{color:var(--cth-ink-3)}
+.add{margin-top:10px;font-size:12.5px;color:var(--cth-indigo-text);text-decoration:underline;background:none;border:none;padding:0;font-family:var(--ui)}
+.pop{margin-top:10px;border:1px solid var(--cth-line);border-radius:var(--cth-r-md);padding:10px;background:var(--cth-paper-200)}
+.pop .k{display:block;margin-bottom:6px}
+.sel-box{font-family:var(--mono);font-size:12px;border:1px solid var(--cth-line-input);border-radius:var(--cth-r-sm);padding:6px 9px;background:var(--cth-card);display:flex;justify-content:space-between}
+.radio{display:flex;gap:9px;padding:7px 0;font-size:12.5px;align-items:flex-start}
+.radio i{width:14px;height:14px;border-radius:50%;box-shadow:inset 0 0 0 1px var(--cth-line-input);flex:none;margin-top:2px}
+.radio i.on{background:var(--cth-ink);box-shadow:none;position:relative}.radio i.on:after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--cth-card)}
+.radio small{display:block;color:var(--cth-ink-3);font-size:11.5px;margin-top:1px}
+.radio.off{opacity:.5}
+.empty{font-size:12.5px;color:var(--cth-ink-3);padding:8px 0 0}
+.note{margin-top:8px;font-size:12px;background:var(--cth-amber-soft);color:var(--cth-amber-text);border-radius:var(--cth-r-md);padding:7px 9px}
+.cap{font-size:11px;color:var(--cth-ink-3);margin:14px 0 6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.row{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--cth-line)}.row:first-child{border-top:none}
+.row .meta{font-size:12px;color:var(--cth-ink-3);margin-top:3px;line-height:17px}
+
+.grid{grid-template-columns:repeat(auto-fit,minmax(330px,1fr));max-width:1480px}
+.opt h2{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.opt h2 .tag{order:2}
+.pop{background:var(--cth-card)}
+.ttl{font-size:13px;font-weight:600;margin:0 0 8px;display:flex;align-items:center;gap:5px}
+.i{width:14px;height:14px;border-radius:50%;border:1px solid var(--cth-line-input);color:var(--cth-ink-3);font-size:9px;display:inline-flex;align-items:center;justify-content:center;font-weight:600}
+.q{font-size:13px;font-weight:600;margin:12px 0 2px}
+.radio{font-size:13px;padding:8px 0;border-top:1px solid var(--cth-line)}.radio:first-of-type{border-top:none}
+.radio span b{font-weight:500}.radio small{font-size:12px;line-height:17px}
+.acts{display:flex;gap:6px;margin-top:10px}
+.btn{font-family:var(--ui);font-size:11.5px;border:1px solid var(--cth-line-input);background:transparent;color:var(--cth-ink);border-radius:var(--cth-r-sm);padding:4px 10px}
+.btn.go{background:var(--cth-ink);color:var(--cth-card);border-color:var(--cth-ink);font-weight:600}
+.say{font-size:13px;margin:10px 0 0;line-height:19px}
+.lnk{font-size:12px;color:var(--cth-indigo-text);text-decoration:underline}
+.bad{font-size:12px;color:var(--cth-amber-text);margin:8px 0 0;line-height:17px}
+.opt+.opt{}
+.pane+.cap{margin-top:16px}
+.after{margin-top:6px}
+</style>
+</head>
+<body>
+<h1>Giving a team member a mailbox</h1>
+<p class="lead">The panel on a team member's Access tab, Email. Each column shows the same three moments. Sample names only.</p>
+<div class="grid"><section class="opt"><h2>Today</h2><p class="why">The words a new owner sees now. The meaning sits behind the small i.</p><div class="pane"><div class="cap">New mailbox, nobody reads it</div><div class="pop"><p class="ttl">Add a mailbox<span class="i">i</span></p><div class="sel-box"><span>hello@example.com</span><span>⌄</span></div><p class="q">How Pam uses it</p><div class="radio"><i class="on"></i><span><b>Watch the inbox</b></span></div><div class="radio"><i class=""></i><span><b>Send only</b><small>Nobody watches it yet, so its email waits until someone does.</small></span></div><div class="acts"><button class="btn go">Add</button><button class="btn">Cancel</button></div></div><div class="cap">A teammate already reads it</div><div class="pop"><p class="ttl">Add a mailbox<span class="i">i</span></p><div class="sel-box"><span>hello@example.com</span><span>⌄</span></div><p class="q">How Pam uses it</p><div class="radio"><i class=""></i><span><b>Watch the inbox</b><small>Kelly watches it now. It moves to Pam after you confirm.</small></span></div><div class="radio"><i class="on"></i><span><b>Send only</b></span></div><div class="acts"><button class="btn go">Add</button><button class="btn">Cancel</button></div></div><div class="cap">After Add</div><div class="pop after"><div class="mbtop"><span class="addr">hello@example.com</span><button class="mini">Remove</button></div><div class="kv"><span class="k">Inbox</span><span class="pill"><span class="dot"></span>Pam watches it</span><span class="k">Sending</span><span class="seg"><span>Can send</span><span class="sel">Send on approval</span><span>Draft only</span></span></div></div></div></section><section class="opt"><h2>A. Plain words, one line each<span class="tag">Recommended</span></h2><p class="why">Says what the member will do, right on the screen. The choice that cannot work yet is greyed with why.</p><div class="pane"><div class="cap">New mailbox, nobody reads it</div><div class="pop"><p class="ttl">Give Pam a mailbox</p><div class="sel-box"><span>hello@example.com</span><span>⌄</span></div><p class="q">What should Pam do with it?</p><div class="radio"><i class="on"></i><span><b>Read and answer email</b><small>Pam reads what comes in, sorts it and replies.</small></span></div><div class="radio off"><i class=""></i><span><b>Only send email</b><small>Someone needs to read this inbox first.</small></span></div><div class="acts"><button class="btn go">Give to Pam</button><button class="btn">Cancel</button></div></div><div class="cap">A teammate already reads it</div><div class="pop"><p class="ttl">Give Pam a mailbox</p><div class="sel-box"><span>hello@example.com</span><span>⌄</span></div><p class="q">What should Pam do with it?</p><div class="radio"><i class=""></i><span><b>Read and answer email</b><small>Kelly reads it now. It moves to Pam after you confirm.</small></span></div><div class="radio"><i class="on"></i><span><b>Only send email</b><small>Pam sends from this address but cannot read it. Kelly reads the replies and passes them on.</small></span></div><div class="acts"><button class="btn go">Give to Pam</button><button class="btn">Cancel</button></div></div><div class="cap">After Add</div><div class="pop after"><div class="mbtop"><span class="addr">hello@example.com</span><button class="mini">Remove</button></div><div class="kv"><span class="k">Inbox</span><span class="pill"><span class="dot"></span>Pam reads and answers it</span><span class="k">Sending</span><span class="seg"><span>Can send</span><span class="sel">Send on approval</span><span>Draft only</span></span></div></div></div></section><section class="opt"><h2>B. Plain words, nothing added</h2><p class="why">Keeps the screen as short as it is today. Only the names change; the meaning stays behind the i.</p><div class="pane"><div class="cap">New mailbox, nobody reads it</div><div class="pop"><p class="ttl">Give Pam a mailbox<span class="i">i</span></p><div class="sel-box"><span>hello@example.com</span><span>⌄</span></div><p class="q">What should Pam do with it?</p><div class="radio"><i class="on"></i><span><b>Read and answer email</b></span></div><div class="radio off"><i class=""></i><span><b>Only send email</b><small>Someone needs to read this inbox first.</small></span></div><div class="acts"><button class="btn go">Give to Pam</button><button class="btn">Cancel</button></div></div><div class="cap">A teammate already reads it</div><div class="pop"><p class="ttl">Give Pam a mailbox<span class="i">i</span></p><div class="sel-box"><span>hello@example.com</span><span>⌄</span></div><p class="q">What should Pam do with it?</p><div class="radio"><i class=""></i><span><b>Read and answer email</b><small>Kelly reads it now. It moves to Pam after you confirm.</small></span></div><div class="radio"><i class="on"></i><span><b>Only send email</b></span></div><div class="acts"><button class="btn go">Give to Pam</button><button class="btn">Cancel</button></div></div><div class="cap">After Add</div><div class="pop after"><div class="mbtop"><span class="addr">hello@example.com</span><button class="mini">Remove</button></div><div class="kv"><span class="k">Inbox</span><span class="pill"><span class="dot"></span>Pam reads and answers it</span><span class="k">Sending</span><span class="seg"><span>Can send</span><span class="sel">Send on approval</span><span>Draft only</span></span></div></div></div></section><section class="opt"><h2>C. No question on a new mailbox</h2><p class="why">A new owner never sees a choice. The two options appear only once a teammate already reads the mailbox.</p><div class="pane"><div class="cap">New mailbox, nobody reads it</div><div class="pop"><p class="ttl">Give Pam a mailbox</p><div class="sel-box"><span>hello@example.com</span><span>⌄</span></div><p class="say">Pam will read what comes in, sort it and reply.</p><div class="acts"><button class="btn go">Give to Pam</button><button class="btn">Cancel</button></div></div><div class="cap">A teammate already reads it</div><div class="pop"><p class="ttl">Give Pam a mailbox</p><div class="sel-box"><span>hello@example.com</span><span>⌄</span></div><p class="q">Kelly reads this mailbox. What should Pam do?</p><div class="radio"><i class="on"></i><span><b>Only send email</b><small>Pam sends from this address but cannot read it. Kelly reads the replies and passes them on.</small></span></div><div class="radio"><i class=""></i><span><b>Take over reading and answering</b><small>It moves from Kelly to Pam after you confirm.</small></span></div><div class="acts"><button class="btn go">Give to Pam</button><button class="btn">Cancel</button></div></div><div class="cap">After Add</div><div class="pop after"><div class="mbtop"><span class="addr">hello@example.com</span><button class="mini">Remove</button></div><div class="kv"><span class="k">Inbox</span><span class="pill"><span class="dot"></span>Pam reads and answers it</span><span class="k">Sending</span><span class="seg"><span>Can send</span><span class="sel">Send on approval</span><span>Draft only</span></span></div></div></div></section></div>
+</body>
+</html>

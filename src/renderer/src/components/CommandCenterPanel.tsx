@@ -18,6 +18,7 @@ import { TriggerCard } from './triggers/ui';
 import { WorkersTab } from './WorkersTab';
 import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool';
 import { terminalInstanceKey } from './terminalRecovery';
+import { areLogsEqual, type LogEntry } from './activityLog';
 import { Icon } from './Icon';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
@@ -43,6 +44,7 @@ import { isComposingKey } from '@shared/imeGuard';
 import { fmtTokens } from '@shared/tokenFormat';
 import { useRtl } from '@/i18n/useDirection';
 import { SilentPanelLine } from './SilentEngine';
+import { fieldLabel, groupName, hint } from './fieldText';
 
 /** Michael's control surface. Shown instead of the plain terminal/files panel
  *  when the god agent is selected: terminal + queue, the floor roster (with
@@ -606,9 +608,9 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
 
   return (
     <Wrap>
-      <Section title={t('commandCenter.dispatchViaMichael', { godName: godName.toUpperCase() })}>
+      <Section title={t('commandCenter.dispatchViaMichael', { godName })}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-          <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, color: 'var(--cth-ink-500)', flexShrink: 0 }}>
+          <span style={{ ...hint, flexShrink: 0 }}>
             {t('commandCenter.suggestedOwner')}
           </span>
           <Select value={dispatchTo} onChange={setDispatchTo}>
@@ -1072,11 +1074,11 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
   // undefined: first read not back yet; null: the read failed.
   const [detail, setDetail] = useState<{ index: string; waiting: number } | null | undefined>(undefined);
   const [showFile, setShowFile] = useState(false);
-  // One search box: exact words across the hive files, or by meaning (MemPalace).
-  const [mode, setMode] = useState<'text' | 'meaning'>('text');
+  // One search box: exact words across the team's notes. Search by meaning
+  // covers company knowledge only, so it lives with it in Settings (owner,
+  // 2026-10-19); members' notes are never indexed by meaning.
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
-  const [searchOut, setSearchOut] = useState('');
   const [textResults, setTextResults] = useState<Array<{ source: string; excerpt: string }>>([]);
   const [textSearched, setTextSearched] = useState(false);
 
@@ -1098,16 +1100,11 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
     if (!q) return;
     setBusy(true);
     try {
-      if (mode === 'text') {
-        const res = await window.cth.textSearch(q);
-        setTextResults(res.ok ? res.results.slice(0, 10) : []);
-        setTextSearched(true);
-      } else {
-        const res = await window.cth.searchMemory(q);
-        setSearchOut(res.ok ? (res.output || t('commandCenter.searchNoMatch')) : `${t('commandCenter.dispatchFailed', { error: res.error })}`);
-      }
+      const res = await window.cth.textSearch(q);
+      setTextResults(res.ok ? res.results.slice(0, 10) : []);
+      setTextSearched(true);
     } catch {
-      if (mode === 'text') { setTextResults([]); setTextSearched(true); }
+      setTextResults([]); setTextSearched(true);
     } finally { setBusy(false); }
   };
 
@@ -1121,10 +1118,10 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
   return (
     <div style={{
       flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: 10,
-      background: 'var(--cth-paper-200)', display: 'flex', flexDirection: 'column'
+      background: 'var(--cth-card)', display: 'flex', flexDirection: 'column'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <h2 style={{ margin: 0, flex: 1, minWidth: 0, fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '20px', fontWeight: 400, color: 'var(--cth-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <h2 style={{ ...fieldLabel, margin: 0, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {t('memoryNotes.title', { name })}
         </h2>
         {!ownOnly && (
@@ -1167,28 +1164,13 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
       )}
 
       {!ownOnly && <section style={{ marginTop: 18, paddingTop: 12, borderTop: '1px solid var(--cth-ink-100)' }}>
-        <h3 style={{ margin: '0 0 6px', fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-ink-700)' }}>{t('memoryNotes.searchTitle')}</h3>
-        <div role="radiogroup" aria-label={t('memoryNotes.searchTitle')} style={{ borderRadius: 'var(--cth-r-md)', display: 'inline-flex', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', marginBottom: 6 }}>
-          {(['text', 'meaning'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              role="radio"
-              aria-checked={mode === m}
-              onClick={() => setMode(m)}
-              style={{
-                padding: '2px 10px', border: 'none', cursor: 'pointer', fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '18px',
-                background: mode === m ? 'var(--cth-ink-900)' : 'transparent', color: mode === m ? 'var(--cth-cream-50)' : 'var(--cth-ink-900)'
-              }}
-            >{t(m === 'text' ? 'memoryNotes.exactWords' : 'memoryNotes.byMeaning')}</button>
-          ))}
-        </div>
+        <h3 style={{ ...groupName, margin: '0 0 6px' }}>{t('memoryNotes.searchTitle')}</h3>
         <div style={{ display: 'flex', gap: 6 }}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (isComposingKey(e)) return; if (e.key === 'Enter') search(); }}
-            placeholder={t(mode === 'text' ? 'commandCenter.textSearchPlaceholder' : 'commandCenter.semanticPlaceholder')}
+            placeholder={t('commandCenter.textSearchPlaceholder')}
             aria-label={t('memoryNotes.searchTitle')}
             style={{ ...textareaStyle, height: 30 }}
           />
@@ -1196,7 +1178,7 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
             {busy ? '…' : t('common.search')}
           </PixelButton>
         </div>
-        {mode === 'text' && textResults.length > 0 && (
+        {textResults.length > 0 && (
           <div style={{ marginTop: 6 }}>
             {textResults.map((r, i) => (
               <div key={i} style={{ marginBottom: 4 }}>
@@ -1206,8 +1188,7 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
             ))}
           </div>
         )}
-        {mode === 'text' && textSearched && textResults.length === 0 && <Muted>{t('commandCenter.nothingMatched')}</Muted>}
-        {mode === 'meaning' && searchOut && <Pre>{searchOut}</Pre>}
+        {textSearched && textResults.length === 0 && <Muted>{t('commandCenter.nothingMatched')}</Muted>}
       </section>}
     </div>
   );
@@ -1293,18 +1274,20 @@ function TokenLimitEditor({ value, onSet }: { value?: number; onSet: (tokens: nu
 
 // ─── Activity tab — hive event log + board ───────────────────────────────────
 
-interface LogEntry { ts?: number; kind?: string; [k: string]: unknown }
-
 function ActivityTab({ embedded = false }: { embedded?: boolean }) {
   const Wrap = embedded ? Bare : Scroll;
   const { t } = useTranslation();
   const [log, setLog] = useState<LogEntry[]>([]);
   const [board, setBoard] = useState('');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     const refresh = async () => {
-      try { setLog((await window.cth.hiveLog(60)) as LogEntry[]); } catch { /* noop */ }
+      try {
+        const next = (await window.cth.hiveLog(60)) as LogEntry[];
+        // Same log as last poll: keep the prev reference so React skips the
+        // re-render. IPC returns fresh objects each time, so compare by value.
+        setLog((prev) => (areLogsEqual(prev, next) ? prev : next));
+      } catch { /* noop */ }
       try { setBoard(await window.cth.hiveBoard()); } catch { /* noop */ }
     };
     refresh();
@@ -1349,13 +1332,13 @@ function Scroll({ children }: { children: React.ReactNode }) {
   // minWidth:0 + overflowX:hidden keep wide children (native selects, long paths,
   // budget rows) from forcing a horizontal scrollbar in the narrow sidebar — they
   // wrap/shrink instead. Vertical scroll stays.
-  return <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: 10, background: 'var(--cth-paper-200)' }}>{children}</div>;
+  return <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: 10, background: 'var(--cth-card)' }}>{children}</div>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px', color: 'var(--cth-ink-500)', marginBottom: 6 }}>{title}</div>
+      <h3 style={{ ...groupName, marginBottom: 6 }}>{title}</h3>
       {children}
     </div>
   );
@@ -1363,7 +1346,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, textAlign: 'center', color: 'var(--cth-ink-700)', fontSize: 13, background: 'var(--cth-paper-200)' }}>
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, textAlign: 'center', color: 'var(--cth-ink-700)', fontSize: 13, background: 'var(--cth-card)' }}>
       {children}
     </div>
   );

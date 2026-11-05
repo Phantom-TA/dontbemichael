@@ -1,6 +1,5 @@
 // Scene library for the blog's hand-drawn hero illustrations.
-// Style contract (see .claude/skills/ian-xiaohei-illustrations/SKILL.md local
-// overrides): 1600x900, pure white, thin wobbly ink lines, yellow #FFCA54
+// Style contract: 1600x900, pure white, thin wobbly ink lines, yellow #FFCA54
 // Xiaohei with black dot eyes, sparse orange/blue/amber English annotations,
 // one concept per image, never red.
 //

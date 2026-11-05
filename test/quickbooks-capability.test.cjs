@@ -142,7 +142,7 @@ test('QuickBooks shows on Capabilities only while its Settings switch is on, as 
   assert.equal(connectorOn({ quickbooksClaude: true }, 'Intuit QuickBooks'), true, 'its switch is still quickbooksClaude');
   assert.equal(connectorOn({ connectorsOn: { 'Intuit QuickBooks': true } }, 'Intuit QuickBooks'), false);
   assert.match(read('src/main/index.ts'), /if \(isQuickBooksKey\(key\)\) \{ writeConfig\(\{ quickbooksClaude: on === true \}\); return \{ ok: true \}; \}/);
-  assert.match(read('src/renderer/src/components/SettingsModal.tsx'), /<ClaudeConnectorsSettings \/>[\s\S]{0,300}<MailboxesSettings \/>/, 'in the connector list, first in Connections');
+  assert.match(read('src/renderer/src/components/SettingsModal.tsx'), /<ClaudeConnectorsSettings \/>[\s\S]{0,400}<MailboxesSettings /, 'in the connector list, first in Connections');
 });
 
 test('the QuickBooks gate leaves every other tool to its own rule', async (t) => {

@@ -206,3 +206,34 @@ test('the list reminder keeps its start across restarts, so a list written befor
     assert.ok(fs.existsSync(path.join(home, 'private', 'ask-list-since.json')));
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+// Owner, 2026-10-29 (GreenWorld reply card): "Send with my changes" gave no
+// place to say what the changes were. An option that needs the owner's words
+// carries a short question; the box asks it once that option is picked, and
+// Reply waits for an answer.
+test('an option that needs the owner\'s words asks for them, and Reply waits for them', () => {
+  const ask = {
+    q: '**Dennis replied, and Dwight needs your call on the answer.**',
+    options: [
+      { label: 'Send as written', recommended: true },
+      { label: 'Send with my changes', note: '  What should change?\n ' },
+      { label: "Don't reply, close it", note: '' }
+    ]
+  };
+  const shape = readAskShape(ask);
+  assert.equal(shape.kind, 'choice');
+  assert.deepEqual(shape.options[1], { label: 'Send with my changes', note: 'What should change?' });
+  assert.equal(shape.options[2].note, undefined, 'an empty note is no note');
+  assert.equal(readAskShape({ q: 'x', options: [{ label: 'a', note: 'x'.repeat(300) }] }).options[0].note.length, 120);
+  assert.equal(labeledAnswer(shape, { pick: 1, note: 'Drop the second paragraph' }), 'Picked: Send with my changes. Note: Drop the second paragraph');
+
+  const tab = read('src/renderer/src/components/AskMeTab.tsx');
+  assert.match(tab, /const pickedNote = shape\.kind === 'choice' && pk\.pick !== undefined \? shape\.options\[pk\.pick\]\?\.note : undefined;/);
+  assert.match(tab, /const toSend = pickedNote && !draft\.trim\(\) \? '' : answerFor\(row, shape\);/, 'nothing to send until the owner writes');
+  assert.match(tab, /disabled=\{!toSend \|\| sending === row\.key\}/);
+  assert.match(tab, /: pickedNote \?\? \(pk\.pick !== undefined \? translate\('askMe\.addNote'\)/, 'the box asks the option\'s question');
+
+  const hive = read('src/main/hive.ts');
+  assert.match(hive, /An option that needs the owner\\'s own words \(the changes to make, a date, a name\) adds "note" with a short question for them/);
+  assert.match(hive, /owner's own words adds \\`"note": "What should change\?"\\`, which the card asks when it is picked;/);
+});

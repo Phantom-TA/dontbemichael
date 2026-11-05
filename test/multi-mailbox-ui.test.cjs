@@ -26,25 +26,27 @@ test('Capabilities is the tab after Profile, for team members and for Michael', 
   assert.match(cc, /tab === 'capabilities' && <CapabilitiesTab agent=\{agent\} \/>/);
 });
 
-test('Claude connectors lead Connections, then Mailboxes; Gmail on the Claude account is a connector row, not a mailbox (E4)', () => {
+test('Claude connectors lead Connections, then Mailboxes; Gmail on the Claude account is never offered here, not a mailbox (E4)', () => {
   const settings = read('src/renderer/src/components/SettingsModal.tsx');
-  assert.ok(settings.indexOf('<ClaudeConnectorsSettings />') < settings.indexOf('<MailboxesSettings />'), 'connectors first (design D2)');
-  assert.ok(settings.indexOf('<MailboxesSettings />') < settings.indexOf('<IntegrationsRegistry />'));
+  // MailboxesSettings takes a focus prop for links in agent text (settings-links-in-replies.md).
+  assert.ok(settings.indexOf('<ClaudeConnectorsSettings />') < settings.indexOf('<MailboxesSettings '), 'connectors first (design D2)');
+  assert.ok(settings.indexOf('<MailboxesSettings ') > 0 && settings.indexOf('<MailboxesSettings ') < settings.indexOf('<IntegrationsRegistry />'));
   const mb = read('src/renderer/src/components/MailboxesSettings.tsx');
   assert.equal((mb.match(/<Toggle /g) || []).length, 0, 'no Claude account switch among the mailboxes');
   assert.doesNotMatch(mb, /email-calendar|claudeAccess/);
-  assert.match(mb, /t\('mailboxes\.gmailIsConnector'\)/, 'the info icon says where Gmail went');
+  assert.match(mb, /t\('mailboxes\.onlyHere'\)/, 'the info icon says email goes only through these mailboxes');
   assert.match(read('src/renderer/src/components/McpDefaultsSettings.tsx'), /e\.id !== 'email-calendar'/);
 });
 
-test('Email is a list of the mailboxes a member uses; watching starts Draft only (6A); Sending is a radio group (7A)', () => {
+test('Email is a list of the mailboxes a member uses; watching starts on Send on approval (owner, 2026-10-30); Sending is a radio group (7A)', () => {
   const cap = read('src/renderer/src/components/CapabilitiesTab.tsx');
   // Owner, 2026-10-07: no on/off switch. Each address the member uses is a row
   // with its Inbox (who watches it) and its Sending; Add a mailbox asks Watch
-  // the inbox or Send only. Watching never starts beyond Draft only.
-  assert.match(cap, /void save\(\{ enabled: true, mailboxes: \[id\], send: false, sending: 'draft' \}, !!mailboxHolder\(config\.agentCapabilities, id, agent\.id\)\);/);
+  // the inbox or Send only. Watching starts on Send on approval, never Can send.
+  assert.match(cap, /void save\(\{ enabled: true, mailboxes: \[id\], send: false, sending: 'approval' \}, !!mailboxHolder\(config\.agentCapabilities, id, agent\.id\)\);/, 'watching starts on Send on approval (owner, 2026-10-30)');
   assert.match(cap, /const stopWatching = \(\): void => \{ void save\(\{ enabled: false, mailboxes: \[\], send: false, sending: 'draft' \}\); \};/);
-  assert.match(cap, /void saveGrant\(\{ mailbox: addId, sending: 'draft' \}\)/, 'Send only starts Draft only too');
+  assert.match(cap, /void saveGrant\(\{ mailbox: addId, sending: 'approval' \}\)/, 'Send only starts on Send on approval too');
+  assert.match(read('src/renderer/src/components/AddAgentModal.tsx'), /mailboxes: \[binding\.mailboxId\], send: false, sending: 'approval' \}/, 'and so does a mailbox picked while hiring');
   assert.doesNotMatch(cap, /mailboxes\[0\]\?\.id/);
   assert.match(cap, /role="radiogroup"/);
   assert.match(cap, /ArrowUp/);
@@ -53,7 +55,7 @@ test('Email is a list of the mailboxes a member uses; watching starts Draft only
   // Picked from a list, with a prompt until one is chosen; a choice that can't be made is greyed with its reason.
   assert.match(cap, /<option value="">\{t\('capabilities\.pickMailbox'\)\}<\/option>/);
   assert.match(cap, /value: 'watch', label: t\('capabilities\.addWatch'\), disabled: !canWatch,/);
-  assert.match(cap, /value: 'send', label: t\('capabilities\.addSendOnly'\), disabled: !canSendOnly,/);
+  assert.match(cap, /value: 'send', label: t\('capabilities\.addSendOnly'\), disabled: !canSendOnly \|\| !addSendReady,/);
   assert.match(cap, /aria-disabled="true"/);
   assert.match(cap, /mailboxes\.length === 0 \? \(/, 'no mailbox set up: the Settings link instead');
   assert.match(cap, /<button type="button" onClick=\{openSettings\} style=\{\{ \.\.\.link, marginInlineStart: 'auto' \}\}>\{t\('capabilities\.addMailbox'\)\}<\/button>/, 'add new mailbox beside the list');
@@ -63,7 +65,7 @@ test('Email is a list of the mailboxes a member uses; watching starts Draft only
   assert.doesNotMatch(cap, /PROVIDER_PRESETS/, 'no service name under the address');
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const c = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).capabilities;
-    for (const k of ['emailSummary', 'emailSummaryNone', 'emailNone', 'removeMailbox', 'inbox', 'inboxWatches', 'inboxSendOnly', 'inboxNobody', 'sendingFrom', 'addMailboxUse', 'addMailboxInfo', 'removeWatchedSure', 'addWatch', 'addWatchTaken', 'addWatchMoves', 'addSendOnly', 'addSendOnlyNobody', 'addSendOnlyTaken', 'addIt', 'cancelAdd']) {
+    for (const k of ['emailSummary', 'emailSummaryNone', 'emailNone', 'removeMailbox', 'inbox', 'inboxWatches', 'inboxSendOnly', 'inboxNobody', 'sendingFrom', 'addMailboxUse', 'addReadsDesc', 'removeWatchedSure', 'addWatch', 'addWatchTaken', 'addWatchMoves', 'addSendOnly', 'addSendOnlyNobody', 'addSendOnlyTaken', 'addIt', 'cancelAdd']) {
       assert.equal(typeof c[k], 'string', `${loc}: capabilities.${k}`);
       assert.doesNotMatch(c[k], /[–—]| - /, `${loc}: capabilities.${k} has a dash`);
     }
@@ -111,7 +113,7 @@ test('md-mail is attached at spawn only for agents with email, as the last argum
   const at = main.indexOf("opts.args = [...(opts.args ?? []), '--mcp-config', file];");
   assert.ok(at > 0);
   assert.ok(at < main.indexOf('const res = ptyManager.spawn(opts, owner);', at), 'right before the spawn');
-  assert.match(main, /hasMailTools\(readConfig\(\)\.agentCapabilities\?\.\[agentId\]\)/, 'own mailbox or a Send only grant');
+  assert.match(main, /const wantsMail = SHOW_MAILBOXES && hasMailTools\(cfg\.agentCapabilities\?\.\[agentId\]\);/, 'own mailbox or a Send only grant, never with mailboxes hidden');
   assert.match(main, /mdMailMcpPath\(home, agentId\)/, 'token file under harnessHome/private (#63)');
   assert.match(read('electron-builder.yml'), /from: resources\/md-mail-mcp\.cjs/);
 });
@@ -119,9 +121,9 @@ test('md-mail is attached at spawn only for agents with email, as the last argum
 test('schedules live in Capabilities: Email and On a schedule fold separately, closed by default (owner, 2026-09-26)', () => {
   const cap = read('src/renderer/src/components/CapabilitiesTab.tsx');
   assert.ok(cap.indexOf("title={t('capabilities.email')}") < cap.indexOf("title={t('capabilities.schedules')}"), 'Email first, then schedules');
-  assert.equal((cap.match(/onToggle=\{\(open\) => setFold\('(email|connectors|schedules)', open\)\}/g) || []).length, 3, 'every section folds');
-  assert.match(cap, /<AgentSchedules agentId=\{agent\.id\} agentName=\{name\} \/>/);
-  assert.match(cap, /useState<Record<SectionKey, boolean>>\(\{ email: true, connectors: true, schedules: true \}\)/, 'all start closed');
+  assert.equal((cap.match(/onToggle=\{\(open\) => setFold\('(email|connectors|integrations|schedules)', open\)\}/g) || []).length, 4, 'every section folds');
+  assert.match(cap, /<AgentSchedules key=\{agent\.id\} agentId=\{agent\.id\} agentName=\{name\} businessType=\{config\.businessType\} sourceCard=\{agent\.sourceCard\} \/>/);
+  assert.match(cap, /useState<Record<SectionKey, boolean>>\(\{ email: true, connectors: true, integrations: true, schedules: true \}\)/, 'all start closed');
   assert.match(read('src/renderer/src/components/triggers/ui.tsx'), /aria-expanded=\{open\}/);
   assert.doesNotMatch(read('src/renderer/src/components/SidebarTabs.tsx'), /key: 'schedules'/);
   assert.doesNotMatch(read('src/renderer/src/components/AgentDetailPanel.tsx'), /sidebarTab === 'schedules'/);
@@ -174,6 +176,19 @@ test('fixing a mailbox, or removing one that needed the owner, closes its Ask me
   assert.match(read('src/renderer/src/components/MailboxesSettings.tsx'), /refocus\(ok \? 'add' : `remove-\$\{id\}`\);/);
 });
 
+test('an outgoing server on 587 is saved as STARTTLS and one on 465 as TLS, whatever the switch (mailboxes.ts MailServer)', () => {
+  const dlg = read('src/renderer/src/components/AddMailboxDialog.tsx');
+  // The TLS switch is for the incoming server; the outgoing one follows the port it ends up on.
+  const m = dlg.match(/imap: server\(imapHost, imapPort, guessed\.imap\), smtp: \{ \.\.\.smtp, secure: ([^}]+?) \}/);
+  assert.ok(m, 'the outgoing server sets its own secure');
+  const { SMTPS_PORT, SUBMISSION_PORT } = require('./load-ts.cjs')('src/shared/mailboxes.ts');
+  const secure = new Function('smtp', 'tls', 'SMTPS_PORT', `return ${m[1]};`);
+  for (const tls of [true, false]) {
+    assert.equal(secure({ port: SUBMISSION_PORT }, tls, SMTPS_PORT), false, `587 is STARTTLS, switch ${tls ? 'on' : 'off'}`);
+    assert.equal(secure({ port: SMTPS_PORT }, tls, SMTPS_PORT), true, `465 is TLS, switch ${tls ? 'on' : 'off'}`);
+  }
+});
+
 test('the schedule picker offers 4h between 2h and 6h (owner, 2026-09-27)', () => {
   const ui = read('src/renderer/src/components/triggers/ui.tsx');
   assert.match(ui, /label: '2h' \},\s*\{ ms: 4 \* HOUR, label: '4h' \},\s*\{ ms: 6 \* HOUR, label: '6h' \}/);
@@ -187,18 +202,18 @@ test('many mailboxes fold into one header line (owner, 2026-10-01)', () => {
   assert.match(mb, /if \(decided\.current \|\| !config\) return;\s*decided\.current = true;\s*if \(\(config\.mailboxes \?\? \[\]\)\.some\(\(m\) => m\.status === 'needs-attention'\)\) setOpen\(true\);/, 'opens once, when one needs you');
   assert.match(mb, /\.sort\(\(a, b\) => needsFirst\(a\) - needsFirst\(b\) \|\| a\.address\.localeCompare\(b\.address\)\)/);
   assert.match(mb, /<button type="button" aria-expanded=\{open\} aria-controls=\{listId\}/);
-  // Add a mailbox works while closed. The Claude account's Gmail moved to
-  // Claude connectors (E4), so the fold holds only mailboxes added here.
+  // Add a mailbox works while closed. The Claude account's Gmail is never
+  // offered (owner, 2026-10-30), so the fold holds only mailboxes added here.
   const fold = mb.indexOf('<div id={listId}>');
   assert.ok(fold > 0);
   assert.ok(mb.indexOf('<span data-focus="add">') < fold, 'Add works while closed');
   assert.ok(mb.indexOf('<div role="list">') > fold);
   // Explanations live behind info icons, not paragraphs.
-  assert.match(mb, /<InfoTip label=\{t\('mailboxes\.title'\)\} text=\{`\$\{t\('mailboxes\.intro'\)\}\$\{mailboxes\.length \? '' : ` \$\{t\('mailboxes\.empty'\)\}`\} \$\{t\('mailboxes\.gmailIsConnector'\)\}`\} \/>/);
+  assert.match(mb, /<InfoTip label=\{t\('mailboxes\.title'\)\} text=\{`\$\{t\('mailboxes\.intro'\)\}\$\{mailboxes\.length \? '' : ` \$\{t\('mailboxes\.empty'\)\}`\} \$\{t\('mailboxes\.onlyHere'\)\}`\} \/>/);
   assert.doesNotMatch(mb, /<div style=\{hint\}>\{t\('mailboxes\.intro'\)\}<\/div>/);
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const m = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).mailboxes;
-    for (const k of ['summaryOne', 'summaryCount', 'summaryNone', 'gmailIsConnector']) assert.ok(m[k], `${loc} ${k}`);
+    for (const k of ['summaryOne', 'summaryCount', 'summaryNone', 'onlyHere']) assert.ok(m[k], `${loc} ${k}`);
     assert.equal(m.claudeAccessDesc, undefined, `${loc}: the Claude account row is gone`);
   }
 });

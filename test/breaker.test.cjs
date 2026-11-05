@@ -76,6 +76,34 @@ test('error storm trips', () => {
   assert.match(d.state.reason, /error storm/);
 });
 
+test('errors with no success between them still trip the storm', () => {
+  const b = makeBreaker();
+  for (let i = 0; i < 3; i++) b.recordError('a', 'repl_main_thread');
+  b.recordApiSuccess('a', 'repl_main_thread'); // that turn recovered
+  for (let i = 0; i < 5; i++) b.recordError('a', 'repl_main_thread');
+  const d = beat(b, 'a', null, true, T0);
+  assert.equal(d.state.level, 'steering');
+  assert.match(d.state.reason, /error storm: 5 consecutive api errors$/);
+});
+
+test('a success from another query_source does not end the run of errors', () => {
+  // An outage on the main model: each turn a side call gets through, then the
+  // main request gives up. Only a main loop success shows the main loop recovered.
+  const b = makeBreaker();
+  for (let i = 0; i < 5; i++) {
+    b.recordApiSuccess('a', 'compact');
+    b.recordError('a', 'repl_main_thread');
+  }
+  const d = beat(b, 'a', null, true, T0);
+  assert.equal(d.state.level, 'steering');
+  assert.match(d.state.reason, /error storm: 5/);
+  // A success from the main loop itself does end it.
+  const c = makeBreaker();
+  for (let i = 0; i < 5; i++) c.recordError('a', 'repl_main_thread');
+  c.recordApiSuccess('a', 'repl_main_thread');
+  assert.equal(beat(c, 'a', null, true, T0).state.level, 'healthy');
+});
+
 test('token velocity spike trips on the second sample', () => {
   const b = makeBreaker();
   beat(b, 'a', sample('a', T0, 0), true, T0);
@@ -463,6 +491,84 @@ test('a healthy beat de-escalates one level', () => {
   b.recordToolUse('a', 'Read', { file: 'new' });       // distinct call clears the loop
   const d = beat(b, 'a', null, true, T0 + BEAT);
   assert.equal(d.state.level, 'healthy');
+});
+
+// ── a limit of 0 typed in Settings ──────────────────────────────────────────
+
+test('a limit of 0 never trips an idle member, even with hard stop on', () => {
+  // Settings takes 0 in "Same step repeated", "Errors in a row" and "Usage per
+  // minute". It used to trip every member on the next beat (`0 >= 0`), hold
+  // each one the beat after, and stop them all with hard stop on.
+  const b = makeBreaker({ hardStop: true, repeatedToolLimit: 0, errorStormLimit: 0, tokenVelocityPerMin: 0 });
+  for (let i = 0; i < 4; i++) {
+    const now = T0 + i * BEAT;
+    for (const id of ['pam', 'jim']) {
+      const d = beat(b, id, sample(id, now, i * 10), true, now);
+      assert.equal(d.state.level, 'healthy', `${id} beat ${i}: ${d.state.reason}`);
+      assert.equal(d.action, 'none');
+    }
+  }
+});
+
+test('a limit of 0 falls back to the default, so a real loop still trips', () => {
+  const b = makeBreaker({ repeatedToolLimit: 0, errorStormLimit: 0 });
+  for (let i = 0; i < 7; i++) b.recordToolUse('a', 'Bash', { cmd: 'same' });
+  assert.equal(beat(b, 'a', null, true, T0).state.level, 'healthy', 'under the default of 8');
+  b.recordToolUse('a', 'Bash', { cmd: 'same' });
+  assert.match(beat(b, 'a', null, true, T0 + BEAT).state.reason, /looping: 8/);
+  for (let i = 0; i < 5; i++) b.recordError('b');
+  assert.match(beat(b, 'b', null, true, T0).state.reason, /error storm: 5/);
+});
+
+test('a trip hands the report what the breaker knew: limit, its source, the error run', () => {
+  // Value: protects=an error storm report tells a 0 in Settings from a run that never cleared from a real storm (issue 661); fails_when=diagnosis loses the limit's source, the statuses or the run's times, or a distinct tool call leaves an old run behind; why_new=issue 661; seam=none
+  const b = makeBreaker({ errorStormLimit: 0, repeatedToolLimit: undefined });
+  b.recordToolUse('a', 'Bash', { cmd: 'ls' }, T0);
+  b.recordApiSuccess('a', 'compact', T0 + 1_000);
+  b.recordError('a', 'repl_main_thread', 529, T0 + 10_000);
+  b.recordError('a', 'repl_main_thread', undefined, T0 + 20_000);
+  for (let i = 0; i < 6; i++) b.recordError('a', 'repl_main_thread', 500, T0 + 30_000 + i);
+  b.recordApiSuccess('a', 'compact', T0 + 40_000); // a side call got through; the run goes on
+  const d = b.diagnosis('a', 'error-storm');
+  assert.deepEqual(
+    { limit: d.limit, limitSet: d.limitSet, hits: d.hits, codes: d.errorCodes, start: d.errorRunStartedAt, last: d.lastErrorAt, ok: d.lastApiSuccessAt, tool: d.lastDistinctToolAt },
+    { limit: 5, limitSet: 'invalid', hits: 8, codes: [500, 500, 500, 500, 500], start: T0 + 10_000, last: T0 + 30_005, ok: T0 + 40_000, tool: T0 }
+  );
+  assert.equal(b.diagnosis('a', 'repeat').limitSet, 'default', 'an empty field is the default');
+  assert.equal(makeBreaker().diagnosis('a', 'repeat').limitSet, 'custom', 'a usable value the owner set');
+  b.recordToolUse('a', 'Read', { file: 'x' }, T0 + 50_000);
+  const after = b.diagnosis('a', 'error-storm');
+  assert.deepEqual([after.hits, after.errorCodes, after.errorRunStartedAt], [0, [], 0], 'a distinct tool call ends the run and its details');
+  b.recordToolUse('a', 'Read', { file: 'x' }, T0 + 60_000);
+  assert.equal(b.diagnosis('a', 'repeat').tool, 'Read');
+});
+
+// ── issue 674: beats the Mac's sleep spread apart are not consecutive ───────
+
+test('a sleeping Mac waking for a moment every 15 minutes never steers or holds a member', () => {
+  // Value: protects=a member is not held back, and no loop-agent report is sent, because the Mac slept; fails_when=beats far apart count as consecutive; why_new=issue 674: the steer and the constrain each ran in a 2 second dark wake, 908 s apart (pmset log, 2026-11-01); seam=none
+  const b = makeBreaker();
+  const NAP = 15 * 60_000;
+  let out = 0;
+  for (let i = 0; i < 6; i++) {
+    const now = T0 + i * NAP;
+    // Each wake finds output written since the last one, and every progress clock stale.
+    const d = beat(b, 'pam', sample('pam', now, out), false, now);
+    out += 800;
+    assert.equal(d.state.level, 'healthy', `wake ${i}: ${d.state.reason}`);
+    assert.equal(d.action, 'none');
+  }
+});
+
+test('after a gap, a member still burning tokens with no progress trips once beats run again', () => {
+  // Value: protects=the gap only starts the run over, so a member truly stuck after the Mac wakes is still caught; fails_when=a gap blinds the arm; why_new=issue 674; seam=none
+  const b = makeBreaker();
+  beat(b, 'a', sample('a', T0, 0), false, T0);
+  const woke = T0 + 20 * 60_000;
+  assert.equal(beat(b, 'a', sample('a', woke, 500), false, woke).state.level, 'healthy', 'the beat after the gap starts a new run');
+  const d = beat(b, 'a', sample('a', woke + BEAT, 1000), false, woke + BEAT);
+  assert.equal(d.state.level, 'steering', `reason: ${d.state.reason}`);
+  assert.match(d.state.reason, /no-progress/);
 });
 
 process.exit(failures ? 1 : 0);

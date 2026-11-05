@@ -9,7 +9,9 @@ import { isComposingKey } from '@shared/imeGuard';
 import { GrowingTextarea } from '@/components/GrowingTextarea';
 import { attachmentsFromPaste } from '@/components/pasteAttachments';
 import { MichaelDock, useOwnerDock, type DockView } from './MichaelDock';
+import type { DockPlace } from './useDockScroll';
 import { sendToMichael } from './ownerSend';
+import { NO_FOLD, type DockFold } from './dockFold';
 import { DOCK_CENTER_ID, dockEscAction } from './wideCenter';
 import { PANEL_MOVE_MS } from './Dialog';
 import { useDockCentered } from '@/hooks/useCenter';
@@ -67,10 +69,11 @@ function TalkToMichael() {
   useEffect(() => { setHost(document.getElementById(DOCK_CENTER_ID)); }, []);
   const centered = wide && !!host;
   const [expanded, setExpanded] = useState<Record<string, true>>({});
-  const [showEarlier, setShowEarlier] = useState(false);
-  const anchor = useRef<string | null>(null);
+  const [earlierFor, setEarlierFor] = useState<number | null>(null);
+  const fold = useRef<DockFold>(NO_FOLD);
+  const anchor = useRef<DockPlace | null>(null);
   useEffect(() => { if (!dockOpen) anchor.current = null; }, [dockOpen]);
-  const view: DockView = { expanded, setExpanded, showEarlier, setShowEarlier, anchor };
+  const view: DockView = { expanded, setExpanded, earlierFor, setEarlierFor, fold, anchor };
   // After a move the box has the focus, at the end of its text.
   const moved = useRef(false);
   useEffect(() => {
@@ -157,6 +160,8 @@ function TalkToMichael() {
   // One number: Michael answered (indigo), or coral while he waits on you (2A, 16A).
   const waiting = dock.waitingForYou > 0;
   const count = waiting ? dock.waitingForYou : dock.unread;
+  const conversationLabel = count === 0 ? t('dock.label', { godName })
+    : waiting ? t('dock.countWaiting', { godName }) : t('dock.countNew', { count, godName });
   const openAt = () => {
     const target = dock.items.find((i) => i.kind === 'owner' && (waiting ? i.status === 'waiting-for-you' : i.unread));
     setDock(true, target?.id);
@@ -278,8 +283,8 @@ function TalkToMichael() {
       {/* The way back to the saved conversation once every reply is read (21A: the owner's action). */}
       {dock.items.length > 0 && (
         <button onClick={() => (dockOpen ? setDock(false) : openAt())} aria-expanded={dockOpen}
-          aria-label={t('dock.label', { godName })} title={t('dock.label', { godName })} style={{
-            width: 34, height: 34, flexShrink: 0, border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
+          aria-label={conversationLabel} title={conversationLabel} style={{
+            position: 'relative', width: 34, height: 34, flexShrink: 0, border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
             display: 'grid', placeItems: 'center',
             background: dockOpen ? 'var(--cth-ink)' : 'var(--cth-neutral-soft)', color: dockOpen ? 'var(--cth-bg)' : 'var(--cth-ink-2)'
           }}>
@@ -287,26 +292,18 @@ function TalkToMichael() {
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d={dockOpen ? 'M6 9l6 6 6-6' : 'M6 15l6-6 6 6'} />
           </svg>
+          {/* The count sits on what it opens, clear of the arrow however long it gets. */}
+          {count > 0 && (
+            <span aria-hidden="true" style={{
+              position: 'absolute', top: -8, insetInlineEnd: -8, minWidth: 20, height: 20, padding: '0 6px', boxSizing: 'border-box',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--cth-r-pill)',
+              background: waiting ? 'var(--cth-coral-strong)' : 'var(--cth-indigo)', color: waiting ? 'var(--cth-on-coral)' : 'var(--cth-on-indigo)',
+              fontFamily: 'var(--cth-font-mono)', fontSize: 11, fontWeight: 600, boxShadow: '0 0 0 2px var(--cth-card)'
+            }}>{count}</span>
+          )}
         </button>
       )}
       {controls}
-      {count > 0 && (
-        // A 28 px target (DESIGN.md) holding the 20 px count pill.
-        <button
-          onClick={() => (dockOpen ? setDock(false) : openAt())}
-          aria-label={waiting ? t('dock.countWaiting', { godName }) : t('dock.countNew', { count, godName })}
-          style={{
-            position: 'absolute', top: -12, insetInlineEnd: -12, minWidth: 28, height: 28, padding: 0, border: 'none', cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent'
-          }}>
-          <span style={{
-            minWidth: 20, height: 20, padding: '0 6px', boxSizing: 'border-box',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--cth-r-pill)',
-            background: waiting ? 'var(--cth-coral-strong)' : 'var(--cth-indigo)', color: waiting ? 'var(--cth-on-coral)' : 'var(--cth-on-indigo)',
-            fontFamily: 'var(--cth-font-mono)', fontSize: 11, fontWeight: 600, boxShadow: '0 0 0 2px var(--cth-card)'
-          }}>{count}</span>
-        </button>
-      )}
     </div>
   );
 }

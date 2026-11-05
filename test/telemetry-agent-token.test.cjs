@@ -96,3 +96,31 @@ test("spawned agents' exporters send their token", () => {
   const index = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'index.ts'), 'utf8');
   assert.match(index, /hive\.setOtelEndpoint\(r\.endpoint, \(agentId\) => telemetry\.tokenFor\(agentId\)\)/);
 });
+
+// Read OTEL_RESOURCE_ATTRIBUTES the way the engine documents it: a value holding
+// a space, comma, semicolon, quote or backslash drops every key, with no error;
+// otherwise each value is percent decoded.
+function engineResource(env) {
+  const pairs = env.split(',').map((p) => [p.slice(0, p.indexOf('=')), p.slice(p.indexOf('=') + 1)]);
+  if (pairs.some(([k, v]) => !k || !/^[\x21-\x7e]*$/.test(v) || /["\\;]/.test(v))) return [];
+  return pairs.map(([k, v]) => ({ key: k, value: { stringValue: decodeURIComponent(v) } }));
+}
+
+test('a member whose name has a space or a comma still counts', async (t) => {
+  // Value: protects=Pulse and the cost ledger for a member named "Jim 2" or "Sales, East"; fails_when=the raw name goes into OTEL_RESOURCE_ATTRIBUTES and the exporter drops agent.id; why_new=bug fix; seam=the engine's documented reading of the variable; no_claim=the engine itself
+  // The line hive.ts spawns the engine with, run as it is written.
+  const hive = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'hive.ts'), 'utf8');
+  const line = hive.match(/env\.OTEL_RESOURCE_ATTRIBUTES = (`[^`\n]+`);/);
+  assert.ok(line, 'hive.ts sets OTEL_RESOURCE_ATTRIBUTES');
+  const resourceEnv = new Function('meta', `return ${line[1]};`);
+  const { telemetry, endpoint } = await started(t);
+  for (const [id, name] of [['agent-jim2', 'Jim 2'], ['agent-east', 'Sales, East'], ['agent-zoe', 'Zoë "Ops"; back\\office']]) {
+    const env = resourceEnv({ id, name });
+    const resource = engineResource(env);
+    assert.deepEqual(resource.map((a) => [a.key, a.value.stringValue]), [['agent.id', id], ['agent.name', name]], env);
+    const batch = outputBatch(id, `s-${id}`, 700);
+    batch.resourceMetrics[0].resource.attributes = resource;
+    assert.equal(await post(endpoint, batch, telemetry.tokenFor(id)), 200);
+    assert.equal(telemetry.getAgentUsage(id)?.output, 700, `${name} is counted`);
+  }
+});

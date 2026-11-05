@@ -7,11 +7,14 @@ import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { AgentAvatar } from '@/components/AgentAvatar';
 import { InfoTip } from '@/components/InfoTip';
 import { FileText } from '@/components/FileChip';
+import { Icon } from '@/components/Icon';
+import { foldedItems, nextFold, type DockFold } from './dockFold';
 import { dockKeys } from './dockKeys';
 import { replyTargets } from './replyTargets';
 import { WideButton } from './PanelChrome';
 import { dockEscAction } from './wideCenter';
 import { isComposingKey } from '@shared/imeGuard';
+import { useDockScroll, type DockPlace } from './useDockScroll';
 
 /**
  * Michael's conversation dock (docs/designs/michael-replies.md): it grows up
@@ -29,7 +32,6 @@ const IDLE_POLL_MS = 60_000;
 /** A Sent question not in Michael's queue after this long was never queued. */
 const ORPHAN_AFTER_MS = 2 * 60_000;
 /** Answered exchanges older than this fold under "Earlier" (22A). */
-const RECENT_MS = 30 * 24 * 3_600_000;
 
 /** The conversation, live: read on mount and on every change main announces;
  *  polled every few seconds only while the dock is open and the window shown
@@ -79,10 +81,13 @@ function dayLabel(iso: string, t: (k: string) => string): string {
 export interface DockView {
   expanded: Record<string, true>;
   setExpanded: (f: (e: Record<string, true>) => Record<string, true>) => void;
-  showEarlier: boolean;
-  setShowEarlier: (on: boolean) => void;
-  /** The item at the top of the list as last read; the next mount opens on it. */
-  anchor: React.MutableRefObject<string | null>;
+  /** The opening or send Show earlier was used in; the next one folds again. */
+  earlierFor: number | null;
+  setEarlierFor: (navigation: number) => void;
+  /** Which questions show (dockFold.ts). */
+  fold: React.MutableRefObject<DockFold>;
+  /** Where the list was last read (none while following the latest); the next mount opens on it. */
+  anchor: React.MutableRefObject<DockPlace | null>;
 }
 
 export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, composerRef, wide = false, view }: {
@@ -101,15 +106,36 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
   const godName = useResolvedGodName();
   const open = useStore((s) => s.dockOpen);
   const focus = useStore((s) => s.dockFocus);
+  const navigation = useStore((s) => s.dockNavigation);
   const setDock = useStore((s) => s.setDock);
   const setDockWide = useStore((s) => s.setDockWide);
   const queue = useStore((s) => s.messageQueues[godId]);
   const draft = useStore((s) => s.drafts[godId] ?? '');
   const rootRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const { expanded, setExpanded, showEarlier, setShowEarlier, anchor } = view;
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const { expanded, setExpanded, earlierFor, setEarlierFor, fold, anchor } = view;
   const [announce, setAnnounce] = useState('');
   const prevStatus = useRef<Record<string, OwnerQuestionStatus>>({});
+  fold.current = nextFold(fold.current, dock.items, navigation, focus);
+  const shown = fold.current.shown;
+  const showEarlier = earlierFor === navigation;
+  const items = useMemo(() => (showEarlier ? dock.items : foldedItems(dock.items, shown)), [dock.items, showEarlier, shown]);
+  // Keyed over the whole conversation, so "Earlier" never shifts which reply is open.
+  const keyOf = useMemo(() => {
+    const keys = dockKeys(dock.items);
+    return new Map(dock.items.map((it, i) => [it, keys[i]]));
+  }, [dock.items]);
+  const rowOf = (it: DockItem) => ({ key: keyOf.get(it) ?? `${it.kind}:${it.id}`, kind: it.kind, notes: it.kind === 'michael' && !!it.notes });
+  const rows = useMemo(() => items.map(rowOf), [items, keyOf]);
+  const history = useMemo(() => dock.items.map(rowOf), [dock.items, keyOf]);
+  const scroll = useDockScroll(listRef, contentRef, open, navigation, focus, rows, history, anchor);
+
+  // A notification can name a folded question. Reveal it before the scroll
+  // hook consumes its pending target.
+  useLayoutEffect(() => {
+    if (open && focus && !items.some((it) => it.id === focus) && dock.items.some((it) => it.id === focus)) setEarlierFor(navigation);
+  }, [open, navigation, focus, items, dock.items, setEarlierFor]);
 
   // Tell main whether the dock is on screen, so a reply in view needs no notification.
   useEffect(() => {
@@ -126,47 +152,17 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
 
   // One polite announcement for news only: answered, couldn't finish, waiting for you (20A).
   useEffect(() => {
+    if (scroll.show) setAnnounce('');
     for (const it of dock.items) {
       if (it.kind !== 'owner') continue;
       const was = prevStatus.current[it.id];
       if (was && was !== it.status && (it.status === 'answered' || it.status === 'couldnt-finish' || it.status === 'waiting-for-you')) {
         const reply = [...dock.items].reverse().find((r): r is DockReply => r.kind === 'michael' && r.replyTo === it.id && !r.notes);
-        setAnnounce(reply ? firstSentence(reply.text) : t(`dock.status.${it.status}`));
+        if (!scroll.show) setAnnounce(reply ? firstSentence(reply.text) : t(`dock.status.${it.status}`));
       }
       prevStatus.current[it.id] = it.status;
     }
-  }, [dock, t]);
-
-  // Opens scrolled to the latest, or to the question it was opened for; after
-  // a move between the bar and the center, on what was being read.
-  useEffect(() => {
-    if (!open) return;
-    const el = listRef.current;
-    if (!el) return;
-    const kept = anchor.current ? el.querySelector(`[data-k="${CSS.escape(anchor.current)}"]`) : null;
-    anchor.current = null;
-    if (kept) { scrollListTo(el, kept, 'start'); return; }
-    const target = focus ? el.querySelector(`[data-q="${CSS.escape(focus)}"]`) : null;
-    if (target) scrollListTo(el, target, 'center');
-    else el.scrollTop = el.scrollHeight;
-  }, [open, focus, dock.items.length, anchor]);
-  // Remembers the item at the top of the view as the owner reads.
-  // Measured once a frame, not on every scroll event: a long conversation
-  // has many bubbles to measure.
-  const anchorFrame = useRef(0);
-  const onScroll = (): void => {
-    if (anchorFrame.current) return;
-    anchorFrame.current = requestAnimationFrame(() => {
-      anchorFrame.current = 0;
-      const el = listRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      for (const it of el.querySelectorAll<HTMLElement>('[data-k]')) {
-        if (it.getBoundingClientRect().bottom > top + 1) { anchor.current = it.dataset.k ?? null; return; }
-      }
-    });
-  };
-  useEffect(() => () => cancelAnimationFrame(anchorFrame.current), []);
+  }, [dock, t, scroll.show]);
 
   // Closes on Esc with focus inside, or a click on the office floor while the
   // composer is empty (21A). Selecting a person or opening Needs you keeps it.
@@ -183,12 +179,6 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
     return () => document.removeEventListener('mousedown', onDown);
   }, [open, draft, setDock, composerRef]);
 
-  const items = useMemo(() => visibleItems(dock.items, showEarlier), [dock.items, showEarlier]);
-  // Keyed over the whole conversation, so "Earlier" never shifts which reply is open.
-  const keyOf = useMemo(() => {
-    const keys = dockKeys(dock.items);
-    return new Map(dock.items.map((it, i) => [it, keys[i]]));
-  }, [dock.items]);
   const canReply = useMemo(() => replyTargets(dock.items), [dock.items]);
   const hasEarlier = items.length < dock.items.length;
   const queued = queue ?? [];
@@ -256,11 +246,12 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
         </span>
         <button onClick={close} aria-label={t('dock.close')} title={t('dock.close')} style={{ ...quietBtn, fontSize: 14, width: 32, height: 32, display: 'grid', placeItems: 'center', padding: 0 }}>✕</button>
       </div>
-      <div ref={listRef} onScroll={onScroll} style={{
-        flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column',
+      <div ref={listRef} onScroll={scroll.onScroll} style={{
+        flex: 1, minHeight: 0, overflowY: 'auto', overflowAnchor: 'none', scrollBehavior: 'auto',
         // Wide, the text is at most 720 px across, centered (wide panel WD8).
-        ...(wide ? { padding: '18px max(16px, calc((100% - 720px) / 2))', gap: 14 } : { padding: '12px 13px', gap: 10 })
+        padding: wide ? '18px max(16px, calc((100% - 720px) / 2))' : '12px 13px'
       }}>
+        <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', gap: wide ? 14 : 10 }}>
         {dock.items.length === 0 && (
           <div style={{ padding: '14px 4px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
             <AgentAvatar id={godId} name={godName} size={26} />
@@ -273,7 +264,10 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
           </div>
         )}
         {hasEarlier && (
-          <button onClick={() => setShowEarlier(true)} style={{ ...quietBtn, alignSelf: 'center' }}>{t('dock.earlier')}</button>
+          // The link goes once used, so focus moves on, as the catch-up button's does.
+          <button onClick={() => { setEarlierFor(navigation); composerRef.current?.querySelector('textarea')?.focus(); }} style={{ ...quietBtn, alignSelf: 'center' }}>
+            {t('dock.showEarlier', { count: dock.items.length - items.length })}
+          </button>
         )}
         {items.map((it) => {
           const key = keyOf.get(it) ?? `${it.kind}:${it.id}`;
@@ -289,47 +283,34 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
           prevQuestion = it.replyTo;
           const question = dock.items.find((q): q is DockQuestion => q.kind === 'owner' && q.id === it.replyTo);
           return [divider, <ReplyBubble key={key} dataKey={key} r={it} wide={wide} godId={godId} godName={godName} quote={quote}
-            expanded={!!expanded[key]} onMore={() => setExpanded((e) => ({ ...e, [key]: true }))}
-            onQuote={() => {
-              const list = listRef.current;
-              const q = list?.querySelector(`[data-q="${CSS.escape(it.replyTo)}"]`);
-              if (list && q) scrollListTo(list, q, 'center');
-            }}
+            expanded={!!expanded[key]} onMore={() => { scroll.pauseForExpansion(); setExpanded((e) => ({ ...e, [key]: true })); }}
+            onFold={scroll.replyResized}
+            onQuote={() => scroll.showQuestion(it.replyTo)}
             canReply={canReply.has(it)}
             onReply={() => question && onReply({ inReplyTo: it.id, conversation: question.conversation, text: firstSentence(it.text) })} />];
         })}
+        </div>
       </div>
-      <div aria-live="polite" style={srOnly}>{announce}</div>
+      <div style={{ flexShrink: 0, height: 'var(--cth-space-7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {scroll.show && <button type="button" data-dock-jump style={jumpBtn} onClick={(e) => {
+          // The button unmounts once caught up. Return its focus to the composer, as close() does.
+          const focused = document.activeElement === e.currentTarget;
+          scroll.jumpToLatest();
+          if (focused) composerRef.current?.querySelector('textarea')?.focus();
+        }}>
+          {scroll.replies ? t('dock.newReplies', { count: scroll.replies }) : t('dock.jumpToLatest')}
+          <Icon name="arrow-right" style={{ transform: 'rotate(90deg)' }} />
+        </button>}
+      </div>
+      <div aria-live="polite" aria-atomic="true" style={srOnly}>{scroll.show ? (scroll.replies ? t('dock.newReplies', { count: scroll.replies }) : t('dock.jumpToLatest')) : announce}</div>
     </div>
   );
-}
-
-/** Brings an item into view by scrolling the list alone. The browser's own
- *  scroll into view also scrolls clipped ancestors: in the wide 1:1 it slid
- *  the whole sheet up and hid its header, with Back to the side and close. */
-function scrollListTo(list: HTMLElement, item: Element, at: 'start' | 'center'): void {
-  const l = list.getBoundingClientRect();
-  const r = item.getBoundingClientRect();
-  list.scrollTop += r.top - l.top - (at === 'center' ? (l.height - r.height) / 2 : 0);
 }
 
 function firstSentence(text: string): string {
   const one = text.replace(/[*_`#>]/g, '').replace(/\s+/g, ' ').trim();
   const m = /^(.+?[.!?])(\s|$)/.exec(one);
   return (m ? m[1] : one).slice(0, 160);
-}
-
-/** Open questions always; answered exchanges from the last 30 days unless "Earlier" (22A). */
-function visibleItems(items: DockItem[], all: boolean): DockItem[] {
-  if (all) return items;
-  const cutoff = Date.now() - RECENT_MS;
-  const keep = new Set<string>();
-  for (const it of items) {
-    if (it.kind !== 'owner') continue;
-    const done = it.status === 'answered' || it.status === 'couldnt-finish' || it.status === 'withdrawn';
-    if (!done || Date.parse(it.at) >= cutoff) keep.add(it.id);
-  }
-  return items.filter((it) => keep.has(it.kind === 'owner' ? it.id : it.replyTo));
 }
 
 function OwnerBubble({ dataKey, q, wide, ahead, onCancel, onRetry, onNudge, onAskAgain }: {
@@ -368,8 +349,8 @@ function statusWords(q: DockQuestion, ahead: number, godName: string, t: (k: str
   }
 }
 
-function ReplyBubble({ dataKey, r, wide, godId, godName, quote, expanded, onMore, onQuote, canReply, onReply }: {
-  dataKey: string; r: DockReply; wide: boolean; godId: string; godName: string; quote?: DockQuestion; expanded: boolean; onMore: () => void; onQuote: () => void;
+function ReplyBubble({ dataKey, r, wide, godId, godName, quote, expanded, onMore, onFold, onQuote, canReply, onReply }: {
+  dataKey: string; r: DockReply; wide: boolean; godId: string; godName: string; quote?: DockQuestion; expanded: boolean; onMore: () => void; onFold: () => void; onQuote: () => void;
   canReply: boolean; onReply: () => void;
 }) {
   const { t } = useTranslation();
@@ -395,6 +376,14 @@ function ReplyBubble({ dataKey, r, wide, godId, godName, quote, expanded, onMore
     return () => ro.disconnect();
   }, [text, open]);
   const folded = !open && clipped;
+  // Folding shows More (and unfolding hides it) in a commit after the dock
+  // placed its list, so the dock places it again; not on the first render,
+  // which the dock's own commit already placed.
+  const placed = useRef(false);
+  useLayoutEffect(() => {
+    if (placed.current) onFold();
+    placed.current = true;
+  }, [folded]);
   return (
     <div data-k={dataKey} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', maxWidth: '92%' }}>
       <AgentAvatar id={godId} name={godName} size={22} />
@@ -447,4 +436,9 @@ const dockWideStyle: CSSProperties = {
 const quietBtn: CSSProperties = { border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--cth-ink-3)', fontFamily: 'var(--cth-font-ui)', fontSize: 12, padding: 2 };
 const linkBtn: CSSProperties = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, marginInlineStart: 4, color: 'inherit', fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 };
 const chipBtn: CSSProperties = { height: 28, padding: '0 10px', borderRadius: 'var(--cth-r-md)', border: 'none', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', background: 'var(--cth-card)', color: 'var(--cth-ink)', fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' };
+const jumpBtn: CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 'var(--cth-space-2)', height: 'var(--cth-space-6)', padding: '0 var(--cth-space-3)',
+  border: 'none', borderRadius: 'var(--cth-r-md)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', background: 'var(--cth-card)',
+  color: 'var(--cth-indigo)', fontFamily: 'var(--cth-font-ui)', fontSize: 'var(--cth-text-body-sm)', fontWeight: 600, cursor: 'pointer'
+};
 const srOnly: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };

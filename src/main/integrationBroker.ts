@@ -3,6 +3,7 @@
  *
  * A 127.0.0.1-only HTTP proxy. An ephemeral worker calls
  *   <METHOD> http://127.0.0.1:<port>/i/<integrationId>/<path...>
+ * or, on a connection with a saved call, POST /call/<integrationId> with { message }.
  * authenticating with a PER-WORKER CAPABILITY TOKEN (a handle, NOT any secret) in the
  * `Authorization: Bearer` / `X-MD-Broker-Token` header. The broker validates the token,
  * authorizes the integration, decrypts the integration's real secret, injects it as the
@@ -28,11 +29,30 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { ConnectionThrottle, HOLD_MAX_MS } from './brokerThrottle';
 import {
+  type AgentIntegration,
+  type IntegrationLevel,
   type IntegrationRecord,
+  type SavedCall,
   buildAuthHeaders,
+  fillSavedCall,
   resolveUpstreamUrl,
-  authTypeNeedsSecret
+  authTypeNeedsSecret,
+  isPostRead,
+  postReadsFor
 } from '../shared/integrations';
+import {
+  BrokerWriteOnce,
+  JOURNAL_UNSAVED,
+  WRITE_BODY_KEEP,
+  WRITE_NOT_SENT,
+  WRITE_TOO_LARGE,
+  WRITE_UNCERTAIN,
+  classifyUpstreamFailure,
+  isWriteMethod,
+  withQuickBooksRequestId,
+  writeOnceIdentity
+} from './brokerWriteOnce';
+import { flagInstructionLike, FLAGGED_NOTE, UNTRUSTED_NOTE } from '../shared/untrustedText';
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB request-body cap
 const UPSTREAM_TIMEOUT_MS = 30_000;
@@ -43,10 +63,16 @@ const HOP_BY_HOP = new Set([
   'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
   'te', 'trailer', 'transfer-encoding', 'upgrade'
 ]);
-/** Request headers the worker is NEVER allowed to pass upstream. */
+/** Request headers the worker is NEVER allowed to pass upstream. `expect` is
+ *  here because this server already answered the worker's 100-continue and
+ *  holds the whole body, and fetch refuses the header outright: curl adds it
+ *  to any large upload, which then failed before reaching the service. */
 const STRIP_REQUEST = new Set([
-  'authorization', 'x-md-broker-token', 'host', 'cookie', 'content-length', ...HOP_BY_HOP
+  'authorization', 'x-md-broker-token', 'host', 'cookie', 'content-length', 'expect', ...HOP_BY_HOP
 ]);
+/** Headers that ask a service to treat a call as another method: a Read only
+ *  GET carrying one could otherwise run as a DELETE. */
+const METHOD_OVERRIDE = new Set(['x-http-method-override', 'x-http-method', 'x-method-override']);
 /** Response headers never forwarded back (fetch already decodes the body, so the
  *  upstream content-encoding/length would be wrong). */
 const STRIP_RESPONSE = new Set([
@@ -66,6 +92,9 @@ interface Capability {
 export type MailRouteHandler = (agentId: string, op: string, body: Record<string, unknown>) => Promise<{ status: number; body: Record<string, unknown> }>;
 
 const MAIL_BODY_MAX = 1_000_000;
+/** The most of one answer `POST /integrations/screen` reads. */
+const SCREEN_BODY_MAX = 2_000_000;
+const FLAGGED_TOLD_MAX = 500;
 
 export interface IntegrationBrokerDeps {
   /** Resolve an integration record by id (injected — the registry). */
@@ -74,6 +103,20 @@ export interface IntegrationBrokerDeps {
   getSecret: (secretRef: string | undefined) => string | undefined;
   /** md-mail tool calls, `POST /mail/<tool>` (docs/designs/multi-mailbox.md). */
   mail?: MailRouteHandler;
+  /** The level a team member holds, read on every call so a change applies at once. */
+  integrationLevel?: (agentId: string, integrationId: string) => IntegrationLevel | undefined;
+  /** What `GET /integrations` tells a member. */
+  agentIntegrations?: (agentId: string) => AgentIntegration[];
+  /** An integration's answer has lines aimed at an AI: tell Michael. */
+  integrationFlagged?: (agentId: string, label: string, flags: string[]) => void;
+  /** App-private send once journal. The desktop app always sets this. Tests
+   *  that are not about writes omit it, and those writes keep the old path. */
+  journalPath?: string;
+  now?: () => number;
+  fetchImpl?: typeof fetch;
+  upstreamTimeoutMs?: number;
+  /** Test seam. Production keeps WRITE_BODY_KEEP. */
+  replayBodyMax?: number;
 }
 
 /** True for IPv4 loopback (127.0.0.0/8) and IPv6 ::1 (incl. v4-mapped). Mirrors slack.ts. */
@@ -81,6 +124,11 @@ function isLoopback(addr: string): boolean {
   const a = addr.replace(/^::ffff:/, '');
   return a === '::1' || a.startsWith('127.');
 }
+
+type WriteOutcome =
+  | { type: 'error'; status: number; code: string; message: string }
+  | { type: 'truncated'; status: number }
+  | { type: 'http'; status: number; contentType: string; body: Buffer };
 
 export class IntegrationBroker {
   private server: Server | null = null;
@@ -92,9 +140,22 @@ export class IntegrationBroker {
   private readonly byToken = new Map<string, Capability>();
   /** workerId -> token, for revoke. */
   private readonly byWorker = new Map<string, string>();
+  /** Send once for connected app writes. Null when no journal path was given. */
+  private readonly journal: BrokerWriteOnce | null;
+  private readonly fetchImpl: typeof fetch;
+  private readonly upstreamTimeoutMs: number;
+  private readonly replayBodyMax: number;
+  /** Identical writes already in flight, so a second caller waits for the first. */
+  private readonly writes = new Map<string, Promise<WriteOutcome>>();
+  /** Flagged answers Michael has heard about, so a repeat read tells him once. */
+  private readonly flaggedTold = new Set<string>();
 
   constructor(deps: IntegrationBrokerDeps) {
     this.deps = deps;
+    this.journal = deps.journalPath ? new BrokerWriteOnce(deps.journalPath, deps.now ?? Date.now) : null;
+    this.fetchImpl = deps.fetchImpl ?? fetch;
+    this.upstreamTimeoutMs = deps.upstreamTimeoutMs ?? UPSTREAM_TIMEOUT_MS;
+    this.replayBodyMax = deps.replayBodyMax ?? WRITE_BODY_KEEP;
   }
 
   /** Bind a loopback port (0 ⇒ OS-assigned). Resolves the bound port. */
@@ -210,8 +271,22 @@ export class IntegrationBroker {
       void this.mail(req, res, cap.agentId ?? cap.workerId, mailMatch[1]);
       return;
     }
-    // 3) Parse /i/<integrationId>/<path...>.
-    const m = /^\/i\/([^/?#]+)(?:\/([^?#]*))?(\?[^#]*)?$/.exec(rawUrl);
+    // 3b) What this member was given, and the screen for what it reads back.
+    if (rawUrl === '/integrations' || rawUrl === '/integrations/screen') {
+      if (!cap.agentId) return IntegrationBroker.sendError(res, 404, 'not_found', 'only team members have these');
+      if (rawUrl === '/integrations') {
+        if (req.method !== 'GET') return IntegrationBroker.sendError(res, 405, 'method', 'use GET');
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ integrations: this.deps.agentIntegrations?.(cap.agentId) ?? [] }));
+        return;
+      }
+      if (req.method !== 'POST') return IntegrationBroker.sendError(res, 405, 'method', 'use POST');
+      void this.screen(req, res, cap.agentId);
+      return;
+    }
+    // 3) Parse /i/<integrationId>/<path...> or /call/<integrationId>.
+    const savedRoute = /^\/call\/([^/?#]+)$/.exec(rawUrl);
+    const m = savedRoute ?? /^\/i\/([^/?#]+)(?:\/([^?#]*))?(\?[^#]*)?$/.exec(rawUrl);
     if (!m) return IntegrationBroker.sendError(res, 404, 'not_found', 'expected /i/<integrationId>/<path>');
     let integrationId: string;
     try {
@@ -222,14 +297,22 @@ export class IntegrationBroker {
     const path = m[2] ?? '';
     const query = m[3] ?? '';
 
-    // 4) Authorize against this worker's capability.
-    if (!cap.allowedIds.has(integrationId)) {
-      return IntegrationBroker.sendError(res, 403, 'forbidden', 'integration not in this worker capability');
+    // 4) Authorize: by what the owner gave this team member now, or by the list
+    //    granted at spawn (a temporary worker's; a team token's is empty).
+    const level = cap.agentId ? this.deps.integrationLevel?.(cap.agentId, integrationId) : undefined;
+    if (!level && !cap.allowedIds.has(integrationId)) {
+      return IntegrationBroker.sendError(res, 403, 'forbidden', cap.agentId
+        ? 'The owner has not given you this integration. It is set on your Access tab. Tell Michael what you need.'
+        : 'integration not in this worker capability');
     }
     // 5) Resolve the record (still enabled?).
     const rec = this.deps.getRecord(integrationId);
     if (!rec) return IntegrationBroker.sendError(res, 404, 'not_found', 'unknown integration');
     if (!rec.enabled) return IntegrationBroker.sendError(res, 403, 'forbidden', 'integration is disabled');
+    // A saved call is the only way in, and only a saved call takes the route.
+    const name = rec.label || integrationId;
+    if (rec.call && !savedRoute) return IntegrationBroker.sendError(res, 400, 'saved_call', `${name} takes only a message: call it with message, and leave out method, path and body.`);
+    if (savedRoute && !rec.call) return IntegrationBroker.sendError(res, 400, 'no_saved_call', `${name} has no saved call: use method and path, not message.`);
     // 5b) An app that asked to slow down is not called until its time is up: a
     //     short wait is held here (the call runs again then), a long one is
     //     answered now.
@@ -237,6 +320,12 @@ export class IntegrationBroker {
     if (wait > HOLD_MAX_MS) return IntegrationBroker.sendThrottled(res, rec.label || integrationId, wait);
     if (wait > 0) {
       setTimeout(() => { if (!req.destroyed && !res.writableEnded) this.handle(req, res); }, wait);
+      return;
+    }
+
+    // Read here, after any hold above: a held call runs this again on the same request.
+    if (rec.call) {
+      void this.callSaved(req, res, rec, rec.call, name);
       return;
     }
 
@@ -251,7 +340,28 @@ export class IntegrationBroker {
       if (!secret) return IntegrationBroker.sendError(res, 503, 'no_secret', 'no secret configured for this integration');
     }
 
-    void this.forward(req, res, rec, upstream, secret);
+    void this.forward(req, res, rec, upstream, secret, cap.agentId ?? cap.workerId, integrationId, path + query, level === 'read');
+  }
+
+  /** Label an answer from an integration as outside text and flag lines aimed
+   *  at an AI, to Michael only: the member carries on (owner, 2026-10-12). */
+  private async screen(req: IncomingMessage, res: ServerResponse, agentId: string): Promise<void> {
+    let body: { integration?: unknown; text?: unknown };
+    try { body = JSON.parse((await readBodyCapped(req, SCREEN_BODY_MAX)).toString('utf8')) as typeof body; }
+    catch { return IntegrationBroker.sendError(res, 400, 'bad_request', 'body must be JSON, 2 MB at most'); }
+    const id = typeof body?.integration === 'string' ? body.integration : '';
+    const text = typeof body?.text === 'string' ? body.text : '';
+    const flags = flagInstructionLike(text);
+    if (flags.length && id && this.deps.integrationLevel?.(agentId, id)) {
+      const key = `${id}\u0000${flags.join('\u0000')}`;
+      if (!this.flaggedTold.has(key)) {
+        if (this.flaggedTold.size >= FLAGGED_TOLD_MAX) this.flaggedTold.delete(this.flaggedTold.values().next().value as string);
+        this.flaggedTold.add(key);
+        try { this.deps.integrationFlagged?.(agentId, this.deps.getRecord(id)?.label || id, flags); } catch { /* the read stands */ }
+      }
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(flags.length ? { note: `${UNTRUSTED_NOTE} ${FLAGGED_NOTE}`, instruction_like: flags } : { note: UNTRUSTED_NOTE }));
   }
 
   private async mail(req: IncomingMessage, res: ServerResponse, agentId: string, op: string): Promise<void> {
@@ -274,12 +384,38 @@ export class IntegrationBroker {
     }
   }
 
+  /** One saved call: the agent's message goes in, the app builds the request.
+   *  It goes out every time (owner, 2026-11-02), so it skips the write journal,
+   *  and either access level may send it. */
+  private async callSaved(req: IncomingMessage, res: ServerResponse, rec: IntegrationRecord, call: SavedCall, name: string): Promise<void> {
+    if (req.method !== 'POST') return IntegrationBroker.sendError(res, 405, 'method', 'use POST');
+    let message: unknown;
+    try { message = (JSON.parse((await readBodyCapped(req, MAIL_BODY_MAX)).toString('utf8')) as { message?: unknown } | null)?.message; }
+    catch { return IntegrationBroker.sendError(res, 400, 'bad_request', 'body must be JSON, 1 MB at most'); }
+    if (typeof message !== 'string' || !message.trim()) return IntegrationBroker.sendError(res, 400, 'bad_request', 'Send message as text, not blank.');
+    const filled = fillSavedCall(call, message);
+    if (!filled) return IntegrationBroker.sendError(res, 500, 'saved_call_damaged', `The saved call on ${name} is damaged. Tell Michael.`);
+    const upstream = resolveUpstreamUrl(rec.baseUrl, filled.path);
+    if (!upstream) return IntegrationBroker.sendError(res, 400, 'bad_request', 'This message leaves the saved address, so it was not sent.');
+    let secret: string | undefined;
+    if (authTypeNeedsSecret(rec.authType)) {
+      secret = this.deps.getSecret(rec.secretRef);
+      if (!secret) return IntegrationBroker.sendError(res, 503, 'no_secret', 'no secret configured for this integration');
+    }
+    const headers: Record<string, string> = { 'user-agent': DEFAULT_USER_AGENT, ...(filled.body === undefined ? {} : { 'content-type': 'application/json' }), ...buildAuthHeaders(rec.authType, rec.authHeader, secret) };
+    await this.streamUpstream(res, rec, upstream, filled.method, headers, filled.body === undefined ? undefined : Buffer.from(filled.body));
+  }
+
   private async forward(
     req: IncomingMessage,
     res: ServerResponse,
     rec: IntegrationRecord,
     upstream: URL,
-    secret: string | undefined
+    secret: string | undefined,
+    agentId: string,
+    integrationId: string,
+    pathAndQuery: string,
+    readOnly = false
   ): Promise<void> {
     // Buffer the request body with a hard cap (write methods).
     const method = (req.method ?? 'GET').toUpperCase();
@@ -296,12 +432,17 @@ export class IntegrationBroker {
       }
     }
 
+    // Read only, checked here because a catalog POST is told apart by its body.
+    if (readOnly && method !== 'GET' && method !== 'HEAD' && !postOnlyReads(rec, method, upstream, body)) {
+      return IntegrationBroker.sendError(res, 403, 'read_only', `The owner gave you read only access to ${rec.label || integrationId}, so this ${method} was not sent. Read only is set on your Access tab. Tell Michael if this change is needed.`);
+    }
+
     // Sanitize worker headers, then inject the auth header(s). Injected auth ALWAYS
     // wins: the strip list removes any worker-supplied authorization/auth header.
     const outHeaders: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) {
       const key = k.toLowerCase();
-      if (STRIP_REQUEST.has(key)) continue;
+      if (STRIP_REQUEST.has(key) || (readOnly && METHOD_OVERRIDE.has(key))) continue;
       if (Array.isArray(v)) outHeaders[key] = v.join(', ');
       else if (typeof v === 'string') outHeaders[key] = v;
     }
@@ -312,13 +453,24 @@ export class IntegrationBroker {
       outHeaders[k] = v;
     }
 
+    // A POST the connector only reads with (a search, a GraphQL query) goes the
+    // read way below: streamed, not recorded, and free to be asked again.
+    if (this.journal && isWriteMethod(method) && !postOnlyReads(rec, method, upstream, body)) {
+      await this.forwardWrite(res, upstream, outHeaders, method, body ?? Buffer.alloc(0), agentId, integrationId, pathAndQuery);
+      return;
+    }
+    await this.streamUpstream(res, rec, upstream, method, outHeaders, body);
+  }
+
+  /** Send once to the service and stream its answer back. */
+  private async streamUpstream(res: ServerResponse, rec: IntegrationRecord, upstream: URL, method: string, headers: Record<string, string>, body: Buffer | undefined): Promise<void> {
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS);
+    const timer = setTimeout(() => ac.abort(), this.upstreamTimeoutMs);
     let upstreamRes: Response;
     try {
-      upstreamRes = await fetch(upstream, {
+      upstreamRes = await this.fetchImpl(upstream, {
         method,
-        headers: outHeaders,
+        headers,
         body: body as BodyInit | undefined,
         redirect: 'manual',
         signal: ac.signal
@@ -350,16 +502,214 @@ export class IntegrationBroker {
       clearTimeout(timer);
     }
   }
+
+  /** One identical write is sent once. The first caller is answered from the
+   *  upstream stream. A later caller, including one after a restart, is
+   *  answered from the journal. */
+  private async forwardWrite(
+    res: ServerResponse,
+    upstream: URL,
+    headers: Record<string, string>,
+    method: string,
+    body: Buffer,
+    agentId: string,
+    integrationId: string,
+    pathAndQuery: string
+  ): Promise<void> {
+    const journal = this.journal;
+    if (!journal) return;
+    const identity = writeOnceIdentity({ agentId, integrationId, method, pathAndQuery, body });
+    const running = this.writes.get(identity.storageKey);
+    if (running) {
+      this.deliver(res, await running);
+      return;
+    }
+    const looked = journal.lookup(identity.storageKey);
+    if (looked.kind === 'uncertain') {
+      this.deliver(res, { type: 'error', status: 409, code: 'may_have_applied', message: WRITE_UNCERTAIN });
+      return;
+    }
+    if (looked.kind === 'replay') {
+      this.deliver(res, { type: 'http', status: looked.status, contentType: looked.contentType, body: looked.body });
+      return;
+    }
+    if (looked.kind === 'truncated') {
+      this.deliver(res, { type: 'truncated', status: looked.status });
+      return;
+    }
+    if (!journal.begin(identity.storageKey, identity.idempotencyKey)) {
+      this.deliver(res, { type: 'error', status: 503, code: 'write_record', message: JOURNAL_UNSAVED });
+      return;
+    }
+
+    // Our key wins. A worker supplied one would change on every retry, and the
+    // provider would treat those as different writes.
+    delete headers['idempotency-key'];
+    headers['idempotency-key'] = identity.idempotencyKey;
+    const target = withQuickBooksRequestId(upstream, identity.idempotencyKey);
+    const attempt = this.executeWrite(res, target, headers, method, body, identity.storageKey, integrationId);
+    this.writes.set(identity.storageKey, attempt);
+    try {
+      await attempt;
+    } finally {
+      this.writes.delete(identity.storageKey);
+    }
+  }
+
+  private async executeWrite(
+    res: ServerResponse,
+    upstream: URL,
+    headers: Record<string, string>,
+    method: string,
+    body: Buffer,
+    storageKey: string,
+    integrationId: string
+  ): Promise<WriteOutcome> {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), this.upstreamTimeoutMs);
+    try {
+      let upstreamRes: Response;
+      try {
+        upstreamRes = await this.fetchImpl(upstream, {
+          method,
+          headers,
+          body: body as BodyInit,
+          redirect: 'manual',
+          signal: ac.signal
+        });
+      } catch (e) {
+        return this.failWrite(res, storageKey, e);
+      }
+      // A rate limit on a write pushes the app's next call back, as for a read.
+      this.throttle.note(integrationId, upstreamRes.status, upstreamRes.headers);
+      return await this.relayWrite(res, upstreamRes, storageKey);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** The first caller gets the real stream, including an answer too large to
+   *  keep. The journal keeps a small answer so a retry can be given it whole. */
+  private async relayWrite(res: ServerResponse, upstreamRes: Response, storageKey: string): Promise<WriteOutcome> {
+    const status = upstreamRes.status;
+    const contentType = upstreamRes.headers.get('content-type') ?? 'application/octet-stream';
+    const respHeaders: Record<string, string> = {};
+    upstreamRes.headers.forEach((value, key) => {
+      if (!STRIP_RESPONSE.has(key.toLowerCase())) respHeaders[key] = value;
+    });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let truncated = false;
+    try {
+      if (!res.headersSent) res.writeHead(status, respHeaders);
+      if (upstreamRes.body) {
+        const node = Readable.fromWeb(upstreamRes.body as Parameters<typeof Readable.fromWeb>[0]);
+        for await (const chunk of node) {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          if (!truncated) {
+            size += buf.length;
+            if (size > this.replayBodyMax) {
+              truncated = true;
+              chunks.length = 0;
+            } else {
+              chunks.push(buf);
+            }
+          }
+          if (!res.writableEnded) {
+            try {
+              if (!res.write(buf)) await waitForDrain(res);
+            } catch {
+              truncated = true;
+              chunks.length = 0;
+              node.destroy();
+              break;
+            }
+          }
+        }
+      }
+      if (!res.writableEnded) res.end();
+    } catch {
+      truncated = true;
+      chunks.length = 0;
+      // The status is already sent and the body has no length, so a clean end
+      // would read to the agent as a whole answer. Drop the connection instead.
+      res.destroy();
+    }
+    const kept = truncated ? undefined : Buffer.concat(chunks);
+    // Only a write that worked is kept. A refusal, a rate limit or a server
+    // error may go again; the same key goes up, so the service can still dedupe.
+    if (status >= 200 && status < 300) this.journal?.settle(storageKey, status, contentType, kept, truncated);
+    else this.journal?.forget(storageKey);
+    if (truncated) return { type: 'truncated', status };
+    return { type: 'http', status, contentType, body: kept ?? Buffer.alloc(0) };
+  }
+
+  private failWrite(res: ServerResponse, storageKey: string, e: unknown): WriteOutcome {
+    const kind = classifyUpstreamFailure(e);
+    console.error('[broker] write failed:', kind, e instanceof Error ? e.message : String(e));
+    let outcome: WriteOutcome;
+    if (kind === 'never' && this.journal?.forget(storageKey)) {
+      outcome = { type: 'error', status: 502, code: 'bad_gateway', message: WRITE_NOT_SENT };
+    } else {
+      outcome = { type: 'error', status: 409, code: 'may_have_applied', message: WRITE_UNCERTAIN };
+    }
+    this.deliver(res, outcome);
+    return outcome;
+  }
+
+  private deliver(res: ServerResponse, outcome: WriteOutcome): void {
+    if (res.headersSent || res.writableEnded) return;
+    if (outcome.type === 'error') {
+      IntegrationBroker.sendError(res, outcome.status, outcome.code, outcome.message);
+      return;
+    }
+    if (outcome.type === 'truncated') {
+      // The real answer was too large to keep. A success status with a stand-in
+      // body would look like the created invoice, so this is a refusal instead.
+      res.writeHead(409, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ code: 'already_applied', error: WRITE_TOO_LARGE }));
+      return;
+    }
+    res.writeHead(outcome.status, { 'content-type': outcome.contentType });
+    res.end(outcome.body);
+  }
+}
+
+/** Whether a POST only reads, by the catalog rules for the connector's host
+ *  (postReadsFor). A custom REST API has none, so its POSTs stay writes. */
+function postOnlyReads(rec: IntegrationRecord, method: string, upstream: URL, body: Buffer | undefined): boolean {
+  if (method !== 'POST' || !body) return false;
+  const rules = postReadsFor(rec.baseUrl);
+  return rules.length > 0 && isPostRead(rules, upstream, body.toString('utf8'));
+}
+
+/** Wait until the caller can take more bytes, or until they go away. */
+function waitForDrain(res: ServerResponse): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const finish = (err?: Error): void => {
+      res.off('drain', onDrain);
+      res.off('close', onClose);
+      res.off('error', onError);
+      if (err) reject(err);
+      else resolve();
+    };
+    const onDrain = (): void => finish();
+    const onClose = (): void => finish();
+    const onError = (err: Error): void => finish(err);
+    res.once('drain', onDrain);
+    res.once('close', onClose);
+    res.once('error', onError);
+  });
 }
 
 /** Read a request body into a Buffer, aborting past MAX_BODY_BYTES (throws 'too_large'). */
-function readBodyCapped(req: IncomingMessage): Promise<Buffer> {
+function readBodyCapped(req: IncomingMessage, max = MAX_BODY_BYTES): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on('data', (c: Buffer) => {
       size += c.length;
-      if (size > MAX_BODY_BYTES) { reject(new Error('too_large')); req.destroy(); return; }
+      if (size > max) { reject(new Error('too_large')); req.destroy(); return; }
       chunks.push(c);
     });
     req.on('end', () => resolve(Buffer.concat(chunks)));

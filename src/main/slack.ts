@@ -127,6 +127,11 @@ export class SlackWebhookServer {
    *  twice when the app subscribes to both `app_mention` and `message.*` (Slack
    *  sends both for one @-mention), and absorbs Slack's retry of un-acked events. */
   private readonly seenEvents: _ISeenEvents = new _SeenEvents();
+  /** Set by `stop()`. `server.close()` only refuses NEW connections: a kept-alive
+   *  one (tunnelmole forwards with Node's keep-alive global agent) that was busy at
+   *  stop time stays open, and Node keeps handing its requests to this handler,
+   *  which would keep honouring the old signing secret and channel filter. */
+  private stopped = false;
 
   constructor(opts: SlackWebhookServerOptions) {
     this.port = opts.port;
@@ -166,8 +171,11 @@ export class SlackWebhookServer {
   }
 
   /** Close the HTTP server. Idempotent and best-effort.
-   *  Note: tunnelmole has no documented close handle; teardown is best-effort. */
+   *  Note: tunnelmole has no documented close handle; teardown is best-effort.
+   *  `close()` ends the idle kept-alive connections; a busy one is answered 503
+   *  (see `refuseStopped`) instead of dispatched, and ends after that answer. */
   stop(): void {
+    this.stopped = true;
     this.tunnelUrl = null;
     try { this.server?.close(); } catch { /* noop */ }
     this.server = null;
@@ -183,6 +191,7 @@ export class SlackWebhookServer {
       server.listen(this.port, '127.0.0.1', () => {
         server.off('error', onError);
         this.server = server;
+        this.stopped = false;
         resolve();
       });
     });
@@ -203,6 +212,7 @@ export class SlackWebhookServer {
   /** Buffer the raw body (needed verbatim for the HMAC) under a size cap, then
    *  verify + dispatch. Only POST is accepted. */
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
+    if (this.stopped) { refuseStopped(res); return; }
     if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
     const chunks: Buffer[] = [];
     let size = 0;
@@ -220,6 +230,8 @@ export class SlackWebhookServer {
     });
     req.on('end', () => {
       if (aborted) return;
+      // The body finished arriving after `stop()`: it must not become a message.
+      if (this.stopped) { refuseStopped(res); return; }
       this.handleBody(req, res, Buffer.concat(chunks).toString('utf8'));
     });
     req.on('error', () => {
@@ -344,6 +356,12 @@ function stripLeadingMention(text: string): string {
   return text.replace(/^\s*<@[A-Z0-9]+>\s*/i, '').trim();
 }
 
+/** The answer on a connection that outlived `stop()`. `connection: close` makes
+ *  Node end the socket after it, so the next request meets the closed listener. */
+function refuseStopped(res: ServerResponse): void {
+  try { res.writeHead(503, { connection: 'close' }); res.end(); } catch { /* socket already gone */ }
+}
+
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -423,6 +441,9 @@ export class SlackReplyServer {
   private readonly token: string;
   private readonly getBotToken: () => string | undefined;
   private readonly onReplied?: (thread_ts: string) => void;
+  /** Set by `stop()`, for the same reason as `SlackWebhookServer.stopped`: a
+   *  kept-alive connection busy at stop time outlives `server.close()`. */
+  private stopped = false;
 
   constructor(opts: SlackReplyServerOptions) {
     this.token = opts.token;
@@ -439,6 +460,7 @@ export class SlackReplyServer {
       const onListening = (): void => {
         server.off('error', onError);
         this.server = server;
+        this.stopped = false;
         const addr = server.address();
         resolve({ ok: true, port: addr && typeof addr === 'object' ? addr.port : preferredPort });
       };
@@ -449,13 +471,16 @@ export class SlackReplyServer {
     });
   }
 
-  /** Close the endpoint. Idempotent and best-effort. */
+  /** Close the endpoint. Idempotent and best-effort. A reply already being
+   *  posted finishes; nothing on a connection left open is acted on after this. */
   stop(): void {
+    this.stopped = true;
     try { this.server?.close(); } catch { /* noop */ }
     this.server = null;
   }
 
   private handle(req: IncomingMessage, res: ServerResponse): void {
+    if (this.stopped) { refuseStopped(res); return; }
     // Defense in depth: even bound loopback-only, refuse any non-loopback peer.
     if (!isLoopback(req.socket.remoteAddress ?? '')) { res.writeHead(403); res.end(); return; }
     if (req.method !== 'POST' || (req.url ?? '').split('?')[0] !== '/reply') {
@@ -474,6 +499,7 @@ export class SlackReplyServer {
     });
     req.on('end', () => {
       if (aborted) return;
+      if (this.stopped) { refuseStopped(res); return; }
       let parsed: { channel?: string; thread_ts?: string; text?: string };
       try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
       catch { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'bad json' })); return; }

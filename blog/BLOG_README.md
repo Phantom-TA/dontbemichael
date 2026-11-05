@@ -30,8 +30,8 @@ flips `status` to `"ready"` — no template changes needed.
 - Hero images are **drawn, not AI-generated**: `blog/media-src/scene-lib.js` (parts +
   16 scene archetypes) + `blog/media-src/spec.js` (per-post archetype + annotations) render
   in a browser via `blog/media-src/render.html?slug=<slug>` at 1600x900; screenshot that
-  page to regenerate any hero. Style contract lives in
-  `.claude/skills/ian-xiaohei-illustrations/SKILL.md` (local overrides section).
+  page to regenerate any hero. The style contract is the header comment in
+  `scene-lib.js`. The Xiaohei character is by Ian (https://github.com/helloianneo).
   `blog/scripts/generate-images.mjs` remains as an optional image-model pipeline.
 - Hero images render automatically on every post page and as card thumbnails.
 - Inline figure in markdown: `{% raw %}{% img "slot-id", "Optional caption" %}{% endraw %}`
@@ -82,7 +82,7 @@ date: 2026-06-10
 category: guides            # cluster slug: guides | orchestration | memory | internals
                             #               | concepts | comparisons | use-cases | story
 categoryLabel: Guides       # human label shown in chips/breadcrumbs + JSON-LD articleSection
-type: Technical             # Technical | Non-technical (from BLOG_IDEAS.md)
+type: Technical             # Technical | Non-technical
 primaryKeyword: "your focus keyword"
 secondaryKeywords: ["supporting term", "another"]
 tags: ["Getting Started", "Hive"]
@@ -121,29 +121,15 @@ posts, so adding a post with a new `category` "just works."
 
 ---
 
-## How Kevin's SEO files flow in
+## Where SEO settings live
 
-The SEO expert (Kevin) ships two files:
-
-- **`SEO_METADATA.md`** — keyword strategy + per-page metadata (titles, descriptions, OG/Twitter,
-  canonicals), JSON-LD plan, sitemap/robots/RSS plan.
-- **`BLOG_IDEAS.md`** — the backlog of post ideas with type (technical / non-technical), keywords,
-  intent, and synopsis.
-
-They map onto this blog as follows:
-
-| Kevin's input | Where it lands |
+| Setting | Where it lives |
 |---|---|
 | Site-level title/description/OG defaults | `src/_data/site.js` |
 | Keyword **clusters** + technical/non-technical split | `site.js` `clusters` + each post's `category` |
 | Per-page `<title>` / description / canonical / OG | each post's frontmatter (`seoTitle`, `description`, `ogImage`, …) |
 | JSON-LD (`BlogPosting`, `BreadcrumbList`, `FAQPage`) | wired in `src/_includes/post.njk` (FAQ via the `faq` frontmatter) |
 | sitemap / robots / RSS | `src/sitemap.njk`, `src/robots.njk`, `src/feed.njk` (auto-generated) |
-| Post backlog (`BLOG_IDEAS.md`) | becomes new `.md` files in `src/posts/` |
-
-> The three seeded posts are real, on-brand examples. When `BLOG_IDEAS.md` lands, reconcile the
-> `category` slugs in `site.js` with Kevin's exact cluster names and start turning backlog rows into
-> posts.
 
 ---
 
@@ -197,7 +183,7 @@ blog/
   scripts/postbuild.mjs  # moves the generated sitemap to docs/sitemap.xml (root)
   src/
     _data/
-      site.js            # site-level SEO + cluster config (Kevin's site-level inputs)
+      site.js            # site-level SEO + cluster config
       build.js           # build timestamp / year
     _includes/
       base.njk           # <head> (SEO, OG, fonts), nav, footer shell

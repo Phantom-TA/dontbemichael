@@ -610,6 +610,45 @@ test('a member reporting again whose brief fails is briefed on a later update; o
   assert.equal(gBriefs() - start, 3);
 });
 
+test('a failed "wait after all" note to Michael is tried again until it goes out, and dropped once nobody is left to wait for', (t) => {
+  // Value: protects=Michael waits for a member that reports again mid close even when the first note to him fails; fails_when=the note is tried once only, sent twice, or still sent after the member confirmed or went quiet again; why_new=TODOS "Retry closing time's wait after all note to Michael"; seam=failSend and the notReporting callback
+  const silent = new Set(['dwight']);
+  const f = floor({ t, silent });
+  f.ct.start();
+  const briefs = () => f.sent.filter((m) => m.to === 'dwight' && m.subject === 'Closing time').length;
+  const waitNotes = () => f.sent.filter((m) => m.to === 'god' && m.subject === 'Closing time: wait for Dwight after all').length;
+  f.failSend((m) => /after all/.test(m.subject));
+  silent.delete('dwight');
+  f.ct.refresh();
+  assert.deepEqual([briefs(), waitNotes()], [1, 0], 'briefed, but Michael was not told');
+  f.failSend(null);
+  f.ct.refresh();
+  assert.equal(waitNotes(), 1, 'tried again on the next update');
+  f.ct.refresh();
+  assert.deepEqual([briefs(), waitNotes()], [1, 1], 'each sent once');
+
+  // Back and briefed, but the note to Michael failed.
+  const backWithNoteFailing = () => {
+    const quiet = new Set(['dwight']);
+    const g = floor({ t, silent: quiet });
+    g.ct.start();
+    g.failSend((m) => /after all/.test(m.subject));
+    quiet.delete('dwight');
+    g.ct.refresh();
+    g.failSend(null);
+    return { g, quiet };
+  };
+  const notes = (g) => g.sent.filter((m) => /after all/.test(m.subject)).length;
+  const acked = backWithNoteFailing();
+  acked.g.route('dwight', 'CLOSING-TIME-ACK');
+  assert.equal(notes(acked.g), 0, 'confirmed first: Michael has the ACK');
+  const quietAgain = backWithNoteFailing();
+  quietAgain.quiet.add('dwight');
+  quietAgain.g.ct.refresh();
+  assert.equal(notes(quietAgain.g), 0, 'quiet again first');
+  assert.equal(quietAgain.g.sent.filter((m) => /isn't reporting to the app/.test(m.subject)).length, 2, 'Michael is told that instead');
+});
+
 test('a team member that is not reporting is shown apart, not waited on, and Michael hears once', (t) => {
   // Value: protects=closing time finishes when a member's engine isn't reporting (its mail is held, so it can never hear closing time); fails_when=it stays in waiting, COMPLETE is refused over it, Michael is not told or is told twice, or a member that reports again is not waited on; why_new=owner report 2026-10-17 (closing time stuck at 0 of 10); seam=the notReporting callback (main passes mailFor hold)
   const silent = new Set(['dwight']);

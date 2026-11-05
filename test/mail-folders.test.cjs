@@ -160,17 +160,17 @@ test('Draft only is named as the member\'s Access tab, never as a limit of the m
 });
 
 /**
- * An office may give a team member the app's own mailbox, a Claude connector
- * such as Gmail, or both (owner, 2026-10-03), so nothing may assume one.
+ * A team member may hold the app's own mailbox, Claude connectors, or both, and
+ * the roster names each with its Settings screen.
  */
 test('Michael sees each member\'s mail access and its Settings screen, whichever kind it is', async (t) => {
   // Value: protects=Michael names the right screen for Mailboxes, Claude connectors or both; fails_when=one kind is missing from the roster, a change does not resend it, or the hook stops passing access; why_new=the roster said nothing about access, so Michael guessed; seam=source pin for the hook wiring
   const { accessLine } = loadTs('src/shared/agentAccess.ts');
   const mailbox = { kind: 'mailbox', address: 'office@x.com', sending: 'draft' };
-  const gmail = { kind: 'connector', key: 'Gmail' };
+  const hubspot = { kind: 'connector', key: 'HubSpot' };
   assert.equal(accessLine([mailbox]), 'mailbox office@x.com (connected in Settings, Connections, Mailboxes; draft only, set on their Access tab, Email, Sending)');
-  assert.equal(accessLine([gmail]), 'Claude connectors Gmail (Settings, Connections, Claude connectors)');
-  assert.equal(accessLine([mailbox, gmail, { kind: 'quickbooks', changes: false }]), 'mailbox office@x.com (connected in Settings, Connections, Mailboxes; draft only, set on their Access tab, Email, Sending); Claude connectors Gmail, QuickBooks read only (Settings, Connections, Claude connectors)');
+  assert.equal(accessLine([hubspot]), 'Claude connectors HubSpot (Settings, Connections, Claude connectors)');
+  assert.equal(accessLine([mailbox, hubspot, { kind: 'quickbooks', changes: false }]), 'mailbox office@x.com (connected in Settings, Connections, Mailboxes; draft only, set on their Access tab, Email, Sending); Claude connectors HubSpot, QuickBooks read only (Settings, Connections, Claude connectors)');
   assert.equal(accessLine([]), null);
 
   const os = require('node:os');
@@ -184,10 +184,10 @@ test('Michael sees each member\'s mail access and its Settings screen, whichever
   fs.writeFileSync(path.join(hive.root(), 'fleet.json'), JSON.stringify({ agents: [
     { id: 'god', name: 'Michael', isGod: true }, { id: 'pam', name: 'Pam', role: 'Executive Admin' }, { id: 'kelly', name: 'Kelly', role: 'Support' }, { id: 'oscar', name: 'Oscar', role: 'Finance' }
   ] }));
-  const access = { pam: accessLine([mailbox, gmail]), kelly: accessLine([gmail]), oscar: null };
+  const access = { pam: accessLine([mailbox, hubspot]), kelly: accessLine([hubspot]), oscar: null };
   const r = hive.teamRoster((id) => access[id]);
-  assert.match(r.full, /- Pam \(pam\), Executive Admin; uses: mailbox office@x\.com \(connected in Settings, Connections, Mailboxes; draft only, set on their Access tab, Email, Sending\); Claude connectors Gmail \(Settings, Connections, Claude connectors\)/);
-  assert.match(r.full, /- Kelly \(kelly\), Support; uses: Claude connectors Gmail \(Settings, Connections, Claude connectors\)/);
+  assert.match(r.full, /- Pam \(pam\), Executive Admin; uses: mailbox office@x\.com \(connected in Settings, Connections, Mailboxes; draft only, set on their Access tab, Email, Sending\); Claude connectors HubSpot \(Settings, Connections, Claude connectors\)/);
+  assert.match(r.full, /- Kelly \(kelly\), Support; uses: Claude connectors HubSpot \(Settings, Connections, Claude connectors\)/);
   assert.match(r.full, /- Oscar \(oscar\), Finance; uses: no mail or connectors/);
   access.oscar = accessLine([mailbox]);
   assert.notEqual(hive.teamRoster((id) => access[id]).layoutKey, r.layoutKey, 'a new grant resends the full roster');
@@ -195,15 +195,15 @@ test('Michael sees each member\'s mail access and its Settings screen, whichever
   assert.match(read('src/main/hooks.ts'), /this\.hive\.teamRoster\(\(id\) => accessLine\(agentAccessSummary\(cfg, id, this\.roleReadsBooks\?\.\(id\) \?\? false, this\.memberPresent\)\)\)/);
 });
 
-test('nothing the team reads assumes one kind of mail', () => {
-  // Value: protects=a Pam with only the Claude Gmail connector still runs inbox zero, and one with both knows they are separate; fails_when=a job or tool text says "mailbox" as the only way in; why_new=the inbox zero job stopped when there was "no mailbox"; seam=none
+test('the team reads that mail comes only through the app\'s mailboxes', () => {
+  // Value: protects=no job or tool text sends a member to the Claude account's mail; fails_when=a job offers a Claude connector for mail, or the mail tools stop saying they are the only way in; why_new=owner 2026-10-30 (email only via the app's connector); seam=none; no_claim=jobs already saved in an office
   for (const f of fs.readdirSync(path.resolve(__dirname, '../resources/packs')).filter((x) => x.endsWith('.json'))) {
     const p = JSON.parse(read(`resources/packs/${f}`));
     for (const j of p.starterMissions || []) assert.doesNotMatch(j.focus, /no mailbox/i, `${f}: ${j.title}`);
     const pam = (p.starterMissions || []).find((j) => j.agentId === 'pam' && j.title === 'Inbox to zero');
-    if (pam) assert.match(pam.focus, /If you have no email tools yet, from Mailboxes or a Claude connector such as Gmail, stop without messaging anyone\.$/, f);
+    if (pam) assert.match(pam.focus, /If you have no email tools yet, stop without messaging anyone\.$/, f);
   }
-  assert.match(read('resources/md-mail-mcp.cjs'), /If you also have a Claude connector such as Gmail, that is a separate connection with its own tools, possibly to another account\./);
+  assert.match(read('resources/md-mail-mcp.cjs'), /Email reaches you only through these tools; the owner\\'s Claude account mail is never yours to use\./);
 });
 
 /** A mailbox that is not Gmail: folders as `list` names them, each holding one message. */

@@ -43,6 +43,41 @@ export function modelForCli(model: string, cliVersion: string | null): ModelForC
   return { model: floor.fallback, downgraded: { from: model, need: floor.min, have: cliVersion } };
 }
 
+/**
+ * Hook events the app registers that an older Claude Code does not know, with
+ * the first version that takes each. An older one refuses the WHOLE settings
+ * file over a name it does not know: a Settings Error prompt, then no hooks, no
+ * sandbox and no deny rules, or an agent that never starts (owner, 2026-10-30).
+ * A hook new enough to be missing from a CLI still in use belongs in this list
+ * (claude-hook-floor.test.cjs fails until it is).
+ *
+ * Newer ones still stop on a Settings Warning prompt until someone answers it.
+ * PostToolBatch is in no changelog, so its floor is from the releases
+ * themselves: 2.1.117 lacks it, 2.1.118 has it. The other two are from the
+ * changelog.
+ */
+export const CLAUDE_HOOK_CLI_FLOOR: Readonly<Record<string, string>> = {
+  PostCompact: '2.1.76',
+  StopFailure: '2.1.78',
+  PostToolBatch: '2.1.118'
+};
+
+/** The hooks this Claude Code takes, the rest left out. A version nobody could
+ *  read leaves out every hook with a floor: a missing hook costs far less than
+ *  a refused file. */
+export function hooksForCli<T>(hooks: Record<string, T>, cliVersion: string | null | undefined): Record<string, T> {
+  const have = cliVersion && /\d+\.\d+\.\d+/.test(cliVersion) ? cliVersion : null;
+  return Object.fromEntries(Object.entries(hooks).filter(([event]) => {
+    const min = CLAUDE_HOOK_CLI_FLOOR[event];
+    return !min || (!!have && !isNewer(min, have));
+  }));
+}
+
+/** The long options `claude --help` lists ("--remote-control-session-name-prefix <prefix>"). */
+export function parseCliFlags(help: string): Set<string> {
+  return new Set([...help.matchAll(/(?:^|[\s,])(--[a-zA-Z][a-zA-Z0-9-]*)/g)].map((m) => m[1]));
+}
+
 /** Pull `2.1.280` out of `claude --version` output ("2.1.280 (Claude Code)"). */
 export function parseCliVersion(output: string): string | null {
   const m = /(\d+\.\d+\.\d+)/.exec(output);

@@ -6,12 +6,21 @@
  * A dismissed suggestion returns only when its evidence crosses the next band
  * or 14 more days of data arrive (D13).
  *
+ * Before 14 live days the same rules run in an early mode (owner, 2026-10-19,
+ * eng D1): over the live days so far, each evidence minimum halved. What they
+ * find shows as plain facts, never as a change to apply, and a model fact
+ * names no model (eng D2).
+ *
  * No electron or node imports: main calls it, tests load it directly.
  */
 
 import type { ModelTier } from './modelCatalogPayload';
 
 export const ADVICE_WINDOW_MS = 14 * 86_400_000;
+/** Early patterns need half the evidence advice needs (owner, 2026-10-19, eng D1). */
+export const EARLY_SCALE = 0.5;
+/** The reopen rule's minimum of reopened cards. */
+export const REOPEN_MIN = 3;
 export const MIN_RUNS = 10;
 export const MIN_INTERVAL_MS = 15 * 60_000;
 
@@ -51,6 +60,8 @@ export interface MemberModelFact {
   keptShare: number | null;
   /** Kept as is decisions counted (drafts plus cards). */
   keptDecisions: number;
+  /** Of those, kept as is. */
+  kept?: number;
   reopens: number;
   usdPerWeek: number;
 }
@@ -92,6 +103,15 @@ export function nextTier(ladder: LadderModel[], provider: string, model: string 
   return ladder.find((m) => m.provider === provider && m.tier === want) ?? null;
 }
 
+/** Halve the evidence minimums (rounded up) over a shorter window: the early
+ *  mode. Called without it, the rules are exactly the 14 day advice. */
+export interface EarlyMode {
+  /** The first live moment counted; the window runs from here to `now`. */
+  from: number;
+  /** 0.5 halves every evidence minimum (rounded up). */
+  scale: number;
+}
+
 /** Every suggestion the evidence supports today, before dismissals. */
 export function adviceFor(input: {
   now: number;
@@ -102,18 +122,19 @@ export function adviceFor(input: {
   gapDays: string[];
   /** Price per million output tokens for a model, or undefined when unknown. */
   priceOf: (model: string) => number | undefined;
-}): Advice[] {
-  const since = input.now - ADVICE_WINDOW_MS;
+}, early?: EarlyMode): Advice[] {
+  const since = early ? Math.max(early.from, input.now - ADVICE_WINDOW_MS) : input.now - ADVICE_WINDOW_MS;
+  const min = (n: number): number => (early ? Math.ceil(n * early.scale) : n);
   const gaps = new Set(input.gapDays);
   const runs = input.runs.filter((r) => r.start >= since && !gaps.has(r.day) && r.outcome !== 'unknown');
   const out: Advice[] = [];
 
   for (const m of input.missions) {
     const mine = runs.filter((r) => r.missionId === m.id);
-    if (mine.length < MIN_RUNS) continue;
+    if (mine.length < min(MIN_RUNS)) continue;
     const nothing = mine.filter((r) => r.outcome === 'nothing').length;
     const didWork = mine.filter((r) => r.outcome === 'did-work').length;
-    const weeks = ADVICE_WINDOW_MS / (7 * 86_400_000);
+    const weeks = Math.max(1, input.now - since) / (7 * 86_400_000);
     const runUsdPerWeek = mine.reduce((s, r) => s + r.usd, 0) / weeks;
     if (nothing / mine.length >= 0.7) {
       out.push({
@@ -125,8 +146,9 @@ export function adviceFor(input: {
       });
       continue;
     }
-    if (didWork / mine.length >= 0.9 && !m.timed && m.intervalMs / 2 >= MIN_INTERVAL_MS) {
-      const mid = since + ADVICE_WINDOW_MS / 2;
+    // A timed schedule has no clean halving, so it opens the editor; the 15 minute floor is for intervals.
+    if (didWork / mine.length >= 0.9 && (m.timed || m.intervalMs / 2 >= MIN_INTERVAL_MS)) {
+      const mid = since + (input.now - since) / 2;
       const median = (xs: number[]): number => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
       const last = median(mine.filter((r) => r.start >= mid).map((r) => r.workCount));
       const prev = median(mine.filter((r) => r.start < mid).map((r) => r.workCount));
@@ -134,7 +156,7 @@ export function adviceFor(input: {
         out.push({
           id: `run-more:${m.to}:${m.id}`, kind: 'run-more', agentId: m.to, missionId: m.id,
           evidence: { runs: mine.length, didWork },
-          change: { kind: 'interval', fromMs: m.intervalMs, toMs: Math.max(MIN_INTERVAL_MS, m.intervalMs / 2) },
+          change: m.timed ? { kind: 'editor', direction: 'more' } : { kind: 'interval', fromMs: m.intervalMs, toMs: Math.max(MIN_INTERVAL_MS, m.intervalMs / 2) },
           savesPerWeek: null,
           band: didWork
         });
@@ -145,7 +167,9 @@ export function adviceFor(input: {
   for (const p of input.members) {
     // Claude only for now (memory 2026-10-10: never across providers).
     if (p.provider !== 'claude' || !p.model) continue;
-    const down = !p.isGod && p.pieces >= 20 && p.mailDecisions >= 10 && p.keptShare !== null && p.keptShare >= 0.9 && p.reopens === 0
+    // A cheaper model only from the top tier (design table): a middle tier member doing well stays put.
+    const top = input.ladder.find((m) => m.provider === p.provider && m.id === p.model)?.tier === 'top';
+    const down = top && !p.isGod && p.pieces >= min(20) && p.mailDecisions >= min(10) && p.keptShare !== null && p.keptShare >= 0.9 && p.reopens === 0
       ? nextTier(input.ladder, p.provider, p.model, -1) : null;
     if (down) {
       const a = input.priceOf(p.model), b = input.priceOf(down.id);
@@ -158,7 +182,7 @@ export function adviceFor(input: {
       });
       continue;
     }
-    const weak = (p.keptDecisions >= 10 && p.keptShare !== null && p.keptShare < 0.6) || p.reopens >= 3;
+    const weak = (p.keptDecisions >= min(10) && p.keptShare !== null && p.keptShare < 0.6) || p.reopens >= min(REOPEN_MIN);
     const up = weak ? nextTier(input.ladder, p.provider, p.model, 1) : null;
     if (up) {
       out.push({
@@ -171,6 +195,26 @@ export function adviceFor(input: {
     }
   }
   return out;
+}
+
+/** What the Early look watches (owner, 2026-10-26: it read as schedules
+ *  only): how many patterns each rule found, and the member closest to a
+ *  cheaper model, so a rule that found nothing yet still shows it is looking. */
+export interface EarlyWatch {
+  counts: Record<AdviceKind, number>;
+  /** The member the cheaper model rule could reach, with the most work kept
+   *  as is: top tier Claude, never Michael. Null when none has a decision. */
+  closest: { agentId: string; kept: number; decisions: number } | null;
+}
+
+export function earlyWatch(found: Advice[], members: MemberModelFact[], ladder: LadderModel[]): EarlyWatch {
+  const counts: Record<AdviceKind, number> = { 'run-less': 0, 'run-more': 0, 'cheaper-model': 0, 'stronger-model': 0 };
+  for (const a of found) counts[a.kind]++;
+  const reachable = members.filter((p) => p.provider === 'claude' && !p.isGod && !!p.model && p.keptDecisions > 0
+    && ladder.find((m) => m.provider === p.provider && m.id === p.model)?.tier === 'top');
+  const share = (p: MemberModelFact): number => (p.kept ?? 0) / p.keptDecisions;
+  const best = [...reachable].sort((a, b) => share(b) - share(a) || b.keptDecisions - a.keptDecisions)[0];
+  return { counts, closest: best ? { agentId: best.agentId, kept: best.kept ?? 0, decisions: best.keptDecisions } : null };
 }
 
 /** D13: a dismissed suggestion stays hidden until its band rises or 14 days pass. */

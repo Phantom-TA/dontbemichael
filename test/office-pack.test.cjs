@@ -262,6 +262,51 @@ test('office hours reject a non-object, an unknown day and a malformed pause', (
   assert.match(noWork.errors.join(' '), /officeHours\.work/);
 });
 
+test('office window rejects inverted or equal times and accepts valid windows', () => {
+  // Value: protects=an inverted or zero-length work or pause window cannot break starter schedules or office stall timers; fails_when=start >= end is accepted, or a valid window is rejected; why_new=office pack window validation
+  const invertedWork = validateOfficePack(
+    pack({ officeHours: { ...hours(), work: { start: '18:00', end: '08:00' } } }),
+    'bundled'
+  );
+  assert.equal(invertedWork.ok, false);
+  assert.match(invertedWork.errors.join(' '), /"officeHours\.work\.start" must be earlier than "officeHours\.work\.end"/);
+
+  const equalWork = validateOfficePack(
+    pack({ officeHours: { ...hours(), work: { start: '09:00', end: '09:00' } } }),
+    'bundled'
+  );
+  assert.equal(equalWork.ok, false);
+  assert.match(equalWork.errors.join(' '), /"officeHours\.work\.start" must be earlier than "officeHours\.work\.end"/);
+
+  const invertedPause = validateOfficePack(
+    pack({ officeHours: { ...hours(), pauses: [{ start: '14:00', end: '13:00' }] } }),
+    'bundled'
+  );
+  assert.equal(invertedPause.ok, false);
+  assert.match(invertedPause.errors.join(' '), /"officeHours\.pauses\[0\]\.start" must be earlier than "officeHours\.pauses\[0\]\.end"/);
+
+  const equalPause = validateOfficePack(
+    pack({ officeHours: { ...hours(), pauses: [{ start: '12:00', end: '12:00' }] } }),
+    'bundled'
+  );
+  assert.equal(equalPause.ok, false);
+  assert.match(equalPause.errors.join(' '), /"officeHours\.pauses\[0\]\.start" must be earlier than "officeHours\.pauses\[0\]\.end"/);
+
+  const valid = validateOfficePack(
+    pack({
+      officeHours: {
+        ...hours(),
+        work: { start: '08:30', end: '17:30' },
+        pauses: [{ start: '12:00', end: '13:00', label: 'Lunch' }]
+      }
+    }),
+    'bundled'
+  );
+  assert.equal(valid.ok, true, valid.errors.join('; '));
+  assert.deepEqual(valid.pack.officeHours.work, { start: '08:30', end: '17:30' });
+  assert.deepEqual(valid.pack.officeHours.pauses, [{ start: '12:00', end: '13:00', label: 'Lunch' }]);
+});
+
 test('valid starter missions survive validation; a non-object mission is refused', () => {
   const ok = validateOfficePack(
     pack({ starterMissions: [{ agentId: 'pam', title: 'Sort the inbox', schedule: 'every 2h during office hours', focus: 'Inbox to zero.' }] }),

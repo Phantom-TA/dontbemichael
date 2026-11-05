@@ -45,5 +45,20 @@ export function dockEscAction(e: { wide: boolean; inDock: boolean; composing: bo
   return e.inDock ? 'close' : 'none';
 }
 
+/** A file shown while the 1:1 is wide takes the center (open-file-from-wide-dock.md,
+ *  decisions 1 and 4, rule 8A for files): the 1:1 goes to the side for now, and
+ *  the note says the file moved it, so closing the file can bring it back. Esc's
+ *  own side, a closed 1:1 or one chosen narrow are left as they are. */
+export function fileShownPatch(s: { dockOpen: boolean; dockWide: boolean; dockSideForNow: boolean }): { dockSideForNow: true; dockAsideForFile: true } | null {
+  return s.dockOpen && s.dockWide && !s.dockSideForNow ? { dockSideForNow: true, dockAsideForFile: true } : null;
+}
+
+/** After a file tab closes (decision 2): when no file is shown any more and a
+ *  file moved the 1:1, it comes back wide. Another file still shown, or a side
+ *  the owner chose with Esc, keeps it at the side. */
+export function fileClosedPatch(s: { dockAsideForFile: boolean }, viewAfter: string): { dockSideForNow: false; dockAsideForFile: false } | null {
+  return s.dockAsideForFile && viewAfter !== 'file' ? { dockSideForNow: false, dockAsideForFile: false } : null;
+}
+
 /** The element id of the center host the wide 1:1 is drawn into (App.tsx). */
 export const DOCK_CENTER_ID = 'cth-dock-center';

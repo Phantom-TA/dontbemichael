@@ -186,7 +186,8 @@ export function buildNodeInstallScript(installer: NodeInstaller, platform: strin
       `if errorlevel 1 exit /b 1`,
       `echo   Verifying checksum...`,
       `certutil -hashfile ${f} SHA256 | findstr /i /c:${sha256} >nul`,
-      `if errorlevel 1 (echo   [x] CHECKSUM MISMATCH - refusing to install ^& exit /b 1)`,
+      // Bare `&` inside the block: it must echo AND exit (`^&` would only print it).
+      `if errorlevel 1 (echo   [x] CHECKSUM MISMATCH - refusing to install & exit /b 1)`,
       `echo   Installing - approve the Windows prompt if it appears...`,
       `msiexec /i ${f} /passive /norestart`,
       `if errorlevel 1 exit /b 1`,

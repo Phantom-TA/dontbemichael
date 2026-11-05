@@ -247,14 +247,13 @@ test('screens: the dock polls only while open and shown, mirrors in Arabic, and 
   assert.match(tab, /const forward = inline && rtl \? 'ArrowLeft' : 'ArrowRight';/);
   assert.doesNotMatch(tab, /overflow: 'hidden'/);
   assert.doesNotMatch(tab, /cth-paper-200|cth-mint/);
-  assert.match(tab, /<InfoTip label=\{t\('capabilities\.addMailboxUse'\)\} text=\{t\('capabilities\.addMailboxInfo', \{ name \}\)\} \/>/);
   const composer = read('src/renderer/src/components/MessageQueueComposer.tsx');
   assert.match(composer, /disabled=\{!canSend \|\| godSending\}/);
   assert.match(composer, /\{godFailed && <div role="alert"/);
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const l = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`));
     assert.doesNotMatch(l.dock.empty, /\n/, `${loc} dock empty state is one line`);
-    for (const [sec, k] of [['askMe', 'mailFailed'], ['capabilities', 'addMailboxInfo'], ['capabilities', 'removeWatchedSure']]) {
+    for (const [sec, k] of [['askMe', 'mailFailed'], ['capabilities', 'removeWatchedSure']]) {
       assert.equal(typeof l[sec][k], 'string', `${loc} ${sec}.${k}`);
       assert.doesNotMatch(l[sec][k], /[–—]| - /, `${loc} ${sec}.${k} has no dash`);
     }
@@ -364,7 +363,8 @@ test('pass 3 pins: card fields reset the browser look, kinds keep their own dire
   assert.match(tab, /<span dir="auto">\{r\.kind\}<\/span>/);
   assert.doesNotMatch(tab, /<div dir="auto" style=\{\{ flex: 1/);
   assert.match(read('src/main/index.ts'), /try \{ ensureClaudePermissionsAccepted\(dir\); \} catch/);
-  assert.match(read('src/renderer/src/shell/BottomBar.tsx'), /minWidth: 28, height: 28, padding: 0, border: 'none', cursor: 'pointer',/);
+  // The count is on the 34 px conversation button, past the 28 px minimum.
+  assert.match(read('src/renderer/src/shell/BottomBar.tsx'), /position: 'relative', width: 34, height: 34, flexShrink: 0, border: 'none', borderRadius: 'var\(--cth-r-md\)', cursor: 'pointer',/);
 });
 
 test('Codex P1: an approved email is recorded as sending first, so a restart never sends it again', async (t) => {

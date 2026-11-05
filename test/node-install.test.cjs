@@ -172,6 +172,17 @@ test('the Windows install script survives cmd /d /s /c quoting', () => {
   assert.ok(line.indexOf(SHA) < line.indexOf('msiexec'), 'elevates before verifying');
 });
 
+test('a Windows checksum mismatch exits before msiexec runs', () => {
+  const line = buildNodeInstallScript(WIN_INSTALLER, 'win32').join(' & ');
+  // Inside the parens a bare `&` chains the exit. `^&` only prints "& exit /b 1"
+  // and cmd carries on into msiexec with the file that failed the check.
+  const block = /if errorlevel 1 \((echo [^)]*CHECKSUM MISMATCH[^)]*)\)/.exec(line);
+  assert.ok(block, 'no mismatch block');
+  assert.ok(!/\^&\s*exit/.test(block[1]), `mismatch only prints the exit: ${block[0]}`);
+  assert.match(block[1], /[^^]& exit \/b 1$/);
+  assert.ok(line.indexOf(block[0]) < line.indexOf('msiexec'), 'mismatch checked after msiexec');
+});
+
 // ── the ladder ──────────────────────────────────────────────────────────────
 
 test('a usable npm is untouched — no Node install is ever spliced in', () => {

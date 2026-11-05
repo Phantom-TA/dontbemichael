@@ -70,7 +70,7 @@ test('setup asks for it in two steps, and Settings has a page with a pointer to 
   const wizard = read('src/renderer/src/components/OnboardingWizard.tsx');
   assert.match(wizard, /parts=\{\['essentials'\]\}/);
   assert.match(wizard, /parts=\{\['details', 'hint'\]\}/);
-  assert.match(wizard, /return s === 'business' \? 'details'\n    : s === 'details' \? 'welcome'/);
+  assert.match(wizard, /return s === 'business' \? 'details'\n    : s === 'details' \? 'team'/);
   assert.match(wizard, /companyProfile: cleanCompanyProfile\(profile\),/);
   const settings = read('src/renderer/src/components/SettingsModal.tsx');
   assert.match(settings, /const NAV_SECTIONS: Section\[\] = \['General', 'Company profile',/);

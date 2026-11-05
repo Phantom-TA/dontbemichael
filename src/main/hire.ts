@@ -237,14 +237,15 @@ async function readBounded(res: Response, maxBytes: number): Promise<string | nu
       chunks.push(value);
     }
   }
-  return Buffer.concat(chunks).toString('utf8');
+  // A file saved as "UTF-8 with BOM" (Notepad, PowerShell 5) is the same JSON.
+  return Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '');
 }
 
 /** Read + validate a hire manifest from a local JSON file (file import). */
 export function readHireManifestFile(path: string): HireResult {
   try {
     if (statSync(path).size > HIRE_MAX_BYTES) return { ok: false, error: 'manifest too large' };
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
     return finish(validateHireManifest(parsed));
   } catch (e) {
     return { ok: false, error: `could not read manifest: ${String(e)}` };

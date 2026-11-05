@@ -1,13 +1,13 @@
 'use strict';
 
 /**
- * The Claude account's Gmail and Google Calendar are connectors like any other
- * (docs/designs/claude-connectors.md, owner 2026-10-02, D6). They used to be
- * one Settings switch for every agent alike (owner, 2026-09-26); now the owner
- * turns each on in Settings > Connections > Claude connectors and gives it to
- * an agent on its Access tab. Off, or not given, the PreToolUse hook refuses
- * every call, Michael's included. The app's own mailboxes (md-mail) follow
- * Capabilities > Email alone.
+ * The Claude account's Google Calendar is a connector like any other
+ * (docs/designs/claude-connectors.md, owner 2026-10-02, D6): the owner turns it
+ * on in Settings > Connections > Claude connectors and gives it to an agent on
+ * its Access tab. Off, or not given, the PreToolUse hook refuses every call,
+ * Michael's included. The Claude account's Gmail is always refused (owner,
+ * 2026-10-30): email goes only through the app's own mailboxes (md-mail), which
+ * follow Capabilities > Email alone.
  */
 
 const test = require('node:test');
@@ -50,33 +50,34 @@ async function floor(t, cfg) {
 
 const denied = (r) => r && r.hookSpecificOutput && r.hookSpecificOutput.permissionDecision === 'deny';
 
-test('with Gmail off in Settings, an agent reading Gmail is refused through the hook', async (t) => {
+test('an agent reading the Claude account\'s Gmail is refused through the hook, and told why', async (t) => {
   const f = await floor(t, { agentCapabilities: { pam: { connectors: ['Gmail'] } } });
   const r = await f.call('mcp__claude_ai_Gmail__search_threads');
   assert.ok(denied(r));
-  assert.match(r.hookSpecificOutput.permissionDecisionReason, /Gmail turned off for the team in Settings/);
+  assert.match(r.hookSpecificOutput.permissionDecisionReason, /Email goes only through the office mailboxes connected in the app, never Gmail/);
   assert.ok(denied(await f.call('mcp__claude_ai_Google_Calendar__list_events')));
   assert.ok(denied(await f.call('mcp__claude_ai_Gmail__search_threads', 'god')), 'Michael too');
 });
 
-test('on in Settings, only the agents given Gmail or Calendar use them, Michael like anyone', async (t) => {
+test('on in Settings, only the agents given Calendar use it, and Gmail stays shut however it was granted', async (t) => {
   const f = await floor(t, {
     connectorsOn: { Gmail: true, 'Google Calendar': true },
     agentCapabilities: { pam: { connectors: ['Gmail'] }, god: { connectors: ['Gmail', 'Google Calendar'] } }
   });
-  assert.ok(!denied(await f.call('mcp__claude_ai_Gmail__search_threads')));
-  assert.ok(!denied(await f.call('mcp__claude_ai_Gmail__send_message')));
+  assert.ok(denied(await f.call('mcp__claude_ai_Gmail__search_threads')), 'an old switch and grant open nothing');
+  assert.ok(denied(await f.call('mcp__claude_ai_Gmail__send_message')));
+  assert.ok(denied(await f.call('mcp__claude_ai_Gmail__some_future_tool')), 'nor a tool added later');
+  assert.ok(denied(await f.call('mcp__claude_ai_Gmail__search_threads', 'god')), 'Michael too');
   const cal = await f.call('mcp__claude_ai_Google_Calendar__list_events');
-  assert.ok(denied(cal), 'Pam was given Gmail, not Calendar');
+  assert.ok(denied(cal), 'Pam was not given Calendar');
   assert.match(cal.hookSpecificOutput.permissionDecisionReason, /not given you Google Calendar/);
-  assert.ok(!denied(await f.call('mcp__claude_ai_Google_Calendar__list_events', 'god')), 'Michael was given both');
-  assert.ok(!denied(await f.call('mcp__claude_ai_Gmail__some_future_tool')), 'a tool added later under a granted connector works');
+  assert.ok(!denied(await f.call('mcp__claude_ai_Google_Calendar__list_events', 'god')), 'Michael was given it');
   assert.ok(denied(await f.call('mcp__claude_ai_Mailchimp__list_campaigns')), 'a connector the app never read is refused');
 });
 
-test('the old team-wide switch no longer opens Gmail by itself', async (t) => {
+test('the old team-wide switch opens nothing by itself', async (t) => {
   const f = await floor(t, { mcpDefaults: { 'email-calendar': { enabled: true } } });
-  assert.ok(denied(await f.call('mcp__claude_ai_Gmail__search_threads')), 'carried over once as grants (D9), never read again');
+  assert.ok(denied(await f.call('mcp__claude_ai_Google_Calendar__list_events')), 'carried over once as grants (D9), never read again');
 });
 
 test('md-mail calls are checked against the named mailbox', async (t) => {
@@ -98,8 +99,8 @@ test('Gmail on the Claude account and md-mail mailboxes are separate: md-mail fo
     agentCapabilities: { pam: { email: { enabled: true, mailboxes: ['sales'], send: true } } }
   });
   const call = (tool, input) => f.server.handle({ agent_id: 'pam', session_id: 's1', hook_event_name: 'PreToolUse', tool_name: tool, tool_input: input, cwd: f.home });
-  assert.ok(!denied(await call('mcp__md-mail__search', { mailbox: 'sales' })), 'Gmail off, added mailbox still works');
-  assert.ok(denied(await call('mcp__claude_ai_Gmail__search_threads', {})), 'Gmail off, Claude account blocked');
+  assert.ok(!denied(await call('mcp__md-mail__search', { mailbox: 'sales' })), 'the added mailbox works');
+  assert.ok(denied(await call('mcp__claude_ai_Gmail__search_threads', {})), 'the Claude account does not');
 });
 
 test('an md-mail tool the gate does not know is refused, and md-mail never reads the connector switches (ship audit)', async (t) => {

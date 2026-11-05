@@ -96,7 +96,7 @@ test('checkDistinct: a junk answer falls back to the rules and is logged', async
   const logs = [];
   const v = await K.checkDistinct(erinCopy, [pam, ryan], deps(logs));
   assert.deepEqual(v, { distinct: false, overlapsWith: ['Pam'], why: '', source: 'rules' });
-  assert.deepEqual(logs, [{ kind: 'hire-check-fallback', reason: 'no verdict' }]);
+  assert.deepEqual(logs, [{ kind: 'hire-check-fallback', reason: 'no verdict: json' }], 'the log names the check that failed (issue 677)');
 });
 
 test('checkDistinct: a failed call (signed out) falls back to the rules with its error', async () => {
@@ -222,38 +222,6 @@ test('checkFocusArea: a verdict is read, and a failed, garbled or throwing check
   const logs = [];
   assert.deepEqual(await C.checkFocusArea(ask, deps(logs)), { checked: false });
   assert.match(logs[0].reason, /boom/);
-});
-
-test('suggestWorkStyle: the draft streams, Stop is not a failure, and a failed or throwing call leaves the field to the owner', async () => {
-  // Value: protects=Suggest me gives a clean draft, passes the live preview and Stop through, and never throws to the IPC; fails_when=onText or signal is not passed, a cancel is logged or shown as failed, an empty or failed answer returns text, or a throw escapes; why_new=only readSuggestRequest and the prompt are tested; seam=runHiddenClaude stubbed
-  const req = C.readSuggestRequest({ ctx: { name: 'Erin', title: 'Executive Admin', business: { name: 'Sunrise Bakery' } }, handles: 'The business inbox.', team: [] });
-  const onText = () => {};
-  const signal = new AbortController().signal;
-  const calls = stub({ ok: true, text: '```\nThe job: Keeps the inbox at zero.\n```' });
-  const logs = [];
-  assert.deepEqual(await C.suggestWorkStyle(req, deps(logs), { onText, signal }), { text: 'The job: Keeps the inbox at zero.' });
-  assert.equal(calls[0].opts.onScreenText, onText, 'the live draft reaches the field');
-  assert.equal(calls[0].opts.signal, signal, 'Stop reaches the session');
-  assert.equal(calls[0].opts.model, 'claude-sonnet-5');
-  assert.deepEqual([calls[0].opts.noTools, calls[0].opts.thinking], [true, false]);
-  assert.match(calls[0].prompt, /whose job is Executive Admin, at Sunrise Bakery\./);
-  assert.deepEqual(logs, []);
-
-  stub({ ok: false, error: 'cancelled' });
-  const cancelLogs = [];
-  assert.deepEqual(await C.suggestWorkStyle(req, deps(cancelLogs)), { text: '', cancelled: true });
-  assert.deepEqual(cancelLogs, [], 'the owner stopping it is not a failure');
-
-  for (const [answer, reason] of [[{ ok: true, text: '   ' }, 'empty'], [{ ok: false, error: 'not signed in' }, 'not signed in'], [{ ok: false }, 'failed']]) {
-    stub(answer);
-    const failLogs = [];
-    assert.deepEqual(await C.suggestWorkStyle(req, deps(failLogs)), { text: '' });
-    assert.deepEqual(failLogs, [{ kind: 'work-style-suggest-failed', reason }]);
-  }
-  stub(new Error('boom'));
-  const thrown = [];
-  assert.deepEqual(await C.suggestWorkStyle(req, deps(thrown)), { text: '' });
-  assert.match(thrown[0].reason, /boom/);
 });
 
 test('checkDistinct: a stopped check returns the rules quietly and passes Stop through', async () => {

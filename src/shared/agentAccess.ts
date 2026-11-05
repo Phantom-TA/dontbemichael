@@ -39,12 +39,29 @@ export function agentAccessSummary(cfg: MailAccessConfig & ConnectorConfig, agen
 
 /**
  * The same access in one line for Michael's roster, with the screen each part
- * comes from, so a team member's mail limit is never blamed on the wrong one
- * (owner, 2026-10-03: an office may use the app's own Mailboxes, Claude
- * connectors such as Gmail, or both). The mailbox is connected in Settings, but
+ * comes from, so a team member's mail limit is never blamed on the wrong one.
+ * The mailbox is connected in Settings, but
  * Can send or Draft only is the member's own Access tab: the connection itself
  * can send (owner, 2026-10-05). Null when the agent has none.
  */
+/**
+ * The mailboxes no member reads yet, for Michael's roster
+ * (docs/designs/settings-links-in-replies.md): added in Settings but not given
+ * to anyone, so he names who should read one instead of asking the owner to
+ * connect it again. Null when every mailbox has a reader.
+ */
+export function unheldMailboxesLine(cfg: {
+  mailboxes?: Array<{ id: string; address: string }>;
+  agentCapabilities?: Record<string, { email?: { enabled?: boolean; mailboxes?: string[] } } | undefined>;
+}, present?: (agentId: string) => boolean): string | null {
+  // An archived or deleted member keeps its settings but reads nothing.
+  const held = new Set(Object.entries(cfg.agentCapabilities ?? {})
+    .flatMap(([id, c]) => (c?.email?.enabled && (present?.(id) ?? true) ? c.email.mailboxes ?? [] : [])));
+  const free = (cfg.mailboxes ?? []).filter((m) => !held.has(m.id)).map((m) => m.address);
+  if (!free.length) return null;
+  return `Mailboxes nobody reads yet: ${free.join(', ')}. Only the owner gives one to a member, on their Access tab, Email: link it as [<name>, Access, Email](dbm:member/<id>/access/email).`;
+}
+
 export function accessLine(items: AccessItem[]): string | null {
   const parts: string[] = [];
   for (const i of items) {

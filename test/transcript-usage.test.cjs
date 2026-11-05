@@ -32,7 +32,7 @@ for (const name of ['pricing', 'transcript']) {
   }).outputText;
   fs.writeFileSync(path.join(out, `${name}.js`), js, 'utf8');
 }
-const { readAgentUsage, projectDir } = require(path.join(out, 'transcript.js'));
+const { readAgentUsage, projectDir, __setUsageReadChunkForTest } = require(path.join(out, 'transcript.js'));
 
 /** A fake cwd whose projectDir we can write transcripts into. */
 function makeProject() {
@@ -108,6 +108,17 @@ test('a partial trailing line is not counted until completed', () => {
   assert.equal(readAgentUsage(cwd).outputTokens, 100);
   fs.appendFileSync(f, full.slice(40) + '\n'); // writer finishes the line
   assert.equal(readAgentUsage(cwd).outputTokens, 600, 'completed line counts exactly once');
+});
+
+test('a byte that is not UTF-8 does not push the next read into a line', () => {
+  const { cwd, dir } = makeProject();
+  const f = path.join(dir, 'a.jsonl');
+  // A tool result with a raw 0xFF byte decodes to U+FFFD, which is 3 bytes.
+  const odd = Buffer.concat([Buffer.from('{"type":"user","text":"'), Buffer.from([0xff]), Buffer.from('"}\n')]);
+  fs.writeFileSync(f, Buffer.concat([odd, Buffer.from(rec(100) + '\n')]));
+  assert.equal(readAgentUsage(cwd).outputTokens, 100);
+  fs.appendFileSync(f, rec(200) + '\n');
+  assert.equal(readAgentUsage(cwd).outputTokens, 300, 'the appended record is read whole');
 });
 
 test('a rewritten (shrunk) file is re-parsed from scratch', () => {
@@ -234,6 +245,51 @@ test('missing project dir yields zeros', () => {
   const u = readAgentUsage('/nonexistent/cwd/for/testing');
   assert.equal(u.outputTokens, 0);
   assert.equal(u.estimatedCostUsd, 0);
+});
+
+/** Run `fn` with new bytes read `bytes` at a time, then put the default back. */
+function withChunk(bytes, fn, lineMax) {
+  __setUsageReadChunkForTest(bytes, lineMax);
+  try { fn(); } finally { __setUsageReadChunkForTest(8 * 1024 * 1024); }
+}
+
+test('new bytes are read in chunks, and lines across a chunk edge count once', () => {
+  withChunk(300, () => {
+    const { cwd, dir } = makeProject();
+    const f = path.join(dir, 'a.jsonl');
+    let text = '';
+    for (let i = 1; i <= 40; i++) text += rec(i, { id: `msg_${i}` }) + '\n';
+    fs.writeFileSync(f, text);
+    assert.equal(readAgentUsage(cwd).outputTokens, 820, 'all 40 records, none twice');
+    fs.appendFileSync(f, rec(1000, { id: 'msg_41' }) + '\n' + rec(5).slice(0, 30));
+    assert.equal(readAgentUsage(cwd).outputTokens, 1820, 'the torn tail waits');
+  });
+});
+
+test('a line longer than a chunk is still read whole', () => {
+  withChunk(64, () => {
+    const { cwd, dir } = makeProject();
+    const f = path.join(dir, 'a.jsonl');
+    const long = JSON.stringify({ type: 'user', text: 'x'.repeat(5000) });
+    fs.writeFileSync(f, rec(100) + '\n' + long + '\n' + rec(200) + '\n');
+    assert.equal(readAgentUsage(cwd).outputTokens, 300);
+    fs.appendFileSync(f, long + '\n' + rec(400) + '\n');
+    assert.equal(readAgentUsage(cwd).outputTokens, 700);
+  });
+});
+
+test('a line too long to parse is stepped over, and the records after it count', () => {
+  withChunk(64, () => {
+    const { cwd, dir } = makeProject();
+    const f = path.join(dir, 'a.jsonl');
+    const huge = JSON.stringify({ type: 'user', text: 'x'.repeat(20000) });
+    fs.writeFileSync(f, rec(100) + '\n' + huge.slice(0, 9000));
+    assert.equal(readAgentUsage(cwd).outputTokens, 100, 'its end is not written yet: wait');
+    fs.appendFileSync(f, huge.slice(9000) + '\n' + rec(200) + '\n');
+    assert.equal(readAgentUsage(cwd).outputTokens, 300);
+    fs.appendFileSync(f, rec(400) + '\n');
+    assert.equal(readAgentUsage(cwd).outputTokens, 700, 'and the offset keeps moving after it');
+  }, 1024);
 });
 
 process.exit(failures ? 1 : 0);

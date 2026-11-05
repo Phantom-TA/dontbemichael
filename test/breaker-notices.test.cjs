@@ -79,7 +79,7 @@ test('a stop sends no hive message (the beat ends the member, Michael tells the 
 test('every trip reason reads in plain words for Michael', () => {
   const cases = {
     'looping: 8× identical tool call (Bash)': 'it ran the same Bash step 8 times in a row',
-    'error storm: 5 consecutive api errors/retries': 'it hit 5 errors in a row talking to the model',
+    'error storm: 5 consecutive api errors': 'it hit 5 errors in a row talking to the model',
     'token limit: 900,000 work tokens over the agent cap of 800,000 (1,200,000 total incl. cache reads)': 'it went over its own token allowance',
     'cost cap: floor total over $50 (top spender $20.00)': 'the office went over its spending cap, and it spent the most',
     'token cap: floor total over 5,000,000 tokens (top spender 2,000,000)': 'the office went over its token budget, and it used the most',

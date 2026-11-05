@@ -62,7 +62,9 @@ test('reads the version out of claude --version', () => {
 test('every Claude hive spawn applies the floor after choosing the model', () => {
   const src = fs.readFileSync(path.resolve(__dirname, '../src/main/index.ts'), 'utf8');
   const pushed = src.indexOf("if (m) args.push('--model', m);");
-  const floor = src.indexOf('modelForCli(requested, await claudeCliVersion(');
-  assert.ok(pushed > 0 && floor > pushed, 'the floor must run after the model is resolved');
+  // The version is probed on every Claude start (owner, 2026-10-30), before the settings are written.
+  const probed = src.indexOf('const cliVersion = await claudeCliVersion(cliBin);');
+  const floor = src.indexOf('modelForCli(requested, cliVersion)');
+  assert.ok(pushed > 0 && probed > 0 && floor > pushed && floor > probed, 'the floor must run after the model is resolved, on the version probed for this start');
   assert.ok(floor - pushed < 1500, 'and in the same spawn block');
 });

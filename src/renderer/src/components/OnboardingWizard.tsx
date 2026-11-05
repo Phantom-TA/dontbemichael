@@ -30,15 +30,16 @@ import { missingBusinessFields, type BusinessField } from '@shared/businessProfi
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { teamPlanFromRecord, type OfficeRecord } from '@shared/officeRecord';
 import { COLLECT_USAGE_STATS } from '@shared/buildFeatures';
+import { fieldLabel, groupName, requiredMark } from './fieldText';
 
 export interface OnboardingWizardProps {
   onComplete: (config: HarnessConfig) => void;
   /** Open on a later step with the first answers filled in. Only for the
    *  reference screens (tools/studio-lab/reference.tsx); the app never sets it. */
-  preview?: { step: 'business' | 'welcome' | 'team' | 'ready'; businessType: string; businessName: string };
+  preview?: { step: 'business' | 'team' | 'ready'; businessType: string; businessName: string };
 }
 
-type Step = 'resume' | 'business' | 'details' | 'team' | 'welcome' | 'home' | 'orchestrator' | 'permissions' | 'ready' | 'done';
+type Step = 'resume' | 'business' | 'details' | 'team' | 'home' | 'orchestrator' | 'permissions' | 'ready' | 'done';
 
 /** The "no pack fits" tile. Not an error path: Michael asks a few questions and
  *  builds from the core pack, so the grid always resolves to something. */
@@ -57,46 +58,6 @@ const GLYPH_EMOJI: Record<string, string> = {
 };
 const glyphFor = (glyph?: string): string =>
   (glyph && (GLYPH_EMOJI[glyph] ?? (/\p{Extended_Pictographic}/u.test(glyph) ? glyph : undefined))) ?? '?';
-
-// First-run showcase — the highest-value features a brand-new owner should grasp
-// before any setup.
-interface Feature {
-  icon: IconName;
-  labelKey: string;
-  descKey: string;
-}
-const FEATURES: Feature[] = [
-  {
-    icon: 'sparkle',
-    labelKey: 'onboarding.welcome.features.team.label',
-    descKey: 'onboarding.welcome.features.team.desc'
-  },
-  {
-    icon: 'gear',
-    labelKey: 'onboarding.welcome.features.manager.label',
-    descKey: 'onboarding.welcome.features.manager.desc'
-  },
-  {
-    icon: 'ledger',
-    labelKey: 'onboarding.welcome.features.memory.label',
-    descKey: 'onboarding.welcome.features.memory.desc'
-  },
-  {
-    icon: 'expand',
-    labelKey: 'onboarding.welcome.features.commandCenter.label',
-    descKey: 'onboarding.welcome.features.commandCenter.desc'
-  },
-  {
-    icon: 'check',
-    labelKey: 'onboarding.welcome.features.guardrails.label',
-    descKey: 'onboarding.welcome.features.guardrails.desc'
-  },
-  {
-    icon: 'plus',
-    labelKey: 'onboarding.welcome.features.hires.label',
-    descKey: 'onboarding.welcome.features.hires.desc'
-  }
-];
 
 /** Anthropic's plan comparison, linked from the manager step's Max plan note. */
 const CLAUDE_PLANS_URL = 'https://claude.com/pricing';
@@ -335,10 +296,10 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
   // Permissions & reliability toggles. These apply IMMEDIATELY on change (their
   // own IPC / OS state) — they are NOT part of finish()'s config write. First-run
-  // defaults: notifications off (config default), login-item off (fresh install);
+  // defaults: notifications on (config default), login-item off (fresh install);
   // each reconciles to the real state the IPC returns.
   const [strongKeepalive, setStrongKeepalive] = useState(false);
-  const [notifications, setNotifications] = useState(false);
+  const [notifications, setNotifications] = useState(true);
   const [openAtLogin, setOpenAtLogin] = useState(false);
 
   const toggleStrongKeepalive = async (v: boolean) => {
@@ -506,6 +467,10 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
         // Research starts with the team when picked; a new office never gets
         // the update card (design review D10).
         research: { on: researchPicked, notice: false },
+        // Nor the Claude connectors update card: a new office never had its
+        // agents reach every connector, so nothing was turned off (owner,
+        // 2026-10-30: a first time owner got "Claude connectors are now off").
+        connectorsMigrated: true,
         registeredRepos: finishPlan.folders,
         autoMode,
         godProvider,
@@ -528,7 +493,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
   // lockup and the step indicator on top, the step's card on the left, and the
   // studio on the right filling with the team as it is picked.
   const steps: readonly Step[] = withReady ? ORDERED_STEPS : ORDERED_STEPS.filter((s) => s !== 'ready');
-  const stepIndex = steps.indexOf(step);
+  // The folder step shows only when the suggested folder can't be used: it
+  // belongs to the team step, so the header stays where the owner was.
+  const stepIndex = steps.indexOf(step === 'home' ? 'team' : step);
   const stepTitle = t(`onboarding.stepTitle.${step}`, { godName });
   const studioPicked = step === 'team' ? teamAgents.filter((a) => teamPicked[a.id]) : teamAgents.filter((a) => teamPicked[a.id] ?? true);
   const studioUnpicked = step === 'team' ? teamAgents.filter((a) => !teamPicked[a.id]) : [];
@@ -536,7 +503,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
   // The card is centered whenever the studio isn't showing (Business, Details,
   // Resume, or no team yet) and sits in its column when it is; the move and the
   // glow follow this one flag (docs/designs/onboarding-centered.md).
-  const hasStudio = (step === 'team' || step === 'welcome' || step === 'home' || step === 'orchestrator' || step === 'permissions' || step === 'ready') && teamAgents.length > 0;
+  const hasStudio = (step === 'team' || step === 'home' || step === 'orchestrator' || step === 'permissions' || step === 'ready') && teamAgents.length > 0;
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 200, overflowY: 'auto',
@@ -552,7 +519,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
         <img className="cth-lockup-dark" src={lockupDark} alt="Don't Be Michael" style={{ height: 24, width: 'auto' }} />
         {stepIndex >= 0 && <StepIndicator steps={steps} current={stepIndex} />}
         {stepIndex >= 0 && (
-          <span style={{ marginInlineStart: 'auto', fontSize: 12, color: 'var(--cth-ink-3)' }}>
+          <span style={{ marginInlineStart: 'auto', fontSize: 14, color: 'var(--cth-ink-3)' }}>
             {t('onboarding.stepOf', { n: stepIndex + 1, total: steps.length })}
           </span>
         )}
@@ -585,19 +552,19 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
               <div role="status" data-damaged-config style={{
                 borderRadius: 'var(--cth-r-md)', padding: '8px 10px',
                 background: 'var(--cth-amber-soft)', color: 'var(--cth-amber-text)',
-                fontSize: 13, lineHeight: '19px'
+                fontSize: 14, lineHeight: '20px'
               }}>
                 {t('onboarding.damagedConfig')}{' '}
-                <span dir="ltr" style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 12, wordBreak: 'break-all' }}>{damagedCopy}</span>
+                <span dir="ltr" style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 14, wordBreak: 'break-all' }}>{damagedCopy}</span>
               </div>
             )}
 
             {step === 'resume' && found && (
               <>
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+                <h3 style={groupName}>
                   {t('onboarding.resume.headline')}
-                </div>
-                <p style={{ margin: 0, lineHeight: '22px' }}>
+                </h3>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: '22px' }}>
                   {t('onboarding.resume.desc', {
                     business: found.record.businessName ?? t('onboarding.resume.unnamed'),
                     count: found.record.team.length,
@@ -656,8 +623,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     ever used as an id or a path. */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink-2)' }}>
-                      {t('onboarding.business.nameLabel')} *
+                    <span style={fieldLabel}>
+                      {t('onboarding.business.nameLabel')}{' '}
+                      <span style={requiredMark}>{t('companyProfile.required')}</span>
                     </span>
                     <input
                       value={businessName}
@@ -672,8 +640,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
                 </div>
 
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
-                  {t('onboarding.business.ask')} *
+                <div style={fieldLabel}>
+                  {t('onboarding.business.ask')}{' '}
+                  <span style={requiredMark}>{t('companyProfile.required')}</span>
                 </div>
 
                 {/* Tiles come from the pack registry, so a community pack appears
@@ -742,52 +711,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
               </>
             )}
 
-            {step === 'welcome' && (
-              <>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <div style={{
-                    borderRadius: 'var(--cth-r-md)',
-                    width: 56, height: 56, flexShrink: 0,
-                    background: 'var(--cth-sky-light)',
-                    boxShadow: 'inset 0 0 0 1.5px var(--cth-indigo)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'
-                  }}>
-                    <SpritePortrait character="michael" scale={2} />
-                  </div>
-                  <div>
-                    <div style={{
-                      fontFamily: 'var(--cth-font-display)',
-                      fontSize: 14, lineHeight: '20px'
-                    }}>{t('onboarding.welcome.headline')}</div>
-                    <div style={{ fontSize: 14, color: 'var(--cth-ink-700)', lineHeight: '20px' }}>
-                      {t('onboarding.welcome.desc')}
-                    </div>
-                  </div>
-                </div>
-
-                {/* What the office does, one quiet row each with its explanation
-                    behind an info icon (review, 2026-10-01: a grid of tinted
-                    tiles, one in coral, with six paragraphs). */}
-                <div style={{ display: 'flex', flexDirection: 'column', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)' }}>
-                  {FEATURES.map((f, i) => (
-                    <div key={f.labelKey} style={{
-                      display: 'flex', gap: 10, alignItems: 'center', padding: '9px 12px',
-                      borderTop: i ? '1px solid var(--cth-line)' : undefined
-                    }}>
-                      <span style={{ width: 26, height: 26, flexShrink: 0, display: 'grid', placeItems: 'center', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-2)' }}>
-                        <Icon name={f.icon} />
-                      </span>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink)' }}>{t(f.labelKey, { godName })}</span>
-                      <InfoTip text={t(f.descKey)} align="end" />
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
             {step === 'home' && (
               <>
-                <p style={{ margin: 0, lineHeight: '22px' }}>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: '22px' }}>
                   {t('onboarding.home.desc')}
                 </p>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -797,7 +723,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     placeholder={t('onboarding.home.placeholder')}
                     className="cth-input"
                     // A folder path: mono, as DESIGN.md 4.1 sets for paths.
-                    style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)', fontSize: 12.5 }}
+                    style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)', fontSize: 14 }}
                   />
                   <PixelButton variant="secondary" size="md" onClick={pickHome}>
                     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
@@ -805,7 +731,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     </span>
                   </PixelButton>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                   {t('onboarding.home.note')}
                 </div>
 
@@ -832,10 +758,10 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     <Icon name="info" />
                   </span>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, lineHeight: '16px', marginBottom: 3 }}>
+                    <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', marginBottom: 3 }}>
                       {t('onboarding.home.syncWarningTitle')}
                     </div>
-                    <div style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
+                    <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
                       {t('onboarding.home.syncWarning')}
                     </div>
                   </div>
@@ -845,7 +771,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
             {step === 'orchestrator' && (
               <>
-                <p style={{ margin: 0, lineHeight: '22px' }}>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: '22px' }}>
                   {t('onboarding.orchestrator.desc')}
                 </p>
 
@@ -897,11 +823,11 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                           <ProviderLogo provider={p.id} size={18} />
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 11 }}>
+                          <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 14, lineHeight: '20px' }}>
                             {p.label}
                           </span>
                           {PROVIDER_BLURB_KEYS[p.id] && (
-                            <span style={{ display: 'block', fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                            <span style={{ display: 'block', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                               {t(PROVIDER_BLURB_KEYS[p.id]!)}
                             </span>
                           )}
@@ -914,7 +840,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                           return (
                             <span title={a.path ?? undefined} style={{
                               borderRadius: 'var(--cth-r-md)',
-                              fontSize: 10, padding: '1px 5px', lineHeight: '16px',
+                              fontSize: 14, padding: '1px 5px', lineHeight: '20px',
                               background: a.state === 'installed' ? 'var(--cth-mint-light)' : bad ? 'var(--cth-paper-100)' : 'var(--cth-cream-200)',
                               color: bad ? 'var(--cth-ink-500)' : 'var(--cth-ink-900)',
                               boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
@@ -925,7 +851,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                         {p.id === 'claude' && (
                           <span style={{
                             borderRadius: 'var(--cth-r-md)',
-                            fontSize: 10, padding: '1px 5px', lineHeight: '16px',
+                            fontSize: 14, padding: '1px 5px', lineHeight: '20px',
                             background: 'var(--cth-lemon)',
                             boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
                             fontFamily: 'var(--cth-font-display)', flexShrink: 0
@@ -955,16 +881,16 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                         <ProviderLogo provider={p.id} size={18} />
                       </span>
                       <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                        <span style={{ display: 'block', fontFamily: 'var(--cth-font-display)', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                           {p.label}
                         </span>
-                        <span style={{ display: 'block', fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                        <span style={{ display: 'block', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                           {t('onboarding.orchestrator.workersOnlyHint')}
                         </span>
                       </span>
                       <span style={{
                         borderRadius: 'var(--cth-r-md)',
-                        fontSize: 10, padding: '1px 5px', lineHeight: '16px',
+                        fontSize: 14, padding: '1px 5px', lineHeight: '20px',
                         background: 'var(--cth-paper-100)', color: 'var(--cth-ink-500)',
                         boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
                         fontFamily: 'var(--cth-font-display)', flexShrink: 0
@@ -977,7 +903,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     borderRadius: 'var(--cth-r-md)',
                     display: 'flex', flexDirection: 'column', gap: 8, padding: 10,
                     background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)',
-                    fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-900)'
+                    fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-900)'
                   }}>
                     <span>{engineMissingWords(selectedEngine, providerPreset(godProvider).label, t)}</span>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -993,7 +919,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                   </div>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{t('onboarding.orchestrator.model')}</div>
+                  <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>{t('onboarding.orchestrator.model')}</div>
                   <select
                     value={godModel ?? ''}
                     onChange={(e) => setGodModel(e.target.value || undefined)}
@@ -1011,7 +937,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                       ));
                     })()}
                   </select>
-                  <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                  <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                     {t('onboarding.orchestrator.modelNote')}
                   </div>
                 </div>
@@ -1043,10 +969,13 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
             {step === 'team' && (
               <>
+                {/* What the office is, behind the (i): the Meet step that said it
+                    was removed (owner, 2026-10-30: owners did not know what it asked). */}
                 <p style={{ margin: 0, lineHeight: '20px', fontSize: 14, color: 'var(--cth-ink-700)' }}>
                   {businessType === OTHER_BUSINESS
                     ? t('onboarding.team.introOther')
                     : t('onboarding.team.intro', { pack: teamPack?.displayName ?? '' })}
+                  {' '}<InfoTip text={t('onboarding.team.introTip', { godName })} />
                 </p>
 
                 {/* The folder idea, said once, in plain words: each person has a
@@ -1122,9 +1051,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 {/* AUTONOMY — one choice that maps to each engine's flag: autoMode →
                     claude bypassPermissions / codex -a never -s workspace-write
                     (sandbox kept), etc.; off → each engine's ask-first default. */}
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink-2)' }}>
+                <h3 style={groupName}>
                   {t('onboarding.permissions.autonomyHead')}
-                </div>
+                </h3>
                 <label style={{
                   borderRadius: 'var(--cth-r-md)',
                   display: 'flex', alignItems: 'center', gap: 10,
@@ -1155,9 +1084,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 <div style={{ height: 1, background: 'var(--cth-ink-300)', margin: '2px 0' }} />
 
                 {/* RELIABILITY — keeping work firing while you're away. */}
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink-2)' }}>
+                <h3 style={groupName}>
                   {t('onboarding.permissions.reliabilityHead')}
-                </div>
+                </h3>
                 <p style={{ margin: 0, lineHeight: '20px', fontSize: 14, color: 'var(--cth-ink-700)' }}>
                   {t('onboarding.permissions.reliabilityDesc')}
                 </p>
@@ -1251,7 +1180,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 padding: '6px 10px',
                 background: 'var(--cth-coral-light)',
                 boxShadow: 'inset 0 0 0 1px var(--cth-coral)',
-                fontSize: 13,
+                fontSize: 14,
                 color: 'var(--cth-ink-900)',
                 overflowWrap: 'anywhere'
               }}>{error}</div>
@@ -1293,23 +1222,28 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                         setError(t('onboarding.team.errNoFolders'));
                         return;
                       }
-                      // Validate the home step HERE. Without this the only check
-                      // lives in finish(), so an empty field walks you through all
-                      // four steps and then bounces you back to step 1 to be told.
-                      if (step === 'home' && !home.trim()) {
-                        setError(t('onboarding.errPickHome'));
-                        return;
-                      }
-                      // A folder that already holds an office is never set up as a
-                      // new one: that would mix a second team into it. Offer to
-                      // continue it instead, or ask for another folder.
-                      if (step === 'home') {
+                      // The office folder is not asked for (owner, 2026-10-29: it
+                      // confused new owners; Settings changes it later). Leaving
+                      // the team step checks the suggested folder, and the folder
+                      // step shows only when that folder can't be used.
+                      if (step === 'team' || step === 'home') {
+                        const where = home.trim();
+                        // Checked HERE, not only in finish(), so an empty field is
+                        // not found four steps later.
+                        if (!where) {
+                          setError(step === 'home' ? t('onboarding.errPickHome') : undefined);
+                          setStep('home');
+                          return;
+                        }
+                        // A folder that already holds an office is never set up as a
+                        // new one: that would mix a second team into it. Offer to
+                        // continue it instead, or ask for another folder.
                         setBusy(true);
-                        const f = await window.cth.officeFind(home.trim()).catch(() => null);
+                        const f = await window.cth.officeFind(where).catch(() => null);
                         setBusy(false);
-                        // A check that failed says nothing about the folder: stay
-                        // here rather than risk setting up a second team in it.
-                        if (!f) { setError(t('onboarding.resume.folderCheckFailed')); return; }
+                        // A check that failed says nothing about the folder: ask
+                        // rather than risk setting up a second team in it.
+                        if (!f) { setError(t('onboarding.resume.folderCheckFailed')); setStep('home'); return; }
                         if (f.hasOffice) {
                           if (f.path && f.record && teamPlanFromRecord(f.record).ok) {
                             setFound({ path: f.path, record: f.record });
@@ -1317,6 +1251,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                             setStep('resume');
                           } else {
                             setError(t('onboarding.resume.folderInUse'));
+                            setStep('home');
                           }
                           return;
                         }
@@ -1333,7 +1268,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     }}
                     disabled={busy || (step === 'orchestrator' && engineBlocked)}
                   >
-                    {step === 'welcome' ? t('onboarding.team.suggestCta') : t('common.next')}
+                    {t('common.next')}
                   </PixelButton>
                 )}
                 {step === 'permissions' && lastStep === 'permissions' && (
@@ -1366,9 +1301,10 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
   );
 }
 
-const ORDERED_STEPS = ['business', 'details', 'welcome', 'team', 'home', 'orchestrator', 'permissions', 'ready'] as const;
+// The folder step is left out: it shows only when the suggested folder can't be used.
+const ORDERED_STEPS = ['business', 'details', 'team', 'orchestrator', 'permissions', 'ready'] as const;
 
-/** The labelled steps (eight with Claude, whose Ready step sets it up; seven
+/** The labelled steps (six with Claude, whose Ready step sets it up; five
  *  otherwise): done ones checked, the current one in ink. */
 function StepIndicator({ steps, current }: { steps: readonly Step[]; current: number }) {
   const { t } = useTranslation();
@@ -1636,9 +1572,8 @@ const NEW_OFFICE_SUGGESTIONS = 20;
 
 function nextStep(s: Step): Step {
   return s === 'business' ? 'details'
-    : s === 'details' ? 'welcome'
-    : s === 'welcome' ? 'team'
-    : s === 'team' ? 'home'
+    : s === 'details' ? 'team'
+    : s === 'team' ? 'orchestrator'
     : s === 'home' ? 'orchestrator'
     : s === 'orchestrator' ? 'permissions'
     : s === 'permissions' ? 'ready'
@@ -1647,10 +1582,9 @@ function nextStep(s: Step): Step {
 function prevStep(s: Step): Step {
   return s === 'ready' ? 'permissions'
     : s === 'permissions' ? 'orchestrator'
-    : s === 'orchestrator' ? 'home'
+    : s === 'orchestrator' ? 'team'
     : s === 'home' ? 'team'
-    : s === 'team' ? 'welcome'
-    : s === 'welcome' ? 'details'
+    : s === 'team' ? 'details'
     : 'business';
 }
 
@@ -1663,6 +1597,6 @@ const inputStyle: React.CSSProperties = {
   background: 'var(--cth-card)',
   border: 'none',
   fontFamily: 'var(--cth-font-ui)',
-  fontSize: 13,
+  fontSize: 14,
   color: 'var(--cth-ink)'
 };

@@ -4,7 +4,7 @@ import { constants, existsSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { imageMimeForExtension } from '../shared/imageTypes';
-import { OPEN_EXTENSIONS, TAB_EXTENSIONS, extensionOf, kindOf, type AskFileVerdict } from '../shared/askFiles';
+import { NAME_ENDINGS, OPEN_EXTENSIONS, TAB_EXTENSIONS, extensionOf, isNameSpan, kindOf, type AskFileVerdict } from '../shared/askFiles';
 import { isSameOrInside } from './pathInside';
 import { RESEARCH_ID } from '../shared/research';
 
@@ -480,8 +480,26 @@ export async function askFileVerdict(
 
 /** What a file tab gets back (docs/designs/open-file-tab.md). */
 export type AskFileRead =
-  | { ok: true; path: string; root: string; real: string; kind: 'markdown' | 'text' | 'json' | 'csv' | 'image'; text?: string; bytes?: Uint8Array<ArrayBuffer>; mime?: string; size: number }
+  | { ok: true; path: string; root: string; real: string; kind: 'markdown' | 'text' | 'json' | 'csv' | 'image' | 'document'; text?: string; bytes?: Uint8Array<ArrayBuffer>; mime?: string; size: number }
   | { ok: false; error: 'not found' | 'too large' | 'unreadable' };
+
+/**
+ * A file named without its ending, such as `First contact follow up draft
+ * 2026-10-19` for the `.md` in the Sales folder (owner, 2026-10-19): each
+ * ending in NAME_ENDINGS is tried in turn, through the same folder check as
+ * any named file, and the first that exists wins. Null when none does, so the
+ * name stays plain text.
+ */
+export async function askFileByName(
+  name: string,
+  roots: readonly AskFileRoot[]
+): Promise<{ verdict: AskFileVerdict; path: string; tab: boolean } | null> {
+  if (!isNameSpan(name)) return null;
+  // Every ending is checked at once; the first in NAME_ENDINGS order wins.
+  const all = await Promise.all(NAME_ENDINGS.map((ext) => askFileVerdict(`${name.trim()}.${ext}`, roots)));
+  const v = all.find((x) => x.verdict !== 'missing');
+  return v ? { verdict: v.verdict, path: v.path, tab: v.tab } : null;
+}
 
 /**
  * Read a file an Ask me question or a reply names, for its tab. The same check
@@ -489,8 +507,14 @@ export type AskFileRead =
  * folder, canonical path, no link leaving it), and only kinds a tab can show
  * are read: text up to 2 MB, images up to 10 MB, through the root-confined
  * readers. Anything outside the folders reads as not found, like the chip.
+ * A Word, Excel, PowerPoint or PDF file shows its words: `documentText` pulls
+ * them out, in a process of its own, as the file may come from outside.
  */
-export async function readAskFile(pathText: string, roots: readonly string[] | readonly AskFileRoot[]): Promise<AskFileRead> {
+export async function readAskFile(
+  pathText: string,
+  roots: readonly string[] | readonly AskFileRoot[],
+  documentText?: (path: string) => Promise<string | null>
+): Promise<AskFileRead> {
   const v = await askFileVerdict(pathText, roots);
   if (v.verdict === 'missing' || !v.tab || !v.real) return { ok: false, error: 'not found' };
   const rel = relative(v.real, v.path);
@@ -500,6 +524,14 @@ export async function readAskFile(pathText: string, roots: readonly string[] | r
     const r = await readFileBinary(v.real, rel);
     if (!r.ok) return { ok: false, error: /too large|grew past/.test(r.error) ? 'too large' : 'unreadable' };
     return { ok: true, path: r.path, root, real: v.real, kind, bytes: r.bytes, mime: r.mime, size: r.size };
+  }
+  if (kind === 'word' || kind === 'excel' || kind === 'powerpoint' || kind === 'pdf') {
+    const text = await documentText?.(v.path).catch(() => null);
+    if (!text) return { ok: false, error: 'unreadable' };
+    const size = Buffer.byteLength(text);
+    if (size > MAX_READ_BYTES) return { ok: false, error: 'too large' };
+    // A sheet's columns line up only in monospace.
+    return { ok: true, path: v.path, root, real: v.real, kind: kind === 'excel' ? 'text' : 'document', text, size };
   }
   const r = await readFileText(v.real, rel);
   if (!r.ok) return { ok: false, error: /too large/.test(r.error) ? 'too large' : /ENOENT|escapes/.test(r.error) ? 'not found' : 'unreadable' };

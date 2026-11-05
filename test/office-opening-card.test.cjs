@@ -37,7 +37,7 @@ test('the floor shows the opening card on every launch, and the stage uses the s
   assert.match(stage, /import \{ useClockingIn \} from '@\/hooks\/useClockingIn';/);
   assert.doesNotMatch(stage, /function useClockingIn\(/, 'one rule, shared');
   const card = read('src/renderer/src/components/TeamClockingIn.tsx');
-  assert.match(card, /const arriving = useClockingIn\(agents\);/);
+  assert.match(card, /const arriving = useClockingIn\(agents, firstSeen\.current\);/);
   assert.match(card, /t\('office\.clockedInCount', \{ count: inCount, total \}\)/);
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const v = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).office.clockedInCount;
@@ -97,6 +97,16 @@ test('an office with no team ends quietly once Michael is in, and waits while he
   const o = { kind: 'opening', since: t0 };
   assert.equal(O.nextOpening(o, input([], { michaelStarting: true }), t0 + 30_000), o);
   assert.deepEqual(O.nextOpening(o, input([]), t0 + 30_000), { kind: 'over' });
+});
+
+test('Michael alone on the floor is still no team: no Everyone\'s in, 1 of 1', () => {
+  // Value: protects=the card gets the whole floor, Michael included, so an empty office must not flash the green card once he is in; fails_when=the no team check counts Michael as a team; why_new=bug found by repro (the card reads agents, not []); seam=pure nextOpening()
+  const t0 = 1_000_000;
+  const o = { kind: 'opening', since: t0 };
+  const michael = { ...member('god'), isGod: true };
+  assert.equal(O.nextOpening(o, input([michael], { michaelStarting: true }), t0 + 30_000), o, 'waits while he starts');
+  assert.deepEqual(O.nextOpening(o, input([michael]), t0 + 30_000), { kind: 'over' });
+  assert.deepEqual(O.nextOpening(o, input([michael, member('toby')]), t0 + 30_000), { kind: 'done', at: t0 + 30_000, total: 2 }, 'a real team still counts Michael');
 });
 
 test('who is still coming: roster order, the first three, and how many more', () => {

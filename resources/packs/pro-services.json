@@ -413,7 +413,7 @@
       "agentId": "pam",
       "title": "Inbox to zero",
       "schedule": "every 2h during office hours",
-      "focus": "Bring the inbox to zero: give every new message its outcome, bring back the Waiting items you noted as due today, and tell Michael what is left and why. If you have no email tools yet, from Mailboxes or a Claude connector such as Gmail, stop without messaging anyone."
+      "focus": "Bring the inbox to zero: give every new message its outcome, bring back the Waiting items you noted as due today, and tell Michael what is left and why. If you have no email tools yet, stop without messaging anyone."
     },
     {
       "agentId": "oscar",

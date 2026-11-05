@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.3). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.3.5). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -36,10 +36,12 @@ moving, and brings you only the decisions that need you.
   member who asked, and your answer goes only to Michael.
 - A file Michael names in a reply, an Ask me card or a task shows as a chip. Markdown, text, JSON,
   CSV and pictures open in an office tab beside Who talks to whom and refresh when the file
-  changes; PDF and Office files open in their own app. Only files in the office and team folders
-  open.
+  changes; Word, Excel, PowerPoint and PDF files show their words in a tab, with Open in app for
+  the file itself. Only files in the office and team folders open. A team folder named on a card
+  opens that folder.
 - Ask Michael anything from the Talk to Michael box: he answers in a conversation that opens above
-  it, and each question shows where it stands until it is answered. Scheduled outcomes, such as a
+  it on your latest question, with older ones folded behind Show earlier, and each question shows
+  where it stands until it is answered. Scheduled outcomes, such as a
   weekly summary, arrive on Ask me as quiet Report cards you clear with Got it.
 - Only Michael sends you desktop notifications. Talk 1:1 with any team member when you want to.
 
@@ -49,8 +51,14 @@ moving, and brings you only the decisions that need you.
   business. Or write a new one.
 - No two teammates do the same work. The app checks every new job against the team by what each
   one handles; an overlap has to be tied to its own mailbox or topic before you can hire.
-- The work style is in plain words you can edit, or Suggest me writes a first one for you. The app
-  turns it into the agent's instructions.
+- Describe the job once, in your own words, and see it written out before you hire. The app turns
+  it into the agent's instructions.
+- Change any job later by saying what should change in Edit agent. You see the steps as it works,
+  then exactly what changes, before anything is saved, and Undo puts it back.
+- A job change is never blocked by an overlap. When it adds work a teammate already does, the
+  preview says so and you can explain how they split it: the app writes the handoff Michael routes
+  by ("technical questions go to Nick") and shows it on the teammate's side. A change that adds
+  tracking asks where the numbers live when the job doesn't say.
 - A new hire's one time first job is a card Michael hands out, not a line in their work style.
 - Every hire gets its own private folder and starts working.
 - Delete a team member for good from the Danger zone in Edit agent: they stop, their schedules
@@ -58,17 +66,34 @@ moving, and brings you only the decisions that need you.
   cards to hand on. Michael, his assistant and Pete can't be deleted.
 
 ### 3. A mailbox for every job
-- Connect as many mailboxes as your business runs on: Gmail, Google Workspace, iCloud, Yahoo, Zoho
-  or any IMAP mailbox. Passwords stay encrypted on your computer.
+- Connect as many mailboxes as your business runs on: Gmail or GSuite (one choice, they connect
+  the same way), iCloud, Yahoo, Zoho or any IMAP mailbox. Passwords stay encrypted on your computer.
+- Setting up Gmail or GSuite is three numbered steps, each with a button that opens the right Google
+  page on your account: turn on 2 Step Verification, create an app password, paste it. Typing your
+  normal Google password says so in plain words.
+- A mail server that isn't encrypted from the start must switch to encryption before the app sends
+  the password. One that can't is refused, and the mailbox says so in plain words, with the
+  encrypted port to use instead.
 - Give each team member the one mailbox that fits its job: the Admin watches the CEO's inbox,
   Support answers support@, Sales follows up from sales@. One team member per mailbox.
-- Choose Can send, Send on approval or Draft only for each one. Send on approval puts each email on Needs you to edit and approve; the team member then sends exactly what you approved. Can send never puts an email on Needs you, and moving a team member to it hands back the emails still waiting there, unless it sends only from a mailbox nobody on the team watches right now. A team member can't reach a mailbox you didn't give it.
+- Choose Can send, Send on approval or Draft only for each one; a newly added mailbox starts on Send on approval. Send on approval puts each email on Needs you to edit and approve; the team member then sends exactly what you approved. Can send never puts an email on Needs you, and moving a team member to it hands back the emails still waiting there, unless it sends only from a mailbox nobody on the team watches right now. A team member can't reach a mailbox you didn't give it.
 - When you keep approving the same kind of email unchanged, the team member can offer to send that
   kind without asking. You tick it on the card and can revoke it on its Access tab; a separate quick
   check reads each such email first, and anything that doesn't fit comes to you.
-- Let one more team member send from a mailbox without reading it (Send only), with its own Sending choice: Sales sends outreach from the CEO's address while the Admin keeps that inbox.
+- Let one more team member send from a mailbox without reading it (Only send email), with its own Sending choice: Sales sends outreach from the CEO's address while the Admin keeps that inbox.
+- Giving a team member a mailbox asks one plain question, Read and answer email or Only send email,
+  with a short line under each. Only send waits until someone reads that inbox, and with one mailbox
+  the app picks it for you.
 - The Executive Admin keeps the inbox at zero: every email is routed, tracked, filed or cleared and
   leaves the inbox. Archiving, marking read and marking junk never delete anything.
+- See the email a question or a reply is built on, as it came: an Email chip on the card opens it
+  in an office tab, straight from your mailbox, even after it was archived. Opening it never marks
+  it read or moves it, pictures from the web stay hidden until you show them, and Gmail mailboxes
+  get Open in Gmail.
+- A team member saves an email attachment to Email attachments in its own folder and reads it
+  there. Programs, scripts and archives are refused, and what is saved is marked as a download and
+  never run. A teammate who needs the file asks for it, and the app copies it across, so nobody
+  opens another member's folder.
 
 ### 4. Jobs on a clock
 - Each team member's schedules sit on its Access tab. Name the job ("Check the support
@@ -78,23 +103,57 @@ moving, and brings you only the decisions that need you.
 - Run now sends a job at once, exactly as its clock would, so you see it work without waiting. A
   job at set times keeps them; a job that runs every few hours counts again from the run.
 - Closing time pauses the office; opening it runs a missed job once, never a backlog.
+- When a job's run goes wrong, say so: "Went wrong" under the job's last run (with a line on what
+  was wrong, if you like). Michael compares it with an earlier run of the same job that went well
+  and suggests a change to the member's work style in Pulse. Review the change opens Edit agent
+  with it typed in; nothing changes until you Apply, and Undo puts it back. For members on Claude.
 
 ### 5. Memory that gets better
 - Each team member keeps a short list of lasting notes: your preferences and corrections, facts it
   looked up, where things live, and the steps for jobs it repeats. A background tidy up merges and
   updates them instead of letting them pile up.
 - Your answers to its questions go straight into its memory, so it doesn't ask again.
+- Every note says what showed it: a source and date, a card, a file. The Memory tab shows it behind
+  an info icon. When two notes disagree, your word wins, then the note with something behind it,
+  then the newer one.
+- Only you make a note "from you": your Ask me answers, your email decisions and what you tell
+  Michael in the dock are kept by the app where no team member can write, so a member's own note
+  can never pass for yours or undo yours.
 - Each team member's memory is its own. Nobody, Michael included, reads or searches another's
   notes: to learn what a teammate knows, they ask that teammate, and Michael reads the task board
   and the work each one hands in. On a Mac, Claude members' shells are walled off from each
   other's notes too.
-- Company profile and company knowledge (Word, Excel, PowerPoint, PDF, and scans on a Mac) are
-  shared with the whole team, searchable by meaning.
+- Reset memory in Settings gives the whole team a first day again without losing the office:
+  every member, Michael included, forgets its notes, its conversations and the messages it
+  handled, then the app restarts. The team, cards, waiting messages, schedules, settings and
+  company knowledge stay.
+- Company profile and company knowledge (Word, Excel, PowerPoint, PDF, and scans or photos on a Mac or a Windows PC) are
+  shared with the whole team, searchable by meaning. Settings lists every document; open one in
+  your own app, save it, and the team searches the new version.
+- Company foundations: one document of what each job needs to know about your business (who you
+  sell to, how you sound, your financial year), filled by you, the company profile and what the
+  team learns. When work needs an empty answer, a card on Needs you asks you once; answer it in
+  words or with a file, which the app checks fits the question before the team can read it.
+  Lists (what you sell, customers, competitors, where money moves, who owes whom, the team,
+  systems, suppliers) stay open until you save the whole list. What the team's work saw that a list
+  lacks waits on its card to add, mark Not ours or decide later, and the money, systems and team
+  lists come back to be confirmed after a while.
 
 ### 6. You stay in charge
-- Every connector on your Claude account (HubSpot, Google Drive, Gmail, QuickBooks and the rest)
-  shows up in Settings by itself, off. Turn one on, then give it to the team members who need it.
-  Nobody else can reach it, and your own Claude Code servers stay yours.
+- Pulse counts only the office's own share of a Claude plan: its work at the plan's rate, learned
+  from the plan's weekly usage meter, so your other Claude use is never charged to the office.
+- Opening the app is clear: a team member counts as in as soon as they have started, and the card
+  shows a running clock and who is slowest, or who has gone quiet. The floor and Ask me wait until
+  everyone is in, at most 70 seconds.
+- Every connector on your Claude account (HubSpot, Google Drive, QuickBooks and the rest) shows up
+  in Settings by itself, off. Turn one on, then give it to the team members who need it. Nobody
+  else can reach it, and your own Claude Code servers stay yours.
+- Give one team member access to one outside service: a custom REST integration reaches only the
+  members you name on their Access tab, at Read only or Can change. A new one starts with nobody,
+  taking access away holds on the next call, and the app keeps the key. A connection can hold one
+  saved call, so the member sends only its words. For members on Claude.
+- Email goes only through the mailboxes you connect in the app. Gmail, Outlook and other mail on
+  your Claude account never show as connectors, and no team member can use them.
 - Spending money, deleting things and anything public come to you first, on the Needs you board.
   While anything waits it stays open; when nothing at all waits it gets out of the way and the
   office fills the window.
@@ -143,6 +202,19 @@ moving, and brings you only the decisions that need you.
   and turn on Compare to see each figure next to the same days of the day, week or month
   before. It fills in the weeks before it started from what the office already keeps, so it
   never starts at zero.
+- Pulse says how long the office ran in the period and how much of that you were away. Time the
+  computer slept or the office was stopped (plan limit, no credit, sign in failed) doesn't count.
+- Costs are worked out at each Claude model's own list price: each Opus, Sonnet and Haiku has its
+  own.
+- Get featured on our website: Pulse builds a customer story page of your office, laid out like a
+  landing page. A headline built from a number Pulse counted, a snapshot of your business, a band of
+  results with what the team cost, how the work went before, a chart of how your office is set up
+  (you, Michael and every team member with their jobs, times, tools and count), your own words, the
+  hours the office worked while you were away, and a closing call to action. The page is in your
+  brand: your logo large in a hero of your colour, read from your website (SVG logos too) or picked
+  by you, every word is editable, and every number comes from Pulse. Send it to us from your
+  own mailbox as a web page with a PDF copy, or save both. After a
+  month of work, Pulse invites you once.
 
 ### 8. Built for small business owners
 - Setup by kind of business: restaurant and food, retail, professional services, home services,
@@ -155,10 +227,211 @@ moving, and brings you only the decisions that need you.
   itself.
 - Setup ends on Get Michael ready: it installs Claude Code and signs you in where you can see it,
   or takes an Anthropic API key instead. Skip it, and Ask me keeps a card until Michael can start.
+  Settings, Agents shows how the team signs in to Claude and changes it: a new key, your Claude
+  account in place of a key, or a key in place of the account.
 - If your settings file was damaged, setup says that is why it starts again and where a copy of
   the file was kept.
+- When Michael or a card sends you somewhere in Settings, the words are a button that opens Settings right there, on
+  the right group. If you ask for email work before email is connected, Michael's answer ends with Connect your email,
+  then asks who on the team should read it, and does the job once you give it to them.
+- Report a problem sits in the top bar on every view, hard to miss. One click opens a bug report
+  with the app version and your system filled in, and saves a picture of the window in your
+  Downloads, ready to add. Help, Report a problem does the same. Reports are public, so the hover
+  text says to check the picture first. It also lists your office's recent automatic reports, so
+  your words can be matched to them.
+- Failures the developers can fix in code are reported automatically: a crash, a team member stuck
+  in a loop, a message that could not be delivered because of a bug. Each report is fixed fields
+  only, with no names, messages or files, and anything you can fix yourself is never sent. Setting
+  DO_NOT_TRACK stops it.
+- Copy on every file that opens in a tab: an email draft or a blog post pastes with its headings,
+  bold, lists and links into Gmail, Outlook, Google Docs or WordPress, and as clean words with no
+  Markdown marks into a plain box such as LinkedIn. A spreadsheet pastes as real cells, a picture
+  as a picture, and a part you select pastes as clean as the whole, in light or dark mode.
 
 ## Part 2: Every change, release by release
+
+### 0.3.5 (2026-11-03)
+
+- Get featured: Pulse builds a customer story page of the office in the business's own brand (its
+  logo, SVG ones too, and its colour, or one the owner picks), with how the work went before, a chart
+  of the office's setup (every member's jobs, times and tools) and the hours worked while the owner
+  was away. It is prepared in the background, every number comes from Pulse, and it goes to us from
+  the owner's own mailbox as a web page with a PDF copy.
+- A custom REST connection can hold one saved call; the member sends only its words.
+- Eight foundation questions are lists that stay open until the owner says that's all. Items a
+  member's work saw wait beside the answer for the owner, and money, systems and the team expire.
+- Members check each foundation answer before reporting and hand in what they hold; Research's
+  answered questions are cleared by the app; Settings no longer shows Skills.
+- Fixed: a first click on an email opens it; a sleeping Mac no longer holds a member back; a folder an
+  ask names is a chip; Work style changes and hire checks read past small slips in the model's answer
+  and report which check failed (#676, #677); a crash with no app frame says where it came from (#675).
+
+### 0.3.4 (2026-11-01)
+
+- Custom REST integrations reach only the members the owner names, at Read only or Can change, checked
+  on every call. A new integration starts with nobody, and a deleted member's access is cleared.
+- Team members save email attachments to Email attachments in their own folder and read them there.
+  Anything from outside is marked as a download and never run.
+- Teammates hand files over by asking. Only a file the app saved since it opened goes on, so after a
+  restart a member saves it again first.
+- Word, Excel, PowerPoint and PDF files open in an office tab, and a card that names a folder opens it.
+- The dock folds older messages behind the latest exchange, and the unread count sits on the up arrow.
+- A First task that cannot go on the board keeps the owner's words and Michael says so. A mailbox
+  problem that could not raise its card tries again every minute.
+- Contributors: terminal shortcuts on any keyboard (#657, #670), Pulse card history and long
+  transcripts (#513, #612), a voice confirm that says no (#541), a slow login shell (#635), emails too
+  long to send whole and money in a standing send (#630, #578), safer task board saves (#629),
+  broker uploads and rate limits (#626, #614), hidden markers in outside text (#611), Michael's closing
+  note and heartbeat (#560, #655), Research drops (#532), Ask me titles (#664), older Git (#523), and
+  the engine table and shared test suite (#577, #579, #580).
+
+### 0.3.3 (2026-10-30)
+
+- Michael starts on an older Claude Code: the app writes only the hooks your version knows, and
+  leaves the newer ones out if it cannot read the version, so nobody meets a Settings Error or
+  Settings Warning. Before 2.1.118, a call the engine refuses shows as running until the turn ends.
+  Before 2.1.78, or on a start where the version could not be read, the app does not hear of a turn
+  cut off by the usage limit, no credit or a failed sign in, so that turn starts no office break.
+
+### 0.3.2 (2026-10-30)
+
+- Clocking in: a team member is in once they have started; the card shows a clock and who is
+  slowest or has gone quiet; the floor and Ask me wait at launch, at most 70 seconds.
+- Pulse: on a Claude plan, cost is the office's own work at a rate learned from the plan's weekly
+  usage meter, never the whole plan. It reads Measuring until the rate is known.
+- Email connects only through the app's mailboxes; mail on your Claude account is hidden and
+  refused. A new mailbox starts on Send on approval, and the choice is one plain question.
+- Setup has no Meet or folder step, and desktop notifications are on by default.
+- If Michael stops, the floor says why with Start again. The app no longer passes an option your
+  Claude Code doesn't know, and failure reports carry the cause.
+
+### 0.3.1 (2026-10-29)
+- An Email chip on a question, a Michael reply or a Send on approval card opens the email it is
+  built on in an office tab, exactly as it came from your mailbox: subject, who sent it and who
+  was copied, the email itself on a white page, and its attachments listed. Opening it never marks
+  it read or moves it. Pictures from the web stay hidden until you click Show pictures, so the
+  sender can't tell you looked. Gmail mailboxes get Open in Gmail.
+- A choice that needs your own words, like "Send with my changes", asks for them when you pick it,
+  and Reply waits until you write them.
+- Automatic failure reports carry the facts that tell one cause from another, still closed values
+  only: the engine's version, which kind of team member it was, and for a stuck team member the
+  breaker's limit and where it came from and the HTTP status numbers of its errors.
+- An approved forward or attachment still goes out after its email was archived.
+- A team member's folder in Dropbox, Google Drive, OneDrive, Box or iCloud Drive on a Mac keeps its
+  privacy wall, and Michael's folder can live there too.
+- A team member whose name has a space or a comma shows in Pulse and in what the office spent.
+- A breaker limit of 0 means the default; a team member that got through after a few errors from
+  Claude is no longer stopped for them.
+- Two team members can no longer reply to each other forever; a big save or a long paste still
+  reaches the app; a webhook you switch off stops answering at once.
+- Pulse counts a stop at the Max turns limit under Steps blocked.
+
+### 0.3.0 (2026-10-28)
+- Settings, Agents shows how the team signs in to Claude, your Claude account or an Anthropic API
+  key, with Change key, Use a Claude account or Use an API key. An office set up before skips
+  setup, so this used to show nowhere.
+- Out of credit on an API key, the stop card adds Change sign in, for a new key or your Claude
+  account.
+- A new sign in restarts the running team on it at once, each member picking up where it left off,
+  and a stopped office checks again. Signing in to an account moves the team off its key only once
+  the sign in finished.
+- An update the Mac refuses to install offers the manual download instead of the same Restart to
+  update again and again. Macs on 0.2.5 or older download the new version by hand once.
+
+### 0.2.9 (2026-10-28)
+- Failures the developers can fix in code report themselves: a crash, a team member's terminal
+  ending abnormally, a router or hook failure, a team member stuck in a loop. Each report is fixed
+  fields only, with no names, messages or files, kept on your computer and filed to a private
+  repository, then copied field by field into a public issue. Anything you can fix yourself is
+  never sent, and DO_NOT_TRACK stops it.
+- Report a problem lists your office's recent automatic reports, so your words can be matched to
+  them.
+- Home and Manager setup text is 14px or more (#416, contributed by @glenmiracle18).
+- Hidden Claude calls start on Windows when the Claude path has a space (#426, contributed by
+  @theshloksschauhan).
+
+### 0.2.8 (2026-10-27)
+- Copy on every file that opens in a tab: a draft pastes with its headings, bold, lists and links
+  into Gmail, Outlook, Google Docs or WordPress, and as clean words into a plain box such as
+  LinkedIn; a spreadsheet pastes as real cells and a picture as a picture.
+- Report a problem sits in the top bar on every view, in place of the Beta pill: a prefilled bug
+  report and a picture of the window saved in Downloads.
+- Places in Settings named by Michael or a card are buttons that open Settings on that group. Email
+  work asked for before email is connected ends with Connect your email, then who should read it,
+  and Michael does it once that is set.
+- Add a whole folder from a Company foundations card, picked or dropped: nothing is copied, the
+  answer names the folder, and the team members whose job uses that question can read it, read
+  only.
+- A file you open while the conversation with Michael is wide shows in the middle, with the
+  conversation waiting at the side; closing the file brings the conversation back.
+- Pulse's Early look shows the four things it watches: schedules finding nothing, schedules with
+  more to do, a cheaper model and a stronger model. Recommendations start folded.
+- Gmail and Google Workspace are one choice, Gmail or GSuite, set up in three numbered steps with
+  buttons that open the right Google page.
+- Contributor changes: rules that survive a long run on Codex and Gemini, Max turns per run that
+  really caps a run, more webhook asks held for approval, a safer shared hire, Company profile
+  saving, office pack windows checked, mailbox ports, terminal pastes, the Git graph, links with
+  spaces, Ask me headlines and skill descriptions.
+
+### 0.2.7 (2026-10-26)
+- Every memory note says what showed it, shown behind an info icon on the Memory tab. Your Ask me
+  answers, email decisions and words to Michael in the dock are kept where no team member can
+  write, so only you make a note "from you"; your word wins a disagreement, then evidence, then
+  the newer note.
+- Went wrong under a scheduled job's last run: Michael compares it with a run that went well and
+  suggests a work style change in Pulse, applied only when you Apply.
+- An overlap never blocks a job change; explain how two members split the work and the app writes
+  the handoff Michael routes by, shown on the teammate's side too.
+- Pulse says how long the office ran and how much of that you were away; costs use each Claude
+  model's own list price.
+- A mail server not encrypted from the start must switch to encryption before the password; a
+  shared hire's turn limit can only lower your cap; a voice confirm naming someone else cancels.
+- Contributor fixes: Pulse's plan bar after a reset, no error storm while the office is stopped,
+  a copied hire's starter jobs come switched off, overnight card steps reach their person, an
+  approved reply survives archiving, cost records in the app's own database, and fixes on Windows,
+  voice, files and panels.
+
+### 0.2.6 (2026-10-23)
+- Change a team member's job by saying what should change: Edit agent shows the job in plain
+  words with one box, then the steps and the new words as they are written, what changes and the
+  whole new job, before Apply. Undo puts it back. A clash becomes one question whose suggested
+  answer keeps your approvals; an overlap names the teammates; one time work goes to Michael.
+- Hiring asks what the new person will do once; a pack update keeps your earlier changes.
+- Add a file right from a Company foundations card, pictures included: it is checked against the
+  question before it joins company knowledge, and nothing of it stays in Claude's history.
+- Settings, Access, the Command Center, the company profile, the schedule editor and Add a mailbox
+  share Edit agent's panels and labels. Edit agent shows scheduled jobs as their own group.
+- A mailbox check that times out tries again by itself; a recovered stuck member is reported to
+  Michael; the office floor carries the GAACC AI Labs mark.
+- Messages typed into a team member's terminal and the app's background checks drop hidden
+  control characters first. The Mac release is signed with the owner's own Apple team.
+
+### 0.2.5 (2026-10-21)
+- Reset memory in Settings: every member, Michael and Research included, starts on its first day
+  again while the office stays. Notes, recorded conversations, handled messages and Claude Code's
+  notes for each working folder go; the team, cards, waiting messages, schedules, settings and
+  Company knowledge stay. Members' notes are no longer kept in the office's history.
+- Pulse lists the emails organized in a period: subject, sender, where each went and who moved it.
+- The Tasks board has search and filters, and says when it shows only some tasks.
+- A member waiting at a permission prompt is never typed into while a helper it started works,
+  and every file chip in a message opens.
+- Contributor fixes: Pulse can say why a number looks wrong, Ask me answers reach notes before
+  Michael is told, starter jobs for a member with no schedules, card numbers beside an expiry
+  caught, Windows office restore with letter case, terminal zoom, quoted Claude paths, knowledge
+  search ranking and closing time messages.
+
+### 0.2.4 (2026-10-20)
+- Company foundations: one document in company knowledge with plain questions for each job, one
+  answer per shared question, in step with the company profile. Work that hits an empty answer
+  raises one card on Needs you; answer it, have the member draft it, or put it off a week. Pulse
+  shows the jobs that hit an empty answer and a Foundations count under each member.
+- Settings lists every company knowledge document with Open in your own app; a save there is read
+  in again. Company knowledge and search by meaning have no switches, and search by meaning
+  follows your edits.
+- Pulse folds quiet tiles into chips and, in the first two weeks, shows what it sees so far.
+- A file an Ask me question names without its ending opens from its chip.
+- Contributor fixes: scans and photos read on Windows, a lost answer to Michael sent again, a late
+  restart reported, Pulse buttons, its backfill on open and stale cost totals, bounded hook counters.
 
 ### 0.2.3 (2026-10-18)
 - The office opens with a Clocking in card over Michael's desk: how many are in, who is still

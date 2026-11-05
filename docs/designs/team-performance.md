@@ -119,6 +119,7 @@ data) cannot start without this view.
 | D9 E7 time saved (owner) | #81 | | | declined | Owner answer to D9: "Skip, keep #81". |
 | D10 run outcome (owner) | scheduleMessage.ts:17 tells agents to stop silently | | the app infers the outcome; no agent behavior change | approved | Owner answer to D10: "App infers it". |
 | D11 away means (owner) | no office hours setting exists (officeOpen.ts, officePack.ts:71) | | owner presence: no input for 30 min or asleep | approved | Owner answer to D11: "You weren't at the computer". |
+| D17 office running time (owner, 2026-10-25) | presence records only away and back; nothing records open, quit or sleep | | how long the office ran (open, awake, not stopped) and how long of that you were away: two stats at the foot of the away half; a stopped office (plan limit, credit, sign in) is not running time | approved | Owner: "the pulse is not telling for how long the office was actually running"; answers D1 "Leave stops out", D2 "Two stats at the foot". |
 | D13 dismissed advice (owner) | spec review pass 2 | | hidden until its evidence crosses the next step; stored in the private folder | approved | Owner answer to D13: "Until numbers change". |
 | D14 documents (owner) | spec review x3, 14 of 14 fixes verified | | this plan and the CEO summary as of 2026-10-15 | approved | Owner answer to D14: "Approve, continue". Approves these document versions only. |
 | D15 S2 silent loss (owner, Section 2) | hive.ts appendLog swallows write errors | | failed record writes are counted per day, flagged on the view, and that day is left out of advice | approved | Owner answer to D15: "Flag and pause advice". |
@@ -226,6 +227,12 @@ Per member, per week, with a 4 week trend:
 - **Speed (E3)**: median time from card created to doneAt, minus time in Blocked or Waiting.
 - **While you were away (E4)**: share of work whose time falls in an away period
   (D11: no input for 30 minutes, or the computer asleep).
+- **Office ran (D17)**: a `running` point every 5 minutes (sooner at midnight, a
+  sleep, a quit or an office change) holds the minutes the app was open, the
+  computer awake and the office not stopped, and the part you were away. A
+  sleep is told by the suspend event; one gap counts at most 15 minutes. The
+  snapshot sums the period's points; days before the first point show nothing,
+  and a period that starts earlier says "since" that day.
 - Office line **plan headroom (E6)**: on a Claude plan only, the latest reading of the
   most constrained window (`rate_limits`) across every Claude account the office uses, its reset time, and "at this pace, runs
   out around <day>" when used% / (elapsed / window length) > 100%, once at least
@@ -243,6 +250,13 @@ The view never folds the 400,000 row ledger: it reads the processor's rollups.
 | Try a stronger model | 10 or more decisions and kept as is under 60%, or 3 or more reopens | next tier up in the same provider; Michael included |
 
 - Each recommendation shows its numbers ("Toby: 14 runs, 12 found nothing to do").
+- **Early patterns** (owner, 2026-10-19): before 14 live days the same four rules run on the
+  live days so far, each evidence minimum halved (5 runs; 10 pieces and 5 decisions; 2
+  reopens), with the same shares. What they find shows under a bold "What Pulse sees so far,
+  not advice yet." as plain facts ("Toby's "Benefits inbox check" found nothing to do on 6
+  of 8 runs so far"), at most 3, the most evidence first: no Apply, no Not now, no saving,
+  and a model fact names no model. On day 14 the advice takes over (`adviceFor(input,
+  { from, scale })`, `PulseView.early`).
 - Model advice shows observed cost per piece; a projected saving appears only when
   both models have a known price (`knownPrice(model)` returns nothing for a model the
   table does not list, unlike `priceFor`, which falls back to Sonnet). Add Fable and
@@ -443,7 +457,7 @@ so the view can show what changed and when.
      -> PERSIST (insert telemetry_events, one prepared statement) -> PROCESSOR (cursor) -> rollups, runs, advice -> push
   shadow paths:
     nil agent id or unknown kind ......... dropped, counted in a debug counter (Section 8)
-    empty tasks.json / no cards .......... no card events; view shows zeros, says so
+    empty tasks.json / no cards .......... no card events; those tiles fold into quiet chips (pulse-smart-view.md, owner 2026-10-19)
     malformed tasks.json ................. tick skipped, last good snapshot kept (Section 2)
     insert fails ......................... D15: failure counted per day, flagged, advice skips the day
     duplicate event (replay after crash) . cursor saved in the same transaction as rollups: no double count

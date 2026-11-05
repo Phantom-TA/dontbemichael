@@ -44,3 +44,13 @@ test('autoplay tells the day: closed from the first frame, the opening, then ran
   assert.match(lab, /timers\.push\(at\(allIn \+ 1200, \(\) => \{/, 'events start once everyone is in');
   assert.match(lab, /if \(k === last\) k = \(k \+ 1\) % steps\.length;/, 'never the same event twice running');
 });
+
+test('the reference screens do not shoot the Meet step setup no longer has', () => {
+  // Value: protects=`npm run shoot` keeps working after the Meet step went; fails_when=tools/studio-lab/shoot.mjs or tools/studio-lab/reference.tsx still names it; why_new=owner 2026-10-30; seam=source pins; no_claim=the shots themselves
+  const fs = require('node:fs');
+  const path = require('node:path');
+  for (const f of ['tools/studio-lab/shoot.mjs', 'tools/studio-lab/reference.tsx']) {
+    assert.doesNotMatch(fs.readFileSync(path.resolve(__dirname, '..', f), 'utf8'), /onboarding-meet/, f);
+  }
+});
+

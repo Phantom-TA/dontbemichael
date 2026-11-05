@@ -219,7 +219,11 @@ test('an auth failure marks the mailbox needs-attention (MB-7); a network blip r
 
 test('errors are classified in plain words', () => {
   assert.equal(classifyMailError({ authenticationFailed: true }).kind, 'auth');
-  assert.equal(classifyMailError({ responseText: 'Application-specific password required' }).kind, 'provider-blocked');
+  // Google's "use an app password" reply is a wrong password, not a block
+  // (eng review of the Google step cards, 2026-10-26).
+  const google = classifyMailError({ responseText: '[ALERT] Application-specific password required: https://support.google.com/accounts/answer/185833 (Failure)' });
+  assert.equal(google.kind, 'auth');
+  assert.match(google.message, /^That is the normal Google password\. Google needs an app password instead/);
   assert.equal(classifyMailError({ code: 'ENOTFOUND' }).kind, 'network');
   assert.equal(classifyMailError({ code: 'EAUTH' }).kind, 'auth');
 });

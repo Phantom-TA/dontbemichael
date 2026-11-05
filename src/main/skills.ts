@@ -52,7 +52,8 @@ export interface CatalogSkill {
  *  and description is routinely a multi-line `|` block, which a naive
  *  key:value split would truncate at the first line. */
 export function parseSkillFrontmatter(md: string): { name?: string; description?: string } {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(md);
+  // A SKILL.md saved as "UTF-8 with BOM" starts with U+FEFF before its `---`.
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(md.replace(/^\uFEFF/, ''));
   if (!m) return {};
   const body = m[1];
   const out: { name?: string; description?: string } = {};
@@ -62,7 +63,8 @@ export function parseSkillFrontmatter(md: string): { name?: string; description?
   // Consecutive INDENTED lines after `description: |`. The earlier lookahead
   // form ended at `\r?\n?$`, which under /m matches the end of the FIRST line —
   // so every multi-line description silently arrived truncated to one line.
-  const blockM = /^description:\s*[|>]-?[ \t]*\r?\n((?:[ \t]+.*(?:\r?\n|$))+)/m.exec(body);
+  // A blank line inside the block is a paragraph break, not its end.
+  const blockM = /^description:\s*[|>]-?[ \t]*\r?\n((?:(?:[ \t]+.*|[ \t]*)(?:\r?\n|$))+)/m.exec(body);
   if (blockM) {
     out.description = blockM[1].split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(' ').trim();
   } else {

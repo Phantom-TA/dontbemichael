@@ -108,10 +108,47 @@ function luhn(digits: string): boolean {
   return sum % 10 === 0;
 }
 
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/;
+const isCard = (digits: string): boolean => digits.length >= 13 && digits.length <= 19 && luhn(digits);
+/** How card numbers start: Visa 4, Mastercard 51 to 55 and 22 to 27, Amex 34
+ *  and 37, Diners 30, 36 and 38, JCB 35, Discover 6011 and 65, UnionPay 62.
+ *  Lists of round numbers and years mostly start otherwise, so they are not
+ *  read as a card (owner review: a list of price tiers read as one). */
+const CARD_START = /^(?:4|5[1-5]|2[2-7]|3[04-8]|6011|6[25])/;
+
+/**
+ * Whether a run of digit groups holds a card number: the whole run, one solid
+ * group, or groups printed the way cards are (four digits that start like a
+ * card, then groups of four to six, the last of any length). Reading only the
+ * whole run missed a card written next to its expiry, its security code or
+ * another number ("4111 1111 1111 1111 12/27"): the extra digits failed the
+ * Luhn check.
+ */
+function hasCard(run: string): boolean {
+  const groups = run.split(/[ -]/);
+  if (isCard(groups.join(''))) return true;
+  for (let i = 0; i < groups.length; i++) {
+    if (isCard(groups[i])) return true;
+    if (groups[i].length !== 4 || !CARD_START.test(groups[i])) continue;
+    let digits = groups[i];
+    for (let j = i + 1; j < groups.length && digits.length < 19; j++) {
+      digits += groups[j];
+      if (isCard(digits)) return true;
+      // A group outside four to six digits can only end a card.
+      if (groups[j].length < 4 || groups[j].length > 6) break;
+    }
+  }
+  return false;
+}
+
+// The part before the @ is at most 64 characters (the email standard's limit).
+// Unbounded, a long run with no @ in it (digits, a key, a pasted blob) was
+// scanned to its end from every character: 60,000 of them took 1.5 s on the
+// main thread. Bounded, an address hidden at the end of a long run still matches.
+const EMAIL = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/;
 // A phone number: an optional +country code, then 9 to 15 digits in groups.
 const PHONE = /(?:^|[^\w])(\+?\d[\d\s().-]{7,}\d)(?![\w])/g;
-const CARD = /(?:\d[ -]?){12,18}\d/g;
+// Digit groups joined by one space or hyphen: "4111 1111 1111 1111 12/27".
+const DIGIT_RUN = /\d+(?:[ -]\d+)*/g;
 const IBAN = /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){2,7}(?:\s?[A-Z0-9]{1,4})?\b/;
 const US_SSN = /\b\d{3}-\d{2}-\d{4}\b/;
 const SECRETS: RegExp[] = [
@@ -124,6 +161,32 @@ const SECRETS: RegExp[] = [
   /\b(?:password|passwd|pwd|api[_ -]?key|secret|token)\s*[:=]\s*\S{6,}/i
 ];
 const LONG_DIGITS = /\b\d{9,}\b/;
+// A number grouped in thousands with dots, the European way: "1.234.567".
+const THOUSANDS = /^[1-9]\d{0,2}(?:\.\d{3}){2,}$/;
+
+// A decimal digit in any script ("१२३४", "٥٠١"). The patterns above match ASCII
+// digits only and NFKC leaves these alone, so an Aadhaar or account number
+// typed in Devanagari or Arabic-Indic digits passed as plain text.
+const OTHER_DIGIT = /(?![0-9])\p{Nd}/gu;
+const IS_DIGIT = /^\p{Nd}$/u;
+// Hyphens, dashes and minus signs other than '-'. NFKC turns the non-breaking
+// hyphen Word and Outlook put in phone numbers into U+2010, not '-', and keeps
+// dashes and the minus sign, so "555‑123‑4567" was not read as a phone.
+const OTHER_HYPHEN = /[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g;
+
+/**
+ * The ASCII digit for a decimal digit in any script. Unicode encodes every
+ * decimal digit in runs of ten, 0 to 9 in order, and back to back runs (the
+ * maths digits) are whole runs too, so a digit's value is its distance from
+ * the first digit of its stretch, modulo ten. This holds for scripts added
+ * later without a table to keep up to date.
+ */
+function asciiDigit(ch: string): string {
+  const cp = ch.codePointAt(0) as number;
+  let first = cp;
+  while (IS_DIGIT.test(String.fromCodePoint(first - 1))) first--;
+  return String((cp - first) % 10);
+}
 
 /**
  * The private data fixed patterns can see, each tied to its class so a
@@ -134,13 +197,15 @@ export function patternHits(text: string): PatternHit[] {
   const hits: PatternHit[] = [];
   // Fullwidth forms and invisible characters must not hide a shape (ship
   // review: an sk- key with a zero width space, a joiner or a Hangul filler
-  // inside passed as plain text).
-  const t = typeof text === 'string' ? text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '') : '';
+  // inside passed as plain text), and nor must digits in another script or
+  // a hyphen that is not '-'.
+  const t = typeof text === 'string'
+    ? text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(OTHER_DIGIT, asciiDigit).replace(OTHER_HYPHEN, '-')
+    : '';
   if (SECRETS.some((re) => re.test(t))) hits.push({ classId: 'secrets' });
   if (EMAIL.test(t)) hits.push({ classId: 'contact' });
-  for (const m of t.matchAll(CARD)) {
-    const digits = m[0].replace(/\D/g, '');
-    if (digits.length >= 13 && digits.length <= 19 && luhn(digits)) { hits.push({ classId: 'money' }); break; }
+  for (const m of t.matchAll(DIGIT_RUN)) {
+    if (hasCard(m[0])) { hits.push({ classId: 'money' }); break; }
   }
   if (IBAN.test(t)) hits.push({ classId: 'accounts' });
   if (US_SSN.test(t)) hits.push({ classId: 'accounts' });
@@ -154,8 +219,10 @@ export function patternHits(text: string): PatternHit[] {
   for (const m of plain.matchAll(PHONE)) {
     const digits = m[1].replace(/\D/g, '');
     // Years, prices and plain counts are not phone numbers: a phone has 9 to
-    // 15 digits and either a + or a separator inside it.
-    if (digits.length >= 9 && digits.length <= 15 && (/^\+/.test(m[1]) || /[\s().-]/.test(m[1])) && !/\d\.\d{3}\.\d{3}/.test(m[1])) {
+    // 15 digits and either a + or a separator inside it. A count grouped in
+    // thousands ("1.234.567.890") is not one either, but only a whole number
+    // grouped that way: "555.123.4567" is a dotted phone number.
+    if (digits.length >= 9 && digits.length <= 15 && (/^\+/.test(m[1]) || /[\s().-]/.test(m[1])) && !m[1].split(/[\s()]+/).some((n) => THOUSANDS.test(n))) {
       hits.push({ classId: 'contact' });
       break;
     }

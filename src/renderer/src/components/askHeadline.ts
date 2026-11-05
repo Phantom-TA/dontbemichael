@@ -8,7 +8,11 @@
 const SENTENCE_LEAD = /^[\s\S]*?(?:(?<!\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|inc|ltd|co|corp|approx|dept|est|etc|u\.s|u\.k|e\.g|i\.e|a\.m|p\.m)|\bno(?=\.\s*\d))[.?!](?=\s|$)|\n|$)/i;
 
 export function askHeadline(q: string): string {
-  const text = q.trim();
+  // A quote, list or checkbox marker opening the ask is layout, not its first
+  // words. A > is a quote only when quoted text clearly follows it (a letter, a
+  // list or number marker, bold or a quote mark); anything else is a comparison
+  // and stays, so "> $500", "> 5 days" and ">= 2" keep their meaning.
+  const text = q.trim().replace(/^(?:>(?=\s*(?:\p{L}|[-*+]\s|\d{1,3}[.)]\s|\*\*|["'“‘(]))\s*|[-*+]\s+(?:\[[ xX]\]\s+)?|[0-9٠-٩۰-۹]{1,3}[.)]\s+)+/u, '');
   const bold = /^\*\*([\s\S]+?)\*\*/.exec(text);
   const lead = bold ? bold[1] : (SENTENCE_LEAD.exec(text)?.[0] ?? text);
   return lead

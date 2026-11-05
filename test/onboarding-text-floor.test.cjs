@@ -3,7 +3,8 @@
 /**
  * Setup text is 14px or larger, with a 20px line height (owner rule, #151).
  * Business and Team were raised in #138. Welcome and Permissions, and the
- * toggle rows only those steps use, stay on the same floor.
+ * toggle rows only those steps use, stay on the same floor, as do Home and
+ * Manager (#416).
  */
 
 const test = require('node:test');
@@ -36,8 +37,21 @@ function assertFloor(label, source) {
   }
 }
 
-test('Welcome and Permissions setup text stays at 14px', () => {
-  assertFloor('Welcome', between("{step === 'welcome' && (", "{step === 'home' && ("));
+test('Permissions setup text stays at 14px', () => {
   assertFloor('Permissions', between("{step === 'permissions' && (", '{error && ('));
   assertFloor('ToggleRow', between('function ToggleRow', 'function Dots'));
+});
+
+test('Home and Manager setup text meets the 14px floor (#416)', () => {
+  assertFloor('Home', between("{step === 'home' && (", "{step === 'orchestrator' && ("));
+  assertFloor('Manager (orchestrator)', between("{step === 'orchestrator' && (", "{step === 'team' && ("));
+});
+
+// The setup fields (the Manager model picker among them) spread this shared
+// style, so its size never shows up inside a step's own source.
+test('the shared setup field style meets the 14px floor', () => {
+  const style = between('const inputStyle: React.CSSProperties = {', '};');
+  const size = style.match(/fontSize:\s*(\d+(?:\.\d+)?)/);
+  assert.ok(size, 'inputStyle names no text size');
+  assert.ok(Number(size[1]) >= 14, `inputStyle has fontSize ${size[1]}, under the 14px floor`);
 });

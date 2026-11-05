@@ -147,6 +147,46 @@ test('indirect asks and money or data moves are held too', () => {
   ]) assert.equal(classifyInboundKind(text), 'directive', text);
 });
 
+test('asking if it is fine, alright or safe to act, or to charge, wipe or erase, is held too', () => {
+  // Value: protects=a request to spend money or destroy data waits for approval however politely it asks; fails_when=fine to, alright to, safe to, objection or these action words pass as chatter; why_new=they reached Michael without approval in communication-only mode; seam=none; no_claim=phrasings no one tried
+  for (const text of [
+    'Is it alright to erase the backups?',
+    'Is it all right to erase the backups?',
+    'Is it fine to charge the client now?',
+    'Is it safe to wipe the server now?',
+    'Is now a good time to purge the logs?',
+    'Any objection to charging the card?',
+    'Did you purchase the licences?',
+    'When do we spend the ad budget?',
+    'Is it time to destroy the old records?'
+  ]) assert.equal(classifyInboundKind(text), 'directive', text);
+});
+
+test('any to before a verb, an ok if, an or, or a dot inside a word is held, whatever the synonym', () => {
+  // Value: protects=the rule holds a request it has no word for; fails_when=a new synonym for allowed, a word between safe and to, a dot joining two words, ok if, or or a verb missing from the list lets a request through; why_new=review on #540 found each of these passing; seam=none; no_claim=a verb that isn't on the list, in a question with no to
+  for (const text of [
+    'Is it acceptable to drop the database?',
+    'Is it allowed to truncate the logs?',
+    'Is it safe for us to drop the database?',
+    'Is it safe.to drop the database?',
+    'Is it ok if I drop the table?',
+    'Is it time to bill the client or revoke access?',
+    'Is it time to overcharge the client?',
+    'When do we bill the client?',
+    'Did you invoice them?',
+    'Has Oscar invoiced the client?',
+    'Is it fine if we nuke the cache?'
+  ]) assert.equal(classifyInboundKind(text), 'directive', text);
+  // Each of these is held by one new rule alone ("zap" is on no list), so
+  // taking that rule out lets it through.
+  assert.equal(classifyInboundKind('Is the job done or can we zap the server?'), 'directive', 'or joins two clauses');
+  assert.equal(classifyInboundKind('Is it done.zap the server?'), 'directive', 'a dot inside a word');
+  assert.equal(classifyInboundKind('Is it ok if we zap the server?'), 'directive', 'ok if');
+  for (const text of ['Is it raining?', 'Is now a good time?', 'How long has the job been running?', 'Who is on call today?', 'Is the standup at 10:30?', 'Any news on the invoice?']) {
+    assert.equal(classifyInboundKind(text), 'communication', text);
+  }
+});
+
 test('only a short, plain status question flows; anything longer or naming an address, link or amount waits', () => {
   // Value: protects=a new phrasing that moves data or money fails safe; fails_when=the length, address, link, amount or clause rule is dropped; why_new=owner chose fail closed after two review rounds (2026-10-14); seam=none; no_claim=none beyond protects
   for (const text of [

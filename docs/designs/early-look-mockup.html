@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Early Look Options</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cth-bg:#F7F7FB;--cth-card:#FFFFFF;--cth-card-2:#FAFAFD;--cth-ink:#1E1B2E;--cth-ink-2:#4A4660;--cth-ink-3:#6C6884;--cth-ink-4:#B4B1C6;
+  --cth-line:#E8E6F2;--cth-line-2:#DAD7EA;--cth-neutral-soft:#F0EFF5;
+  --cth-green:#1FB872;--cth-green-soft:#E3F7EC;--cth-green-text:#157D4D;
+  --cth-amber:#F2A93B;--cth-amber-soft:#FFF4DF;--cth-amber-text:#8F5C07;
+  --cth-indigo:#6C5CE7;--cth-indigo-soft:#EEEBFD;--cth-indigo-text:#4338CA;
+  --cth-r-md:9px;--cth-r-lg:12px;--cth-r-xl:14px;--cth-r-pill:999px;
+  --ui:"Sora",-apple-system,system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --cth-bg:#14131C;--cth-card:#1F1E2B;--cth-card-2:#24233A;--cth-ink:#ECEAF4;--cth-ink-2:#C9C6D9;--cth-ink-3:#A5A2B8;--cth-ink-4:#5E5B73;
+  --cth-line:rgba(255,255,255,.09);--cth-line-2:rgba(255,255,255,.14);--cth-neutral-soft:#2A2938;
+  --cth-green-soft:rgba(31,184,114,.16);--cth-green-text:#5FD49B;--cth-amber-soft:rgba(242,180,90,.15);--cth-amber-text:#F2B45A;
+  --cth-indigo-soft:rgba(157,144,255,.16);--cth-indigo-text:#A99FFF;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cth-bg);color:var(--cth-ink);font-family:var(--ui);padding:24px 16px 56px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:18px;margin:0 0 4px}
+.lead{color:var(--cth-ink-3);font-size:13px;margin:0 0 28px;line-height:19px;max-width:80ch}
+.opt{margin-bottom:44px}
+.opt h2{font-size:15px;margin:0 0 4px}
+.opt .why{font-size:12.5px;color:var(--cth-ink-3);margin:0 0 12px;line-height:18px;max-width:90ch}
+.tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:99px;background:var(--cth-indigo-soft);color:var(--cth-indigo-text);margin-left:6px;vertical-align:2px}
+.sec{font-size:16px;font-weight:600;margin:0 0 10px;display:flex;align-items:center;gap:6px}
+.i{width:15px;height:15px;border-radius:50%;border:1.3px solid var(--cth-ink-3);color:var(--cth-ink-3);font-size:9px;display:inline-grid;place-items:center;font-weight:600}
+.card{background:var(--cth-card);border-radius:var(--cth-r-xl);box-shadow:inset 0 0 0 1px var(--cth-line),0 2px 8px rgba(30,27,46,.05);overflow:hidden}
+.hdr{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;background:linear-gradient(90deg,var(--cth-indigo-soft),transparent 70%)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:var(--cth-r-pill);background:var(--cth-indigo-soft);color:var(--cth-indigo-text);font-size:11px;font-weight:600}
+.title{font-size:14px;font-weight:600}
+.count{margin-left:auto;display:inline-flex;align-items:center;gap:10px;font-size:11px;color:var(--cth-ink-3);white-space:nowrap}
+.bar{width:120px;height:6px;border-radius:99px;background:var(--cth-neutral-soft);overflow:hidden}.bar i{display:block;height:100%;width:86%;background:var(--cth-indigo);border-radius:99px}
+.body{padding:6px 16px 16px}
+/* What Pulse watches: four rules */
+.watch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:8px 0 14px}
+.rule{border-radius:var(--cth-r-lg);padding:11px 12px;box-shadow:inset 0 0 0 1px var(--cth-line);background:var(--cth-card-2);display:flex;flex-direction:column;gap:6px;min-width:0}
+.rule.on{background:var(--cth-indigo-soft);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--cth-indigo) 35%,transparent)}
+.rule .top{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600}
+.ico{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:var(--cth-card);box-shadow:inset 0 0 0 1px var(--cth-line);font-size:12px}
+.rule .st{font-size:12px;color:var(--cth-ink-2)}
+.rule.on .st{color:var(--cth-indigo-text);font-weight:600}
+.meter{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--cth-ink-3)}
+.meter .m{flex:1;height:5px;border-radius:99px;background:var(--cth-neutral-soft);overflow:hidden}.meter .m i{display:block;height:100%;background:var(--cth-ink-4);border-radius:99px}
+.kicker{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--cth-ink-3);margin:2px 0 8px}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.ec{background:var(--cth-card-2);border-radius:var(--cth-r-lg);box-shadow:inset 0 0 0 1px var(--cth-line);padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.who{display:flex;gap:10px;align-items:center}
+.av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:600;color:#fff}
+.name{font-size:13px;font-weight:600}.sub{font-size:11px;color:var(--cth-ink-3)}
+.big{font-family:var(--mono);font-size:26px;font-weight:600;line-height:28px}.big span{font-family:var(--ui);font-size:12px;font-weight:400;color:var(--cth-ink-3);margin-left:6px}
+.split{display:flex;height:8px;gap:2px;border-radius:99px;overflow:hidden;background:var(--cth-neutral-soft)}
+.cap{font-size:12px;color:var(--cth-ink-2)}
+.rtag{align-self:flex-start;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:99px;background:var(--cth-neutral-soft);color:var(--cth-ink-3)}
+/* Option B */
+.rows{display:flex;flex-direction:column;gap:14px;margin-top:8px}
+.row{display:grid;grid-template-columns:150px 1fr;gap:14px;align-items:start}
+.rowh{padding-top:4px}.rowh b{display:block;font-size:13px}.rowh small{font-size:11.5px;color:var(--cth-ink-3);line-height:16px;display:block;margin-top:2px}
+.members{display:flex;flex-wrap:wrap;gap:8px}
+.mem{display:flex;align-items:center;gap:8px;padding:7px 10px 7px 7px;border-radius:var(--cth-r-lg);background:var(--cth-card-2);box-shadow:inset 0 0 0 1px var(--cth-line);font-size:12px;min-width:150px}
+.mem .av{width:22px;height:22px;font-size:10px}
+.mem .mt{flex:1;display:flex;flex-direction:column;gap:3px}
+.mem .mt .m{height:4px;border-radius:99px;background:var(--cth-neutral-soft);overflow:hidden}.mem .mt .m i{display:block;height:100%;background:var(--cth-ink-4)}
+.mem .n{font-family:var(--mono);font-size:11px;color:var(--cth-ink-3)}
+.mem.close .mt .m i{background:var(--cth-indigo)}
+.note{font-size:11.5px;color:var(--cth-ink-3);margin-top:8px}
+@media (max-width:820px){.watch{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:1fr}.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Early look: show everything Pulse watches</h1>
+<p class="lead">Today the Early look only shows patterns it has found. In your office those are two schedules, so it reads as if Pulse only looks at schedules. Both options below also show the rules that have found nothing yet, including the two model rules, and how close each one is. Numbers are your office's, 15 to 26 Oct.</p>
+
+<!-- ───────────── Option A ───────────── -->
+<div class="opt">
+  <h2>A. A row of the four things Pulse watches <span class="tag">Recommended</span></h2>
+  <p class="why">Four small tiles across the top, one per rule. A rule with a pattern is lit and its cards sit below with a label naming the rule; a rule still waiting says what it waits for. The dashed "More patterns" box goes.</p>
+  <div class="sec">Recommendations <span class="i">i</span></div>
+  <div class="card">
+    <div class="hdr">
+      <span class="pill">✦ Early look</span>
+      <span class="title">What Pulse sees so far, not advice yet.</span>
+      <span class="count">Day 12 of 14 <span class="bar"><i></i></span> Advice from Thu, Oct 29</span>
+    </div>
+    <div class="body">
+      <div class="watch">
+        <div class="rule on">
+          <div class="top"><span class="ico">⏱</span>Schedules finding nothing</div>
+          <div class="st">2 so far</div>
+        </div>
+        <div class="rule">
+          <div class="top"><span class="ico">⇡</span>Schedules with more to do</div>
+          <div class="st">None yet</div>
+        </div>
+        <div class="rule">
+          <div class="top"><span class="ico">↓</span>A cheaper model</div>
+          <div class="st">None yet</div>
+          <div class="meter"><span class="m"><i style="width:100%"></i></span>Nick: 10 of 10 kept as is</div>
+        </div>
+        <div class="rule">
+          <div class="top"><span class="ico">↑</span>A stronger model</div>
+          <div class="st">Nothing worrying</div>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="ec">
+          <span class="rtag">Schedule finding nothing</span>
+          <div class="who"><span class="av" style="background:#1E1B2E">M</span><div><div class="name">Michael</div><div class="sub">Hourly ops standup</div></div></div>
+          <div class="big">184<span>of 201 runs</span></div>
+          <div class="split"><i style="flex:184;background:var(--cth-ink-4)"></i><i style="flex:17;background:var(--cth-green)"></i></div>
+          <div class="cap">found nothing to do so far</div>
+        </div>
+        <div class="ec">
+          <span class="rtag">Schedule finding nothing</span>
+          <div class="who"><span class="av" style="background:#E2617E">K</span><div><div class="name">Kelly</div><div class="sub">Check emails</div></div></div>
+          <div class="big">48<span>of 60 runs</span></div>
+          <div class="split"><i style="flex:48;background:var(--cth-ink-4)"></i><i style="flex:12;background:var(--cth-green)"></i></div>
+          <div class="cap">found nothing to do so far</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">The (i) beside each tile says what the rule checks, in one line. Nick's 10 of 10 is your 2 email approvals plus his 8 finished cards; he still gets no cheaper model today because the rule also wants 5 email decisions. That rule is a separate change.</p>
+</div>
+
+<!-- ───────────── Option B ───────────── -->
+<div class="opt">
+  <h2>B. Two rows: schedules and models</h2>
+  <p class="why">The cards split into a Schedules row and a Models row. The Models row lists every member with how much evidence Pulse has toward a model change, so the owner sees all twelve are being watched, not only the two with a pattern.</p>
+  <div class="sec">Recommendations <span class="i">i</span></div>
+  <div class="card">
+    <div class="hdr">
+      <span class="pill">✦ Early look</span>
+      <span class="title">What Pulse sees so far, not advice yet.</span>
+      <span class="count">Day 12 of 14 <span class="bar"><i></i></span> Advice from Thu, Oct 29</span>
+    </div>
+    <div class="body">
+      <div class="rows">
+        <div class="row">
+          <div class="rowh"><b>Schedules</b><small>Runs that find nothing, or more work than they can do</small></div>
+          <div class="grid">
+            <div class="ec">
+              <div class="who"><span class="av" style="background:#1E1B2E">M</span><div><div class="name">Michael</div><div class="sub">Hourly ops standup</div></div></div>
+              <div class="big">184<span>of 201 runs</span></div>
+              <div class="split"><i style="flex:184;background:var(--cth-ink-4)"></i><i style="flex:17;background:var(--cth-green)"></i></div>
+              <div class="cap">found nothing to do so far</div>
+            </div>
+            <div class="ec">
+              <div class="who"><span class="av" style="background:#E2617E">K</span><div><div class="name">Kelly</div><div class="sub">Check emails</div></div></div>
+              <div class="big">48<span>of 60 runs</span></div>
+              <div class="split"><i style="flex:48;background:var(--cth-ink-4)"></i><i style="flex:12;background:var(--cth-green)"></i></div>
+              <div class="cap">found nothing to do so far</div>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="rowh"><b>Models</b><small>Work you kept as is, of your decisions on it: drafts and finished cards</small></div>
+          <div class="members">
+            <div class="mem close"><span class="av" style="background:#2F9E76">N</span><div class="mt"><span>Nick</span><span class="m"><i style="width:100%"></i></span></div><span class="n">10/10</span></div>
+            <div class="mem close"><span class="av" style="background:#C2410C">D</span><div class="mt"><span>Dwight</span><span class="m"><i style="width:100%"></i></span></div><span class="n">7/7</span></div>
+            <div class="mem close"><span class="av" style="background:#B45309">R</span><div class="mt"><span>Ryan</span><span class="m"><i style="width:100%"></i></span></div><span class="n">6/6</span></div>
+            <div class="mem"><span class="av" style="background:#7A5AF8">P</span><div class="mt"><span>Pam</span><span class="m"><i style="width:78%"></i></span></div><span class="n">7/9</span></div>
+            <div class="mem"><span class="av" style="background:#E2617E">K</span><div class="mt"><span>Kelly</span><span class="m"><i style="width:100%"></i></span></div><span class="n">3/3</span></div>
+            <div class="mem"><span class="av" style="background:#6C6884">+6</span><div class="mt"><span>6 more</span><span class="m"><i style="width:0%"></i></span></div><span class="n">few</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">Michael is left out of the Models row: Pulse never suggests a cheaper model for him. Twelve members do not fit on one line, so the row folds after the five with the most evidence. Counts are from your records, 15 to 26 Oct, assuming no card was reopened.</p>
+</div>
+</div>
+</body>
+</html>

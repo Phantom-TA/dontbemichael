@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { layoutGraph, LANE_COLORS } from './graph';
+import { layoutGraph, LANE_COLORS, runLane } from './graph';
 
 /**
  * Commit history — lane rail + one line per commit.
@@ -106,30 +106,37 @@ export function CommitGraph({ commits, currentBranch, onCommitClick }: CommitGra
         {rows.map((r, i) => {
           const x1 = laneX(r.lane);
           const y1 = rowY(i);
-          return r.parents.map((p) => {
+          return r.parents.map((p, k) => {
             const j = rowIndex.get(p.sha);
             const color = LANE_COLORS[Math.min(p.lane, MAX_LANES - 1) % LANE_COLORS.length];
+            // The straight run's lane (runLane): a merge's other parent turns
+            // into its own lane just below the merge, a quarter-turn out of the dot.
+            const xr = laneX(runLane(r, k));
+            const start = xr === x1 ? `M ${x1} ${y1}` : `M ${x1} ${y1} Q ${xr} ${y1} ${xr} ${y1 + BEND}`;
             // Parent outside the fetched window: run the line to the bottom edge
             // rather than dropping it, so the lane doesn't just stop mid-air.
+            // The index is in the key: a commit may name the same parent twice.
             if (j === undefined) {
               return (
                 <path
-                  key={`${r.sha}-${p.sha}`}
-                  d={`M ${x1} ${y1} L ${x1} ${height}`}
+                  key={`${r.sha}-${k}-${p.sha}`}
+                  d={`${start} L ${xr} ${height}`}
                   stroke={color} strokeWidth={1.5} fill="none" opacity={0.5}
                 />
               );
             }
-            const x2 = laneX(p.lane);
+            // The parent's own lane, where its dot is: a lane kept for the line
+            // can sit beside it when two branches share the parent.
+            const x2 = laneX(rows[j].lane);
             const y2 = rowY(j);
-            const d = x1 === x2
-              ? `M ${x1} ${y1} L ${x2} ${y2}`
-              // Straight down the child's lane, then a quarter-turn into the
+            const d = xr === x2
+              ? `${start} L ${x2} ${y2}`
+              // Straight down the run's lane, then a quarter-turn into the
               // parent — the shape a git graph is expected to make.
-              : `M ${x1} ${y1} L ${x1} ${y2 - BEND} Q ${x1} ${y2} ${x2} ${y2}`;
+              : `${start} L ${xr} ${y2 - BEND} Q ${xr} ${y2} ${x2} ${y2}`;
             return (
               <path
-                key={`${r.sha}-${p.sha}`}
+                key={`${r.sha}-${k}-${p.sha}`}
                 d={d}
                 stroke={color} strokeWidth={1.5} fill="none"
               />

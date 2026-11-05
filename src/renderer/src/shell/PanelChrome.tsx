@@ -109,7 +109,8 @@ function NoteRow({ agent }: { agent: Agent }) {
   const save = () => { useStore.getState().setAgentNote(agent.id, draft.trim()); setEditing(false); };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (isComposingKey(e)) return;
-    if (e.key === 'Escape') { setEditing(false); }
+    // Marked, so the column's Esc leaves the panel where it is.
+    if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
   };
   if (editing) {

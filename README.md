@@ -14,9 +14,11 @@
   <img src="./branding/reference/studio/home-light.png" alt="The office: a pod for each department around Michael's glass office, and the Needs you board on the right with what waits on you" width="1240">
 </picture>
 
-Pick your kind of business, pick your team, and Michael, your office manager, runs the office
-while you run the business. Every team member is an AI agent with a job, its own folder and its
-own memory, working on your computer.
+Pick your kind of business and choose your team. Michael, your office manager, runs the office
+while you run the business.
+
+Every team member is an AI agent with a clear job, its own folder, and its own memory. Everything
+runs on your computer.
 
 <p>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-FF6B6B.svg?style=flat-square&labelColor=1A1320"></a>
@@ -39,10 +41,9 @@ own memory, working on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.2.3: the office clocks in, and Waiting cards come back.**
-> A card shows your team arriving as the office opens. A card waiting on a customer or supplier
-> gets a check back time, Michael follows up, and after two follow ups with no reply he asks you.
-> Pulse lists what the team learned, and you can run a scheduled job now. In 0.2.2, Pulse arrived.
+> **New in 0.3.5: Get featured with a case study of your office.**
+> Pulse builds a customer story page in your own brand. In 0.3.4, one team member gets access to
+> one outside service.
 
 ## Contents
 
@@ -54,26 +55,27 @@ own memory, working on your computer.
 - [Your data](#your-data)
 - [For developers](#for-developers)
 - [Contributing](#contributing)
-- [Where it came from](#where-it-came-from)
 - [License](#license)
 - [Acknowledgements](#acknowledgements)
 
 ## What it is
 
 Don't Be Michael is a desktop app that runs a small office of AI team members for your business.
-Each team member is a [Claude Code](https://claude.com/claude-code) agent with a role: finance,
-customer support, sales, marketing and so on. Michael is the office manager. You talk to him; he
-routes the work, answers the team's questions, and asks you only when something needs your
-decision.
+
+Each team member is a [Claude Code](https://claude.com/claude-code) agent with a specific role
+(finance, customer support, sales, marketing, and more). Michael is the office manager. You talk
+to him. He routes the work, answers the team's questions, and only brings you the decisions that
+need your attention.
 
 Everything runs on your computer, on the Claude plan you already have. Each team member has a
-desk in an office you can watch, a pod for each department around Michael's glass office, so you
-can see who is working on what.
+desk in an office you can watch, with a pod for each department around Michael's glass office, so
+you can see who is working on what.
 
 ## Your team
 
-Setup asks for your business and your kind of business, then suggests a team from that business's
-Office Pack. You pick who joins, and you can hire more later.
+During setup, you tell the app your business name and the kind of business you run. It then
+suggests a starting team from that business type's Office Pack. You choose who joins, and you can
+hire more team members later.
 
 | Kind of business | Suggested team |
 |---|---|
@@ -102,11 +104,11 @@ business runs on, and each team member works from the one that matches its job.
 - **Connect once.** In Settings, Connections, Mailboxes, add Gmail, Google Workspace, iCloud,
   Yahoo, Zoho or any other IMAP mailbox with an app password. The login is tested before it is
   saved, and the password stays encrypted on your computer, never in a file an agent can read.
-- **Hand it out per team member.** On a team member's Access tab, under Email, choose **Add a
-  mailbox**, pick it, choose **Watch the inbox**, and set **Can send**, **Send on approval** or **Draft only**. Nobody gets a mailbox until you give it one,
-  and each mailbox is watched by one team member: moving it to another asks you first.
-- **Let another team member send from it.** Add a mailbox someone else watches and choose
-  **Send only**, with its own Can send, Send on approval or Draft only.
+- **Hand it out per team member.** On a team member's Access tab, under Email, choose **Give them a
+  mailbox**, pick it, choose **Read and answer email**, and set **Can send**, **Send on approval** or **Draft only**. Nobody gets a mailbox until you give it one,
+  and each mailbox is read by one team member: moving it to another asks you first.
+- **Let another team member send from it.** Give them a mailbox someone else reads and choose
+  **Only send email**, with its own Can send, Send on approval or Draft only.
   Sales can send outreach from the CEO's address without reading the CEO's inbox: replies land
   with the mailbox's own team member, who passes them on. The mailbox shows who else sends from it.
 - **You choose how mail leaves.** Can send goes out at once. Send on approval puts each email on
@@ -120,6 +122,10 @@ business runs on, and each team member works from the one that matches its job.
 - **Each one stays in its lane.** A team member reads, searches, files (archive, mark read, mark
   junk), drafts and sends only as you allowed, in the mailbox you gave it, and cannot forward or
   attach mail from another one. Nothing it does deletes mail.
+- **Attachments land in its own folder.** A team member saves an attachment to Email attachments in
+  its own folder and reads it there. Programs, scripts and archives are refused, and what is saved
+  is marked as a download and never run. A teammate who needs the file asks for it, and the app
+  copies it across, so nobody opens another team member's folder.
 - **Put it on a clock.** Add a schedule like "Check the support inbox" every hour in the same tab,
   with a focus area for each run, and the team member sorts new mail, answers it as its Sending
   setting allows and tells Michael what needs you. A new Executive Admin arrives with an Inbox to zero job already set.
@@ -222,8 +228,7 @@ member's work live.
 
 Setup asks for your business name, your kind of business, the owner and your headquarters
 address. Contact details, hours and prices are optional and can wait for Settings. Michael then
-shows you around the office and suggests a starter team: you pick who joins and where each one
-works. The last step, Get Michael ready, installs Claude Code if your computer doesn't have it
+suggests a starter team: you pick who joins and where each one works. The last step, Get Michael ready, installs Claude Code if your computer doesn't have it
 and signs you in where you can see it, or takes an Anthropic API key instead.
 
 </td>
@@ -233,28 +238,28 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 </tr>
 <tr>
 <td width="50%">
-  <img src="./branding/reference/studio/onboarding-meet.png" alt="Setup step 3: Michael explains the starter team, how he runs the office, memory and approvals" width="100%">
+  <img src="./branding/reference/studio/onboarding-team.png" alt="Setup step 3: pick your starter team; the office fills with a pod for each person picked" width="100%">
 </td>
-<td width="50%">
-  <img src="./branding/reference/studio/onboarding-team.png" alt="Setup step 4: pick your starter team; the office fills with a pod for each person picked" width="100%">
-</td>
+<td width="50%"></td>
 </tr>
 </table>
 
 **Running the office**
 - **Needs you.** When the team needs a decision, Michael puts it on the Needs you board. Your answer goes back to whoever asked, and they remember it. Michael gets it too, as work he routes and then closes. Choices show as rows you pick with a click, and several questions get a line each; answer only some, and the rest go back to whoever asked.
-- **Michael answers in the app.** A question you type in the Talk to Michael box opens a conversation above it. Each question shows where it stands, such as Michael has it, Waiting for you or Answered, and his reply arrives under it, with one count on the box and one notification per answer. Commands such as /clear still go straight to his terminal. Scheduled outcomes, such as a weekly summary, arrive on Needs you as quiet Report cards you clear with Got it.
+- **Michael answers in the app.** A question you type in the Talk to Michael box opens a conversation above it. Each question shows where it stands, such as Michael has it, Waiting for you or Answered, and his reply arrives under it, with one count on the arrow beside the box and one notification per answer. It opens on your latest question, and older ones fold behind Show earlier. Commands such as /clear still go straight to his terminal. Scheduled outcomes, such as a weekly summary, arrive on Needs you as quiet Report cards you clear with Got it.
 - **Schedules.** Each team member's jobs on a clock live in the On a schedule section of its Access tab. Say when and which job ("Follow up on unpaid invoices", every weekday at 9), and the team member does it the way its Work style says. One job can have several "when" lines, like every 2 hours on weekdays plus 2 pm on weekends. A team member can ask for a schedule change; Michael decides it, and asks you on Needs you only when he can't settle it. Michael's Office schedule tab lists every job that is on.
 - **A mailbox for each team member.** Connect Gmail, Google Workspace, iCloud, Yahoo, Zoho or any other IMAP mailbox with an app password in Settings, Connections, Mailboxes. The password is tested before it is saved and stays encrypted on your computer. Then add it on a team member's Access tab to watch its inbox, and choose Can send, Send on approval or Draft only. Each mailbox has one team member watching it; others can be added to send only from it. Outlook is not supported yet.
 - **Claude connectors.** Settings, Connections, Claude connectors lists every connector on your Claude account (HubSpot, Google Drive, Gmail, QuickBooks and the rest), read from Claude by itself. Each is off until you turn it on; then give it to the team members who need it on their Access tab. QuickBooks keeps Read only or Can make changes, and Oscar starts on and Read only. Your own Claude Code servers, plugin servers included, never reach the team.
-- **Every team member's panel.** Profile first (the job, its folder and the instructions it works from), then Access (email, Claude connectors, and schedules), Messages as a day by day history, Memory as readable notes, and Work, its session live.
-- **Office, Tasks, Pulse, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, Pulse (what the office got done and what each team member costs, with ways to save that change nothing until you click Apply), and who talks to whom. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these, while PDF and Office files open in their own app.
+- **Integrations.** Add an outside service with a custom REST integration in Settings. Nobody has it until you give it to a team member on its Access tab, as Read only or Can change, and taking it away holds on the next call. The app keeps the key. A connection can hold one saved call: the team member sends only its words, and the app builds the request. For team members on Claude.
+- **Every team member's panel.** Profile first (the job, its folder and the instructions it works from), then Access (email, Claude connectors, integrations and schedules), Messages as a day by day history, Memory as readable notes, and Work, its session live.
+- **Office, Tasks, Pulse, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, Pulse (what the office got done and what each team member costs, with ways to save that change nothing until you click Apply), and who talks to whom. Get featured in Pulse builds a case study page of your office in your own brand, for you to send us. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these. Word, Excel, PowerPoint and PDF files show their words in a tab too, with Open in app for the file itself. A team folder named on a card opens that folder.
 - **Webhooks.** Another app sends a webhook (set it up in Settings, Connections) and Michael picks it up; the sender can check on the work and get its result.
 - **A fresh start without losing work.** A team member that has sat idle with a long conversation writes a handoff of anything unfinished, then starts fresh. You can bring the old conversation back.
 
 **Your business, known to everyone**
 - **Company profile.** Your business name, owner, address, hours, time zone, currency and more, given to every team member. Change it in Settings.
-- **Company knowledge.** Add your documents and policies in Memory & Knowledge: Word, Excel, PowerPoint, PDF, and scans or photos (on a Mac or a Windows PC). Every team member can search them by words, and by meaning when MemPalace is installed, so "money back" finds your refund policy.
+- **Company knowledge.** Add your documents and policies in Memory & Knowledge: Word, Excel, PowerPoint, PDF, and scans or photos (on a Mac or a Windows PC). Every team member can search them by words, and by meaning when MemPalace is installed, so "money back" finds your refund policy. Open one to read or change it in your own app; when you save, the team searches the new version.
+- **Company foundations.** One document of what each job needs to know about your business, such as who you sell to or your financial year. When a team member's work needs an answer that is still empty, Michael asks you for it on Needs you, weekly until it is answered, and what you teach the team fills it in too. A list, such as your customers or every place money comes in and goes out, stays open until you save it as the whole list, and anything the team's work saw that is missing from it waits on its card for you to add, mark Not ours or decide later.
 
 **Private folders**
 - Michael works in your business folder, and each team member works in its own folder inside it.
@@ -285,12 +290,11 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 
 1. Download the `.dmg` from the [latest release](https://github.com/agentvivekkumar/dontbemichael/releases/latest).
 2. Open it and drag **Don't Be Michael** into your Applications folder.
-3. Open it from Applications. The first time, macOS says it could not verify the app. Click
-   **Done**, then open **System Settings → Privacy & Security**, scroll to the message about Don't
-   Be Michael and click **Open Anyway**.
+3. Open it from Applications. The first time, macOS asks if you're sure you want to open an app
+   downloaded from the internet. Click **Open**.
 
-You only do step 3 once. macOS asks because this early build is not yet signed with an Apple
-Developer ID. Setup takes it from there.
+You only do step 3 once. The app is signed with an Apple Developer ID and notarized by Apple.
+Setup takes it from there.
 
 **On Windows 11**
 
@@ -313,7 +317,13 @@ follow.
   trust layer that keeps out the kinds of data you mark private in Settings, Research & privacy,
   and their answers are cleaned of instructions before your team reads them. They see none of your
   files, and they are off until you turn them on. On Windows, they can still reach your office files.
-- **No usage data.** The app sends nothing about how you use it. See [`TELEMETRY.md`](./TELEMETRY.md).
+  The one exception: when you start your case study, the app reads your logo from your own website.
+- **A case study, only if you send it.** Pulse can build a case study page of your office for
+  our website. It goes out only when you press Send, from your own mailbox, after you agree we may
+  publish it and take it down if you ask. See [`TELEMETRY.md`](./TELEMETRY.md#case-studies-you-send-us).
+- **No usage data.** The app sends nothing about how you use it. Failures the developers can fix
+  in code (a crash, a team member stuck in a loop) are reported automatically, as fixed fields with
+  no names, messages or files, so they get fixed. See [`TELEMETRY.md`](./TELEMETRY.md).
 
 ## For developers
 
@@ -358,8 +368,8 @@ Setup offers only Claude Code, signed in with a Claude account or an Anthropic A
 still carries presets for other agent CLIs (Codex, Gemini, Antigravity, Grok, Kimi, Qwen, OpenCode, Crush, pi,
 Copilot and Cursor), API keys for other providers and local models,
 but this build doesn't offer them. Some developer features are switched off because business
-owners don't use them: git views, the built in code editor, temporary helper agents, voice, and
-opening a Terminal in an agent's folder. Each one has a switch in
+owners don't use them: git views, the built in code editor, temporary helper agents, voice, the
+Skills page in Settings (skills keep working), and opening a Terminal in an agent's folder. Each one has a switch in
 [`src/shared/buildFeatures.ts`](./src/shared/buildFeatures.ts).
 
 ## Contributing
@@ -368,12 +378,6 @@ Contributions are welcome. Start with [`CONTRIBUTING.md`](./CONTRIBUTING.md). Fo
 idea? [Open an issue](https://github.com/agentvivekkumar/dontbemichael/issues).
 [`CONTRIBUTORS.md`](./CONTRIBUTORS.md) lists everyone with a merged pull request. Changes are in
 [`CHANGELOG.md`](./CHANGELOG.md).
-
-## Where it came from
-
-Don't Be Michael started as a fork of [Munder Difflin](https://github.com/chaitanyagiri/munder-difflin),
-an agent harness for developers by Chaitanya Giri. It has since grown into its own project, built
-for business owners rather than developers, and is developed independently.
 
 ## License
 

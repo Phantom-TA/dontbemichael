@@ -3,6 +3,7 @@
 import type { ResearchConfig } from '@shared/research';
 import type { DataClassId, DataClassSetting } from '@shared/dataClasses';
 import type { ClaudeConnectorsState } from '@shared/claudeConnectors';
+import type { IntegrationRecord } from '@shared/integrations';
 import type { MailboxRecord, AgentCapabilities } from '@shared/mailboxes';
 import type { CompanyProfile } from '@shared/companyProfile';
 import {
@@ -129,6 +130,8 @@ export interface HarnessConfig {
   /** Mailboxes connected in Settings (docs/designs/multi-mailbox.md). Metadata
    *  only; each app password lives in the secret store under `mail:<id>`. */
   mailboxes?: MailboxRecord[];
+  /** Saved integrations. The Access tab lists them through integrationsClient. */
+  integrations?: IntegrationRecord[];
   /** Per-agent Capabilities, keyed by agent id (Michael included). Missing means
    *  no capabilities: every agent starts with email off (MB-6). */
   agentCapabilities?: { [agentId: string]: AgentCapabilities };
@@ -141,7 +144,8 @@ export interface HarnessConfig {
   connectorsOn?: { [key: string]: boolean };
   /** Connector keys the owner has seen in Settings. */
   connectorsSeen?: string[];
-  semanticMemory: boolean;
+  /** One-time guard for the connector carry-over (main config.ts); a new office sets it at setup. */
+  connectorsMigrated?: boolean;
   embeddingModel: 'minilm' | 'embeddinggemma';
   missions?: ScheduledMission[];
   opsStandupSeeded?: boolean;

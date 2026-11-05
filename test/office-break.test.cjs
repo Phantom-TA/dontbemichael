@@ -184,7 +184,7 @@ test('the hook server passes on the usage limit, the reset times and finished tu
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md office break '));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const hive = new HiveManager(() => home);
-  const inj = await hive.ensureAgent({ id: 'a1', name: 'Sales', provider: 'claude', cwd: home });
+  const inj = await hive.ensureAgent({ id: 'a1', name: 'Sales', provider: 'claude', cwd: home }, { cliVersion: '2.1.314' });
   const signals = [];
   const server = new HookServer(hive, () => null, () => ({ notifications: false }), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, (s) => signals.push(s));
   const rl = { five_hour: { used_percentage: 23.5, resets_at: 1738425600 } };
@@ -373,7 +373,7 @@ test('a break saved by an older build reads as the plan limit', () => {
 });
 
 test('the office says the real cause to the owner, Michael and the team, and resumes without a restart', () => {
-  // Value: protects=eng R1 words per reason, B1 (no restart except a new key), the fixed billing address and one sign in card; fails_when=a reason falls back to plan limit words, the check restarts terminals, or the page can choose the address; why_new=new behavior; seam=source pins; no_claim=Claude Code resuming live after credit is added (owner's live test, B1)
+  // Value: protects=eng R1 words per reason, B1 (no restart except a new sign in), the fixed billing address and one sign in card; fails_when=a reason falls back to plan limit words, the check restarts terminals, or the page can choose the address; why_new=new behavior; seam=source pins; no_claim=Claude Code resuming live after credit is added (owner's live test, B1)
   const index = read('src/main/index.ts');
   assert.match(index, /start: 'The office stopped\. Your Anthropic account is out of credit\.'/);
   assert.match(index, /start: 'The office stopped\. The Anthropic API key stopped working\.'/);
@@ -387,10 +387,11 @@ test('the office says the real cause to the owner, Michael and the team, and res
   assert.match(index, /const ANTHROPIC_BILLING_URL = 'https:\/\/platform\.claude\.com\/settings\/billing';/);
   assert.match(index, /ipcMain\.handle\('office:addCredit', \(\) => \{ void shell\.openExternal\(ANTHROPIC_BILLING_URL\); return \{ ok: true \}; \}\);/, 'no address from the page');
   assert.match(index, /ipcMain\.handle\('office:retry', \(\) => \(\{ ok: ownerRetryOffice\(\) \}\)\);/);
-  // The check only sends Michael the next message; only a new key restarts (B1).
+  // The check only sends Michael the next message; only a new sign in (a new
+  // key, or a Claude account in place of a key) restarts (B1).
   const check = index.slice(index.indexOf('function sendOfficeCheck('), index.indexOf('function ownerRetryOffice('));
   assert.doesNotMatch(check, /respawn|restart|kill/i);
-  assert.match(index, /if \(officeBreak\.view\(\)\?\.reason === 'signin'\) \{\s*try \{ liveWebContents\(\)\?\.send\('office:restartClaude', runningClaudePtys\(\)\); \}/);
+  assert.match(index, /function claudeAuthChanged\(\): void \{\s*try \{ liveWebContents\(\)\?\.send\('office:restartClaude', runningClaudePtys\(\)\); \}[^\n]*\n\s*if \(stopNeedsOwner\(officeBreak\.view\(\)\)\) ownerRetryOffice\(\);/);
   assert.match(index, /const retry = !\(signal\.reason === 'signin' && readConfig\(\)\.claudeAuth === 'apiKey'\);/);
   // One sign in card while a sign in stop is on (eng R3).
   const needs = read('src/renderer/src/shell/useNeedsYou.ts');
@@ -403,7 +404,7 @@ test('the office says the real cause to the owner, Michael and the team, and res
   assert.doesNotMatch(card.slice(card.indexOf('const stopCard'), card.indexOf('function LimitBreakCard')), /border(Left|InlineStart)|inset 3px/, 'no side rule (design D5)');
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const j = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`));
-    for (const k of ['title', 'credit', 'creditAgain', 'signIn', 'keyStopped', 'checking', 'addCredit', 'tryAgain', 'signInAction', 'changeKey', 'chip', 'creditInfo', 'signInInfo', 'keyInfo']) {
+    for (const k of ['title', 'credit', 'creditAgain', 'signIn', 'keyStopped', 'checking', 'addCredit', 'tryAgain', 'signInAction', 'changeKey', 'changeSignIn', 'chip', 'creditInfo', 'creditKeyInfo', 'signInInfo', 'keyInfo']) {
       assert.equal(typeof j.officeStop[k], 'string', `${loc} ${k}`);
     }
     assert.doesNotMatch(JSON.stringify(j.officeStop), /[–—]| - /, `${loc}: no dashes`);

@@ -33,7 +33,7 @@ test('the tab asks before moving a held mailbox and marks who holds each one', (
   const tab = read('src/renderer/src/components/CapabilitiesTab.tsx');
   assert.match(tab, /if \(holderOf\(id\)\) \{ setMoving\(id\); return; \}/, 'picking a held mailbox asks first');
   assert.match(tab, /if \(!res\.ok && res\.heldBy && next\.mailboxes\[0\]\) \{ setMoving\(next\.mailboxes\[0\]\); return; \}/, 'a race with another save asks too');
-  assert.match(tab, /save\(\{ \.\.\.email, enabled: true, mailboxes: \[moving\] \}, true\)/, 'Move it confirms the move');
+  assert.match(tab, /save\(\{ \.\.\.email, enabled: true, mailboxes: \[moving\], send: false, sending: 'approval' \}, true\)/, 'Move it confirms the move');
   assert.match(tab, /onClick=\{\(\) => setMoving\(null\)\}>\{t\('capabilities\.keepIt'\)\}/);
   assert.match(tab, /holder \? t\('capabilities\.heldBy', \{ name: nameOf\(holder\) \}\)/);
   assert.match(tab, /mailboxHolder\(config\.agentCapabilities, id, agent\.id\)/);

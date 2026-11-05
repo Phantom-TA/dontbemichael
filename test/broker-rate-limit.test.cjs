@@ -1,9 +1,10 @@
 'use strict';
 
 // A connected app that rate limits is not hammered (TODOS: "Third-party
-// rate-limit backoff in the broker"): after a 429, or a 503 with Retry-After,
-// the broker holds calls to that app until its time is up, and answers at once
-// when the wait is long. Runs the real broker in front of a local server.
+// rate-limit backoff in the broker"): after a 429, a 503 with Retry-After, or a
+// 403 that says it is a rate limit (GitHub), the broker holds calls to that app
+// until its time is up, and answers at once when the wait is long. Runs the
+// real broker in front of a local server.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -27,6 +28,19 @@ test('the wait comes from Retry-After, then the reset headers, within sane bound
   assert.equal(backoffMs(200, h({ 'retry-after': '5' }), NOW), undefined);
   assert.equal(backoffMs(429, h({ 'retry-after': '86400' }), NOW), BACKOFF_CAP_MS);
   assert.equal(backoffMs(429, h({ 'retry-after': '0' }), NOW), 1000);
+});
+
+test('a 403 that is a rate limit waits like a 429; a 403 that is a refusal does not', () => {
+  // GitHub's primary limit: 403, nothing left, reset as a Unix time.
+  const primary = { 'x-ratelimit-limit': '5000', 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(NOW / 1000 + 600) };
+  assert.equal(backoffMs(403, h(primary), NOW), 600_000);
+  // GitHub's secondary limit: 403 with Retry-After.
+  assert.equal(backoffMs(403, h({ 'retry-after': '60', 'x-ratelimit-remaining': '4321' }), NOW), 60_000);
+  // Nothing left but no reset named: the default wait.
+  assert.equal(backoffMs(403, h({ 'ratelimit-remaining': '0' }), NOW), DEFAULT_BACKOFF_MS);
+  // A missing scope or a private repo: answered as it is, no wait.
+  assert.equal(backoffMs(403, h({}), NOW), undefined);
+  assert.equal(backoffMs(403, h({ 'x-ratelimit-remaining': '4999', 'x-ratelimit-reset': String(NOW / 1000 + 600) }), NOW), undefined);
 });
 
 test('each app has its own wait, and a later limit never shortens it', () => {
@@ -85,4 +99,23 @@ test('a long wait is answered at once, without calling the app, and other apps a
   assert.deepEqual(await held.json(), { error: `Books asked the app to slow down. Try again in ${retry} seconds.`, code: 'rate_limited' });
   assert.equal(app.seen.length, 1, 'the app saw one call');
   assert.equal((await app.call('crm', 'contacts')).status, 200, 'another app is called as normal');
+});
+
+test('GitHub\'s 403 for an exhausted limit holds the next call; a 403 refusal does not', async (t) => {
+  const reset = String(Math.floor(Date.now() / 1000) + 300);
+  const app = await office(t, (n) => (n === 1
+    ? [403, { 'x-ratelimit-limit': '5000', 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': reset }]
+    : [403, {}]));
+  const first = await app.call('books', 'repos/acme/shop/issues');
+  assert.equal(first.status, 403, 'the app\'s own answer reaches the agent');
+  const held = await app.call('books', 'repos/acme/shop/issues');
+  assert.equal(held.status, 429, 'answered by the broker until the reset');
+  const retry = Number(held.headers.get('retry-after'));
+  assert.ok(retry > 250 && retry <= 300, `retry-after ${retry}`);
+  assert.equal(app.seen.length, 1, 'GitHub saw one call');
+
+  // A plain 403 (a missing scope) is passed back, and the next call still goes out.
+  assert.equal((await app.call('crm', 'private')).status, 403);
+  assert.equal((await app.call('crm', 'private')).status, 403);
+  assert.equal(app.seen.length, 3, 'both calls reached the app');
 });

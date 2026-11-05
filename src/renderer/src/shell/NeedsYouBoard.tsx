@@ -23,6 +23,11 @@ export function NeedsYouBoard() {
   const count = useNeedsYouCount();
   const [closeHover, setCloseHover] = useState(false);
   const close = () => { useStore.getState().setRightColumn('closed'); focusNeedsYouPill(); };
+  // With Michael stopped nothing here is routed (owner, 2026-10-30): say so,
+  // so an answer is not given into a silence.
+  const michaelStopped = useStore((s) => Object.values(s.stopped).some((m) => m.isMichael) && s.godStatus !== 'booting');
+  // The board waits while the office opens at launch (App.tsx): say why.
+  const opening = useStore((s) => s.launchLock);
   return (
     <div style={{
       height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12,
@@ -56,6 +61,21 @@ export function NeedsYouBoard() {
           }}
         >✕</button>}
       </div>
+      {michaelStopped && (
+        <div role="note" style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--cth-r-md)',
+          background: 'var(--cth-amber-soft)', boxShadow: 'inset 0 0 0 1px var(--cth-amber)'
+        }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink)' }}>{t('shell.michaelStopped', { godName })}</span>
+          <PixelButton variant="secondary" size="sm" onClick={() => useStore.getState().requestMichaelStart()}>{t('office.stopped.startAgain')}</PixelButton>
+        </div>
+      )}
+      {opening && !michaelStopped && (
+        <div role="note" style={{
+          flexShrink: 0, padding: '8px 10px', borderRadius: 'var(--cth-r-md)', fontSize: 13, lineHeight: '18px',
+          color: 'var(--cth-ink)', background: 'var(--cth-indigo-soft)', boxShadow: 'inset 0 0 0 1px var(--cth-indigo)'
+        }}>{t('shell.answersWait')}</div>
+      )}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <AskMeTab />
       </div>

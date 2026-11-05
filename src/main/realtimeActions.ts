@@ -41,9 +41,10 @@ import { inferAgentProvider, BUILD_ENGINES, type AgentProvider } from '../shared
 import { ALLOW_VOICE_HIRE } from '../shared/buildFeatures';
 import { clearCommandForProvider } from '../shared/providerAutomation';
 import { resolveGodName } from '../shared/godIdentity';
-import { cleanFocus } from '../shared/missions';
+import { cleanFocus, deleteMission, setMissionEnabled } from '../shared/missions';
 import { cardConversation, openAskIndexes } from '../shared/askMeRouting';
 import { ownerChangeNote } from '../shared/ownerRequests';
+import { RESEARCH_ID } from '../shared/research';
 
 export const VOICE_ACTOR = 'michael-voice';
 
@@ -161,8 +162,7 @@ const SETTING_POLICY: Record<string, {
   costCapTokens: { tier: 'confirm', type: 'number', min: 0, max: 1_000_000_000 },
   maxTurns: { tier: 'confirm', type: 'number', min: 1, max: 1000 },
   slackEnabled: { tier: 'confirm', type: 'boolean' },
-  webhookEnabled: { tier: 'confirm', type: 'boolean' },
-  semanticMemory: { tier: 'confirm', type: 'boolean' }
+  webhookEnabled: { tier: 'confirm', type: 'boolean' }
 };
 
 const PENDING_TTL_MS = 120_000;
@@ -243,15 +243,39 @@ function resolveAgent(target: string, reg: Registry): ResolvedAgent | { error: s
   return { error: `I don't see an agent matching "${target}"` };
 }
 
+/** Words that turn a confirm into a refusal: "no, don't kill Jim" carries the
+ *  verb word but says not to. norm() has already turned ' into a space, so any
+ *  n't word reads "can t"; a curly apostrophe is left as typed. */
+const NEGATION = /\b(no|nope|nah|not|never|nevermind|cannot|cancel|stop|wait|abort|hold on|hold off|hang on|dont|cant|wont|didnt|doesnt|isnt|wasnt|arent|werent|shouldnt|couldnt|wouldnt|havent|hasnt)\b|\b\w+n t\b|n[\u2018\u2019]t\b/;
+
+/** The phrase says not to go ahead. */
+const saysNo = (phrase: string): boolean => NEGATION.test(norm(phrase));
+
 /** Distinct-token confirm check. Accept only if the phrase carries the verb word or
- *  the literal "confirm"; a bare affirmation ("yes", "ok") is rejected. */
+ *  the literal "confirm"; a bare affirmation ("yes", "ok") is rejected, and so is
+ *  any phrase that says no. */
 function confirmAccepted(phrase: string, confirmWord: string): boolean {
   const p = norm(phrase);
   if (!p) return false;
-  if (BARE_AFFIRMATIONS.has(p)) return false;
+  if (BARE_AFFIRMATIONS.has(p) || NEGATION.test(p)) return false;
   if (/\bconfirm(ed|s)?\b/.test(p)) return true;
   if (new RegExp(`\\b${escapeRegExp(confirmWord)}\\b`).test(p)) return true;
   return false;
+}
+
+/** Does the phrase name a team member other than `targetId`, by id, full name or
+ *  first name? "Confirm kill of Nolan" while Jim's kill waits is about Nolan, so
+ *  it must not run Jim's. Words the target's own names share are skipped, so
+ *  two members called Jim never cancel each other. */
+function namesSomeoneElse(phrase: string, targetId: string, reg: Registry): boolean {
+  const p = ` ${norm(phrase)} `;
+  // A first word like "the" in "The Closer" is not a name of its own.
+  const words = (id: string, name?: string): string[] =>
+    [id, name ?? '', (name ?? '').split(' ')[0]].map(norm)
+      .filter((w) => w.length > 1 && !['the', 'an', 'my', 'our', 'mr', 'ms', 'mrs', 'dr'].includes(w));
+  const own = new Set(words(targetId, reg.agents?.[targetId]?.name));
+  return Object.entries(reg.agents ?? {}).some(([id, m]) =>
+    id !== targetId && words(id, m.name).some((w) => !own.has(w) && p.includes(` ${w} `)));
 }
 
 // ─── pending (single-slot two-phase confirm) ────────────────────────────────
@@ -260,6 +284,8 @@ interface Pending {
   verb: string;
   confirmWord: string;
   targetLabel: string;
+  /** The team member the action is for, when it is for one. */
+  targetId?: string;
   createdAt: number;
   commit: () => Promise<string>;
 }
@@ -634,8 +660,10 @@ function buildEditSchedule(
   return async () => {
     const all = deps.listMissions();
     let next: ScheduledMission[];
-    if (action === 'delete') next = all.filter((m) => m.id !== mission.id);
-    else next = all.map((m) => (m.id === mission.id ? { ...m, enabled: action === 'enable' } : m));
+    if (action === 'delete') next = deleteMission(all, mission.id);
+    // As the Schedules tab toggle: a job turned back on waits for its next
+    // slot, not the one that passed while it was off.
+    else next = setMissionEnabled(all, mission.id, action === 'enable', Date.now()) ?? all;
     deps.saveMissions(next);
     attribute(deps, 'edit_schedule', mission.id, { action });
     return `${action === 'delete' ? 'Deleted' : action === 'enable' ? 'Enabled' : 'Disabled'} the "${mission.label}" schedule.`;
@@ -669,7 +697,7 @@ function proposeDestructive(deps: RealtimeActionDeps, verb: string, a: Record<st
       : buildArchive(deps, r);
     const breaker = deps.controlSnapshot(r.id);
     const note = breaker?.halted ? ' (note: already halted)' : breaker?.paused ? ' (note: already paused)' : '';
-    pending = { verb, confirmWord: spec.confirmWord, targetLabel: r.name, createdAt: Date.now(), commit };
+    pending = { verb, confirmWord: spec.confirmWord, targetLabel: r.name, targetId: r.id, createdAt: Date.now(), commit };
     const consequence = verb === 'clear_context'
       ? `That wipes ${r.name}'s working memory of the current conversation.`
       : verb === 'archive'
@@ -757,6 +785,11 @@ function proposeDestructive(deps: RealtimeActionDeps, verb: string, a: Record<st
     const to = str(a.to) || str(a.agentId) || 'god';
     const target = resolveAgent(to, reg);
     const targetId = 'error' in target ? 'god' : target.id;
+    // Research gets no schedules (design review D19); voice refuses one as
+    // missions:upsert and agent schedule requests do.
+    if (!('error' in target) && target.id === RESEARCH_ID) {
+      return { ok: false, spoken: `${target.name} has no schedules. They answer the questions teammates send them.` };
+    }
     const mission: ScheduledMission = {
       id: `voice-${slug(label)}-${shortId()}`,
       label,
@@ -769,7 +802,7 @@ function proposeDestructive(deps: RealtimeActionDeps, verb: string, a: Record<st
       createdBy: 'owner'
     };
     pending = {
-      verb, confirmWord: 'schedule', targetLabel: label, createdAt: Date.now(),
+      verb, confirmWord: 'schedule', targetLabel: label, targetId, createdAt: Date.now(),
       commit: async () => {
         deps.saveMissions([...deps.listMissions(), mission]);
         attribute(deps, 'create_schedule', mission.id, { title: label.slice(0, 120) });
@@ -916,6 +949,24 @@ export function registerRealtimeActionIpc(deps: RealtimeActionDeps): void {
     const cur = pendingFresh();
     if (!cur) return { ok: false, spoken: 'There\'s nothing waiting to confirm.' } satisfies ActionResult;
     const phrase = str(p.phrase) || str(p.confirm) || str(p.text);
+    // A no drops the staged action, so a later phrase that happens to carry
+    // the verb word can't still run it. A bare yes keeps it, and asks again.
+    if (saysNo(phrase)) {
+      pending = null;
+      return { ok: false, spoken: `Cancelled the ${cur.verb}.` } satisfies ActionResult;
+    }
+    // A confirm naming someone else is about them, not the staged one: drop it,
+    // so neither this phrase nor a later one runs it on the wrong person.
+    const reg = cur.targetId ? deps.hiveRegistry() : null;
+    if (cur.targetId && reg && namesSomeoneElse(phrase, cur.targetId, reg)) {
+      pending = null;
+      // The member's name, not the label: a staged schedule's label is the job.
+      const who = reg.agents?.[cur.targetId]?.name?.trim() || cur.targetLabel;
+      return {
+        ok: false,
+        spoken: `That named someone other than ${who}, so I cancelled the ${cur.verb.replace(/_/g, ' ')}. Ask again for the one you mean.`
+      } satisfies ActionResult;
+    }
     if (!confirmAccepted(phrase, cur.confirmWord)) {
       return {
         ok: false,

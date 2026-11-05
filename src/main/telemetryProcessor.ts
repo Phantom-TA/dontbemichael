@@ -33,6 +33,10 @@ export const COST_KEY_KEEP_MS = 30 * 86_400_000;
 /** One request's working time counts at most this much (a reply left open overnight is not work). */
 export const TURN_CAP_MS = 60 * 60_000;
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+/** A tick reads this many points a pass, for at most this many passes, so a
+ *  backfill's weeks drain over a few ticks instead of holding the main thread. */
+export const TICK_BATCH = 5000;
+export const TICK_PASSES = 2;
 
 interface AgentState { lastStop: number; lastActivity: number; turnStart?: number }
 interface OpenRun { id: number; agentId: string; missionId: string; dispatched: number; start: number | null; usd: number; work: number; relay: boolean }
@@ -90,9 +94,9 @@ export class TelemetryProcessor {
     const db = this.db();
     if (!db) return 0;
     let read = 0;
-    for (let pass = 0; pass < 20; pass++) {
+    for (let pass = 0; pass < TICK_PASSES; pass++) {
       const state = this.loadState(db, office);
-      const rows = this.store.eventsAfter(office, state.cursor, 5000);
+      const rows = this.store.eventsAfter(office, state.cursor, TICK_BATCH);
       const n = db.transaction(() => {
         const fold = new CostFold();
         for (const [k, v] of Object.entries(state.costs)) fold.seed(k, v);
@@ -113,7 +117,7 @@ export class TelemetryProcessor {
         return rows.length;
       })();
       read += n;
-      if (n < 5000) break;
+      if (n < TICK_BATCH) break;
     }
     this.prune(db, office);
     return read;
@@ -271,11 +275,13 @@ export class TelemetryProcessor {
     }
   }
 
-  /** E4: raw points older than 400 days go, a few thousand at a time, once a day. */
+  /** E4: raw points and runs older than 400 days go, a few thousand at a time, once a day. */
   private prune(db: Database.Database, office: string): void {
     const state = this.loadState(db, office);
     if (this.now() - state.lastPrune < 86_400_000) return;
     try {
+      db.prepare('DELETE FROM telemetry_runs WHERE id IN (SELECT id FROM telemetry_runs WHERE office = ? AND dispatched < ? ORDER BY id LIMIT 5000)')
+        .run(office, this.now() - RAW_KEEP_MS);
       db.prepare('DELETE FROM telemetry_events WHERE id IN (SELECT id FROM telemetry_events WHERE office = ? AND ts < ? ORDER BY id LIMIT 5000)')
         .run(office, this.now() - RAW_KEEP_MS);
       this.saveState(db, office, { ...state, ...quietCostsDropped(state, this.now()), lastPrune: this.now() });
@@ -341,19 +347,34 @@ export class TelemetryProcessor {
     return r?.t ?? null;
   }
 
-  /** Cards finished or reopened since a time, with time held Blocked or Waiting. */
+  /** Cards finished or reopened since a time, with time held Blocked or Waiting.
+   *  A card's whole history counts: a reopen or hold before the time too. */
   cards(office: string, since: number): CardFact[] {
-    const by = new Map<string, CardFact & { heldFrom: number | null }>();
-    for (const r of this.rows(office, ['card-status', 'card-reopen'], since)) {
+    const kinds = ['card-status', 'card-reopen'];
+    const recent = this.rows(office, kinds, since);
+    // These cards, and when each was made (0 when unknown, as on a reopen row).
+    const made = new Map<string, number>();
+    for (const r of recent) {
       const id = String(r.attrs?.id ?? '');
-      if (!id) continue;
+      if (id) made.set(id, Math.max(made.get(id) ?? 0, Number(r.attrs?.createdAt) || 0));
+    }
+    // No card has events before it was made, so the earlier ones are read
+    // from the oldest card on. A card whose time is unknown adds nothing
+    // earlier than the period start.
+    let from = since;
+    for (const t of made.values()) if (t > 0) from = Math.min(from, t);
+    const by = new Map<string, CardFact & { heldFrom: number | null }>();
+    for (const r of from < since ? this.rows(office, kinds, from) : recent) {
+      const id = String(r.attrs?.id ?? '');
+      if (!made.has(id)) continue;
       const c = by.get(id) ?? { id, assignee: r.agentId ?? '', createdAt: Number(r.attrs?.createdAt ?? r.ts) || r.ts, heldMs: 0, reopened: false, excluded: false, heldFrom: null };
       if (r.agentId) c.assignee = r.agentId;
-      if (r.kind === 'card-reopen') { c.reopened = true; by.set(id, c); continue; }
+      if (r.kind === 'card-reopen') { c.reopened = true; c.reopenedAt = Math.max(c.reopenedAt ?? 0, r.ts); by.set(id, c); continue; }
       const to = String(r.attrs?.to ?? '');
       if (c.heldFrom !== null && to !== 'blocked' && to !== 'waiting') { c.heldMs += r.ts - c.heldFrom; c.heldFrom = null; }
       if ((to === 'blocked' || to === 'waiting') && c.heldFrom === null) c.heldFrom = r.ts;
-      if (to === 'done') c.doneAt = r.ts;
+      // Only a finish since the time is one: an earlier one is in an earlier period.
+      if (to === 'done' && r.ts >= since) c.doneAt = r.ts;
       if (r.attrs?.excluded) c.excluded = true;
       by.set(id, c);
     }
@@ -370,6 +391,16 @@ export class TelemetryProcessor {
     const routed = this.rows(office, ['message'], since).filter((r) => r.ts <= until && r.agentId === godId && r.attrs?.act === 'request').length;
     const cardsOpened = this.rows(office, ['card-status'], since).filter((r) => r.ts <= until && r.attrs?.from === null).length;
     return { routed, cardsOpened };
+  }
+
+  /** Running time points since a time (owner, 2026-10-25), and when the
+   *  office's first one began, so a period that starts earlier can say so:
+   *  the time, not the day, since the clock can start partway into a day. */
+  running(office: string, since: number): { points: Array<{ ts: number; ms: number; awayMs: number }>; since: number | null } {
+    const points = this.rows(office, ['running'], since).map((r) => ({ ts: r.ts, ms: Number(r.value ?? 0), awayMs: Number(r.attrs?.away ?? 0) }));
+    const db = this.db();
+    const first = db ? (db.prepare("SELECT MIN(ts - value) AS t FROM telemetry_events WHERE office = ? AND kind = 'running'").get(office) as { t: number | null } | undefined)?.t ?? null : null;
+    return { points, since: first ?? null };
   }
 
   /** The first day this office has any point, for "Collecting since". With

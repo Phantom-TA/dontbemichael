@@ -42,6 +42,38 @@ test('the headline keeps underscores in file names and addresses, and drops them
   assert.equal(askHeadline('__Approve__ the *new* price?'), 'Approve the new price?');
 });
 
+test('an ask that opens with a list item or a quote shows its question', () => {
+  assert.equal(askHeadline('1. Should I renew the Acme contract? It ends Friday.'), 'Should I renew the Acme contract?');
+  assert.equal(askHeadline('2) Pay the $480 invoice from Dunder? It is due.'), 'Pay the $480 invoice from Dunder?');
+  assert.equal(askHeadline('- Approve the refund for Kelly? Details below.'), 'Approve the refund for Kelly?');
+  assert.equal(askHeadline('> Can I send the quote today? The client asked.'), 'Can I send the quote today?');
+  assert.equal(askHeadline('> - Can I send the quote today?'), 'Can I send the quote today?');
+  assert.equal(askHeadline('1. **Renew the Acme contract?** It ends Friday.'), 'Renew the Acme contract?');
+  // Not a marker: no space after it.
+  assert.equal(askHeadline('1.5 hours were billed twice. Should I dispute it?'), '1.5 hours were billed twice.');
+  // A > that compares is part of the question, not a quote.
+  assert.equal(askHeadline('>= $500 is the budget. Approve?'), '>= $500 is the budget.');
+  assert.equal(askHeadline('>5 days late, chase them?'), '>5 days late, chase them?');
+  assert.equal(askHeadline('>Can I send it?'), 'Can I send it?');
+  // A space or a currency sign before the amount doesn't make it a quote.
+  assert.equal(askHeadline('>$500 is the budget. Approve?'), '>$500 is the budget.');
+  assert.equal(askHeadline('> $500 is the budget. Approve?'), '> $500 is the budget.');
+  assert.equal(askHeadline('> €2,000 over budget. Approve?'), '> €2,000 over budget.');
+  assert.equal(askHeadline('> 5 days late, chase them?'), '> 5 days late, chase them?');
+  // Quoted text still loses its marker, whatever opens it.
+  assert.equal(askHeadline('> Can I send it?'), 'Can I send it?');
+  assert.equal(askHeadline('> - Can I send the quote today?'), 'Can I send the quote today?');
+  assert.equal(askHeadline('> 1. Should I renew? It ends Friday.'), 'Should I renew?');
+  assert.equal(askHeadline('> **Renew the Acme contract?** It ends Friday.'), 'Renew the Acme contract?');
+  assert.equal(askHeadline('> هل توافق على الدفع؟'), 'هل توافق على الدفع؟');
+  assert.equal(askHeadline('> "Can I send it?" the client asked.'), '"Can I send it?" the client asked.');
+  // Arabic and Persian numbered asks, and task list checkboxes.
+  assert.equal(askHeadline('١. هل توافق على الدفع؟'), 'هل توافق على الدفع؟');
+  assert.equal(askHeadline('۲) هل توافق على الدفع؟'), 'هل توافق على الدفع؟');
+  assert.equal(askHeadline('- [ ] Approve the refund?'), 'Approve the refund?');
+  assert.equal(askHeadline('* [x] Approve the refund?'), 'Approve the refund?');
+});
+
 test('how long ago, in plain words', () => {
   const now = Date.parse('2026-09-30T12:00:00Z');
   assert.equal(askedAgo('2026-09-30T11:59:30Z', now, 'en'), 'just now');

@@ -155,6 +155,10 @@ function officeWindow(raw: unknown, field: string, out: FieldErrors): OfficeWind
   const end = timeField(raw.end, `${field}.end`, out);
   const label = cappedString(raw.label, 40, `${field}.label`, out);
   if (!start || !end) return undefined;
+  if (start >= end) {
+    out.errors.push(`"${field}.start" must be earlier than "${field}.end"`);
+    return undefined;
+  }
   return { start, end, ...(label ? { label } : {}) };
 }
 

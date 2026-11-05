@@ -496,11 +496,26 @@ test('a stamped file with an added field or under another name is swept', async 
 });
 
 test('the last wall: deliver() itself drops a message for Research the layer did not produce', async (t) => {
-  // Value: protects=a routing regression can't reach Research; fails_when=deliver() writes it; why_new=testing review pass 2; seam=none
+  // Value: protects=a routing regression can't reach Research; fails_when=deliver() writes it or reports success for a drop; why_new=testing review pass 2, contract fix (return false on drop); seam=none
   const { hive } = await office(t);
-  hive['deliver'](hive['normalize']({ to: 'research', act: 'inform', subject: 'x', body: 'y' }, 'system'), 'research');
+  const ok = hive['deliver'](hive['normalize']({ to: 'research', act: 'inform', subject: 'x', body: 'y' }, 'system'), 'research');
+  assert.equal(ok, false, 'deliver() must return false when it drops an uncleared Research message');
   assert.equal(msgsIn(hive, 'research').length, 0);
   assert.match(fs.readFileSync(path.join(hive.root(), 'log.jsonl'), 'utf8'), /research-unchecked/);
+});
+
+test('a message the layer did clear still reaches Research and reports success', async (t) => {
+  // Value: protects=the contract fix does not stop the trust layer's clean copies from arriving; fails_when=a cleared id is dropped or reports failure; why_new=contract fix regression guard; seam=none
+  const { hive } = await office(t);
+  const msg = hive['normalize']({ to: 'research', act: 'inform', subject: 'x', body: 'y' }, 'system');
+  hive['researchCleared'].add(msg.id);
+  try {
+    const ok = hive['deliver'](msg, 'research');
+    assert.equal(ok, true, 'deliver() reports success for a cleared Research message');
+    assert.equal(msgsIn(hive, 'research').length, 1, 'the cleared copy is delivered');
+  } finally {
+    hive['researchCleared'].delete(msg.id);
+  }
 });
 
 test('the app flags a steering answer to Michael even when the layer does not', async (t) => {
@@ -1176,6 +1191,70 @@ test('a time an agent typed is replaced by the app\'s', async (t) => {
   }
 });
 
+/** The outbox journal: the app's record for one outbox file (Codex review, ship 2026-10-18). */
+const journalDir = (hive, from) => path.join(path.dirname(hive.root()), 'private', 'outbox-routing', from);
+/** One pass that dies after delivering, before the file is archived. */
+const passThatDies = (hive) => {
+  hive.archiveOutboxFile = () => {};
+  try { hive.routeOnce(); } finally { delete hive.archiveOutboxFile; }
+};
+
+test('a message delivered by a pass that died before archiving it is not delivered again', async (t) => {
+  // Value: protects=a crash between delivery and archive never doubles a message; fails_when=the replay routes it again under a new id; why_new=Codex review, ship 2026-10-18 (the app makes every id, so nothing deduped a replay); seam=archiveOutboxFile stubbed for one pass
+  const { hive } = await office(t);
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'once', body: 'b' });
+  passThatDies(hive);
+  const first = notes(hive, 'god', 'once');
+  assert.equal(first.length, 1);
+  assert.ok(fs.existsSync(path.join(hive.root(), 'agents', 'pam', 'outbox', 'm1.json')), 'the file is still in the outbox');
+  hive.routeOnce();
+  assert.equal(notes(hive, 'god', 'once').length, 1, 'not again');
+  assert.equal(sentId(hive, 'pam'), first[0].id, 'the sent copy names the id it was delivered under');
+  assert.deepEqual(fs.readdirSync(journalDir(hive, 'pam')), [], 'the record goes once it is archived');
+});
+
+test('a pass that died before recording the delivery delivers again under the same id, so the copy replaces itself', async (t) => {
+  // Value: protects=the narrow window between delivery and its record still leaves one copy; fails_when=the replay picks a new id; why_new=Codex review, ship 2026-10-18; seam=the journal record set back to not delivered
+  const { hive } = await office(t);
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'once', body: 'b' });
+  passThatDies(hive);
+  const [first] = notes(hive, 'god', 'once');
+  const rec = path.join(journalDir(hive, 'pam'), 'm1.json');
+  fs.writeFileSync(rec, JSON.stringify({ ...JSON.parse(fs.readFileSync(rec, 'utf8')), delivered: false }));
+  hive.routeOnce();
+  const again = notes(hive, 'god', 'once');
+  assert.equal(again.length, 1, 'one copy');
+  assert.deepEqual([again[0].id, again[0].created_at], [first.id, first.created_at], 'the same id and time');
+});
+
+test('a schedule request is filed once though the pass died before archiving it', async (t) => {
+  // Value: protects=a crash never files a schedule request or answers it twice; fails_when=the replay calls the scheduler again; why_new=Codex review, ship 2026-10-18; seam=archiveOutboxFile stubbed for one pass
+  const { hive } = await office(t);
+  let filed = 0;
+  hive.onScheduleRequest(() => { filed++; return 'Schedule request sent.'; });
+  send(hive, 'pam', { to: 'scheduler', act: 'request', subject: 's', body: 'why', schedule: { kind: 'x' } });
+  passThatDies(hive);
+  hive.routeOnce();
+  assert.equal(filed, 1);
+  assert.equal(notes(hive, 'pam', 'Schedule request').length, 1);
+});
+
+test('a journal record whose file is gone, or names another file, is never used', async (t) => {
+  // Value: protects=a stale record never gives a new message an old id; fails_when=records outlive their file or are matched by name alone; why_new=Codex review, ship 2026-10-18; seam=records written by hand
+  const { hive } = await office(t);
+  const dir = journalDir(hive, 'pam');
+  fs.mkdirSync(dir, { recursive: true });
+  const old = { ino: 1, birth: 1, id: '20260101-000000-aaaa', created_at: '2026-01-01T00:00:00.000Z', delivered: true };
+  fs.writeFileSync(path.join(dir, 'gone.json'), JSON.stringify(old));
+  fs.writeFileSync(path.join(dir, 'm1.json'), JSON.stringify(old));
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'new', body: 'b' });
+  hive.routeOnce();
+  const [m] = notes(hive, 'god', 'new');
+  assert.ok(m, 'delivered, not skipped as delivered');
+  assert.notEqual(m.id, old.id, 'a fresh id');
+  assert.deepEqual(fs.readdirSync(dir), [], 'both records went');
+});
+
 test('Research\'s schedule request is archived as Research wrote it', async (t) => {
   // Value: protects=Research's files are the app's own record, never written over (red team, third ship); fails_when=the scheduler branch stamps Research's file; why_new=ship review; seam=none
   const { hive } = await office(t);
@@ -1353,4 +1432,50 @@ test('a checked note that reached Research is never sent twice when a step after
   assert.equal(msgsIn(hive, 'research').length, 1, 'one copy');
   assert.equal(hive.researchWaiting(), 1, 'only the delivered copy waits');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'private', 'research-pending.json'), 'utf8')), []);
+});
+
+test('once Research\'s answer is sent, the app moves the question it answers to inbox/.done; nothing else moves', async (t) => {
+  // Value: protects=Research never answers the same question twice when it can't move files itself (its commands are refused on Windows, PR 517); fails_when=the app leaves an answered question in the inbox, moves one that wasn't answered, or moves a file it did not deliver; why_new=PR 517 review; seam=fake layer
+  const layer = fakeLayer({ outbound: (m) => (/blocked/.test(String(m.body)) ? { decision: 'deny', reason: 'private' } : { decision: 'pass', subject: String(m.subject), body: String(m.body), flagged: false }) });
+  const { hive } = await office(t, { layer });
+  const first = await askFrom(hive, 'pam');
+  const second = await askFrom(hive, 'god');
+  const inbox = path.join(hive.root(), 'agents', 'research', 'inbox');
+  const done = path.join(inbox, '.done');
+  assert.ok(fs.existsSync(path.join(inbox, `${first}.json`)) && fs.existsSync(path.join(inbox, `${second}.json`)));
+  send(hive, 'research', { to: 'pam', in_reply_to: first, act: 'inform', subject: 'Trends', body: 'Thin crust is up.' });
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.ok(msgsIn(hive, 'pam').some((m) => m.subject === 'Trends'), 'the answer went out');
+  assert.ok(!fs.existsSync(path.join(inbox, `${first}.json`)), 'the answered question left the inbox');
+  assert.ok(fs.existsSync(path.join(done, `${first}.json`)), 'into the handled copies');
+  assert.ok(fs.existsSync(path.join(inbox, `${second}.json`)), 'the unanswered one stays');
+  // A refused answer was not sent: its question stays for Research to try again.
+  send(hive, 'research', { to: 'god', in_reply_to: second, act: 'inform', subject: 'Trends', body: 'blocked words' }, 'm2.json');
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.ok(fs.existsSync(path.join(inbox, `${second}.json`)), 'a refused answer moves nothing');
+  // A note to Michael naming Pam's other question is sent, but leaves that question waiting.
+  const third = await askFrom(hive, 'pam');
+  send(hive, 'research', { to: 'god', in_reply_to: third, act: 'inform', subject: 'Problem', body: 'This one needs the owner.' }, 'm3.json');
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.ok(fs.existsSync(path.join(inbox, `${third}.json`)), 'only an answer to the asker clears a question');
+  // Michael's own question, answered to a name for him, is cleared.
+  const fromMichael = await askFrom(hive, 'god');
+  send(hive, 'research', { to: 'michael', in_reply_to: fromMichael, act: 'inform', subject: 'For Michael', body: 'Here it is.' }, 'm4.json');
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.ok(!fs.existsSync(path.join(inbox, `${fromMichael}.json`)), 'an answer to Michael by any of his names clears his question');
+  // An id that names no delivery of the app's, or a path, moves nothing.
+  for (const bad of ['../../god/inbox/x', 'nope']) {
+    send(hive, 'research', { to: 'god', in_reply_to: bad, act: 'inform', subject: 'Other', body: 'Answer.' }, `m-${bad.length}.json`);
+    hive.routeOnce(); await tick(); hive.routeOnce();
+  }
+  assert.ok(fs.existsSync(path.join(inbox, `${second}.json`)));
+  assert.deepEqual(fs.readdirSync(done).filter((f) => f.endsWith('.json')).sort(), [`${first}.json`, `${fromMichael}.json`].sort());
+});
+
+test('Research is told the app moves an answered message, not to move it itself', () => {
+  // Value: protects=Research isn't sent to do a move its tools can't make on Windows; fails_when=the instruction asks Research to move the file again; why_new=PR 517 review; seam=none
+  const { researchInstructions } = loadTs('src/main/hive.ts');
+  const text = researchInstructions({ name: 'Harbor Bakery' }, 'Michael', { inbox: '/r/inbox', inboxDone: '/r/inbox/.done', outbox: '/r/outbox', protocol: '/h/PROTOCOL.md', hiveRoot: '/h' });
+  assert.match(text, /once your answer to it is sent, the app moves it to \/r\/inbox\/\.done/);
+  assert.doesNotMatch(text, /then move it to/);
 });

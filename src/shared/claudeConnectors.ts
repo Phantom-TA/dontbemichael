@@ -58,6 +58,9 @@ export const MCP_RESOURCE_TOOLS: ReadonlySet<string> = new Set(['ListMcpResource
 /** The app's own mail server, passed to agents with `--mcp-config`. Its tools
  *  follow the agent's Email capability, never the connector rules. */
 export const APP_MCP_SERVER = 'md-mail';
+/** The app's own integrations server, passed the same way. The broker decides
+ *  every call, per member (shared/integrations.ts). */
+export const INTEGRATIONS_MCP_SERVER = 'md-integrations';
 
 const KEY_MAX = 80;
 const URL_MAX = 300;
@@ -122,14 +125,28 @@ export function isQuickBooksKey(key: string): boolean {
   return key.trim().toLowerCase() === QUICKBOOKS_KEY.toLowerCase();
 }
 
-/** The Claude account's Gmail and Google Calendar, for the one-time carry-over
- *  of the old "Your Claude account" switch. */
+/** The two connectors the old "Your Claude account" switch covered. Only
+ *  Calendar carries over now; a list naming either shows connectors were read. */
 export function isEmailCalendarKey(key: string): boolean {
   return /^(gmail|google calendar)$/i.test(key.trim());
 }
 
+/** A mailbox on the Claude account (Gmail, Outlook, Yahoo Mail...). Email
+ *  reaches the team only through the mailboxes connected in the app (owner,
+ *  2026-10-30), so these are never offered, never on and always denied. */
+export function isMailConnectorKey(key: string): boolean {
+  const k = key.trim();
+  return /mail$/i.test(k) || /^(microsoft )?outlook$/i.test(k);
+}
+
+/** The connectors the owner sees and can switch: all but a mailbox. */
+export function offeredConnectors(list: ClaudeConnector[] | null | undefined): ClaudeConnector[] {
+  return (list ?? []).filter((c) => !isMailConnectorKey(c.key));
+}
+
 /** Whether the owner has a connector on. QuickBooks keeps its own switch. */
 export function connectorOn(cfg: ConnectorConfig, key: string): boolean {
+  if (isMailConnectorKey(key)) return false;
   return isQuickBooksKey(key) ? cfg.quickbooksClaude === true : cfg.connectorsOn?.[key] === true;
 }
 
@@ -186,7 +203,7 @@ export function mcpTarget(cfg: ConnectorConfig, toolName: string, input: unknown
     // A list with no server would show every server the session connected:
     // deny rules hide a server's tools, not its resources (owner, 2026-10-02).
     if (typeof s !== 'string' || !s) return { kind: 'all-servers' };
-    if (s === APP_MCP_SERVER) return { kind: 'app' };
+    if (s === APP_MCP_SERVER || s === INTEGRATIONS_MCP_SERVER) return { kind: 'app' };
     const c = /^claude\.ai (.+)$/.exec(s);
     if (c) {
       const key = knownKeys(cfg).find((k) => k === c[1].trim());
@@ -197,7 +214,7 @@ export function mcpTarget(cfg: ConnectorConfig, toolName: string, input: unknown
   const m = /^mcp__(.+)$/.exec(toolName ?? '');
   if (!m) return { kind: 'none' };
   server = m[1];
-  if (server.startsWith(`${APP_MCP_SERVER}__`)) return { kind: 'app' };
+  if (server.startsWith(`${APP_MCP_SERVER}__`) || server.startsWith(`${INTEGRATIONS_MCP_SERVER}__`)) return { kind: 'app' };
   // The longest matching prefix wins ("Google" vs "Google Drive"). Two names
   // that become the same tool prefix ("Foo Bar", "Foo_Bar") cannot be told
   // apart, so neither is (Codex adversarial review, 2026-10-02).
@@ -245,11 +262,12 @@ export function connectorAccess(
   if (target.kind === 'all-servers') {
     return { ok: false, reason: 'Name the connector\'s server to list its resources (for example "claude.ai HubSpot"). Only connectors you were given can be listed.' };
   }
-  // The app's own md-mail: Capabilities > Email decides its tools, in the hook.
-  // It has no resources, and the mail gate checks tool names only, so a
-  // resource call naming md-mail is refused (Codex adversarial review, 2026-10-02).
+  // The app's own servers: Capabilities > Email decides md-mail's tools, in the
+  // hook, and the broker decides md-integrations'. They have no resources, and
+  // the mail gate checks tool names only, so a resource call naming either is
+  // refused (Codex adversarial review, 2026-10-02).
   if (target.kind === 'app') {
-    return MCP_RESOURCE_TOOLS.has(toolName) ? { ok: false, reason: `The office mail server has no resources to read. ${TELL_MICHAEL}` } : { ok: true };
+    return MCP_RESOURCE_TOOLS.has(toolName) ? { ok: false, reason: `The office's own servers have no resources to read. ${TELL_MICHAEL}` } : { ok: true };
   }
   if (target.kind === 'other') {
     return { ok: false, reason: `"${target.server}" is not one of the office's connections, so you cannot use it. ${TELL_MICHAEL}` };
@@ -266,6 +284,9 @@ export function connectorAccess(
     return { ok: false, reason: `That connector on the owner's Claude account is not turned on for the team. ${TELL_MICHAEL}` };
   }
   const { key } = target;
+  if (isMailConnectorKey(key)) {
+    return { ok: false, reason: `Email goes only through the office mailboxes connected in the app, never ${key} on the owner's Claude account. ${TELL_MICHAEL}` };
+  }
   const listed = (list ?? []).some((c) => c.key === key);
   // QuickBooks keeps its own switch and rules: the hook's QuickBooks gate
   // decides, as long as the account still has it.
@@ -304,14 +325,16 @@ export function removedKeys(cfg: ConnectorConfig): string[] {
   const out = new Set<string>();
   for (const [k, on] of Object.entries(cfg.connectorsOn ?? {})) if (on && !present.has(k)) out.add(k);
   for (const caps of Object.values(cfg.agentCapabilities ?? {})) for (const k of caps?.connectors ?? []) if (!present.has(k)) out.add(k);
+  for (const k of out) if (isMailConnectorKey(k)) out.delete(k);
   return [...out].sort((a, b) => a.localeCompare(b));
 }
 
 /** The one-time carry-over (owner, 2026-10-02, D9), run at the first good read.
  *  QuickBooks keeps its own switch and each agent's choice, untouched. The old
- *  "Your Claude account" switch, when on, turns Gmail and Google Calendar on and
- *  grants them to every agent (Michael included), who could all use them
- *  before. Every other connector starts off. `switchedOff` names the connected
+ *  "Your Claude account" switch, when on, turns Google Calendar on and grants
+ *  it to every agent (Michael included), who could all use it before; Gmail
+ *  no longer, as mail goes through the app's mailboxes (owner, 2026-10-30).
+ *  Every other connector starts off. `switchedOff` names the connected
  *  ones agents could reach before the update and no longer can (E2). */
 export function connectorCarryOver(
   cfg: ConnectorConfig & { mcpDefaults?: { [id: string]: { enabled: boolean } } },
@@ -320,16 +343,18 @@ export function connectorCarryOver(
 ): { connectorsOn: { [key: string]: boolean }; agentCapabilities: { [agentId: string]: AgentCapabilities }; switchedOff: string[] } {
   const connectorsOn = { ...(cfg.connectorsOn ?? {}) };
   const agentCapabilities = { ...(cfg.agentCapabilities ?? {}) };
-  const mail = list.filter((c) => isEmailCalendarKey(c.key)).map((c) => c.key);
-  if (emailCalendarAllowed(cfg.mcpDefaults) && mail.length) {
-    for (const k of mail) connectorsOn[k] = true;
+  const calendar = list.filter((c) => isEmailCalendarKey(c.key) && !isMailConnectorKey(c.key)).map((c) => c.key);
+  // Agents could reach the Claude account's Gmail only with the old switch on.
+  const hadMail = emailCalendarAllowed(cfg.mcpDefaults);
+  if (hadMail && calendar.length) {
+    for (const k of calendar) connectorsOn[k] = true;
     for (const id of agentIds) {
       const caps = agentCapabilities[id] ?? {};
-      agentCapabilities[id] = { ...caps, connectors: [...new Set([...(caps.connectors ?? []), ...mail])] };
+      agentCapabilities[id] = { ...caps, connectors: [...new Set([...(caps.connectors ?? []), ...calendar])] };
     }
   }
   const switchedOff = agentIds.length
-    ? list.filter((c) => c.status === 'connected' && !isQuickBooksKey(c.key) && !isEmailCalendarKey(c.key)).map((c) => c.key)
+    ? list.filter((c) => c.status === 'connected' && !isQuickBooksKey(c.key) && !calendar.includes(c.key) && (hadMail || !isMailConnectorKey(c.key))).map((c) => c.key)
     : [];
   return { connectorsOn, agentCapabilities, switchedOff };
 }
@@ -337,5 +362,5 @@ export function connectorCarryOver(
 /** Keys found now that the owner has not seen in Settings yet. */
 export function unseenKeys(list: ClaudeConnector[] | null | undefined, seen: string[] | undefined): string[] {
   if (!list) return [];
-  return list.map((c) => c.key).filter((k) => !(seen ?? []).includes(k));
+  return offeredConnectors(list).map((c) => c.key).filter((k) => !(seen ?? []).includes(k));
 }

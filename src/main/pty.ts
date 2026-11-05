@@ -142,6 +142,10 @@ export function buildCmdCommandLine(resolved: string, args: string[]): string {
     // an unquoted `&`/`|`/etc. would let one token chain a second command once this
     // string is executed by cmd.exe. Quoting neutralizes them — cmd does not
     // interpret metacharacters inside a double-quoted run.
+    // An empty argument is written as "": left bare it vanishes, and the next
+    // flag becomes its value (`--tools ''` would swallow `--strict-mcp-config`,
+    // #426).
+    if (s === '') return '""';
     const escaped = s.replace(/"/g, '\\"');
     return /[ \t"&|^<>()%!]/.test(s) ? `"${escaped}"` : escaped;
   };
@@ -247,7 +251,7 @@ export function parseNpmCmdShim(shimPath: string, content: string): NpmShimTarge
    *  expands WITH a trailing backslash) into an absolute, normalized path. Any
    *  other surviving `%` means a variable we did not model → refuse. */
   const expand = (raw: string): string | null => {
-    let s = raw.replace(/%~dp0%?|%dp0%/gi, `${dir}\\`);
+    let s = raw.replace(/%~dp0%?|%dp0%/gi, () => `${dir}\\`);
     if (s.includes('%')) return null;
     if (!s.trim()) return null;
     // `<dir>\` + `\node_modules\…` produces a doubled separator that Windows
@@ -338,6 +342,9 @@ export function parseNpmCmdShim(shimPath: string, content: string): NpmShimTarge
 export class PtyManager {
   private sessions = new Map<string, PtySession>();
   private webContents: WebContents | null = null;
+  /** A spawn that will silently lose something (the lossy cmd.exe fallback),
+   *  for the failure reporter (docs/designs/auto-report-failures.md). */
+  onFailure?: (kind: 'cmd-fallback', detail: 'multiline') => void;
   /** Fired when a PTY exits on its OWN (child finished/crashed/killed
    *  externally), so the main process can run the SAME lifecycle teardown
    *  (archive, worktree removal, map cleanup) that the explicit kill() path
@@ -453,6 +460,7 @@ export class PtyManager {
       const appData = process.env.APPDATA ?? '';
       const localAppData = process.env.LOCALAPPDATA ?? '';
       const home = process.env.USERPROFILE ?? process.env.HOME ?? '';
+      const programFiles = process.env.ProgramFiles ?? '';
       const winCandidates = [
         `${appData}\\npm\\${command}.cmd`,
         `${appData}\\npm\\${command}`,
@@ -460,6 +468,9 @@ export class PtyManager {
       // Claude's own installer (install.ps1) puts claude.exe here and updates the
       // user PATH in the registry, which this already running app never sees.
       `${home}\\.local\\bin\\${command}.exe`,
+        // The app's own Node install (nodeInstall.ts) lands here, and this running
+        // app's PATH predates it. Never built from an unset variable (drive root).
+        ...(programFiles ? [`${programFiles}\\nodejs\\${command}.exe`, `${programFiles}\\nodejs\\${command}.cmd`] : []),
         `${home}\\.claude\\local\\${command}.cmd`,
         `${home}\\.claude\\local\\${command}`
       ];
@@ -560,7 +571,8 @@ export class PtyManager {
     const resolved = typeof opts.shellScript === 'string' ? opts.command : this.resolveCommand(opts.command).path;
     try {
       // Build a user-shell PATH so child can resolve subprocess deps. Cached
-      // for the session (shellEnv.userShellPath, fenced against rc-file noise) —
+      // once the shell answers (shellEnv.userShellPath, fenced against rc-file
+      // noise; a failed capture is asked again after a backoff) —
       // the interactive-shell launch it replaces cost ~1s of main-thread freeze
       // on EVERY spawn.
       const userPath = withHiveRuntimeFallback(
@@ -649,6 +661,8 @@ export class PtyManager {
         // argument is actually at risk in THIS spawn.
         if (needsCmd) {
           const multiline = (opts.args ?? []).some((a) => a.includes('\n'));
+          // The lossy case is a failure report too (docs/designs/auto-report-failures.md).
+          if (multiline) { try { this.onFailure?.('cmd-fallback', 'multiline'); } catch { /* never block a spawn */ } }
           console.warn(
             `[pty] Windows: "${resolved}" could not be decoded as an npm shim — falling back to cmd.exe.` +
             (multiline

@@ -1,7 +1,9 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { authTypeNeedsSecret as needsSecret } from '@shared/integrations';
+import { authTypeNeedsSecret as needsSecret, INTEGRATION_ID_TAKEN, MESSAGE_PLACEHOLDER, validateSavedCall, type SavedCall } from '@shared/integrations';
+import { InfoTip } from './InfoTip';
 import { PixelButton } from './PixelButton';
+import { fieldLabel, groupName, hint, panelStyle } from './fieldText';
 import {
   integrationsClient,
   slugify,
@@ -20,11 +22,8 @@ import {
 //
 // All data flows through integrationsClient — never IPC directly.
 //
-// v1 worker model (Jim §4): the broker grants EVERY enabled integration to ALL
-// workers; there is no per-integration worker scoping yet. So "which workers can
-// use it" is surfaced as the usability gate — usable === enabled && hasSecret —
-// rather than an editable per-integration picker. Per-worker scoping is a future
-// extension; this reflection updates when Jim confirms that model.
+// Who may use one is set per agent on its Access tab (CapabilitiesTab), so this
+// screen shows only whether it is ready: usable === enabled && hasSecret.
 
 type View = 'list' | 'gallery' | 'configure';
 
@@ -40,6 +39,10 @@ interface Draft {
   hasSecret: boolean; // an existing stored secret (edit)
   createdAt: number;
   secret: string;     // write-only input buffer
+  callMethod: SavedCall['method'] | ''; // '' is no saved call
+  callPath: string;
+  callBody: string;
+  callPurpose: string;
 }
 
 const AUTH_LABEL: Record<IntegrationAuthType, string> = {
@@ -51,6 +54,15 @@ const AUTH_LABEL: Record<IntegrationAuthType, string> = {
 // Auth types a user may pick for a custom-REST integration.
 const CUSTOM_AUTH: IntegrationAuthType[] = ['none', 'bearer', 'header'];
 
+const NO_CALL = { callMethod: '', callPath: '', callBody: '', callPurpose: '' } as const;
+const BODY_EXAMPLE = `{\n  "serverUrl": "https://example.com",\n  "message": ${MESSAGE_PLACEHOLDER}\n}`;
+
+/** The saved call a draft holds, as the form has it. */
+function callOf(d: Draft): SavedCall | undefined {
+  if (!d.callMethod) return undefined;
+  return { method: d.callMethod, path: d.callPath, body: d.callMethod === 'POST' ? d.callBody : '', purpose: d.callPurpose };
+}
+
 // UI-only brand glyphs (Jim's templates carry no glyph). Falls back to label initials.
 const GLYPH: Record<string, { mono: string; bg: string }> = {
   github: { mono: 'Gh', bg: '#1A1320' },
@@ -60,10 +72,10 @@ function glyphFor(kind: string, label: string): { mono: string; bg: string } {
   return GLYPH[kind] ?? { mono: (label.replace(/[^A-Za-z0-9]/g, '').slice(0, 2) || '··'), bg: '#6B5878' };
 }
 
-const dispLabel: CSSProperties = { fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px', color: 'var(--cth-ink-500)', textTransform: 'uppercase' };
-const fieldLabel: CSSProperties = { ...dispLabel, color: 'var(--cth-ink-700)' };
-const subText: CSSProperties = { fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' };
-const hint: CSSProperties = { fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-500)' };
+/** The three views (gallery, form, list) are one group on the shared soft
+ *  panel, with the app's group name, field labels and hints (fieldText). */
+const groupBox: CSSProperties = { ...panelStyle, gap: 12 };
+const subText = hint;
 const inputStyle: CSSProperties = { width: '100%', padding: '6px 8px', background: 'var(--cth-paper-100)', border: 'none', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)', fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-900)' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', padding: 0, alignSelf: 'flex-start', fontSize: 12, color: 'var(--cth-ink-500)' };
 
@@ -74,23 +86,24 @@ function Glyph({ mono, bg, lg }: { mono: string; bg: string; lg?: boolean }) {
   );
 }
 
-/** Is an integration actually usable by workers? (Jim §6 gate.) */
+/** Is an integration ready for the agents given it? (Jim §6 gate.) */
 function usable(r: { enabled: boolean; authType: IntegrationAuthType; hasSecret: boolean }): boolean {
   return r.enabled && (!needsSecret(r.authType) || r.hasSecret);
 }
 
-function draftFromTemplate(t: IntegrationTemplate, now: number): Draft {
+function draftFromTemplate(t: IntegrationTemplate, now: number, takenIds: string[]): Draft {
   return {
-    isNew: true, id: slugify(t.idSuggestion || t.label), label: t.label, kind: t.kind,
+    isNew: true, id: slugify(t.idSuggestion || t.label, takenIds), label: t.label, kind: t.kind,
     baseUrl: t.baseUrl, authType: t.authType, authHeader: t.authHeader ?? '',
-    enabled: true, hasSecret: false, createdAt: now, secret: ''
+    enabled: true, hasSecret: false, createdAt: now, secret: '', ...NO_CALL
   };
 }
 function draftFromRecord(r: IntegrationRecordView): Draft {
   return {
     isNew: false, id: r.id, label: r.label, kind: r.kind, baseUrl: r.baseUrl,
     authType: r.authType, authHeader: r.authHeader ?? '', enabled: r.enabled,
-    hasSecret: r.hasSecret, createdAt: r.createdAt, secret: ''
+    hasSecret: r.hasSecret, createdAt: r.createdAt, secret: '',
+    callMethod: r.call?.method ?? '', callPath: r.call?.path ?? '', callBody: r.call?.body ?? '', callPurpose: r.call?.purpose ?? ''
   };
 }
 
@@ -114,6 +127,9 @@ export function IntegrationsRegistry() {
 
   const flash = (msg: string) => { setNote(msg); setTimeout(() => setNote(''), 2400); };
   const refresh = async () => setRecords(await integrationsClient.list());
+  // A new integration never takes an id in use: saving under one replaces
+  // that integration and its secret (upsertRecord in src/main/integrations.ts).
+  const takenIds = records.map((r) => r.id);
 
   useEffect(() => {
     let alive = true;
@@ -130,7 +146,7 @@ export function IntegrationsRegistry() {
   const continueFromGallery = () => {
     const t = templates.find((x) => x.idSuggestion === picked);
     if (!t) return;
-    setDraft(draftFromTemplate(t, Date.now())); setReplacing(false); setShowSecret(false); setCfgTest(null); setErr(''); setView('configure');
+    setDraft(draftFromTemplate(t, Date.now(), takenIds)); setReplacing(false); setShowSecret(false); setCfgTest(null); setErr(''); setView('configure');
   };
   const startEdit = (r: IntegrationRecordView) => { setDraft(draftFromRecord(r)); setReplacing(false); setShowSecret(false); setCfgTest(null); setErr(''); setView('configure'); };
 
@@ -145,6 +161,9 @@ export function IntegrationsRegistry() {
       if (!/^https:\/\//.test(u) && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/.test(u)) return tr('integrations.errBaseUrlFormat');
     }
     if (d.authType === 'header' && !/^[A-Za-z0-9-]{1,64}$/.test(d.authHeader.trim())) return tr('integrations.errHeader');
+    const call = callOf(d);
+    const checked = call ? validateSavedCall(call, d.baseUrl.trim()) : null;
+    if (checked && !checked.ok) return tr(`integrations.savedCallError.${checked.code}`, { placeholder: MESSAGE_PLACEHOLDER });
     return null;
   };
 
@@ -159,6 +178,7 @@ export function IntegrationsRegistry() {
       authHeader: d.authType === 'header' ? d.authHeader.trim() : undefined,
       secretRef: needsSecret(d.authType) ? `int:${id}` : undefined,
       enabled: d.enabled,
+      call: callOf(d),
       createdAt: d.isNew ? now : d.createdAt,
       updatedAt: now
     };
@@ -171,8 +191,13 @@ export function IntegrationsRegistry() {
     setBusy(true); setErr('');
     try {
       const secret = draft.secret.trim().length > 0 ? draft.secret : undefined;
-      const res = await integrationsClient.save(recordFromDraft(draft, Date.now()), secret);
-      if (!res.ok) { setErr(res.error || tr('integrations.couldNotSave')); return; }
+      const res = await integrationsClient.save(recordFromDraft(draft, Date.now()), secret, { isNew: draft.isNew });
+      if (!res.ok) {
+        // Taken since this form loaded (another window, or a list not loaded yet):
+        // reload it, so a changed label picks a free id.
+        if (res.error === INTEGRATION_ID_TAKEN) { await refresh(); setErr(tr('integrations.errIdTaken')); return; }
+        setErr(res.error || tr('integrations.couldNotSave')); return;
+      }
       await refresh();
       flash(draft.isNew ? tr('integrations.added') : tr('integrations.updated'));
       goList();
@@ -208,10 +233,10 @@ export function IntegrationsRegistry() {
   // ───────────────────────── GALLERY ─────────────────────────
   if (view === 'gallery') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={groupBox}>
         <button type="button" onClick={goList} style={linkBtn}>{tr('integrations.backToList')}</button>
         <div>
-          <div style={{ ...dispLabel, marginBottom: 4 }}>{tr('integrations.pickTemplate')}</div>
+          <h3 style={{ ...groupName, marginBottom: 4 }}>{tr('integrations.pickTemplate')}</h3>
           <span style={subText}>{tr('integrations.galleryDesc')}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
@@ -250,7 +275,7 @@ export function IntegrationsRegistry() {
     const showSavedPill = !draft.isNew && draft.hasSecret && !replacing;
     const isUsable = usable(draft);
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ ...groupBox, gap: 14 }}>
         <button type="button" onClick={draft.isNew ? startAdd : goList} style={linkBtn}>{draft.isNew ? tr('integrations.backToTemplates') : tr('integrations.backToList')}</button>
 
         <div style={{ borderRadius: 'var(--cth-r-md)', display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'var(--cth-cream-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
@@ -264,7 +289,7 @@ export function IntegrationsRegistry() {
         {/* Label */}
         <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <span style={fieldLabel}>{tr('integrations.label')}</span>
-          <input value={draft.label} onChange={(e) => patch({ label: e.target.value, ...(draft.isNew ? { id: slugify(e.target.value) } : {}) })} placeholder={`e.g. ${tpl?.label ?? 'My API'} (prod)`} style={inputStyle} />
+          <input value={draft.label} onChange={(e) => patch({ label: e.target.value, ...(draft.isNew ? { id: slugify(e.target.value, takenIds) } : {}) })} placeholder={`e.g. ${tpl?.label ?? 'My API'} (prod)`} style={inputStyle} />
           <span style={hint}>{tr('integrations.labelHint')}: <code style={{ fontFamily: 'var(--cth-font-mono)' }}>{slugify(draft.id || draft.label) || '·'}</code>{draft.isNew ? '' : ` (${tr('integrations.fixed')})`}</span>
         </label>
 
@@ -323,14 +348,46 @@ export function IntegrationsRegistry() {
           </div>
         )}
 
+        {/* Saved call: the one request agents make, custom-rest only */}
+        {draft.kind === 'custom-rest' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 5, maxWidth: 260 }}>
+              <span style={{ ...fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6 }}>{tr('integrations.savedCall')}<InfoTip label={tr('integrations.savedCall')} text={tr('integrations.savedCallInfo')} /></span>
+              <select value={draft.callMethod} onChange={(e) => patch({ callMethod: e.target.value as Draft['callMethod'] })} style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)' }}>
+                <option value="">{tr('integrations.savedCallNone')}</option>
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+              </select>
+            </label>
+            {draft.callMethod && (
+              <>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <span style={fieldLabel}>{tr('integrations.savedCallPurpose')}</span>
+                  <input value={draft.callPurpose} onChange={(e) => patch({ callPurpose: e.target.value })} maxLength={300} style={inputStyle} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <span style={fieldLabel}>{tr('integrations.savedCallPath')}</span>
+                  <input value={draft.callPath} onChange={(e) => patch({ callPath: e.target.value })} placeholder={draft.callMethod === 'GET' ? `search?q=${MESSAGE_PLACEHOLDER}` : ''} style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)' }} />
+                </label>
+                {draft.callMethod === 'POST' && (
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <span style={{ ...fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6 }}>{tr('integrations.savedCallBody')}<InfoTip label={tr('integrations.savedCallBody')} text={tr('integrations.savedCallBodyInfo', { placeholder: MESSAGE_PLACEHOLDER })} /></span>
+                    <textarea value={draft.callBody} onChange={(e) => patch({ callBody: e.target.value })} placeholder={BODY_EXAMPLE} rows={5} spellCheck={false} dir="ltr" style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)', resize: 'vertical' }} />
+                  </label>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {/* Enabled gate + worker availability */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={fieldLabel}>{tr('integrations.availability')}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <PixelButton variant={draft.enabled ? 'primary' : 'secondary'} size="sm" onClick={() => patch({ enabled: !draft.enabled })}>{draft.enabled ? tr('integrations.enabled') : tr('integrations.disabled')}</PixelButton>
-            <span style={hint}>{isUsable ? tr('integrations.availableToAll') : needsSecret(draft.authType) && !(draft.hasSecret || draft.secret.trim()) ? tr('integrations.addSecretToEnable') : draft.enabled ? tr('integrations.readyOnceSaved') : tr('integrations.disabledNoUse')}</span>
+            <span style={hint}>{isUsable ? tr('integrations.readyForAgents') : needsSecret(draft.authType) && !(draft.hasSecret || draft.secret.trim()) ? tr('integrations.addSecretToEnable') : draft.enabled ? tr('integrations.readyOnceSaved') : tr('integrations.disabledNoUse')}</span>
           </div>
-          <span style={hint}>{tr('integrations.v1Note')}</span>
+          <span style={hint}>{tr('integrations.accessNote')}</span>
         </div>
 
         {/* Test connection (saved integrations only — broker probes by id) */}
@@ -340,7 +397,7 @@ export function IntegrationsRegistry() {
             <PixelButton variant="secondary" size="sm" onClick={() => { void onTestCfg(); }} disabled={draft.isNew || testing}>{testing ? tr('integrations.testing') : tr('integrations.testConnection')}</PixelButton>
             {cfgTest && <span style={{ fontSize: 12, color: cfgTest.ok ? 'var(--cth-green-text)' : 'var(--cth-coral-text)' }}>{fmtTest(cfgTest)}</span>}
           </div>
-          <span style={hint}>{draft.isNew ? tr('integrations.testAfterSave') : tr('integrations.testLiveDesc')}</span>
+          <span style={hint}>{draft.isNew ? tr('integrations.testAfterSave') : records.find((r) => r.id === draft.id)?.call ? tr('integrations.testSavedDesc') : tr('integrations.testLiveDesc')}</span>
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -355,17 +412,17 @@ export function IntegrationsRegistry() {
   // ───────────────────────── LIST (default) ─────────────────────────
   const usableCount = records.filter(usable).length;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={groupBox}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={dispLabel}>{tr('integrations.title')}</div>
+          <h3 style={groupName}>{tr('integrations.title')}</h3>
           <span style={{ ...subText, maxWidth: 440 }}>{tr('integrations.titleDesc')}</span>
         </div>
         {records.length > 0 && <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={busy || templates.length === 0}>+ {tr('integrations.addIntegration')}</PixelButton>}
       </div>
 
       {records.length === 0 ? (
-        <div style={{ borderRadius: 'var(--cth-r-md)', padding: 24, textAlign: 'center', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
+        <div style={{ borderRadius: 'var(--cth-r-lg)', padding: 24, textAlign: 'center', background: 'var(--cth-card)' }}>
           <p style={{ margin: '0 0 12px', fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{tr('integrations.empty')}</p>
           <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={templates.length === 0}>+ {tr('integrations.addFirst')}</PixelButton>
         </div>
@@ -383,7 +440,7 @@ export function IntegrationsRegistry() {
                   : { dot: '●', color: 'var(--cth-green-text)', text: tr('integrations.enabled') };
               const rt = rowTest[r.id];
               return (
-                <div key={r.id} style={{ borderRadius: 'var(--cth-r-md)', display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
+                <div key={r.id} style={{ borderRadius: 'var(--cth-r-lg)', display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-card)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <Glyph mono={g.mono} bg={g.bg} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
@@ -399,7 +456,7 @@ export function IntegrationsRegistry() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ ...hint, color: usable(r) ? 'var(--cth-green-text)' : 'var(--cth-ink-500)' }}>
-                      {usable(r) ? tr('integrations.availableToAll') : tr('integrations.notAvailableYet')}
+                      {usable(r) ? tr('integrations.readyForAgents') : tr('integrations.notReady')}
                     </span>
                     {rt && <span style={{ fontSize: 12, color: rt.ok ? 'var(--cth-green-text)' : 'var(--cth-coral-text)' }}>· {fmtTest(rt)}</span>}
                   </div>

@@ -33,7 +33,6 @@ const SHOTS = [
   ['file-tab', '?shot=file-tab'],
   ['onboarding-team', '?shot=onboarding-team'],
   ['onboarding-business', '?shot=onboarding-business'],
-  ['onboarding-meet', '?shot=onboarding-meet'],
   ['onboarding-ready', '?shot=onboarding-ready'],
   ['kelly-memory', '?shot=kelly-memory'],
   ['hire', '?shot=hire'],

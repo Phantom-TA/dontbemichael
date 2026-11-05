@@ -45,6 +45,10 @@ export interface FolderLayout {
    *  (`<harnessHome>/agent-settings`), which set its sandbox at its next start
    *  (issue 100). Any agent may read them; none, Michael included, changes them. */
   appLocked?: string[];
+  /** The engine's record of every session: its projects folder and its prompt
+   *  history. The engine writes both itself; no agent, Michael included, opens
+   *  them with its tools, so nobody reads a teammate's conversation. */
+  engineRecords?: { projects: string; history: string };
 }
 
 export interface AgentFolderPolicy {
@@ -67,6 +71,28 @@ export interface FolderAgent {
   isGod: boolean;
   /** The folder the agent works in. */
   cwd: string;
+  /** Folders the owner named on a Company foundations card that this member's
+   *  job uses (shared/foundations.ts readFoldersFor): read only, even inside
+   *  the business folder (eng review 2026-10-26, D1). */
+  readFolders?: string[];
+}
+
+/** The named folders a member may read: never one holding the business
+ *  folder, a team folder or the app's own folders, nor one inside another
+ *  member's folder, whatever the record says. */
+function grantedReads(agent: FolderAgent, layout: FolderLayout, caseInsensitive: boolean): string[] {
+  const inside = insideFn(caseInsensitive);
+  const same = sameFn(caseInsensitive);
+  const team = teamFoldersOf(layout, same).filter((f) => !same(f, agent.cwd));
+  const closed = [layout.appPrivate, ...(layout.appLocked ?? []), layout.engineRecords?.projects, layout.engineRecords?.history]
+    .filter((f): f is string => !!f);
+  const kept = [layout.business, ...team, ...closed].filter((f): f is string => !!f);
+  // Nor one inside the app's own folders or Claude's session records: the
+  // shell's allowRead would reopen what denyRead closes (review, 2026-10-27).
+  return (agent.readFolders ?? []).filter((f) => !!f && isAbsolute(f)
+    && !kept.some((k) => inside(f, k))
+    && !team.some((t) => inside(t, f))
+    && !closed.some((c) => inside(c, f)));
 }
 
 /** Claude's file tools that only read. */
@@ -89,6 +115,12 @@ export function folderPolicy(agent: FolderAgent, layout: FolderLayout, caseInsen
   for (const f of layout.appLocked ?? []) {
     policy.sandbox.denyWrite.push(f);
     policy.deny.push(rule('Edit', f));
+  }
+  if (layout.engineRecords) {
+    const { projects, history } = layout.engineRecords;
+    policy.sandbox.denyRead.push(projects, history);
+    policy.sandbox.denyWrite.push(projects, history);
+    policy.deny.push(rule('Read', projects), rule('Edit', projects), fileRule('Read', history), fileRule('Edit', history));
   }
 
   if (agent.isGod) {
@@ -114,6 +146,9 @@ export function folderPolicy(agent: FolderAgent, layout: FolderLayout, caseInsen
     policy.sandbox.denyRead.push(f);
     policy.deny.push(rule('Read', f), rule('Edit', f));
   }
+  // A folder the owner named for this member's job: its shell reads it from
+  // this start (allowRead wins over the business folder's denyRead).
+  for (const f of grantedReads(agent, layout, caseInsensitive)) policy.sandbox.allowRead.push(f);
   return policy;
 }
 
@@ -141,6 +176,10 @@ export function folderDecision(
   if (writes && (layout.appLocked ?? []).some((f) => inside(f, target))) {
     return { deny: true, reason: 'That folder holds the app\'s own program and settings. You can read it, but nobody on the team changes it.' };
   }
+  const records = layout.engineRecords;
+  if (records && (inside(records.projects, target) || same(records.history, target))) {
+    return { deny: true, reason: 'That is where every team member\'s conversations are kept, so nobody on the team opens it.' };
+  }
 
   if (agent.isGod) {
     if (writes && teamFolder && !inside(teamFolder, agent.cwd)) {
@@ -161,9 +200,18 @@ export function folderDecision(
     };
   }
   if (layout.business && inside(layout.business, target)) {
+    if (!writes && grantedReads(agent, layout, caseInsensitive).some((f) => inside(f, target))) return { deny: false };
     return {
       deny: true,
       reason: `That is ${godName}'s folder, and only ${godName} can open it. If you need something from it, ask ${godName}.`
+    };
+  }
+  // A folder the owner named on a Company foundations card is read only
+  // wherever it is (review, 2026-10-27).
+  if (writes && grantedReads(agent, layout, caseInsensitive).some((f) => inside(f, target))) {
+    return {
+      deny: true,
+      reason: `The owner shared that folder for reading only. If something in it needs to change, ask ${godName}.`
     };
   }
   return { deny: false };
@@ -404,6 +452,11 @@ function rule(tool: 'Read' | 'Edit', folder: string): string {
   const p = resolve(folder).replace(/\\/g, '/');
   // Absolute paths are written with a leading `//` in permission rules.
   return `${tool}(/${p.startsWith('/') ? p : `/${p}`}/**)`;
+}
+
+/** The same rule for one file. */
+function fileRule(tool: 'Read' | 'Edit', file: string): string {
+  return rule(tool, file).slice(0, -4) + ')';
 }
 
 /** Team folders, each once, never Michael's folder itself. */

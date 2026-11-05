@@ -20,6 +20,9 @@ import type { OfficePack } from './officePack';
 import { splitAgentRole, joinAgentRole } from './agentRole';
 import { teamMemberGoal, teamMemberName, folderNameFor } from './teamPlan';
 import { OFFICE_ROLES } from './officeRoles';
+import { clipUnits } from './cutText';
+import { readObject } from './jsonReply';
+import { cleanFolderName, suffixedFolderName } from './folderName';
 
 export type HireJobSource = 'card' | 'team' | 'new';
 
@@ -245,7 +248,7 @@ export function swapName(text: string, from: string | undefined, to: string): st
   const f = from?.trim();
   const t = to.trim();
   if (!text || !f || !t || f === t) return text;
-  return text.replace(nameRe(f), t);
+  return text.replace(nameRe(f), () => t);
 }
 
 /**
@@ -299,14 +302,35 @@ export function hireAgentId(name: string, now: number = Date.now()): string {
   return `${base || 'agent'}-${now.toString(36)}`;
 }
 
-/** One folder name, safe on every system: no path separators or characters
- *  Windows forbids, no leading dots, at most 60 characters. "AR/AP Clerk"
- *  becomes "AR-AP Clerk", never a folder inside a folder. The trailing-dot
- *  and trailing-space strip runs again AFTER the length cut: a name sliced
- *  mid-word can end in a '.' or ' ' that Windows silently drops, so the
- *  folder on disk would not match the name the office shows for it. */
+/** One folder name, safe on every system: "AR/AP Clerk" becomes "AR-AP
+ *  Clerk", never a folder inside a folder, and nothing usable is ''. The same
+ *  cleaning as the main process (shared/folderName.ts), which checks and makes
+ *  the folder this name gives. */
 export function safeFolder(raw: string): string {
-  return raw.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[.\s-]+/, '').replace(/[.\s]+$/, '').trim().slice(0, 60).replace(/[.\s]+$/, '');
+  return cleanFolderName(raw, '');
+}
+
+/** The most of a hire's name a folder suffix keeps, so a long name still
+ *  leaves room for the job's folder name and a counter. */
+const HIRE_NAME_IN_FOLDER = 24;
+
+function hireFolderParts(base: string, name: string): { b: string; first: string } {
+  const b = safeFolder(base) || safeFolder(name) || 'Team';
+  // Trailing dots and spaces come off too: Windows drops them silently, so
+  // "Jim." would land on disk as "Jim" while the office keeps showing "Jim.".
+  const n = clipUnits(name.trim().replace(/[\\/:*?"<>|]+/g, ''), HIRE_NAME_IN_FOLDER).replace(/[.\s]+$/, '');
+  return { b, first: n ? `_${n}` : '_2' };
+}
+
+/** The first `count` folders a new hire may get, in the order hireFolderName
+ *  tries them: the job's folder, then `<Folder>_<Name>`, `<Folder>_<Name>_2`,
+ *  ... Each is a whole folder name within the length limit, so the suffix is
+ *  never cut off and the name main checks on disk is the name tried. */
+export function hireFolderCandidates(base: string, name: string, count: number): string[] {
+  const { b, first } = hireFolderParts(base, name);
+  const out = [b];
+  for (let i = 1; out.length < count; i++) out.push(suffixedFolderName(b, i === 1 ? first : `${first}_${i}`));
+  return out;
 }
 
 /**
@@ -315,18 +339,10 @@ export function safeFolder(raw: string): string {
  * whether a folder name is already on disk or in use by a teammate.
  */
 export function hireFolderName(base: string, name: string, taken: (folder: string) => boolean): string {
-  const b = base.trim() || name.trim() || 'Team';
-  if (!taken(b)) return b;
-  // Trailing dots and spaces come off too: Windows drops them silently, so
-  // "Jim." would land on disk as "Jim" while the office keeps showing "Jim.".
-  const n = name.trim().replace(/[\\/:*?"<>|]+/g, '').replace(/[.\s]+$/, '');
-  const first = n ? `${b}_${n}` : `${b}_2`;
-  if (!taken(first)) return first;
-  for (let i = 2; i < 100; i++) {
-    const next = `${first}_${i}`;
-    if (!taken(next)) return next;
-  }
-  return `${first}_${Date.now().toString(36)}`;
+  const free = hireFolderCandidates(base, name, 100).find((f) => !taken(f));
+  if (free) return free;
+  const { b, first } = hireFolderParts(base, name);
+  return suffixedFolderName(b, `${first}_${Date.now().toString(36)}`);
 }
 
 // ─── The distinct job check, rules half (D6) ─────────────────────────────────
@@ -367,9 +383,17 @@ export const SIMILAR_LINES = 0.5;
 export function overlapsByRules(job: JobProfile, team: JobProfile[]): string[] {
   const strip = (text: string, ...names: string[]) =>
     names.filter((n) => n.trim()).reduce((t, n) => t.replace(nameRe(n.trim()), ' '), text);
+  // Work one of them sends to the other is not work they share: "Not for
+  // technical questions; that goes to Nick." on Kelly's line is a handoff,
+  // and comparing its words would make the handoff look like an overlap
+  // (overlap split plan, A1). Only the lines between these two go; the rest
+  // of each line is still compared.
+  const sent = (text: string, to: string) => (to.trim() ? text.replace(bindingRe(to.trim()), ' ') : text);
   const out: string[] = [];
   for (const m of team) {
-    if (lineSimilarity(strip(job.routing, job.name, m.name), strip(m.routing, job.name, m.name)) >= SIMILAR_LINES) out.push(m.name);
+    const mine = strip(sent(job.routing, m.name), job.name, m.name);
+    const theirs = strip(sent(m.routing, job.name), job.name, m.name);
+    if (lineSimilarity(mine, theirs) >= SIMILAR_LINES) out.push(m.name);
   }
   return out;
 }
@@ -460,6 +484,22 @@ export function appendOnce(line: string, extra: string): string {
   return `${/[.!?:;)"'”’]$/.test(l) ? l : `${l}.`} ${extra}`;
 }
 
+/** The lines a hire binding wrote into a role line ("Only <scope>." on the
+ *  bound member, "Not for <scope>; that goes to <Name>." on teammates). Lazy
+ *  up to the full stop that ends the line, so a scope with a period or a
+ *  semicolon in it stays whole: "the owner@sunrise.com mailbox", "orders over
+ *  $1.5k", "refunds; returns". */
+export const BINDING_LINE_RE = /Only (?:(?!Only |Not for ).)+?\.(?![\p{L}\p{N}])|Not for (?:(?!Not for ).)+?; that goes to [^.]+?\.(?![\p{L}\p{N}])/gu;
+
+/** A role line's own words and its binding lines, apart: a rewrite of "What X
+ *  handles" never sees the bindings, and code puts them back word for word
+ *  (docs/designs/work-style-change-request.md, finding 1). */
+export function splitBindings(routing: string): { text: string; lines: string[] } {
+  const lines = routing.match(BINDING_LINE_RE) ?? [];
+  const text = lines.reduce((t, l) => t.replace(l, ' '), routing).replace(/\s{2,}/g, ' ').trim();
+  return { text, lines };
+}
+
 /** The stored role line for a hire. */
 export function hireRole(title: string, routing: string): string {
   return joinAgentRole(title, routing);
@@ -476,7 +516,19 @@ export interface DistinctVerdict {
   source: 'ai' | 'rules';
 }
 
-export function distinctPrompt(job: JobProfile, team: JobProfile[]): string {
+/** Who the check is for: a new hire (the wizard), or a member whose job the
+ *  owner is changing (Edit agent), where handoffs between them count. */
+export type DistinctMode = 'hire' | 'change';
+
+/** A role line with its binding and handoff lines first, so the 500
+ *  character clip never cuts the line that says where work goes. */
+function linesFirst(routing: string): string {
+  const { text, lines } = splitBindings(routing);
+  return [...lines, text].filter(Boolean).join(' ');
+}
+
+export function distinctPrompt(job: JobProfile, team: JobProfile[], mode: DistinctMode = 'hire'): string {
+  if (mode === 'change') return changePrompt(job, team);
   const clip = (s: string | undefined, n: number) => (s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
   const lines = team.map((m) =>
     `- ${m.name}: title "${clip(m.title, 80)}"; what to send: "${clip(m.routing, 500)}"`
@@ -499,28 +551,65 @@ export function distinctPrompt(job: JobProfile, team: JobProfile[]): string {
   ].join('\n');
 }
 
-/** The JSON verdict from the model's answer, names limited to the team's.
- *  Null when the answer holds no usable verdict. */
-export function parseDistinctAnswer(text: string, teamNames: string[]): DistinctVerdict | null {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  let raw: unknown;
-  try { raw = JSON.parse(text.slice(start, end + 1)); } catch { return null; }
-  if (!raw || typeof raw !== 'object') return null;
-  const o = raw as Record<string, unknown>;
-  if (typeof o.distinct !== 'boolean') return null;
+/** The check for a changed job (Edit agent): the hire check's rule, plus
+ *  handoffs. Work a member sends on to a teammate, by a "Not for X; that goes
+ *  to Name." line or by its work style sending it to that teammate's role, is
+ *  not an overlap with that teammate; the rest is judged as for a hire. The
+ *  suggestion asks how the work could split between them, for the owner's
+ *  "Explain how they split it" box. */
+function changePrompt(job: JobProfile, team: JobProfile[]): string {
+  const clip = (s: string | undefined, n: number) => (s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const lines = team.map((m) =>
+    `- ${m.name}: title "${clip(m.title, 80)}"; what to send: "${clip(linesFirst(m.routing), 500)}"`
+    + `${m.mailbox ? `; mailbox ${m.mailbox}` : ''}; work style: "${clip(m.workStyle, 600)}"`);
+  return [
+    'You check whether a team member\'s changed job overlaps anyone else on a small business\'s AI team.',
+    'The office manager routes each piece of work by reading every teammate\'s "what to send" line, so two teammates whose lines cover the same work make routing a coin toss and double the work.',
+    'A job is distinct when a request could only sensibly go to one of them: a different area of work, or the same area bound to something particular such as its own mailbox, a named channel, a customer group, a location or a topic.',
+    'A line "Not for X; that goes to Name." means the member sends X on to Name and does not do it: that part is not an overlap with Name. Work the work style says to pass to a teammate\'s role, such as asking the IT Engineer and tracking the answer, is not an overlap with that teammate either. Judge the rest of the job as usual.',
+    'Judge only by what to send and the work style. The job title and the person\'s name never make a job distinct: the same work under another title is an overlap.',
+    '',
+    'The team today:',
+    ...(lines.length ? lines : ['- (nobody yet)']),
+    '',
+    `The changed job, ${job.name}:`,
+    `title "${clip(job.title, 80)}"; what to send: "${clip(linesFirst(job.routing), 500)}"${job.mailbox ? `; mailbox ${job.mailbox}` : ''}; work style: "${clip(job.workStyle, 1200)}"`,
+    '',
+    'Answer with ONE JSON object and nothing else:',
+    `{"distinct": true or false, "overlapsWith": ["names of teammates whose work overlaps"], "why": "one plain sentence for the owner", "suggestion": "one short sentence on how the work could split between ${job.name} and them, saying who does what, or empty"}`,
+    'Use plain words and no dashes.'
+  ].join('\n');
+}
+
+/** Why a verdict did not read (issue 677): a fixed word the failure report carries. */
+export type DistinctParseFail = 'json' | 'verdict';
+
+/** The JSON verdict from the model's answer, names limited to the team's, or
+ *  why it holds no usable verdict. */
+export function readDistinctAnswer(text: string, teamNames: string[]): { verdict: DistinctVerdict } | { fail: DistinctParseFail } {
+  const o = readObject(text);
+  if (!o) return { fail: 'json' };
+  // "distinct" as true or false, or the same written as a word.
+  const said = typeof o.distinct === 'string' ? o.distinct.trim().toLowerCase() : o.distinct;
+  if (said !== true && said !== false && said !== 'true' && said !== 'false') return { fail: 'verdict' };
   const known = new Map(teamNames.map((n) => [n.toLowerCase(), n]));
-  const overlapsWith = Array.isArray(o.overlapsWith)
-    ? [...new Set(o.overlapsWith.filter((x): x is string => typeof x === 'string')
-      .map((x) => known.get(x.trim().toLowerCase())).filter((x): x is string => !!x))]
-    : [];
-  const distinct = o.distinct && overlapsWith.length === 0;
+  const named = Array.isArray(o.overlapsWith) ? o.overlapsWith : typeof o.overlapsWith === 'string' ? [o.overlapsWith] : [];
+  const overlapsWith = [...new Set(named.filter((x): x is string => typeof x === 'string')
+    .map((x) => known.get(x.trim().toLowerCase())).filter((x): x is string => !!x))];
+  const distinct = (said === true || said === 'true') && overlapsWith.length === 0;
   return {
-    distinct,
-    overlapsWith: distinct ? [] : overlapsWith,
-    why: typeof o.why === 'string' ? o.why.trim().slice(0, 400) : '',
-    suggestion: typeof o.suggestion === 'string' && o.suggestion.trim() ? o.suggestion.trim().slice(0, 300) : undefined,
-    source: 'ai'
+    verdict: {
+      distinct,
+      overlapsWith: distinct ? [] : overlapsWith,
+      why: typeof o.why === 'string' ? o.why.trim().slice(0, 400) : '',
+      suggestion: typeof o.suggestion === 'string' && o.suggestion.trim() ? o.suggestion.trim().slice(0, 300) : undefined,
+      source: 'ai'
+    }
   };
+}
+
+/** The verdict, or null when the answer holds none (readDistinctAnswer). */
+export function parseDistinctAnswer(text: string, teamNames: string[]): DistinctVerdict | null {
+  const r = readDistinctAnswer(text, teamNames);
+  return 'verdict' in r ? r.verdict : null;
 }

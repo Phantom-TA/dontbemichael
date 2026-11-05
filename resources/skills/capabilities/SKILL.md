@@ -96,6 +96,11 @@ on one):
 - **Enterprise Knowledge Graph.** If enabled: `node "$KG_CLI" search "<query>"`
   for ranked passages, `node "$KG_CLI" list`, `node "$KG_CLI" get <id>` — use it
   for company-specific facts instead of guessing.
+- **Integrations the owner gave you.** If you have the `md-integrations` tools:
+  `list_integrations` shows what you may use, `call_integration` calls it. The
+  app adds the key. Read only access refuses a change; if the change is needed,
+  tell Michael rather than trying another way. If one has a `saved_call`, send it
+  only `message`, in plain words; the app builds the request.
 - **MCP integrations** (filesystem, git, and others) come pre-wired into your
   session settings when enabled; invoke them as normal tools. The set is gated
   by the hive's consent configuration.

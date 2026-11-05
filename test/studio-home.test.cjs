@@ -111,7 +111,7 @@ test('only what is real: mail paths run to the person who watches the mailbox, a
   assert.match(src, /section: 'Connections'/);
   // Counts come from the ledger and the hive log, never from sample numbers.
   assert.match(src, /e\.from !== 'god' \|\| e\.act !== 'request'/, 'delegated = Michael\'s requests today');
-  assert.match(src, /const asks = openQuestions\(t\)\.length; if \(asks\) forYouBy\[t\.assignee\]/, 'for you = open Ask me questions on that person\'s cards');
+  assert.match(src, /const asks = shownQuestions\(t, foundations\)\.length; if \(asks\) forYouBy\[t\.assignee\]/, 'for you = the Ask me questions Needs you shows on that person\'s cards');
   assert.doesNotMatch(src, /closes 6:00|Harbor|Northwind/);
 });
 
@@ -233,7 +233,7 @@ test('lights come up as people clock in, the way closing time turns them off (ow
   assert.match(rule, /if \(a\.action !== marker\) \{ since\.delete\(a\.id\); continue; \}/);
   assert.match(rule, /now - \(since\.get\(a\.id\) \?\? now\) < CLOCK_IN_CAP_MS/, 'never dark for more than a minute');
   assert.match(rule, /export const CLOCK_IN_CAP_MS = 60_000;/);
-  assert.match(read('src/renderer/src/hooks/useClockingIn.ts'), /clockingIn\(agents, since\.current, Date\.now\(\), ACTION_CLOCKING_IN\)/);
+  assert.match(read('src/renderer/src/hooks/useClockingIn.ts'), /clockingIn\(agents, since \?\? own\.current, Date\.now\(\), ACTION_CLOCKING_IN\)/);
   assert.match(stage, /\|\| pod\.members\.every\(\(a\) => away\.has\(a\.id\)\)\}/);
   assert.match(stage, /const hubAway = godStatus === 'booting' \|\| \(!!god && away\.has\(god\.id\)\);/);
   const art = read('src/renderer/src/scene/studio/StudioArt.tsx');

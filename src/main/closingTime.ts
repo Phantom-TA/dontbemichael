@@ -34,7 +34,7 @@
 import type { WebContents } from 'electron';
 import type { HiveManager, HiveMessage } from './hive';
 import type { ControlRegistry } from './control';
-import { CLOSING_COMPLETE_RE, CLOSING_TIME_REMIND_MS } from '../shared/closingTime';
+import { CLOSING_ACK_RE, CLOSING_COMPLETE_RE, CLOSING_TIME_REMIND_MS } from '../shared/closingTime';
 import { RESEARCH_ID } from '../shared/research';
 
 export type ClosingTimePhase =
@@ -70,7 +70,7 @@ export type ClosingTimeActionResult = { ok: true } | { ok: false; error: string 
 /** Subject markers. Deliberately forgiving (case, -/_/space) — agents write
  *  these by hand, so "Closing Time Ack" must count as well as the canonical
  *  CLOSING-TIME-ACK the brief asks for. */
-const ACK_RE = /CLOSING[-_\s]*TIME[-_\s]*ACK/i;
+const ACK_RE = CLOSING_ACK_RE;
 const COMPLETE_RE = CLOSING_COMPLETE_RE;
 
 /** How long to wait before surfacing "this is taking long — force quit?".
@@ -105,6 +105,9 @@ export class ClosingTimeController {
   private toldEnded = new Set<string>();
   /** Team members Michael has been told aren't reporting, so he stops waiting. */
   private toldNotReporting = new Set<string>();
+  /** Team members reporting again whose "wait for them after all" note to
+   *  Michael has not gone out yet. */
+  private owedWaitNote = new Set<string>();
   private timeoutTimer: NodeJS.Timeout | null = null;
   private teardownTimer: NodeJS.Timeout | null = null;
 
@@ -175,6 +178,7 @@ export class ClosingTimeController {
     this.timedOut = false;
     this.toldEnded = new Set();
     this.toldNotReporting = new Set();
+    this.owedWaitNote = new Set();
     this.active = true;
     this.relaunch = opts.relaunch === true;
 
@@ -404,13 +408,23 @@ export class ClosingTimeController {
     // that comes back (owner, 2026-10-18 ship review).
     for (const id of [...this.toldNotReporting]) {
       if (silent.includes(id) || this.acked.has(id) || this.excused.has(id) || !live.has(id) || reg.agents[id]?.archived) continue;
-      const name = reg.agents[id]?.name ?? id;
       try { this.hive.send({ to: id, act: 'request', subject: 'Closing time', body: WORKER_STEER }, 'human'); }
       catch (e) { console.error('[closing-time] reporting again mail:', e); continue; }
       // The brief went out: never sent again, whatever happens to the note.
       this.toldNotReporting.delete(id);
       this.control?.removeSteer(id, WORKER_STEER);
       this.control?.steer(id, WORKER_STEER);
+      this.owedWaitNote.add(id);
+    }
+    // The note stays owed until it goes out, so a failed one is tried again on
+    // the next row update. It is dropped once there is nothing left to wait for
+    // (confirmed, closed without, quiet again or gone), which Michael hears anyway.
+    for (const id of [...this.owedWaitNote]) {
+      if (silent.includes(id) || this.acked.has(id) || this.excused.has(id) || !live.has(id) || reg.agents[id]?.archived) {
+        this.owedWaitNote.delete(id);
+        continue;
+      }
+      const name = reg.agents[id]?.name ?? id;
       try {
         this.hive.send({
           to: this.godId,
@@ -418,6 +432,7 @@ export class ClosingTimeController {
           subject: `Closing time: wait for ${name} after all`,
           body: `${name} (${id}) can get the closing steps again, so wait for their CLOSING-TIME-ACK after all before you send CLOSING-TIME-COMPLETE.`
         }, 'human');
+        this.owedWaitNote.delete(id);
       } catch (e) { console.error('[closing-time] wait after all mail:', e); }
     }
     const ended = [...this.workers].filter(

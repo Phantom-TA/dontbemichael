@@ -15,7 +15,7 @@
  */
 const CUF_RE = /\x1b\[(\d*)C/g; // cursor-forward: the TUI's stand-in for spaces
 const OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g; // OSC … BEL/ST (titles, links)
-const CSI_RE = /\x1b\[[0-9;:?]*[ -/]*[@-~]/g; // any CSI: SGR, cursor, erase, modes
+const CSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g; // any CSI: SGR, cursor, erase, modes (params 0-9 : ; < = > ?)
 const CHARSET_RE = /\x1b[()][0-9A-B]/g; // charset selects (ESC ( B …)
 const ESC2_RE = /\x1b./g; // stray two-byte escapes (ESC 7, ESC = …)
 
@@ -44,7 +44,7 @@ export const MAX_CARRY = 256;
 // An ESC whose sequence has not reached its final byte yet: ESC alone, a CSI
 // with params/intermediates but no final, an OSC with no BEL/ST, or a bare
 // charset-select prefix.
-const PARTIAL_TAIL_RE = /^\x1b(?:\[[0-9;:?]*[ -/]*|\][^\x07\x1b]*|[()])?$/;
+const PARTIAL_TAIL_RE = /^\x1b(?:\[[0-?]*[ -/]*|\][^\x07\x1b]*|[()])?$/;
 
 export function createAnsiStripper(): (chunk: string) => string {
   let carry = '';

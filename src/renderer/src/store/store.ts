@@ -22,10 +22,12 @@ import type { ScheduledMission } from '@shared/missions';
 import { refocusAfterRemoval, focusOnLoad, restoreFocus } from './focusMode';
 import { chooseRosterSource } from './rosterSource';
 import { renamePatches, swapName } from '@shared/hireTemplates';
+import type { Handoff, JobChangeEntry, JobVersion, PlainWords } from '@shared/jobChange';
 import { canOpen } from '../shell/closingFloor';
-import type { CenterClaim } from '../shell/wideCenter';
-import { closeTab, openTab, type FileTab, type FixedView } from './fileTabs';
+import { fileClosedPatch, fileShownPatch, type CenterClaim } from '../shell/wideCenter';
+import { closeTab, openTab, retitleTab, type FileTab, type FixedView } from './fileTabs';
 import { afterLeave, attemptLeave } from './leaveGuard';
+import type { StoppedMember } from '@shared/agentExit';
 
 export type ToolKind =
   | 'Read' | 'Edit' | 'Write' | 'Bash' | 'WebFetch' | 'WebSearch'
@@ -44,7 +46,7 @@ export interface PendingRestart {
   /** engine: Claude Code was just set up (docs/designs/get-michael-ready.md).
    *  stuck: the session stopped on a prompt (hooks.ts stuckOnPrompt).
    *  silent: its engine stopped reporting to the app (issue #326). */
-  reason: 'email' | 'connectors' | 'engine' | 'stuck' | 'silent';
+  reason: 'email' | 'connectors' | 'integrations' | 'engine' | 'stuck' | 'silent';
   /** The owner pressed Restart now: do not wait for idle. */
   now?: boolean;
   /** The last restart attempt failed; it is tried again on the next tick. */
@@ -128,6 +130,17 @@ export interface Agent {
    *  Mirrors `RegistryAgent.onHold`; main owns the record, this is the copy the
    *  title bar renders from. */
   onHold?: boolean;
+  /** The plain words the owner reads for `goal`, with the fingerprint of the
+   *  instructions they describe (shared/jobChange.ts, eng D5). */
+  goalPlain?: PlainWords;
+  /** The job before the owner's last change: one level of Undo, text only. */
+  jobPrevious?: JobVersion;
+  /** The owner's applied change requests, oldest first (eng D7). */
+  jobChanges?: JobChangeEntry[];
+  /** Work this member sends on to a teammate, as the owner explained it
+   *  (shared/jobChange.ts, overlap split plan): live while its line is in the
+   *  role line and the teammate is on the team. */
+  handoffs?: Handoff[];
   /** The office pack card this agent's job was copied from when it was hired,
    *  `<businessType>/<cardId>` (hire redesign E2): its Profile shows that card's
    *  does, asks first and connections. Setup's pack members need none, since
@@ -237,6 +250,12 @@ interface State {
   /** Files opened from a reply or an Ask me card, as tabs after Who talks to
    *  whom (docs/designs/open-file-tab.md). Never saved. */
   fileTabs: FileTab[];
+  /** The case study (docs/designs/case-study.md): prepared in main in the
+   *  background, and whether its screen is open over Pulse. */
+  caseStudyPrep: 'idle' | 'preparing' | 'ready';
+  caseStudyOpen: boolean;
+  setCaseStudyPrep: (state: 'idle' | 'preparing' | 'ready') => void;
+  setCaseStudyOpen: (open: boolean) => void;
   /** The file tab shown while `floorView` is 'file'. */
   activeFileTab: string | null;
   /** The fixed view the owner was on, to go back to when the last file tab closes. */
@@ -278,6 +297,15 @@ interface State {
   /** Esc sent the wide 1:1 back to the side for now (6B); cleared on close. */
   dockSideForNow: boolean;
   setDockSideForNow: (on: boolean) => void;
+  /** A file shown while the 1:1 was wide sent it to the side, so closing the
+   *  file brings it back (open-file-from-wide-dock.md, decision 2). */
+  dockAsideForFile: boolean;
+  /** The file that just took the center from the wide 1:1, for its view to
+   *  focus its title and say it opened (decision 3). */
+  fileOpened: { id: string; seq: number } | null;
+  /** The view has focused and announced it: going back to that tab later
+   *  says nothing again (decision 3, only when the file takes the center). */
+  clearFileOpened: () => void;
   /** Who opened last, the 1:1 or the right column: that one takes the center
    *  (8A, shell/wideCenter.ts). Never remembered. */
   centerClaim: CenterClaim;
@@ -286,6 +314,10 @@ interface State {
   /** The office opening (DESIGN.md 7.24): the Clocking in card and the clock
    *  pill read it; TeamClockingIn.tsx moves it on (shell/clockingIn.ts). */
   opening: OfficeOpening;
+  /** The floor and the right column wait while the office opens at launch
+   *  (owner, 2026-10-30). Only ever goes off, so a restore later in the day
+   *  never takes Ask me away from a working office. */
+  launchLock: boolean;
   /** Per-agent outgoing message queue (agent id → messages awaiting delivery).
    *  Lets the user keep "talking" to a busy agent: messages park here and are
    *  drained to the terminal one-by-one once the agent is free. */
@@ -295,7 +327,15 @@ interface State {
   toolCounts: Record<string, number>;
   bumpToolCount: (id: string) => void;
   setGodStatus: (status: GodStatus) => void;
+  /** Members whose terminal ended by itself, by id, until they start again
+   *  (agentExit.ts, owner 2026-10-30): the opening waits for none of them. */
+  stopped: Record<string, StoppedMember>;
+  setStopped: (list: StoppedMember[]) => void;
+  /** Bumped by Start again on a stopped Michael: his start runs again. */
+  michaelStartRequest: number;
+  requestMichaelStart: () => void;
   setOpening: (opening: OfficeOpening) => void;
+  endLaunchLock: () => void;
   /** A Restore team run opens the office again, card and pill included. */
   reopenOffice: () => void;
   select: (id: string) => void;
@@ -362,16 +402,29 @@ interface State {
   openAgentMemory: (agentId: string) => void;
   /** Open a team member's Profile tab (their schedules), from Pulse. */
   openAgentProfile: (agentId: string) => void;
+  /** A person's Work tab: what their terminal shows. */
+  openAgentWork: (agentId: string) => void;
+  /** A member link in agent text (settings-links-in-replies.md): the member's
+   *  Access tab opens with Email unfolded and in view, once. */
+  openAgentEmail: (agentId: string) => void;
+  emailRequest: { agentId: string; seq: number } | null;
+  clearEmailRequest: () => void;
   /** The task whose detail overlay is open (rendered app-wide over the office
    *  floor — the card content grows: contracts, deps, the human Q&A trail). */
   taskDetailId: string | null;
   openTaskDetail: (id: string) => void;
   /** Open Edit {name} for a member from outside its panel (a Needs you card's
    *  Change engine, issue #326): its panel opens and Edit with it. */
-  editAgentRequest: { agentId: string; engine: boolean; seq: number } | null;
-  requestEditAgent: (agentId: string, opts?: { engine?: boolean }) => void;
+  editAgentRequest: { agentId: string; engine: boolean; change?: string; seq: number } | null;
+  /** `change` fills "What should change?" (a run comparison's suggestion). */
+  requestEditAgent: (agentId: string, opts?: { engine?: boolean; change?: string }) => void;
   /** Edit opened for the request: it is used once (ship review 2026-10-17). */
   clearEditAgentRequest: () => void;
+  /** "Change on Access" (edit-agent-scheduled-jobs.md, SJ3): the member's
+   *  Access tab opens with On a schedule unfolded and in view, once. */
+  schedulesRequest: { agentId: string; seq: number } | null;
+  openSchedules: (agentId: string) => void;
+  clearSchedulesRequest: () => void;
   closeTaskDetail: () => void;
   /** One-shot prefill for the Command Center's dispatch box (a task detail's
    *  "assign" from anywhere in the app). seq-keyed like ccTabRequest. */
@@ -438,6 +491,8 @@ interface State {
    *  and the owner question to show. */
   dockOpen: boolean;
   dockFocus?: string;
+  /** Every explicit navigation, including reopening the same question. */
+  dockNavigation: number;
   setDock: (open: boolean, focus?: string) => void;
   /** "Send now" while floor auto-delivery is paused: marks the message manual
    *  (drain bypasses the pause gate for it) and moves it to the queue front. */
@@ -455,6 +510,8 @@ interface State {
   /** Open a file's tab, or select it if it is open (keyed by main's real path). */
   openFileTab: (tab: Omit<FileTab, 'openedAt'>) => void;
   selectFileTab: (id: string) => void;
+  /** Rename an open tab (an email's tab takes its subject once read). */
+  retitleFileTab: (id: string, title: string) => void;
   closeFileTab: (id: string) => void;
   /** Move focus mode WITHOUT touching the preference. For the paths that re-home
    *  a focused agent that went away: the app is following the user, not being
@@ -574,8 +631,9 @@ export function toolOfAction(action: string): string | null {
 /** A tool call in words a business owner reads at a glance. */
 export function toolText(tool: string, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const k = (key: string, opts?: Record<string, unknown>) => t(`office.activity.tool.${key}`, opts);
+  if (/^mcp__md-integrations__/i.test(tool)) return k('integration');
   const mail = /^mcp__md-mail__([a-z_]+)$/i.exec(tool);
-  if (mail) return mail[1] === 'send' ? k('sendingEmail') : mail[1] === 'draft' ? k('draftingEmail') : k('checkingEmail');
+  if (mail) return mail[1] === 'send' ? k('sendingEmail') : mail[1] === 'draft' ? k('draftingEmail') : mail[1] === 'save_attachment' ? k('savingAttachment') : k('checkingEmail');
   const mcp = /^mcp__(.+?)__(.+)$/i.exec(tool);
   if (mcp) {
     const server = mcp[1].replace(/^claude_ai_/i, '').replace(/[_-]+/g, ' ').trim();
@@ -951,6 +1009,13 @@ function newQueuedId(): string {
   return `q-${Date.now()}-${queuedSeq}`;
 }
 
+/** The store's part of a file taking the center from the wide 1:1: the 1:1 to
+ *  the side, and the file named so its view focuses and says it opened. */
+function fileTakesCenter(s: { dockOpen: boolean; dockWide: boolean; dockSideForNow: boolean; fileOpened: { seq: number } | null }, id: string): Partial<Pick<State, 'dockSideForNow' | 'dockAsideForFile' | 'fileOpened'>> {
+  const patch = fileShownPatch(s);
+  return patch ? { ...patch, fileOpened: { id, seq: (s.fileOpened?.seq ?? 0) + 1 } } : {};
+}
+
 export const useStore = create<State>((set, get) => ({
   agents: initialAgents,
   archivedAgents: initialArchivedAgents,
@@ -967,6 +1032,23 @@ export const useStore = create<State>((set, get) => ({
     persistAgents(s.agents, agentId);
     return { selectedId: agentId, ccTabRequest: { tab: 'profile', seq }, rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView) };
   })); },
+  openAgentWork: (agentId) => { attemptLeave({ selectedId: agentId, rightColumn: 'person' }, () => set((s) => {
+    const seq = (s.ccTabRequest?.seq ?? 0) + 1;
+    persistAgents(s.agents, agentId);
+    return { selectedId: agentId, ccTabRequest: { tab: 'terminal', seq }, rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView) };
+  })); },
+  openAgentEmail: (agentId) => { attemptLeave({ selectedId: agentId, rightColumn: 'person' }, () => set((s) => {
+    const seq = (s.ccTabRequest?.seq ?? 0) + 1;
+    persistAgents(s.agents, agentId);
+    return {
+      selectedId: agentId,
+      ccTabRequest: { tab: 'capabilities', seq },
+      emailRequest: { agentId, seq: (s.emailRequest?.seq ?? 0) + 1 },
+      rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView)
+    };
+  })); },
+  emailRequest: null,
+  clearEmailRequest: () => set({ emailRequest: null }),
   openAgentMemory: (agentId) => { attemptLeave({ selectedId: get().agents.find((a) => a.isGod)?.id ?? get().selectedId, rightColumn: 'person' }, () => set((s) => {
     const god = s.agents.find((a) => a.isGod);
     const seq = (s.ccTabRequest?.seq ?? 0) + 1;
@@ -1000,6 +1082,10 @@ export const useStore = create<State>((set, get) => ({
   prefersFocusMode: initialPrefersFocusMode,
   floorView: initialFloorView,
   fileTabs: [],
+  caseStudyPrep: 'idle',
+  caseStudyOpen: false,
+  setCaseStudyPrep: (caseStudyPrep) => set({ caseStudyPrep }),
+  setCaseStudyOpen: (caseStudyOpen) => set({ caseStudyOpen }),
   activeFileTab: null,
   lastFixedView: initialFloorView === 'tasks' || initialFloorView === 'graph' || initialFloorView === 'pulse' ? initialFloorView : 'office',
   ideInitialFile: null,
@@ -1014,9 +1100,12 @@ export const useStore = create<State>((set, get) => ({
   dockWide: initialDockWide,
   setDockWide: (on) => {
     try { window.localStorage.setItem(LS_DOCK_WIDE, on ? '1' : '0'); } catch { /* noop */ }
-    set(on ? { dockWide: on, dockSideForNow: false, centerClaim: 'dock' } : { dockWide: on, dockSideForNow: false });
+    set(on ? { dockWide: on, dockSideForNow: false, dockAsideForFile: false, centerClaim: 'dock' } : { dockWide: on, dockSideForNow: false, dockAsideForFile: false });
   },
   dockSideForNow: false,
+  dockAsideForFile: false,
+  fileOpened: null,
+  clearFileOpened: () => set({ fileOpened: null }),
   setDockSideForNow: (on) => set({ dockSideForNow: on }),
   centerClaim: null,
   sidebarTab: initialSidebarTab,
@@ -1026,8 +1115,14 @@ export const useStore = create<State>((set, get) => ({
   bumpToolCount: (id) =>
     set((s) => ({ toolCounts: { ...s.toolCounts, [id]: (s.toolCounts[id] ?? 0) + 1 } })),
   setGodStatus: (status) => set({ godStatus: status }),
+  stopped: {},
+  setStopped: (list) => set({ stopped: Object.fromEntries(list.filter((m) => m && typeof m.agentId === 'string').map((m) => [m.agentId, m])) }),
+  michaelStartRequest: 0,
+  requestMichaelStart: () => set((s) => ({ michaelStartRequest: s.michaelStartRequest + 1 })),
   opening: { kind: 'opening', since: Date.now() },
   setOpening: (opening) => set({ opening }),
+  launchLock: true,
+  endLaunchLock: () => set({ launchLock: false }),
   reopenOffice: () => set({ opening: { kind: 'opening', since: Date.now() } }),
   // A person who has gone home at closing time opens from nowhere (5A).
   select: (id) => { attemptLeave(canOpen(id, get().goneHome) ? { selectedId: id, rightColumn: 'person' } : null, () => set((s) => {
@@ -1263,9 +1358,15 @@ export const useStore = create<State>((set, get) => ({
     get().select(agentId);
     // After the select applies, so Keep editing drops the request with it; the
     // panel clears it once it opens Edit (ship review 2026-10-17).
-    afterLeave(() => set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, seq: (s.editAgentRequest?.seq ?? 0) + 1 } })));
+    afterLeave(() => set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, ...(opts?.change ? { change: opts.change } : {}), seq: (s.editAgentRequest?.seq ?? 0) + 1 } })));
   },
   clearEditAgentRequest: () => set({ editAgentRequest: null }),
+  schedulesRequest: null,
+  openSchedules: (agentId) => {
+    get().setSidebarTab('capabilities');
+    set((s) => ({ schedulesRequest: { agentId, seq: (s.schedulesRequest?.seq ?? 0) + 1 } }));
+  },
+  clearSchedulesRequest: () => set({ schedulesRequest: null }),
   closeTaskDetail: () => set({ taskDetailId: null }),
   dispatchSeedRequest: null,
   requestDispatchSeed: (text) =>
@@ -1309,10 +1410,11 @@ export const useStore = create<State>((set, get) => ({
   setOrgTrigger: (cfg) => set({ orgTrigger: cfg }),
   dockOpen: false,
   dockFocus: undefined,
+  dockNavigation: 0,
   // Opening the 1:1 takes the center (8A); closing ends Esc's "for now" (7A).
-  setDock: (open, focus) => set(open
-    ? { dockOpen: true, dockFocus: focus, centerClaim: 'dock' }
-    : { dockOpen: false, dockFocus: undefined, dockSideForNow: false }),
+  setDock: (open, focus) => set((s) => open
+    ? { dockOpen: true, dockFocus: focus, centerClaim: 'dock', dockNavigation: s.dockNavigation + 1 }
+    : { dockOpen: false, dockFocus: undefined, dockSideForNow: false, dockAsideForFile: false, dockNavigation: s.dockNavigation + 1 }),
   enqueueMessage: (agentId, text, meta) =>
     set((s) => {
       const trimmed = text.trim();
@@ -1427,16 +1529,20 @@ export const useStore = create<State>((set, get) => ({
     // fixed view (open-file-tab.md, R4).
     if (view === 'file') { set({ floorView: view }); return; }
     try { window.localStorage.setItem(LS_FLOOR_VIEW, view); } catch { /* per-Mac nicety only */ }
-    set({ floorView: view, lastFixedView: view });
+    // Another view chosen over the file: the 1:1 stays at the side (decision 2).
+    set({ floorView: view, lastFixedView: view, dockAsideForFile: false });
   },
   // A file opened from Task detail would land behind that dialog, so the
   // dialog closes and the owner sees the file.
-  openFileTab: (tab) => set((s) => ({ ...openTab(s, { ...tab, openedAt: Date.now() }), floorView: 'file', taskDetailId: null })),
-  selectFileTab: (id) => set((s) => (s.fileTabs.some((f) => f.id === id) ? { activeFileTab: id, floorView: 'file' } : {})),
+  // A file shown while the 1:1 is wide takes the center, the 1:1 to the side
+  // for now (open-file-from-wide-dock.md, rule 8A for files).
+  openFileTab: (tab) => set((s) => ({ ...openTab(s, { ...tab, openedAt: Date.now() }), floorView: 'file', taskDetailId: null, ...fileTakesCenter(s, tab.id) })),
+  selectFileTab: (id) => set((s) => (s.fileTabs.some((f) => f.id === id) ? { activeFileTab: id, floorView: 'file', ...fileTakesCenter(s, id) } : {})),
+  retitleFileTab: (id, title) => set((s) => retitleTab(s, id, title)),
   closeFileTab: (id) => set((s) => {
     const r = closeTab(s, id);
     const floorView: FloorView = s.floorView !== 'file' ? s.floorView : r.select ?? s.lastFixedView;
-    return { fileTabs: r.fileTabs, activeFileTab: r.activeFileTab, floorView };
+    return { fileTabs: r.fileTabs, activeFileTab: r.activeFileTab, floorView, ...(fileClosedPatch(s, floorView) ?? {}) };
   }),
   setFullscreen: (id) => {
     // Focus mode is hidden in this build: nothing opens it (buildFeatures.ts).

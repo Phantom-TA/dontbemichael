@@ -34,7 +34,7 @@ test('full paths in plain text are files; URLs, words and relative bits are not 
   assert.equal(unescapeMarkdown('C:\\Reports\\_q3.md'), 'C:\\Reports_q3.md', 'how Markdown reads a backslash before punctuation');
   assert.equal(kindOf('a.json'), 'json');
   assert.equal(TAB_EXTENSIONS.has('json') && !OPEN_EXTENSIONS.has('json'), true, 'JSON reads in a tab and never launches an app');
-  for (const ext of ['pdf', 'docx', 'xlsx', 'pptx']) assert.equal(TAB_EXTENSIONS.has(ext), false, `${ext} opens in its app (R3)`);
+  for (const ext of ['pdf', 'docx', 'xlsx', 'pptx']) assert.equal(TAB_EXTENSIONS.has(ext) && OPEN_EXTENSIONS.has(ext), true, `${ext} reads in a tab and can still open in its app (R3a)`);
 });
 
 test('the chip replaces exactly the path, from the source, in text, code spans and links (R2)', async () => {
@@ -60,6 +60,19 @@ test('the chip replaces exactly the path, from the source, in text, code spans a
   assert.deepEqual(chips('Saved to C:/Reports/q3.csv. See [notes](D:/Reports/notes.md).').out,
     ['C:/Reports/q3.csv', 'D:/Reports/notes.md'], 'Windows forward slash paths become chips in prose and links');
   assert.deepEqual(chips('See [site](https://example.com/C:/Reports/q3.csv).').out, [], 'a URL containing a drive path stays a link');
+  for (const md of [
+    'See [report](/Users/me/Q3(final)/report.md)',
+    'See [report](/Users/me/Q3\\(final\\)/report.md "review")',
+    'See [report](C:\\Reports\\_q3.md)',
+    'See [report](/Users/me/report.md\n "Q3")',
+    'See [report](</Users/me/Harbor & Pine/Q3 (final)/report.md>)'
+  ]) {
+    assert.deepEqual(askFilePaths(md), chips(md).out, 'paths checked by main match rendered chip paths');
+  }
+  for (const depth of [32, 33]) {
+    const md = `See [report](/Users/me/Q3${'('.repeat(depth)}final${')'.repeat(depth)}/report.md)`;
+    assert.deepEqual(askFilePaths(md), chips(md).out, `destination nesting depth ${depth} matches the renderer`);
+  }
   assert.deepEqual(chips('```\n/Users/me/skip.md\n```').out, [], 'code fences stay code');
   // 2026-10-11: Michael wrote **... 10 Oct (`/path/report.md`).** and the chip
   // wrapped to its own line, stranding "(" above it and ")." below it.
@@ -111,7 +124,7 @@ test('main reads only readable kinds inside the folders, capped, by canonical pa
   const png = await readAskFile('pic.png', roots);
   assert.equal(png.kind, 'image');
   assert.equal(png.bytes.length, 4);
-  assert.deepEqual(await readAskFile('Plan.pdf', roots), { ok: false, error: 'not found' }, 'PDF opens in its app, never in a tab');
+  assert.deepEqual(await readAskFile('Plan.pdf', roots), { ok: false, error: 'unreadable' }, 'no words came out: the tab says so and offers Open in app');
   assert.deepEqual(await readAskFile('big.md', roots), { ok: false, error: 'too large' });
   assert.deepEqual(await readAskFile('key.txt', roots), { ok: false, error: 'not found' }, 'a link to a secret outside the office is refused');
   assert.deepEqual(await readAskFile(path.join(outside, 'id_rsa.txt'), roots), { ok: false, error: 'not found' });
@@ -120,7 +133,7 @@ test('main reads only readable kinds inside the folders, capped, by canonical pa
   const json = await askFileVerdict('data.json', roots);
   assert.equal(json.verdict, 'reveal', 'JSON never launches an app');
   assert.equal(json.tab, true, 'but reads in a tab');
-  assert.equal((await askFileVerdict('Plan.pdf', roots)).tab, false);
+  assert.equal((await askFileVerdict('Plan.pdf', roots)).tab, true);
 });
 
 test('file tabs: one per file, at most five, closing the selected one goes left (R4)', () => {
@@ -142,6 +155,18 @@ test('file tabs: one per file, at most five, closing the selected one goes left 
   assert.equal(c.select, null);
   c = closeTab({ ...s, activeFileTab: 'f6' }, 'f2');
   assert.equal(c.activeFileTab, 'f6', 'closing another tab keeps the selection');
+});
+
+test('closing a tab in the background keeps you in the file you are reading', () => {
+  const tab = (id, at) => ({ id, title: id, kind: 'markdown', who: {}, openedAt: at });
+  let s = openTab({ fileTabs: [], activeFileTab: null }, tab('/office/q3-report.md', 1));
+  s = openTab(s, tab('/office/notes.md', 2));
+  const c = closeTab(s, '/office/q3-report.md');
+  assert.deepEqual(c.fileTabs.map((f) => f.id), ['/office/notes.md']);
+  assert.equal(c.activeFileTab, '/office/notes.md');
+  // The store turns a null select into the last fixed view, so this keeps the file view.
+  assert.equal(c.select, 'file');
+  assert.match(read('src/renderer/src/store/store.ts'), /s\.floorView !== 'file' \? s\.floorView : r\.select \?\? s\.lastFixedView/);
 });
 
 test('CSV and TSV become a table; broken quoting falls back to text (E3)', () => {
@@ -201,14 +226,58 @@ test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, w
   assert.match(main, /wc\.once\('destroyed', drop\);\n\s+wc\.once\('render-process-gone', drop\);\n\s+wc\.on\('did-start-navigation'/, 'a reload or crash drops its watchers');
   assert.match(main, /if \(askFileWatches\.get\(wc\.id\) === forWindow\) askFileWatches\.delete\(wc\.id\);\n\s+wc\.off\('destroyed', drop\);\n\s+wc\.off\('render-process-gone', drop\);\n\s+wc\.off\('did-start-navigation', onNavigate\);/, 'each drop removes its own listeners and never clears a newer map');
   assert.match(main, /const watcher = watchFs\(dirname\(v\.path\)/, 'the folder is watched, so a rename over the file is seen');
-  assert.match(main, /ipcMain\.handle\('fs:readAskFile'[\s\S]*?const r = await readAskFile\(p, askFileRoots\(who\)\);/, 'main checks the folders itself');
+  assert.match(main, /ipcMain\.handle\('fs:readAskFile'[\s\S]*?const r = await readAskFile\(p, askFileRoots\(who\), \(path\) => documentText\(path\)\);/, 'main checks the folders itself');
   const hive = read('src/main/hive.ts');
   assert.match(hive, /Name files by their full path in backticks so the owner can open them/, 'E4');
   assert.match(hive, /then the full paths of its files, each in backticks/, 'E4b');
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const f = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).fileTab;
-    for (const k of ['close', 'office', 'openInApp', 'reading', 'empty', 'tooLarge', 'unreadable', 'rows']) assert.ok(f[k], `${loc} ${k}`);
+    for (const k of ['close', 'office', 'openInApp', 'copy', 'copied', 'copyFailed', 'reading', 'empty', 'tooLarge', 'unreadable', 'rows']) assert.ok(f[k], `${loc} ${k}`);
     assert.match(f.close, /\{\{name\}\}/);
     assert.doesNotMatch(JSON.stringify(f), /[–—]/, `${loc}: no dashes`);
   }
+});
+
+test('the files checked for chips are the files drawn as chips, from the same parse', () => {
+  // Value: protects=every chip drawn is checked, so none greys out for a link the renderer reads differently; fails_when=the chip check goes back to its own reader of link syntax; why_new=a link with spaces inside its parentheses drew a chip the old reader never checked; seam=none
+  const { chipPaths } = loadTs('src/renderer/src/markdown/chipPaths.ts');
+  const { askFilePaths } = loadTs('src/shared/askFiles.ts');
+  const spaced = 'Report: [here]( /Users/me/sp.md )';
+  assert.deepEqual(askFilePaths(spaced), [], 'the old reader missed it');
+  assert.deepEqual(chipPaths(spaced), ['/Users/me/sp.md'], 'the drawn chip is checked');
+  // A reference definition draws no chip, so it is not checked either.
+  assert.deepEqual(chipPaths('See /Users/me/x.md\n\n[r]: /Users/me/ref.md\n\n[ref][r]'), ['/Users/me/x.md']);
+  assert.deepEqual(chipPaths('Open [the report](</Users/me/Q3 (final)/report.md>) and `/Users/me/a.md`, twice: /Users/me/a.md'), ['/Users/me/Q3 (final)/report.md', '/Users/me/a.md']);
+  const chip = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/src/components/FileChip.tsx'), 'utf8');
+  assert.match(chip, /for \(const p of chipPaths\(e\.q\)\)/, 'Ask me cards');
+  assert.match(chip, /const paths = useMemo\(\(\) => chipPaths\(shown\), \[shown\]\);/, 'agent text');
+  assert.doesNotMatch(chip, /askFilePaths\(/);
+});
+
+test('R3a: a Word file a member saved shows its words in a tab, read by the document reader', async () => {
+  const { zipSync, strToU8 } = require('fflate');
+  const { extractDocumentText } = loadTs('src/main/docText.ts');
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'md-doc-tab-'));
+  const saved = path.join(dir, 'Email attachments');
+  fs.mkdirSync(saved);
+  const body = '<w:document><w:body><w:p><w:r><w:t>Workflow edits</w:t></w:r></w:p><w:p><w:r><w:t>Second step</w:t></w:r></w:p></w:body></w:document>';
+  fs.writeFileSync(path.join(saved, 'Workflow.docx'), Buffer.from(zipSync({ '[Content_Types].xml': strToU8('<Types/>'), 'word/document.xml': strToU8(body) })));
+  fs.writeFileSync(path.join(saved, 'Broken.docx'), 'not a zip');
+  fs.writeFileSync(path.join(saved, 'Numbers.xlsx'), 'x');
+  fs.writeFileSync(path.join(saved, 'Huge.pdf'), 'x');
+  const roots = [dir];
+  const words = async (p) => { const r = await extractDocumentText(p); return r.kind === 'text' ? r.text : null; };
+
+  const doc = await readAskFile('Email attachments/Workflow.docx', roots, words);
+  assert.equal(doc.ok, true);
+  assert.equal(doc.kind, 'document');
+  assert.equal(doc.text, 'Workflow edits\nSecond step');
+  assert.equal(doc.size, Buffer.byteLength(doc.text));
+  assert.equal((await askFileVerdict('Email attachments/Workflow.docx', roots)).verdict, 'open', 'Open in app still reaches the file');
+
+  assert.deepEqual(await readAskFile('Email attachments/Broken.docx', roots, words), { ok: false, error: 'unreadable' });
+  assert.equal((await readAskFile('Email attachments/Numbers.xlsx', roots, async () => 'a\tb')).kind, 'text', 'a sheet keeps its columns in monospace');
+  assert.deepEqual(await readAskFile('Email attachments/Huge.pdf', roots, async () => 'x'.repeat(2 * 1024 * 1024 + 1)), { ok: false, error: 'too large' });
+  assert.deepEqual(await readAskFile('Email attachments/Huge.pdf', roots, async () => { throw new Error('reader died'); }), { ok: false, error: 'unreadable' });
+  fs.rmSync(dir, { recursive: true, force: true });
 });

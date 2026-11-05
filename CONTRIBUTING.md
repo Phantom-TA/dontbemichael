@@ -57,7 +57,8 @@ much cheaper than finding out in review.
 
 - **macOS, Windows, or Linux** to build and run from source. Releases on the
   [releases page](https://github.com/agentvivekkumar/dontbemichael/releases/latest)
-  are for Mac and Windows 11 (x64), and are not signed yet.
+  are for Mac and Windows 11 (x64). Mac releases are signed and notarized;
+  Windows releases are not signed yet.
   Cross-platform smoke-testing and fixes are very welcome (see
   [Good first areas](#good-first-areas)).
 - **Node.js 20+** and npm. CI runs on Node 20; the mail libraries (`imapflow`,

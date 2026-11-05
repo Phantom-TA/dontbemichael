@@ -27,6 +27,7 @@
 import { createHash } from 'node:crypto';
 import type { CircuitBreakerConfig } from './config';
 import type { AgentUsageSample } from './usage';
+import type { BreakerFacts } from '../shared/failureReport';
 
 export type BreakerLevel = 'healthy' | 'steering' | 'constrained' | 'stopped';
 
@@ -106,6 +107,17 @@ const PROGRESS_TOOL_WINDOW_MS = 300_000;
 /** Consecutive tripping beats the no-progress arm needs before it fires — a
  *  one-beat blip (inbox ack, statusline burst) never steers on its own. */
 const NO_PROGRESS_BEATS = 2;
+/** The beat runs every 30 s. A longer gap than three beats means the beats
+ *  stopped: the Mac slept (it can wake for two seconds, run one beat and sleep
+ *  again), or the app stalled. Beats either side of a gap are not consecutive,
+ *  and every progress window expired in the sleep, so the no-progress run
+ *  starts over (issue 674: a steer and a constrain 908 s apart, each in a dark
+ *  wake, held a member back and reported a loop). */
+const BEAT_GAP_MS = 90_000;
+/** The loop check reads each string of a call's input only up to here (see
+ *  toolKey). The hook program cuts a big save's input to the same length, so
+ *  a trimmed call keys exactly as the whole one would. */
+export const TOOL_KEY_STRING_CAP = 4096;
 
 interface AgentBreakerState {
   level: BreakerLevel;
@@ -114,8 +126,20 @@ interface AgentBreakerState {
   /** Consecutive identical tool calls (same name+input). */
   repeatKey: string | null;
   repeatCount: number;
-  /** Consecutive api_error / retry events with no intervening progress. */
+  /** Consecutive api_error events with no intervening progress. */
   errorCount: number;
+  /** The query_source of the last counted api_error (main loop, compaction, a
+   *  subagent, a side call): only a success from the same source ends the run. */
+  errorSource?: string;
+  /** The error run, for a failure report (diagnosis): when it began, its last
+   *  error, and the HTTP status of each error counted (the last 5). */
+  errorRunStartedAt: number;
+  lastErrorAt: number;
+  errorCodes: number[];
+  /** The last request that got through, from any part of the engine. */
+  lastApiSuccessAt: number;
+  /** Output tokens a minute, as last measured by the velocity trip. */
+  lastVelocity: number;
   /** Δoutput-based trips are exempt until this instant (compaction in flight,
    *  set on PreCompact; PostCompact shortens it to a trailing grace). */
   compactingUntil: number;
@@ -133,6 +157,8 @@ interface AgentBreakerState {
   lastUserPromptAt: number;
   /** Consecutive beats the no-progress condition held (debounce counter). */
   noProgressBeats: number;
+  /** When this agent's last beat ran, 0 before its first (BEAT_GAP_MS). */
+  lastBeatAt: number;
 }
 
 export class CircuitBreaker {
@@ -142,12 +168,16 @@ export class CircuitBreaker {
 
   private cfg() {
     const c = this.getConfig() ?? {};
+    // A limit of 0 (Settings takes it) or below would trip every member on the
+    // next beat, idle or not: `0 >= 0` is always true. Like an empty field it
+    // means the default, the way 0 means no limit for the token budget.
+    const limit = (v: number | undefined, d: number) => (typeof v === 'number' && v > 0 ? v : d);
     return {
       enabled: c.enabled ?? DEFAULTS.enabled,
       hardStop: c.hardStop ?? DEFAULTS.hardStop,
-      repeatedToolLimit: c.repeatedToolLimit ?? DEFAULTS.repeatedToolLimit,
-      errorStormLimit: c.errorStormLimit ?? DEFAULTS.errorStormLimit,
-      tokenVelocityPerMin: c.tokenVelocityPerMin ?? DEFAULTS.tokenVelocityPerMin,
+      repeatedToolLimit: limit(c.repeatedToolLimit, DEFAULTS.repeatedToolLimit),
+      errorStormLimit: limit(c.errorStormLimit, DEFAULTS.errorStormLimit),
+      tokenVelocityPerMin: limit(c.tokenVelocityPerMin, DEFAULTS.tokenVelocityPerMin),
       costCapUsd: c.costCapUsd,
       costCapTokens: c.costCapTokens,
       agentTokenCaps: c.agentTokenCaps
@@ -160,7 +190,8 @@ export class CircuitBreaker {
       s = {
         level: 'healthy', reason: '', lastSample: null, repeatKey: null, repeatCount: 0,
         errorCount: 0, compactingUntil: 0, lastDistinctToolAt: 0, lastUserPromptAt: 0,
-        noProgressBeats: 0
+        noProgressBeats: 0, errorRunStartedAt: 0, lastErrorAt: 0, errorCodes: [], lastApiSuccessAt: 0,
+        lastVelocity: 0, lastBeatAt: 0
       };
       this.agents.set(agentId, s);
     }
@@ -170,6 +201,28 @@ export class CircuitBreaker {
   /** Drop all state for an agent (call on archive/kill so it can't leak/zombie). */
   forget(agentId: string): void {
     this.agents.delete(agentId);
+  }
+
+  /** What the breaker knew when `arm` tripped for an agent, for its failure
+   *  report (loopAgentContext turns it into closed fields). `limitSet` says
+   *  whether the limit is the default, the owner's, or a value Settings kept
+   *  that the breaker cannot use. */
+  diagnosis(agentId: string, arm: 'repeat' | 'error-storm' | 'velocity' | 'no-progress'): BreakerFacts {
+    const s = this.get(agentId);
+    const cfg = this.cfg();
+    const raw = this.getConfig() ?? {};
+    const setBy = (v: unknown): BreakerFacts['limitSet'] =>
+      v === undefined || v === null ? 'default' : typeof v === 'number' && v > 0 ? 'custom' : 'invalid';
+    const [limit, limitSet, hits] =
+      arm === 'repeat' ? [cfg.repeatedToolLimit, setBy(raw.repeatedToolLimit), s.repeatCount]
+        : arm === 'error-storm' ? [cfg.errorStormLimit, setBy(raw.errorStormLimit), s.errorCount]
+          : arm === 'velocity' ? [cfg.tokenVelocityPerMin, setBy(raw.tokenVelocityPerMin), s.lastVelocity]
+            : [NO_PROGRESS_BEATS, 'default' as const, s.noProgressBeats];
+    return {
+      limit, limitSet, hits, hardStop: cfg.hardStop, lastDistinctToolAt: s.lastDistinctToolAt,
+      tool: s.repeatKey?.split(':')[0], errorCodes: [...s.errorCodes], errorRunStartedAt: s.errorRunStartedAt,
+      lastErrorAt: s.lastErrorAt, lastApiSuccessAt: s.lastApiSuccessAt
+    };
   }
 
   /** Current breaker level for an agent (for the live fleet snapshot). */
@@ -191,13 +244,46 @@ export class CircuitBreaker {
       s.repeatKey = key;
       s.repeatCount = 1;
       s.errorCount = 0; // a distinct tool call = progress; clear the error storm
+      s.errorRunStartedAt = 0;
+      s.errorCodes = [];
       s.lastDistinctToolAt = now;
     }
   }
 
-  /** An api_error / retry occurred (no forward progress). */
-  recordError(agentId: string): void {
-    this.get(agentId).errorCount += 1;
+  /** An api_error occurred (no forward progress). Claude Code logs one only
+   *  after it gives up on a request. `querySource` is the record's
+   *  query_source, kept so recordApiSuccess can tell which calls were failing.
+   *  `statusCode` is the record's HTTP status, kept only for a failure report. */
+  recordError(agentId: string, querySource?: string, statusCode?: number, now = Date.now()): void {
+    const s = this.get(agentId);
+    if (s.errorCount === 0) { s.errorRunStartedAt = now; s.errorCodes = []; }
+    s.errorCount += 1;
+    s.errorSource = querySource;
+    s.lastErrorAt = now;
+    if (typeof statusCode === 'number') s.errorCodes = [...s.errorCodes, statusCode].slice(-5);
+  }
+
+  /** The errors so far were the account refusing this agent's turn (the office
+   *  stopped on it), not a storm of its own. */
+  clearErrors(agentId: string): void {
+    const s = this.get(agentId);
+    s.errorCount = 0;
+    s.errorSource = undefined;
+    s.errorRunStartedAt = 0;
+    s.errorCodes = [];
+  }
+
+  /** A request got through. A later api_request is how Claude Code's docs tell
+   *  a recovered session from a stalled one (a request re-issued after a
+   *  streaming failure starts `attempt` again at 1, so one turn can log several
+   *  api_errors and then succeed). It ends the run only when it came from the
+   *  same query_source as the errors: compaction, a subagent or a side call can
+   *  succeed while the main loop keeps failing, and that must not hold the
+   *  storm off for good. */
+  recordApiSuccess(agentId: string, querySource?: string, now = Date.now()): void {
+    const s = this.get(agentId);
+    s.lastApiSuccessAt = now;
+    if (s.errorCount > 0 && s.errorSource === querySource) this.clearErrors(agentId);
   }
 
   /** A human submitted a prompt to this agent (UserPromptSubmit hook). Stamps
@@ -244,7 +330,7 @@ export class CircuitBreaker {
     let inp = '';
     try {
       inp = JSON.stringify(toolInput, (_k, v) =>
-        typeof v === 'string' && v.length > 4096 ? v.slice(0, 4096) : v) ?? '';
+        typeof v === 'string' && v.length > TOOL_KEY_STRING_CAP ? v.slice(0, TOOL_KEY_STRING_CAP) : v) ?? '';
     } catch { inp = String(toolInput); }
     return `${toolName ?? '?'}:${createHash('sha256').update(inp).digest('hex')}`;
   }
@@ -295,6 +381,8 @@ export class CircuitBreaker {
 
     for (const input of inputs) {
       const s = this.get(input.agentId);
+      if (s.lastBeatAt > 0 && nowMs - s.lastBeatAt > BEAT_GAP_MS) s.noProgressBeats = 0;
+      s.lastBeatAt = nowMs;
       const trip = this.evaluate(
         input, s, cfg, nowMs,
         input.agentId === topSpender, cfg.costCapUsd,
@@ -341,7 +429,7 @@ export class CircuitBreaker {
     }
     // (b) api_error storm
     if (s.errorCount >= cfg.errorStormLimit) {
-      return { tripping: true, reason: `error storm: ${s.errorCount} consecutive api errors/retries` };
+      return { tripping: true, reason: `error storm: ${s.errorCount} consecutive api errors` };
     }
     // (a) per-agent token limit — this agent's own WORK tokens over its configured
     // cap. Measured without cacheRead (#189): tested against the all-kinds total,
@@ -374,6 +462,7 @@ export class CircuitBreaker {
       const dMin = (input.sample.ts - s.lastSample.ts) / 60_000;
       if (dOut > 0 && dMin > 0) {
         const velocity = dOut / dMin;
+        s.lastVelocity = velocity;
         if (velocity > cfg.tokenVelocityPerMin) {
           return { tripping: true, reason: `token velocity ${Math.round(velocity)}/min > ${cfg.tokenVelocityPerMin}/min` };
         }

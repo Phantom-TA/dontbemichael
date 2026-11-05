@@ -33,7 +33,16 @@ export type TelemetryKind =
   | 'trust-checked'
   // A note new to a member's memory index, by id and source, never its text
   // (Learning, owner 2026-10-18: an edit or a repeat is not a new note).
-  | 'note-added';
+  | 'note-added'
+  // Company foundations (office-foundations.md, eng finding 4): a question
+  // answered, changed or cleared, or work that hit it while empty, by id.
+  | 'foundation'
+  // How long the office ran (owner, 2026-10-25): open, awake and not
+  // stopped, in ms, with the part you were away in attrs.away.
+  | 'running'
+  // The account's weekly usage meter from a status line, in percent, with
+  // when its window resets in attrs.r (owner, 2026-10-29: the plan's rate).
+  | 'meter';
 
 export interface TelemetryEvent {
   agentId: string | null;
@@ -58,15 +67,29 @@ export interface CardLite {
 /** Idle this long and the owner counts as away (D11). */
 export const AWAY_AFTER_SEC = 30 * 60;
 const MAX_BUFFER = 5000;
+/** Running time is saved as one point this often, or sooner at a day's end,
+ *  a sleep, a quit or an office change. A crash loses at most this much. */
+export const RUN_SAVE_MS = 5 * 60_000;
+/** One gap between ticks counts at most this much: it bounds a sleep whose
+ *  suspend event never came. A late timer (a busy machine) still counts. */
+export const RUN_GAP_CAP_MS = 15 * 60_000;
+
+interface RunBuffer { office: string; day: string; ms: number; away: number; since: number; until: number }
 
 export class TelemetryStore {
   private buf: Array<TelemetryEvent & { office: string }> = [];
   /** office \t day -> failed writes not yet saved (D15). */
   private failed = new Map<string, number>();
   private lastCost = new Map<string, string>();
+  private lastMeter: string | null = null;
   private lastCards = new Map<string, Map<string, string>>();
   private away: boolean | null = null;
+  /** The last running tick; null before the clock starts and after a sleep. */
+  private lastTick: number | null = null;
+  private run: RunBuffer | null = null;
   private loggedFailure = false;
+  /** Told of each point queued, for the health readout (telemetry:health). */
+  onRecord?: (office: string) => void;
 
   constructor(
     private readonly db: () => Database.Database | null,
@@ -77,8 +100,12 @@ export class TelemetryStore {
   /** Queue one data point for the current office. */
   record(ev: TelemetryEvent): void {
     const office = this.office();
-    if (!office) return;
+    if (office) this.push(ev, office);
+  }
+
+  private push(ev: TelemetryEvent, office: string): void {
     this.buf.push({ ...ev, office });
+    this.onRecord?.(office);
     if (this.buf.length >= MAX_BUFFER) this.flush();
   }
 
@@ -115,15 +142,22 @@ export class TelemetryStore {
 
   /** Days in an office with records that could not be saved, saved or pending. */
   failureDays(office: string): string[] {
-    const days = new Set<string>();
-    for (const key of this.failed.keys()) if (key.startsWith(`${office}\t`)) days.add(key.slice(office.length + 1));
+    return Object.keys(this.failedWrites(office)).sort();
+  }
+
+  /** Records in an office that could not be saved, by day, saved or pending. */
+  failedWrites(office: string): Record<string, number> {
+    const days: Record<string, number> = {};
+    for (const [key, n] of this.failed) if (key.startsWith(`${office}\t`)) days[key.slice(office.length + 1)] = n;
     const db = this.db();
     if (db) {
       try {
-        for (const r of db.prepare('SELECT day FROM telemetry_failures WHERE office = ?').all(office) as Array<{ day: string }>) days.add(r.day);
+        for (const r of db.prepare('SELECT day, count FROM telemetry_failures WHERE office = ?').all(office) as Array<{ day: string; count: number }>) {
+          days[r.day] = (days[r.day] ?? 0) + r.count;
+        }
       } catch { /* the pending ones still count */ }
     }
-    return [...days].sort();
+    return days;
   }
 
   /** A cost sample (running total). Stored only when it changed since the
@@ -135,6 +169,16 @@ export class TelemetryStore {
     if (this.lastCost.get(key) === sig) return;
     this.lastCost.set(key, sig);
     this.record({ agentId, kind: 'cost', ts, value: usd, attrs: { s: session, tokens, ...(model ? { model } : {}) } });
+  }
+
+  /** A weekly meter reading, stored only when it changed: every member's
+   *  status line carries the same account wide meter. */
+  meter(pct: number, resetsAt: number, ts = this.now()): void {
+    if (!(pct >= 0) || !(resetsAt > 0)) return;
+    const sig = `${pct}|${Math.round(resetsAt / 3_600_000)}`;
+    if (this.lastMeter === sig) return;
+    this.lastMeter = sig;
+    this.record({ agentId: null, kind: 'meter', ts, value: pct, attrs: { r: resetsAt } });
   }
 
   /** The 8 s tick's tasks: one card-status point per change (doneAt is the
@@ -165,6 +209,56 @@ export class TelemetryStore {
     if (away === this.away) return;
     this.away = away;
     this.record({ agentId: null, kind: 'presence', ts: away && !asleep ? ts - idleSec * 1000 : ts, value: away ? 1 : 0 });
+  }
+
+  /** Start the running clock: the app is open and the computer awake, from
+   *  launch and again after a resume. A clock already running keeps going
+   *  (an unlock re-arms the beats too, with no sleep in between). */
+  runningStart(ts = this.now()): void {
+    if (this.lastTick === null) this.lastTick = ts;
+  }
+
+  /** Each minute: the time since the last tick ran, unless the computer slept
+   *  in between (the first tick after a pause only starts the clock again and
+   *  counts nothing) or the office is stopped (plan limit, no credit, sign in
+   *  failed: owner D1). Away is the presence state. */
+  running(stopped: boolean, ts = this.now()): void {
+    const last = this.lastTick;
+    this.lastTick = ts;
+    const office = this.office();
+    if (last === null || !office || ts <= last) return;
+    if (!stopped) this.add(office, Math.max(last, ts - RUN_GAP_CAP_MS), ts, this.away === true);
+    if (this.run && ts - this.run.since >= RUN_SAVE_MS) this.runningSave();
+  }
+
+  /** Before a sleep or a quit: count up to now, save, and stop the clock. */
+  runningPause(stopped: boolean, ts = this.now()): void {
+    this.running(stopped, ts);
+    this.runningSave();
+    this.lastTick = null;
+  }
+
+  /** Save the buffered running time as one point for its office and day. */
+  runningSave(): void {
+    const r = this.run;
+    this.run = null;
+    if (r && r.ms > 0) this.push({ agentId: null, kind: 'running', ts: r.until, value: r.ms, attrs: { away: r.away } }, r.office);
+  }
+
+  /** Add a span to the buffer, split at local midnight so a point never spans two days. */
+  private add(office: string, from: number, to: number, away: boolean): void {
+    while (from < to) {
+      const day = dayKey(from);
+      const next = new Date(from);
+      next.setHours(24, 0, 0, 0);
+      const end = Math.min(to, next.getTime());
+      if (this.run && (this.run.office !== office || this.run.day !== day)) this.runningSave();
+      const r = this.run ?? (this.run = { office, day, ms: 0, away: 0, since: from, until: from });
+      r.ms += end - from;
+      if (away) r.away += end - from;
+      r.until = end === next.getTime() ? end - 1 : end;
+      from = end;
+    }
   }
 
   /** Points after a cursor, oldest first, for the processor. */

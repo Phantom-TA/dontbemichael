@@ -41,6 +41,7 @@ import { summarizeReleaseNotes } from '@shared/releaseNotes';
 import { extractDropHtml } from '@shared/releaseDrop';
 import { ReleaseDrop } from '@/components/ReleaseDrop';
 import { REPO_URL, type UpdateStatus } from '@shared/updateState';
+import { fieldLabel } from './fieldText';
 
 /** The toast is the LOUD half — it only interrupts for the two states a user has
  *  to act on. Everything else (checking, available, download progress, errors)
@@ -149,15 +150,17 @@ export function UpdateToast() {
    *  read. (The warning outranking every modal is a separate fix — this one is
    *  about not asking two questions at once.) If main reports it could not quit,
    *  the notice comes back so the user can retry; a user CANCEL of the warning
-   *  is not a failure, and the notice stays closed. */
+   *  is not a failure, and the notice stays closed. A status main pushed while
+   *  the restart ran wins over the old one: an install it refused comes back as
+   *  the manual download, never as the same Restart again. */
   const restart = async () => {
     const prev = status;
     setBusy(true);
     setStatus(null);
     try {
       const res = await window.cth.updateRestartAndInstall();
-      if (!res.ok) { setStatus(prev); setBusy(false); }
-    } catch { setStatus(prev); setBusy(false); }
+      if (!res.ok) { setStatus((cur) => cur ?? prev); setBusy(false); }
+    } catch { setStatus((cur) => cur ?? prev); setBusy(false); }
   };
 
   /** Same call the manual state's button makes: main resolves `undefined` to
@@ -214,7 +217,7 @@ export function UpdateToast() {
 
       {notes.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+          <div style={fieldLabel}>
             {t('updateToast.whatsNew')}
           </div>
           {/* The digest is already capped at ~280 chars; the clamp is the second

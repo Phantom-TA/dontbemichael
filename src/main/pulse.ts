@@ -11,19 +11,22 @@
  *   view ─ pulse:undo / pulse:dismiss
  *   view ─ pulse:held(fromMs, toMs) ─► held() ─► private/held.jsonl rows (the held tile's list)
  *   view ─ pulse:checked(fromMs, toMs, way) ─► checked() ─► private/checked.jsonl rows (questions and answers lists)
+ *   view ─ pulse:organized(fromMs, toMs, agentId?) ─► organized() ─► private/organized.jsonl rows (the emails organized list)
  */
 import type Database from 'better-sqlite3';
 import type { ScheduledMission } from '../shared/missions';
 import {
-  compareFrom, dayKey, keptAsIs, measuredSaving, periodRange, planHeadroom, previousRange, pulseSnapshot,
+  compareFrom, dayKey, keptAsIs, measuredSaving, MIN_DECISIONS, periodRange, planHeadroom, previousRange, pulseSnapshot, reopensSince,
   type AskFact, type DayRange, type Period, type PlanReading, type PulseSnapshot
 } from '../shared/teamPerformance';
-import { adviceFor, visibleAdvice, ADVICE_WINDOW_MS, type Advice, type Dismissal, type LadderModel, type MissionFact } from '../shared/teamAdvice';
+import { adviceFor, earlyWatch, visibleAdvice, ADVICE_WINDOW_MS, EARLY_SCALE, type Advice, type Dismissal, type EarlyMode, type EarlyWatch, type LadderModel, type MemberModelFact, type MissionFact } from '../shared/teamAdvice';
 import { keptSafe, type KeptSafe } from '../shared/pulseSafety';
-import { planCostFor, scaleSnapshot, type PlanPrice } from '../shared/claudePlan';
+import { METER_LOOKBACK_MS, planCostFor, planRate, scaleSnapshot, usdPerMeterPoint, type CostPoint, type MeterPoint, type PlanPrice } from '../shared/claudePlan';
 import { countFromDay, learnedNotes, learning, type AddedNote, type LearnedNote, type NoteFact } from '../shared/teamLearning';
 import { parseHeld, type HeldRow } from '../shared/heldRecord';
 import { parseChecked, type CheckedList, type CheckedRow } from '../shared/checkedRecord';
+import { parseOrganized, type OrganizedList, type OrganizedRow } from '../shared/organizedRecord';
+import { countFor, foundationsPulse, replayFoundations, type FoundationEvent, type FoundationJob, type FoundationsPulse } from '../shared/foundations';
 import type { TelemetryStore } from './telemetryStore';
 import type { TelemetryProcessor } from './telemetryProcessor';
 
@@ -51,7 +54,14 @@ export interface PulseDeps {
   readHeld?: () => string;
   /** private/checked.jsonl, the lists of what the check let through or stopped. */
   readChecked?: () => string | Promise<string>;
+  /** The private organized mail record (organizedRecord.ts); '' when there is none. */
+  readOrganized?: () => string | Promise<string>;
   now?: () => number;
+  /** Each member's job, for Company foundations (office-foundations.md). */
+  memberJobs?: () => Record<string, FoundationJob[]>;
+  /** The foundations record's answers: what is answered now, whatever the
+   *  events say (an event can be lost or pruned). */
+  foundationsAnswers?: () => Partial<Record<string, { at: string }>>;
 }
 
 export type { AppliedChange, PulseView } from '../shared/pulseView';
@@ -62,22 +72,59 @@ function windowMs(name: string): number {
   return /five_hour|5h/i.test(name) ? 5 * 3_600_000 : 7 * 86_400_000;
 }
 
+/** At most this many early lines, the most evidence first. */
+export const EARLY_MAX = 3;
+/** The early lines to show: the most evidence first, at most EARLY_MAX. */
+export function earliest(all: Advice[]): Advice[] {
+  const weight = (a: Advice): number => a.evidence.runs ?? (a.evidence.decisions ?? 0) + (a.evidence.reopens ?? 0);
+  return [...all].sort((a, b) => weight(b) - weight(a)).slice(0, EARLY_MAX);
+}
+
+/** The case study invitation's row in telemetry_dismissed, and its day count (D7). */
+export const CASE_STUDY_INVITE = 'case-study-invite';
+export const CASE_STUDY_INVITE_DAYS = 30;
+
+interface MeasureSource {
+  now: number;
+  days: ReturnType<TelemetryProcessor['days']>;
+  cards: ReturnType<TelemetryProcessor['cards']>;
+  decisions: ReturnType<TelemetryProcessor['decisions']>;
+  asks: AskFact[];
+  ids: string[];
+  gapDays: string[];
+  running: ReturnType<TelemetryProcessor['running']>;
+  godId: string | null;
+  price: PlanPrice | null;
+  rate: number | null;
+}
+
 export class PulseService {
-  private reading: PlanReading | null = null;
+  /** Every live usage window from the last status line that had one (E6). */
+  private readings: PlanReading[] = [];
   constructor(private readonly d: PulseDeps) {}
   private now(): number { return this.d.now ? this.d.now() : Date.now(); }
 
-  /** A status line's usage windows: keep the most constrained one (E6). */
+  /** The plan bar's window: the most constrained one that hasn't reset. A reset
+   *  five hour window falls back to the weekly one instead of an empty bar, and
+   *  a quiet office never shows a reset window as used up. */
+  private get reading(): PlanReading | null {
+    const now = this.now();
+    return this.readings.reduce<PlanReading | null>((best, r) => (r.resetsAt > now && (!best || r.usedPct > best.usedPct) ? r : best), null);
+  }
+
+  /** A status line's usage windows: keep each live one, so the most constrained
+   *  can be chosen when Pulse is read (E6). */
   noteRateLimits(rateLimits: unknown, at = this.now()): void {
     if (!rateLimits || typeof rateLimits !== 'object') return;
-    let best: PlanReading | null = null;
+    const live: PlanReading[] = [];
     for (const [name, w] of Object.entries(rateLimits as Record<string, { used_percentage?: unknown; resets_at?: unknown }>)) {
       const pct = typeof w?.used_percentage === 'number' ? w.used_percentage : NaN;
       const resets = typeof w?.resets_at === 'number' ? w.resets_at * 1000 : NaN;
       if (!(pct >= 0) || !(resets > at)) continue;
-      if (!best || pct > best.usedPct) best = { usedPct: pct, resetsAt: resets, windowMs: windowMs(name), at };
+      live.push({ usedPct: pct, resetsAt: resets, windowMs: windowMs(name), at });
+      if (name === 'seven_day') this.d.store.meter(pct, resets, at);
     }
-    if (best) this.reading = best;
+    if (live.length) this.readings = live;
   }
 
   private asks(): AskFact[] {
@@ -88,6 +135,62 @@ export class PulseService {
       if (!Number.isFinite(askedAt)) continue;
       const answeredAt = e.answeredAt ? Date.parse(e.answeredAt) : NaN;
       out.push({ raisedBy: e.raisedBy, askedAt, ...(Number.isFinite(answeredAt) ? { answeredAt } : {}) });
+    }
+    return out;
+  }
+
+  /**
+   * Company foundations from harness.db (eng finding 4): the strip, each
+   * member's count, and, once a member has enough work on both sides of the
+   * day its hit questions were answered, kept as is without and with them.
+   */
+  foundations(office: string): FoundationsPulse {
+    const db = this.d.db();
+    const jobs = this.d.memberJobs?.() ?? {};
+    if (!db) return { jobs: [], members: {} };
+    let rows: Array<{ agent_id: string | null; ts: number; attrs: string | null }> = [];
+    try { rows = db.prepare("SELECT agent_id, ts, attrs FROM telemetry_events WHERE office = ? AND kind = 'foundation' ORDER BY id").all(office) as typeof rows; } catch { return { jobs: [], members: {} }; }
+    const events: FoundationEvent[] = [];
+    for (const r of rows) {
+      try {
+        const a = r.attrs ? JSON.parse(r.attrs) as { q?: unknown; change?: unknown } : {};
+        if (typeof a.q === 'string' && (a.change === 'answered' || a.change === 'changed' || a.change === 'cleared' || a.change === 'hit')) events.push({ agentId: r.agent_id, ts: r.ts, q: a.q, change: a.change });
+      } catch { /* a broken row */ }
+    }
+    const state = replayFoundations(events);
+    // The record says what is answered now; the events say when and who hit it.
+    const answers = this.d.foundationsAnswers?.();
+    if (answers) {
+      for (const q of [...state.answeredAt.keys()]) if (!answers[q]) state.answeredAt.delete(q);
+      for (const [q, a] of Object.entries(answers)) {
+        const at = a ? Date.parse(a.at) : NaN;
+        if (!state.answeredAt.has(q as never) && Number.isFinite(at)) state.answeredAt.set(q as never, at);
+      }
+    }
+    const out = foundationsPulse(state, jobs);
+    // The proof (D14): the first of a member's hit questions answered splits its
+    // work in two; each side needs half the evidence advice needs.
+    const firsts = new Map<string, { q: FoundationEvent['q']; at: number }>();
+    for (const agentId of Object.keys(jobs)) {
+      for (const [q, by] of state.hits) {
+        const at = state.answeredAt.get(q);
+        const was = firsts.get(agentId);
+        if (at !== undefined && by.has(agentId) && (!was || at < was.at)) firsts.set(agentId, { q, at });
+      }
+    }
+    if (!firsts.size) return out;
+    const since = this.now() - 90 * 86_400_000;
+    const cards = this.d.processor.cards(office, since);
+    const decisions = this.d.processor.decisions(office, since);
+    const min = Math.ceil(MIN_DECISIONS * EARLY_SCALE);
+    for (const [agentId, first] of firsts) {
+      const at = first.at;
+      const before = keptAsIs(agentId, decisions.filter((d) => d.at < at), cards.filter((c) => (c.doneAt ?? 0) < at), min).share;
+      const after = keptAsIs(agentId, decisions.filter((d) => d.at >= at), cards.filter((c) => (c.doneAt ?? 0) >= at), min).share;
+      if (before === null || after === null) continue;
+      const proof = { without: before, with: after, question: first.q as never };
+      const c = countFor(new Set<string>(state.answeredAt.keys()), jobs[agentId]);
+      out.members[agentId] = out.members[agentId] ? { ...out.members[agentId], proof } : { answered: c.answered, total: c.total, missing: [], more: 0, proof };
     }
     return out;
   }
@@ -107,10 +210,17 @@ export class PulseService {
     }));
   }
 
-  /** Every suggestion the last 14 days support, before dismissals. */
-  private allAdvice(office: string): Advice[] {
+  /** Every suggestion the last 14 days support, before dismissals. In the
+   *  early mode, what the live days so far show at half the evidence (eng D1). */
+  private allAdvice(office: string, early?: EarlyMode): Advice[] {
+    return this.evidence(office, early).advice;
+  }
+
+  /** The advice rules over their window, with the member facts they read
+   *  (the Early look shows the closest member too). */
+  private evidence(office: string, early?: EarlyMode): { advice: Advice[]; members: MemberModelFact[] } {
     const now = this.now();
-    const since = now - ADVICE_WINDOW_MS;
+    const since = early ? Math.max(early.from, now - ADVICE_WINDOW_MS) : now - ADVICE_WINDOW_MS;
     const days = this.d.processor.days(office, dayKey(since)).filter((x) => x.day >= dayKey(since));
     const cards = this.d.processor.cards(office, since);
     const decisions = this.d.processor.decisions(office, since);
@@ -118,25 +228,34 @@ export class PulseService {
     const missions: MissionFact[] = this.d.missions()
       .filter((m) => m.enabled && (m.kind ?? 'dispatch') === 'dispatch')
       .map((m) => ({ id: m.id, to: m.to === 'god' && godId ? godId : m.to, label: m.label, intervalMs: m.intervalMs, timed: !!(m.times?.length || m.weekly) }));
-    const members = this.d.models().map((m) => {
+    const members: MemberModelFact[] = this.d.models().map((m) => {
       const mine = days.filter((x) => x.agentId === m.agentId);
-      const kept = keptAsIs(m.agentId, decisions, cards);
+      const kept = keptAsIs(m.agentId, decisions, cards, early ? Math.ceil(MIN_DECISIONS * early.scale) : undefined);
       return {
         agentId: m.agentId, provider: m.provider, model: m.model, isGod: m.agentId === godId,
         pieces: mine.reduce((s, x) => s + x.emails + x.sent + x.tasks + x.checks, 0),
         mailDecisions: decisions.filter((x) => x.agentId === m.agentId && x.decision !== 'cancelled').length,
-        keptShare: kept.share, keptDecisions: kept.decisions,
-        reopens: cards.filter((c) => c.assignee === m.agentId && c.reopened).length,
+        keptShare: kept.share, keptDecisions: kept.decisions, kept: kept.kept,
+        reopens: reopensSince(m.agentId, cards, since),
         usdPerWeek: mine.reduce((s, x) => s + x.usd, 0) / 2
       };
     });
     // A change the owner applied in the window makes the evidence before it
     // stale: that suggestion waits for 14 days of new records.
     const recent = new Set(this.appliedChanges(office).filter((a) => a.undoneAt === null && a.at >= since).map((a) => a.adviceId));
-    return adviceFor({
+    const advice = adviceFor({
       now, runs: this.d.processor.runs(office, since), missions, members,
       ladder: this.d.ladder(), gapDays: this.d.store.failureDays(office), priceOf: this.d.priceOf
-    }).filter((a) => !recent.has(a.id));
+    }, early).filter((a) => !recent.has(a.id));
+    return { advice, members };
+  }
+
+  /** Before advice can show (from the first live day, `firstMs`): what the
+   *  rules see so far as facts (eng D1), and what each rule is watching. */
+  private early(office: string, firstMs: number | null): { early: Advice[]; earlyWatch?: EarlyWatch } {
+    if (firstMs === null) return { early: [] };
+    const { advice, members } = this.evidence(office, { from: firstMs, scale: EARLY_SCALE });
+    return { early: earliest(advice), earlyWatch: earlyWatch(advice, members, this.d.ladder()) };
   }
 
   snapshot(period: Period, compare = false): PulseView {
@@ -147,7 +266,7 @@ export class PulseService {
     const db = this.d.db();
     const range = periodRange(period, now);
     const empty = pulseSnapshot({ period, now, days: [], cards: [], decisions: [], asks: [], members: [] });
-    if (!office || !db) return { available: false, billing, collectingSince: null, liveSince: null, snapshot: empty, advice: [], adviceFrom: null, saved: { state: 'none' }, headroom: null, applied: [], trend: {}, keptSafe: keptSafe([]), learning: learning({ notes: [], procedures: {}, asks: [], turns: [], range }), plan: null, compare: null, compareReady: false, compareFrom: null };
+    if (!office || !db) return { available: false, billing, collectingSince: null, liveSince: null, snapshot: empty, advice: [], early: [], adviceFrom: null, saved: { state: 'none' }, headroom: null, applied: [], trend: {}, keptSafe: keptSafe([]), learning: learning({ notes: [], procedures: {}, asks: [], turns: [], range }), plan: null, compare: null, compareReady: false, compareFrom: null };
     const first = this.d.processor.firstDay(office);
     // Recommendations and Compare count from live recording, never from a backfill.
     const live = this.d.processor.firstDay(office, true);
@@ -161,26 +280,17 @@ export class PulseService {
     const decisions = this.d.processor.decisions(office, from);
     const asks = this.asks();
     const gapDays = this.d.store.failureDays(office);
-    // On a plan, each member's dollars are their part of the plan's real cost
-    // for the period, split by share of the work (owner, 2026-10-15).
+    const running = this.d.processor.running(office, from);
+    // On a plan, each member's dollars are what their own work cost of the
+    // plan, at the plan's rate (owner, 2026-10-29): the rest of the plan is
+    // the owner's other Claude use, never the office's.
     const price = billing === 'account' ? this.planPrice() : null;
-    const measure = (r: DayRange): { snapshot: PulseSnapshot; keptSafe: KeptSafe; periodCost: number; payPerUse: number } => {
-      const raw = pulseSnapshot({
-        period, now, range: r, days, cards, decisions, asks, members: ids, gapDays,
-        sentAsWritten: decisions.filter((x) => x.decision === 'approve' && x.at >= r.fromMs && x.at <= r.toMs).length,
-        ...(godId ? { michael: { agentId: godId, ...this.d.processor.michaelCounts(office, godId, r.fromMs, r.toMs) } } : {})
-      });
-      const periodCost = price ? planCostFor(price.monthly, r.fromMs, r.toMs, now) : 0;
-      return {
-        snapshot: price && raw.totalUsd > 0 ? scaleSnapshot(raw, periodCost / raw.totalUsd) : raw,
-        keptSafe: keptSafe(this.d.processor.safetyRows(office, r.from, r.to)),
-        periodCost,
-        payPerUse: raw.totalUsd
-      };
-    };
+    const rate = price ? this.planRate(office, price) : null;
+    const src: MeasureSource = { now, days, cards, decisions, asks, ids, gapDays, running, godId, price, rate };
+    const measure = (r: DayRange) => this.measureRange(office, period, r, src);
     const cur = measure(range);
     const prev = before ? measure(before) : null;
-    const plan = price ? { label: price.label, monthly: price.monthly, source: price.source, periodCost: cur.periodCost, payPerUse: cur.payPerUse } : null;
+    const plan = price && rate !== null ? { label: price.label, monthly: price.monthly, source: price.source, periodCost: cur.periodCost, payPerUse: cur.payPerUse } : null;
     const firstMs = live ? new Date(`${live}T00:00:00`).getTime() : now;
     const adviceReady = now - firstMs >= ADVICE_WINDOW_MS;
     const applied = this.appliedChanges(office);
@@ -191,17 +301,22 @@ export class PulseService {
       liveSince: live,
       snapshot: cur.snapshot,
       advice: adviceReady ? visibleAdvice(this.allAdvice(office), this.dismissed(office), now) : [],
+      // Before advice can show: what the live days so far show, as facts (eng D1).
+      ...this.early(office, adviceReady || !live ? null : firstMs),
       adviceFrom: adviceReady ? null : dayKey(firstMs + ADVICE_WINDOW_MS),
       saved: this.saved(office, applied),
       headroom: billing === 'account' ? planHeadroom(this.reading) : null,
       applied,
-      trend: this.trend(office, ids, price),
+      trend: this.trend(office, ids, price, rate),
       keptSafe: cur.keptSafe,
       learning: this.learning(office, range, before, asks),
+      foundations: this.foundations(office),
       plan,
+      ...(price && rate === null ? { planLearning: true } : {}),
       compare: prev ? { snapshot: prev.snapshot, keptSafe: prev.keptSafe } : null,
       compareReady,
-      compareFrom: readyFrom
+      compareFrom: readyFrom,
+      caseStudyInvite: this.caseStudyInvite(office)
     };
   }
 
@@ -224,8 +339,126 @@ export class PulseService {
     return { rows: all.filter((r) => r.at >= fromMs && r.at <= toMs).sort((a, b) => b.at - a.at), since };
   }
 
+  /** The emails organized in a span, newest first, all members or one (owner,
+   *  2026-10-21). Throws when the record can't be read, so the list says so. */
+  async organized(fromMs: number, toMs: number, agentId?: string): Promise<OrganizedList> {
+    const text = (await this.d.readOrganized?.()) ?? '';
+    const all = text.split('\n').map(parseOrganized).filter((r): r is OrganizedRow => !!r);
+    // The first kept row says from when emails are named.
+    const since = all.reduce<number | null>((m, r) => (m === null || r.at < m ? r.at : m), null);
+    return { rows: all.filter((r) => r.at >= fromMs && r.at <= toMs && (!agentId || r.agentId === agentId)).sort((a, b) => b.at - a.at), since };
+  }
+
   private planPrice(): PlanPrice | null {
     try { return this.d.plan(); } catch { return null; }
+  }
+
+  /** Plan dollars per pay per use dollar, from the weekly meter readings and
+   *  the office's cost samples of the last four weeks; null until learned. */
+  private planRate(office: string, price: PlanPrice): number | null {
+    const db = this.d.db();
+    if (!db) return null;
+    try {
+      const since = this.now() - METER_LOOKBACK_MS;
+      const meter: MeterPoint[] = (db.prepare("SELECT ts, value, attrs FROM telemetry_events WHERE office = ? AND kind = 'meter' AND ts >= ? ORDER BY ts")
+        .all(office, since) as Array<{ ts: number; value: number | null; attrs: string | null }>)
+        .map((r) => ({ at: r.ts, pct: Number(r.value), resetsAt: Number((r.attrs ? JSON.parse(r.attrs) as { r?: unknown } : {}).r) }))
+        .filter((m) => m.pct >= 0 && m.resetsAt > 0);
+      if (meter.length < 2) return null;
+      const from = meter[0].at;
+      const point = (r: { agent_id: string | null; ts: number; value: number | null; attrs: string | null }): CostPoint =>
+        ({ at: r.ts, key: `${r.agent_id}\t${String((r.attrs ? JSON.parse(r.attrs) as { s?: unknown } : {}).s ?? '')}`, usd: Number(r.value) });
+      const costs = (db.prepare("SELECT agent_id, ts, value, attrs FROM telemetry_events WHERE office = ? AND kind = 'cost' AND ts >= ?")
+        .all(office, from) as Array<{ agent_id: string | null; ts: number; value: number | null; attrs: string | null }>).map(point);
+      // Each session's last running total before the first reading.
+      const seed: Record<string, number> = {};
+      for (const r of db.prepare("SELECT agent_id, MAX(ts) AS ts, value, attrs FROM telemetry_events WHERE office = ? AND kind = 'cost' AND ts < ? AND ts >= ? GROUP BY agent_id, json_extract(attrs, '$.s')")
+        .all(office, from, from - METER_LOOKBACK_MS) as Array<{ agent_id: string | null; ts: number; value: number | null; attrs: string | null }>) {
+        const p = point(r);
+        seed[p.key] = p.usd;
+      }
+      const perPoint = usdPerMeterPoint(meter, costs, seed);
+      return perPoint === null ? null : planRate(price.monthly, perPoint);
+    } catch { return null; }
+  }
+
+  /** One span measured the way Pulse shows it: the tiles, and on a plan the
+   *  dollars scaled to the plan (Compare and the case study use it too). */
+  private measureRange(office: string, period: Period, r: DayRange, src: MeasureSource): { snapshot: PulseSnapshot; keptSafe: KeptSafe; periodCost: number; payPerUse: number } {
+    const { now, days, cards, decisions, asks, ids, gapDays, running, godId, price, rate } = src;
+    const raw = pulseSnapshot({
+      period, now, range: r, days, cards, decisions, asks, members: ids, gapDays, running,
+      sentAsWritten: decisions.filter((x) => x.decision === 'approve' && x.at >= r.fromMs && x.at <= r.toMs).length,
+      ...(godId ? { michael: { agentId: godId, ...this.d.processor.michaelCounts(office, godId, r.fromMs, r.toMs) } } : {})
+    });
+    // Never more than the whole plan for the days so far.
+    const periodCost = rate !== null && price ? Math.min(raw.totalUsd * rate, planCostFor(price.monthly, r.fromMs, r.toMs, now)) : 0;
+    return {
+      snapshot: rate !== null && raw.totalUsd > 0 ? scaleSnapshot(raw, periodCost / raw.totalUsd) : raw,
+      keptSafe: keptSafe(this.d.processor.safetyRows(office, r.from, r.to)),
+      periodCost,
+      payPerUse: raw.totalUsd
+    };
+  }
+
+  /**
+   * The case study's figures for a span (docs/designs/case-study.md, eng A6):
+   * Pulse's own measure, plan scaled spend included, and the office's running
+   * hours per local day (D18). Running points are already split at local
+   * midnight and stamped inside their day (telemetryStore.add), so each sums
+   * by its own day. Null with no office or store.
+   */
+  caseStudyFigures(r: DayRange): { snapshot: PulseSnapshot; days: Array<{ day: string; ms: number; awayMs: number }> } | null {
+    const office = this.d.office();
+    const db = this.d.db();
+    if (!office || !db) return null;
+    const billing = this.d.billing();
+    const price = billing === 'account' ? this.planPrice() : null;
+    const src: MeasureSource = {
+      now: this.now(),
+      days: this.d.processor.days(office, r.from),
+      cards: this.d.processor.cards(office, r.fromMs),
+      decisions: this.d.processor.decisions(office, r.fromMs),
+      asks: this.asks(),
+      ids: this.d.members().map((m) => m.id),
+      gapDays: this.d.store.failureDays(office),
+      running: this.d.processor.running(office, r.fromMs),
+      godId: this.d.godId(),
+      price,
+      rate: price ? this.planRate(office, price) : null
+    };
+    const { snapshot } = this.measureRange(office, 'this-month', r, src);
+    const byDay = new Map<string, { ms: number; awayMs: number }>();
+    for (let t = r.fromMs; dayKey(t) <= r.to; t += 86_400_000) if (!byDay.has(dayKey(t))) byDay.set(dayKey(t), { ms: 0, awayMs: 0 });
+    for (const p of src.running.points) {
+      if (p.ts < r.fromMs || p.ts > r.toMs) continue;
+      const d = byDay.get(dayKey(p.ts));
+      if (d) { d.ms += p.ms; d.awayMs += p.awayMs; }
+    }
+    return { snapshot, days: [...byDay].map(([day, v]) => ({ day, ...v })) };
+  }
+
+  /** The case study invitation (D7): once the office has 30 distinct days
+   *  with an outcome, until dismissed or sent. Kept in the Pulse store per
+   *  office, never in office.json, which is rewritten from the config (eng A1). */
+  caseStudyInvite(office: string): boolean {
+    const db = this.d.db();
+    if (!db) return false;
+    try {
+      if (db.prepare('SELECT 1 FROM telemetry_dismissed WHERE office = ? AND advice_id = ?').get(office, CASE_STUDY_INVITE)) return false;
+      const row = db.prepare('SELECT COUNT(DISTINCT day) AS n FROM telemetry_daily WHERE office = ? AND emails + sent + tasks + checks > 0').get(office) as { n: number } | undefined;
+      return (row?.n ?? 0) >= CASE_STUDY_INVITE_DAYS;
+    } catch { return false; }
+  }
+
+  /** Dismissed or sent: the invitation never shows again for this office. */
+  caseStudyInviteDone(): boolean {
+    const office = this.d.office();
+    const db = this.d.db();
+    if (!office || !db) return false;
+    db.prepare(`INSERT INTO telemetry_dismissed (office, advice_id, band, at) VALUES (?, ?, 0, ?)
+      ON CONFLICT(office, advice_id) DO UPDATE SET at = excluded.at`).run(office, CASE_STUDY_INVITE, this.now());
+    return true;
   }
 
   /** Learning for the period and, with Compare, the span before. */
@@ -258,8 +491,8 @@ export class PulseService {
   }
 
   /** Value per week, last four weeks (this week last), per member; on a plan,
-   *  each week's part of the plan's cost for that week. */
-  private trend(office: string, ids: string[], price: PlanPrice | null): Record<string, number[]> {
+   *  at the plan's rate, never more than the plan's cost for that week. */
+  private trend(office: string, ids: string[], price: PlanPrice | null, rate: number | null): Record<string, number[]> {
     const now = this.now();
     const monday = new Date(periodRange('this-week', now).fromMs);
     monday.setDate(monday.getDate() - 21);
@@ -271,12 +504,12 @@ export class PulseService {
       const w = Math.floor((new Date(`${d.day}T12:00:00`).getTime() - start) / (7 * 86_400_000));
       if (w >= 0 && w < 4) (out[d.agentId] ??= [0, 0, 0, 0])[w] += d.usd;
     }
-    if (price) {
+    if (price && rate !== null) {
       const week = 7 * 86_400_000;
       for (let w = 0; w < 4; w++) {
         const total = Object.values(out).reduce((s, v) => s + v[w], 0);
         if (total <= 0) continue;
-        const factor = planCostFor(price.monthly, start + w * week, start + (w + 1) * week - 1, now) / total;
+        const factor = Math.min(total * rate, planCostFor(price.monthly, start + w * week, start + (w + 1) * week - 1, now)) / total;
         for (const v of Object.values(out)) v[w] *= factor;
       }
     }

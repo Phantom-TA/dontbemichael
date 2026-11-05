@@ -16,6 +16,29 @@ let cachedPath: string | null = null;
  *  (shell failed / fence missing) stays retryable. */
 const shellCapture = new Map<string, string>();
 
+/** How long one login-shell capture may block the main process. */
+let captureTimeoutMs = 3000;
+
+/** After a failed PATH capture, how long userShellPath() hands out the process
+ *  PATH before it asks the shell again. Retrying on every spawn would make a
+ *  shell that keeps timing out freeze the main process on every spawn. */
+const PATH_RETRY_MS = 60_000;
+let pathRetryAt = 0;
+let now = (): number => Date.now();
+
+/** Test seam: forget every cached capture and, optionally, shorten the capture
+ *  timeout so a slow-shell test does not have to wait the full 3 s, and swap
+ *  the clock that paces PATH retries. */
+export function __resetShellEnvForTest(
+  opts: { timeoutMs?: number; now?: () => number } = {}
+): void {
+  shellCapture.clear();
+  cachedPath = null;
+  pathRetryAt = 0;
+  captureTimeoutMs = opts.timeoutMs ?? 3000;
+  now = opts.now ?? (() => Date.now());
+}
+
 /** Run `script` in the user's INTERACTIVE login shell and return only what the
  *  script itself printed.
  *
@@ -39,10 +62,14 @@ export function captureFromLoginShell(script: string): string | null {
 function captureFromLoginShellUncached(script: string): string | null {
   const mark = '__MD_SHELL_FENCE__';
   try {
+    // SIGKILL, not the default SIGTERM: an INTERACTIVE zsh or bash ignores
+    // SIGTERM, so a timed-out shell kept running its rc files (nvm, conda, a
+    // cold network mount) and spawnSync blocked the whole main process until
+    // they finished, however long past the timeout that was.
     const res = spawnSync(
       process.env.SHELL ?? '/bin/zsh',
       ['-ilc', `printf %s ${mark}; ${script}; printf %s ${mark}`],
-      { encoding: 'utf8', timeout: 3000 }
+      { encoding: 'utf8', timeout: captureTimeoutMs, killSignal: 'SIGKILL' }
     );
     const out = res.stdout ?? '';
     const start = out.indexOf(mark);
@@ -54,7 +81,8 @@ function captureFromLoginShellUncached(script: string): string | null {
   }
 }
 
-/** The user's interactive-shell PATH, queried once and cached for the session. */
+/** The user's interactive-shell PATH, cached for the session once the shell
+ *  has answered. */
 export function userShellPath(): string {
   if (cachedPath !== null) return cachedPath;
   // Windows has no interactive login-shell PATH problem — use the process PATH directly.
@@ -62,12 +90,39 @@ export function userShellPath(): string {
     cachedPath = process.env.PATH || '';
     return cachedPath;
   }
+  // Only a real answer is cached. The process PATH is the fallback, and for a
+  // Finder or Dock launch it is launchd's bare /usr/bin:/bin:/usr/sbin:/sbin;
+  // caching it after one slow first launch left every agent, hidden call and
+  // MCP list without node, brew or uv for the whole session. Ask again after
+  // PATH_RETRY_MS instead.
+  const fallback = process.env.PATH || '';
+  if (now() < pathRetryAt) return fallback;
   const shellPath = captureFromLoginShell('printf %s "$PATH"')?.trim();
   // A PATH is a single colon-joined line. Anything multi-line is rc-file noise
   // that slipped the fence — fall back rather than hand the agent a corrupt
   // PATH it would carry into every subprocess it spawns.
-  cachedPath = shellPath && !shellPath.includes('\n') ? shellPath : process.env.PATH || '';
-  return cachedPath;
+  if (shellPath && !shellPath.includes('\n')) {
+    cachedPath = shellPath;
+    return cachedPath;
+  }
+  pathRetryAt = now() + PATH_RETRY_MS;
+  return fallback;
+}
+
+let cachedDnt: boolean | null = null;
+
+/** DO_NOT_TRACK as the user's shell sets it: a Mac app opened from the Dock
+ *  never sees an export in ~/.zshrc. Kept once a read works; null when the
+ *  shell could not be read, so the caller holds sending and tries again. */
+export function userShellDoNotTrack(): boolean | null {
+  if (cachedDnt !== null) return cachedDnt;
+  if (process.platform === 'win32') return (cachedDnt = false);
+  // printenv works in every shell (fish cannot parse ${VAR:-}).
+  const out = captureFromLoginShell('printenv DO_NOT_TRACK');
+  if (out === null) return null;
+  const v = out.trim();
+  cachedDnt = v !== '' && v !== '0' && !v.includes('\n');
+  return cachedDnt;
 }
 
 /** Resolve a bare command (e.g. 'claude') against the user's PATH + common
@@ -101,6 +156,7 @@ export function resolveCommand(command: string): string {
     const appData = process.env.APPDATA ?? '';
     const localAppData = process.env.LOCALAPPDATA ?? '';
     const home = process.env.USERPROFILE ?? process.env.HOME ?? '';
+    const programFiles = process.env.ProgramFiles ?? '';
     const winCandidates = [
       `${appData}\\npm\\${command}.cmd`,
       `${appData}\\npm\\${command}`,
@@ -108,6 +164,9 @@ export function resolveCommand(command: string): string {
       // Claude's own installer (install.ps1) puts claude.exe here and updates the
       // user PATH in the registry, which this already running app never sees.
       `${home}\\.local\\bin\\${command}.exe`,
+      // The app's own Node install (nodeInstall.ts) lands here, and this running
+      // app's PATH predates it. Never built from an unset variable (drive root).
+      ...(programFiles ? [`${programFiles}\\nodejs\\${command}.exe`, `${programFiles}\\nodejs\\${command}.cmd`] : []),
       `${home}\\.claude\\local\\${command}.cmd`,
       `${home}\\.claude\\local\\${command}`
     ];

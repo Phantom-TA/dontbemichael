@@ -5,7 +5,8 @@ import { PixelButton } from './PixelButton';
 /**
  * Catches a render crash anywhere under it, so the window shows a short line
  * and a Reload button instead of going blank. The error itself goes to the
- * console, never to the owner.
+ * console, never to the owner, and to an automatic failure report
+ * (docs/designs/auto-report-failures.md).
  */
 export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -16,11 +17,20 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('[renderer] a screen crashed', error, info.componentStack);
+    reportRendererFailure('screen-crash', error);
   }
 
   render(): ReactNode {
     return this.state.failed ? <CrashScreen /> : this.props.children;
   }
+}
+
+/** Sends a renderer failure to main: the error's name and stack only. */
+export function reportRendererFailure(kind: 'screen-crash' | 'renderer-error', error: unknown): void {
+  try {
+    const e = error instanceof Error ? error : null;
+    window.cth.reportFailure?.({ kind, name: e?.name ?? 'Error', stack: (e?.stack ?? '').slice(0, 8192) });
+  } catch { /* reporting never breaks a screen */ }
 }
 
 export function CrashScreen() {

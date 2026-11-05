@@ -19,11 +19,11 @@ const root = path.resolve(__dirname, '..');
 const wizard = fs.readFileSync(path.join(root, 'src/renderer/src/components/OnboardingWizard.tsx'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'src/renderer/src/design/global.css'), 'utf8');
 
-test('the studio shows only on the steps after Meet, and only with a team', () => {
+test('the studio shows only from the Team step on, and only with a team', () => {
   const m = wizard.match(/const hasStudio = \(([^)]+)\) && teamAgents\.length > 0;/);
   assert.ok(m, 'hasStudio is defined from the step list and the team');
   const steps = [...m[1].matchAll(/step === '([a-z]+)'/g)].map((x) => x[1]).sort();
-  assert.deepEqual(steps, ['home', 'orchestrator', 'permissions', 'ready', 'team', 'welcome']);
+  assert.deepEqual(steps, ['home', 'orchestrator', 'permissions', 'ready', 'team']);
   for (const centered of ['business', 'details', 'resume']) assert.ok(!steps.includes(centered), `${centered} is centered`);
 });
 

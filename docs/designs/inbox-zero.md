@@ -36,7 +36,9 @@ label or mark read, while the seeds told her to label and archive.
   "18:00 on office days", "mon 09:00"), each with its focus area. Pam gets
   "Inbox to zero" every 2 hours during office hours; the home services Pam
   also gets "Tomorrow's jobs" at 18:00 on office days. Seeded at team start
-  and on hire, once per job name.
+  and on hire, once per job name. A job a teammate already runs comes
+  switched off (a second hire into Pam's job), for the owner to turn on in
+  Capabilities if the work is really split.
 - **Existing offices** (`src/shared/workStyleUpdates.ts`): a team member hired
   from an updated card is offered the new text on Ask me: Use the new one
   (replaces the Work style and role line, adds the starter jobs) or Keep mine.

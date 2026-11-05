@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
  * colored card on the floor, so it is never read as another name chip. Indigo
  * while people clock in, green for "Everyone's in", amber when the cap ends it
  * with someone out. Michael's own start and the team's opening share it.
- * The floor stays clickable under it.
+ * It takes no clicks itself; the floor under it waits at launch (App.tsx).
  */
 export type OpeningTone = 'indigo' | 'green' | 'amber';
 
@@ -32,9 +32,11 @@ export interface OpeningCardProps {
   say: string;
   /** End states fade out on their own after this long (CSS, so no timer). */
   fadeAfterMs?: number;
+  /** Buttons under the line: the only part of the card that takes clicks. */
+  actions?: ReactNode;
 }
 
-export function OpeningCard({ tone, pulse, check, title, count, progress, line, say, fadeAfterMs }: OpeningCardProps) {
+export function OpeningCard({ tone, pulse, check, title, count, progress, line, say, fadeAfterMs, actions }: OpeningCardProps) {
   const c = TONE[tone];
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
@@ -67,6 +69,7 @@ export function OpeningCard({ tone, pulse, check, title, count, progress, line, 
           </div>
         )}
         {line && <div style={{ fontSize: 12, lineHeight: '16.5px', color: 'var(--cth-ink-2)', overflowWrap: 'anywhere' }}>{line}</div>}
+        {actions && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', pointerEvents: 'auto' }}>{actions}</div>}
       </div>
     </div>
   );

@@ -226,9 +226,9 @@ test('the hook shim refuses MCP calls when it cannot reach the app, and leaves o
 test('the one-time carry-over keeps the owner\'s yes and names what the update turned off (D9, E2)', () => {
   const list = LIST.list;
   const mailOn = C.connectorCarryOver({ mcpDefaults: { 'email-calendar': { enabled: true } }, quickbooksClaude: true }, list, ['pam', 'god']);
-  assert.deepEqual(mailOn.connectorsOn, { Gmail: true, 'Google Calendar': true });
-  for (const id of ['pam', 'god']) assert.deepEqual(mailOn.agentCapabilities[id].connectors, ['Gmail', 'Google Calendar'], `${id}, Michael included`);
-  assert.deepEqual(mailOn.switchedOff, ['Claude Docs', 'Intuit TurboTax', 'HubSpot', 'Google Drive'], 'connected, not carried over; not QuickBooks, not Windsor (needs sign in)');
+  assert.deepEqual(mailOn.connectorsOn, { 'Google Calendar': true }, 'never Gmail: mail goes through the app\'s mailboxes');
+  for (const id of ['pam', 'god']) assert.deepEqual(mailOn.agentCapabilities[id].connectors, ['Google Calendar'], `${id}, Michael included`);
+  assert.deepEqual(mailOn.switchedOff, ['Claude Docs', 'Intuit TurboTax', 'HubSpot', 'Google Drive', 'Gmail'], 'connected, not carried over; not QuickBooks, not Windsor (needs sign in)');
   const mailOff = C.connectorCarryOver({}, list, ['pam']);
   assert.deepEqual(mailOff.connectorsOn, {});
   assert.equal(mailOff.agentCapabilities.pam, undefined);
@@ -384,7 +384,7 @@ test('md-mail with no agent id is refused; a connector saved as needs sign in wo
   assert.match(reason(await f.call('mcp__claude_ai_Windsor_ai__get_data', 'oscar')), /not given you Windsor\.ai/);
 });
 
-// Value: protects=the one-time carry-over keeps what each agent already had (its QuickBooks choice and other grants) and adds Gmail and Calendar once; fails_when=connectorCarryOver replaces an agent's capabilities or connectors instead of merging, or duplicates a key already granted; why_new=the existing carry-over test starts from empty capabilities only; seam=none
+// Value: protects=the one-time carry-over keeps what each agent already had (its QuickBooks choice and other grants) and adds Calendar once; fails_when=connectorCarryOver replaces an agent's capabilities or connectors instead of merging, or duplicates a key already granted; why_new=the existing carry-over test starts from empty capabilities only; seam=none
 test('the carry-over merges into what each agent already has, QuickBooks untouched, no key twice (D9)', () => {
   const qb = { enabled: true, mode: 'read' };
   const cfg = {
@@ -393,11 +393,11 @@ test('the carry-over merges into what each agent already has, QuickBooks untouch
     agentCapabilities: { pam: { quickbooks: qb, connectors: ['HubSpot', 'Gmail'], email: { enabled: true, mailboxes: ['sales'], send: false } } }
   };
   const r = C.connectorCarryOver(cfg, LIST.list, ['pam', 'oscar']);
-  assert.deepEqual(r.connectorsOn, { HubSpot: true, Gmail: true, 'Google Calendar': true });
+  assert.deepEqual(r.connectorsOn, { HubSpot: true, 'Google Calendar': true });
   assert.deepEqual(r.agentCapabilities.pam.quickbooks, qb, 'QuickBooks keeps each agent\'s choice');
   assert.deepEqual(r.agentCapabilities.pam.email, cfg.agentCapabilities.pam.email, 'the app\'s own mailboxes too');
   assert.deepEqual(r.agentCapabilities.pam.connectors, ['HubSpot', 'Gmail', 'Google Calendar']);
-  assert.deepEqual(r.agentCapabilities.oscar.connectors, ['Gmail', 'Google Calendar']);
+  assert.deepEqual(r.agentCapabilities.oscar.connectors, ['Google Calendar']);
   assert.deepEqual(cfg.agentCapabilities.pam.connectors, ['HubSpot', 'Gmail'], 'the saved config is not changed in place');
 });
 

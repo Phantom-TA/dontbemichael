@@ -155,6 +155,12 @@ export class WebhookServer {
   // Fixed-window rate limiters keyed by bucket ('' = global, else the endpoint id).
   // The remote IP is the tunnel's, so per-IP would be meaningless behind tunnelmole.
   private windows = new Map<string, { start: number; count: number }>();
+  /** Set by `stop()`. `server.close()` only refuses NEW connections: a kept-alive
+   *  one (tunnelmole forwards with Node's keep-alive global agent) that was busy at
+   *  stop time stays open, and Node keeps handing its requests to this handler.
+   *  Without this flag a caller the operator just revoked would keep creating work
+   *  through the stopped instance, still holding the old endpoints and secrets. */
+  private stopped = false;
 
   constructor(opts: WebhookServerOptions) {
     this.port = opts.port;
@@ -230,8 +236,15 @@ export class WebhookServer {
   }
 
   /** Close the HTTP server. Idempotent and best-effort.
-   *  Note: tunnelmole has no documented close handle; teardown is best-effort. */
+   *  Note: tunnelmole has no documented close handle; teardown is best-effort.
+   *
+   *  `close()` stops new connections and ends the idle kept-alive ones. A busy one
+   *  is left to finish, but from here on every request it carries (including one
+   *  whose body is still arriving) is refused with 503 + `connection: close`
+   *  instead of dispatched, so the socket ends after that answer. A request that
+   *  was already dispatched has been answered by then: dispatch is synchronous. */
   stop(): void {
+    this.stopped = true;
     this.tunnelUrl = null;
     try { this.server?.close(); } catch { /* noop */ }
     this.server = null;
@@ -247,6 +260,7 @@ export class WebhookServer {
       server.listen(this.port, '127.0.0.1', () => {
         server.off('error', onError);
         this.server = server;
+        this.stopped = false;
         resolve();
       });
     });
@@ -277,6 +291,9 @@ export class WebhookServer {
   }
 
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
+    // Before anything else, so a stopped instance does no auth or lookup work and
+    // does not touch the rate-limit windows. See `stopped`.
+    if (this.stopped) { refuseStopped(res); return; }
     const id = readEndpointId(req);
     const endpoint = id !== null ? this.endpoints.get(id) ?? null : null;
     // Per-endpoint budget, with every unknown id sharing one bucket (see UNKNOWN_BUCKET).
@@ -329,6 +346,9 @@ export class WebhookServer {
     });
     req.on('end', () => {
       if (aborted) return;
+      // The body finished arriving after `stop()`: the endpoint may have just been
+      // revoked, so it must not become work. See `stopped`.
+      if (this.stopped) { refuseStopped(res); return; }
       let parsed: unknown;
       try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
       catch { json(res, 400, { ok: false, error: 'bad json' }); return; }
@@ -434,6 +454,16 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   try {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(body));
+  } catch { /* socket already gone */ }
+}
+
+/** The answer on a connection that outlived `stop()`. `connection: close` makes
+ *  Node end the socket after it, so the caller's next request opens a fresh
+ *  connection, which the closed server refuses outright. */
+function refuseStopped(res: ServerResponse): void {
+  try {
+    res.writeHead(503, { 'content-type': 'application/json', connection: 'close' });
+    res.end(JSON.stringify({ ok: false, error: 'stopped' }));
   } catch { /* socket already gone */ }
 }
 

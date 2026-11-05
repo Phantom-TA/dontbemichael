@@ -12,12 +12,19 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { askFilePaths, fileTitle, kindOf, type AskFileCheck } from '@shared/askFiles';
+import { askFileNames, fileTitle, folderTitle, isFolderSpan, kindOf, withNamedFiles, type AskFileCheck } from '@shared/askFiles';
 import { MarkdownPreview, type MarkdownVariant } from '@/markdown/MarkdownPreview';
+import { chipPaths } from '@/markdown/chipPaths';
+import { folderTeam, type FolderMember } from '@/markdown/remarkFolderChips';
 import { useStore } from '@/store/store';
 import { Icon } from './Icon';
 
 export type Checks = Record<string, AskFileCheck>;
+
+/** Name lookups made in the last half minute, by names and who asks. */
+const NAMED_TTL_MS = 30_000;
+const NAMED_CACHE_MAX = 200;
+const namedCache = new Map<string, { at: number; v: Checks }>();
 type Who = { raisedBy?: string; assignee?: string };
 
 /** Main's check caps one call at 20 paths. */
@@ -55,7 +62,7 @@ export function useAskFileChecks(
     for (const e of entries ?? []) {
       const raiser = e.raisedBy ?? '';
       const list = m.get(raiser) ?? [];
-      for (const p of askFilePaths(e.q)) if (!list.includes(p)) list.push(p);
+      for (const p of chipPaths(e.q)) if (!list.includes(p)) list.push(p);
       if (list.length) m.set(raiser, list);
     }
     return [...m];
@@ -87,9 +94,10 @@ export function FileChip({ path, check, who, onGone }: {
   const { t } = useTranslation();
   // Finder is the Mac's; Windows and Linux both say folder.
   const win = window.cth.platform !== 'darwin';
-  const name = fileTitle(path);
+  const folder = isFolderSpan(path);
+  const name = folder ? folderTitle(path) : fileTitle(path);
   const kind = kindOf(path);
-  const icon = kind === 'excel' || kind === 'csv' ? 'sheet' : kind === 'image' ? 'image' : 'file';
+  const icon = folder ? 'folder' : kind === 'excel' || kind === 'csv' ? 'sheet' : kind === 'image' ? 'image' : 'file';
   const missing = check?.verdict === 'missing';
   const reveal = !!check && !check.tab && check.verdict === 'reveal';
   const chip: CSSProperties = {
@@ -236,6 +244,9 @@ export function FileChip({ path, check, who, onGone }: {
  * Task detail trail. `checks` comes from a parent that checked many questions
  * at once (useAskFileChecks); without it the text checks its own paths, once
  * per set of paths, so a 5 s poll that re-renders the card asks main nothing.
+ * A file named without its ending (`First contact follow up draft 2026-10-19`)
+ * is looked up by name here, once per set of names; one found in the office's
+ * folders is drawn as its file's chip (owner, 2026-10-19).
  */
 export function FileText({ source, who, checks: given, variant = 'card' }: {
   source: string;
@@ -243,7 +254,11 @@ export function FileText({ source, who, checks: given, variant = 'card' }: {
   checks?: Checks;
   variant?: MarkdownVariant;
 }) {
-  const paths = useMemo(() => askFilePaths(source), [source]);
+  const names = useMemo(() => askFileNames(source), [source]);
+  const nameKey = names.join('\n');
+  const [named, setNamed] = useState<Checks>({});
+  const shown = useMemo(() => withNamedFiles(source, Object.fromEntries(Object.entries(named).map(([n, c]) => [n, c.path]))), [source, named]);
+  const paths = useMemo(() => chipPaths(shown), [shown]);
   const key = paths.join('\n');
   const [own, setOwn] = useState<Checks>({});
   // A click that finds the file gone marks it here, over either source.
@@ -258,15 +273,50 @@ export function FileText({ source, who, checks: given, variant = 'card' }: {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, raisedBy, assignee, !given]);
 
-  const checks = given ?? own;
+  useEffect(() => {
+    // Needs you mounts every card again on each refresh: a lookup made a
+    // moment ago is used as it is (each one checks many paths).
+    const cacheKey = `${nameKey}\u0000${raisedBy ?? ''}\u0000${assignee ?? ''}`;
+    const hit = namedCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < NAMED_TTL_MS) { setNamed(hit.v); return; }
+    setNamed({});
+    // A dev window whose main process predates the lookup has no askFileNames:
+    // the names then stay plain text instead of taking the screen down.
+    const lookup = window.cth.askFileNames as typeof window.cth.askFileNames | undefined;
+    if (!names.length || !lookup) return;
+    let alive = true;
+    void lookup(names, { raisedBy, assignee })
+      .then((v) => {
+        namedCache.set(cacheKey, { at: Date.now(), v });
+        if (namedCache.size > NAMED_CACHE_MAX) namedCache.delete(namedCache.keys().next().value as string);
+        if (alive) setNamed(v);
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nameKey, raisedBy, assignee]);
+
+  // A found name's check is keyed by the path its chip now carries.
+  const checks = useMemo(() => {
+    const base = given ?? own;
+    const extra = Object.values(named);
+    return extra.length ? { ...base, ...Object.fromEntries(extra.map((c) => [c.path, c])) } : base;
+  }, [given, own, named]);
   const onGone = useCallback((p: string) => setGone((g) => ({ ...g, [p]: true })), []);
-  const fileChip = useCallback((p: string) => (
-    <FileChip
+  // As a string, so a member's status changing doesn't redraw every card.
+  const teamKey = useStore((s) => JSON.stringify(folderTeam(s.agents)));
+  const team = useMemo(() => JSON.parse(teamKey) as FolderMember[], [teamKey]);
+  const fileChip = useCallback((p: string) => {
+    // A folder path is only a chip for a folder the office holds: a path
+    // anywhere else (another app's folder, a route) stays as it was written.
+    const folder = isFolderSpan(p);
+    if (folder && checks[p]?.verdict === 'missing' && !gone[p]) return <code>{p}</code>;
+    return <FileChip
       path={p}
       check={gone[p] ? { verdict: 'missing', tab: false, path: p } : checks[p]}
       who={{ raisedBy, assignee }}
       onGone={onGone}
-    />
-  ), [checks, gone, raisedBy, assignee, onGone]);
-  return <MarkdownPreview source={source} variant={variant} fileChip={paths.length ? fileChip : undefined} />;
+    />;
+  }, [checks, gone, raisedBy, assignee, onGone]);
+  return <MarkdownPreview source={shown} variant={variant} fileChip={paths.length ? fileChip : undefined} placeLinks folderTeam={team} />;
 }

@@ -71,6 +71,9 @@ extraResources:
   # Claude Code starts it with the bundled node, outside the asar.
   - from: resources/md-mail-mcp.cjs
     to: md-mail-mcp.cjs
+  # md-integrations: the same for the integrations the owner gives a member.
+  - from: resources/md-integrations-mcp.cjs
+    to: md-integrations-mcp.cjs
   # Knowledge Graph agent CLI + its pure-JS core. Agents invoke `node
   # <resources>/kg.cjs` out-of-process; kg-core.cjs ships beside it so the CLI's
   # `require('./kg-core.cjs')` resolves outside the asar.
@@ -123,12 +126,10 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   gatekeeperAssess: false
   # Disable electron-builder's BUILT-IN notarization. It auto-triggers whenever the
-  # APPLE_* env vars are present and runs inside signApp — a path our afterSign hook's
-  # try/catch can't guard, so a bad-credential failure there hard-fails the whole
-  # release (exactly what bit us). Instead, the root-level `afterSign: build/notarize.cjs`
-  # hook does notarization best-effort: it tries, and on failure ships the signed (un-
-  # notarized) build rather than sinking the cross-platform release. Notarization
-  # resumes automatically once the APPLE_* secrets are valid — no further changes.
+  # APPLE_* env vars are present and runs inside signApp, a path our hook does not
+  # control. Instead, the root-level `afterSign: build/notarize.cjs` hook notarizes and
+  # staples, and a failure stops the Mac release: a signed but unnotarized download
+  # still shows macOS's "cannot verify" warning.
   notarize: false
   # Signing: TCC binds a remembered grant to a STABLE code signature, so a signed
   # build is asked for folder access ONCE. The "Developer ID Application" cert is
@@ -136,7 +137,7 @@ mac:
   # cert is found, electron-builder warns and produces an unsigned build, so
   # contributors without an Apple account can still build.
   #   To sign: install your "Developer ID Application" cert into the keychain.
-  #   (Override with CSC_LINK=<path-to.p12> + CSC_KEY_PASSWORD for CI.)
+  #   CI imports it into its own keychain and sets CSC_KEYCHAIN (release.yml).
   # Notarization happens in the root-level `afterSign` hook (top of this file).
   # dmg is what humans download; zip is what Squirrel.Mac (electron-updater)
   # actually updates from — latest-mac.yml points at it. Both universal.

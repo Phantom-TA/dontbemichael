@@ -1,5 +1,4 @@
-- **Clocking in** shows your team arriving.
-- **Waiting cards** come back on their date.
-- **Pulse** lists what the team learned.
-- **Run a job now** from its schedule.
-- **Members' notes** stay their own.
+- **Get featured** with a case study of your office.
+- **A saved call** for a custom REST connection.
+- Foundation lists stay open until you say that's all.
+- A first click on an email opens it.

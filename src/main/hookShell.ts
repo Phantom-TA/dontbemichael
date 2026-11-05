@@ -79,5 +79,8 @@ export function shellCommand(shell: HookShell, exe: string, script: string, ...a
     const q = (s: string): string => `'${s.replace(/['\u2018\u2019\u201A\u201B]/g, '$&$&')}'`;
     return ['&', q(exe), q(script), ...args].join(' ');
   }
-  return [`"${exe}"`, `"${script}"`, ...args].join(' ');
+  // Single quotes in bash too: double quotes still expand `$` and fold the `\\`
+  // of a UNC path. An embedded quote is closed, escaped and reopened.
+  const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+  return [q(exe), q(script), ...args].join(' ');
 }

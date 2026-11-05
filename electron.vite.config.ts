@@ -15,7 +15,11 @@ const define = { __APP_VERSION__: JSON.stringify(pkg.version) };
 const defineMain = {
   ...define,
   __POSTHOG_KEY__: JSON.stringify(process.env.POSTHOG_KEY ?? ''),
-  __POSTHOG_HOST__: JSON.stringify(process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com')
+  __POSTHOG_HOST__: JSON.stringify(process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com'),
+  // Automatic failure reports (docs/designs/auto-report-failures.md): a key that
+  // can write issues in the private reports repo only. Release CI injects it;
+  // local and forked builds get '' and never send.
+  __REPORT_KEY__: JSON.stringify(process.env.FAILURE_REPORT_KEY ?? '')
 };
 
 // Copy raw .cjs main-process sidecars into out/main after the main bundle is
@@ -30,7 +34,12 @@ function copyMainSidecars() {
     // Knowledge Graph core: required by knowledge.ts at runtime (pure-JS, no
     // native deps), so it must be emitted next to the main bundle like the
     // Slack sidecar above.
-    ['src/main/kg-core.cjs', 'out/main/kg-core.cjs']
+    ['src/main/kg-core.cjs', 'out/main/kg-core.cjs'],
+    // The case study page's faces (src/main/caseStudy.ts): main reads them for
+    // the screen's preview and the PDF, so both draw the same fonts.
+    ['src/renderer/src/assets/fonts/sora-latin-var.woff2', 'out/main/fonts/sora-latin-var.woff2'],
+    ['src/renderer/src/assets/fonts/ibm-plex-mono-regular.woff2', 'out/main/fonts/ibm-plex-mono-regular.woff2'],
+    ['src/renderer/src/assets/fonts/ibm-plex-mono-medium.woff2', 'out/main/fonts/ibm-plex-mono-medium.woff2']
   ];
   return {
     name: 'copy-main-cjs-sidecars',

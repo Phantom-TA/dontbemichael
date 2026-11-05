@@ -164,7 +164,9 @@ The pre-landing review found three gaps; the owner chose:
   starter jobs for the hire, so a standing duty that used to live in the First
   task text is not lost. A hire whose edited First task became a card gets
   them too. The jobs are added before the text comes out: when they cannot
-  be saved, the words stay and the cleanup runs again next launch. A closed
+  be saved, the words stay and the cleanup runs again next launch. A typed
+  First task whose card cannot go on the board, because the board cannot be
+  read, stays in the Work style and the owner gets a notification. A closed
   hire's jobs are added switched off, like its other schedules (Codex
   adversarial review, 2026-10-04).
 - **SR5. A typed First task becomes a card.** A First task section the owner

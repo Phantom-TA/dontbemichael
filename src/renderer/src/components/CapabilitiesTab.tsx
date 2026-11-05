@@ -1,5 +1,5 @@
 import { RESEARCH_ID } from '../../../shared/research';
-import { useEffect, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, Toggle, TriggerCard, MiniButton } from './triggers/ui';
 import { AgentSchedules, useGodId, useMissions } from './triggers/ScheduleList';
@@ -12,12 +12,15 @@ import type { StandingApproval } from '@shared/mailProposals';
 import { missionsFor } from '@shared/missions';
 import { quickbooksCapability, type QuickBooksCapability } from '@shared/quickbooks';
 import { connectorGranted, connectorOn, isQuickBooksKey } from '@shared/claudeConnectors';
+import { authTypeNeedsSecret, integrationLevel, type IntegrationLevel } from '@shared/integrations';
+import { integrationsClient, type IntegrationRecordView } from '@/integrations/registryClient';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { InfoTip } from './InfoTip';
 import { SHOW_MAILBOXES } from '@shared/buildFeatures';
 import { useResearchName } from '@/shell/research';
+import { fieldLabel } from './fieldText';
 
-type SectionKey = 'email' | 'connectors' | 'schedules';
+type SectionKey = 'email' | 'connectors' | 'integrations' | 'schedules';
 
 /**
  * What a team member may do without asking, and the jobs it runs on a clock
@@ -36,6 +39,9 @@ type SectionKey = 'email' | 'connectors' | 'schedules';
  *   its row, and before the owner chooses, roles that read the books (Oscar)
  *   are on, Read only. The hook checks every call at once; the agent restarts
  *   when idle so a new connector loads (useHive effect 8), or at Restart now.
+ * - Integrations: every integration in Settings, A to Z, each Off, Read only
+ *   or Can change. The broker checks every call at once; only the first one
+ *   needs a restart, to attach the tools.
  * - On a schedule: the agent's own jobs (docs/designs/per-agent-schedules.md),
  *   the same list and editor the Schedules tab had.
  *
@@ -64,7 +70,40 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
   const { missions } = useMissions();
   const mine = missionsFor(missions, agent.id, godId);
   const schedulesOn = mine.filter((m) => m.enabled).length;
-  const [collapsed, setCollapsed] = useState<Record<SectionKey, boolean>>({ email: true, connectors: true, schedules: true });
+  const [collapsed, setCollapsed] = useState<Record<SectionKey, boolean>>({ email: true, connectors: true, integrations: true, schedules: true });
+  // "Change on Access" from Edit agent or the Profile tab: On a schedule
+  // opens unfolded and in view, once (edit-agent-scheduled-jobs.md, SJ3).
+  const schedulesRequest = useStore((s) => s.schedulesRequest);
+  const clearSchedulesRequest = useStore((s) => s.clearSchedulesRequest);
+  const schedulesRef = useRef<HTMLDivElement>(null);
+  const [scrollToSchedules, setScrollToSchedules] = useState(false);
+  // A member link in agent text opens Email the same way
+  // (settings-links-in-replies.md).
+  const emailRequest = useStore((s) => s.emailRequest);
+  const clearEmailRequest = useStore((s) => s.clearEmailRequest);
+  const emailRef = useRef<HTMLDivElement>(null);
+  const [scrollToEmail, setScrollToEmail] = useState(false);
+  useEffect(() => {
+    if (!emailRequest || emailRequest.agentId !== agent.id) return;
+    clearEmailRequest();
+    setCollapsed((c) => ({ ...c, email: false }));
+    setScrollToEmail(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emailRequest?.seq, agent.id]);
+  useEffect(() => {
+    if (!scrollToEmail || !emailRef.current) return;
+    setScrollToEmail(false);
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    emailRef.current.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+    emailRef.current.querySelector<HTMLElement>('button[aria-expanded]')?.focus({ preventScroll: true });
+  });
+  useEffect(() => {
+    if (!schedulesRequest || schedulesRequest.agentId !== agent.id) return;
+    clearSchedulesRequest();
+    setCollapsed((c) => ({ ...c, schedules: false }));
+    setScrollToSchedules(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedulesRequest?.seq, agent.id]);
   // Unknown until main answers for this agent (the card stays hidden), so
   // Oscar's switch never shows off while the hook treats him as on, and
   // another agent's answer never shows.
@@ -75,8 +114,26 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
     return () => { alive = false; };
   }, [agent.id]);
   const booksDefault = booksAnswer?.id === agent.id ? booksAnswer.on : undefined;
+  // Read again when Settings changes the list, redacted by main.
+  const [integrationList, setIntegrationList] = useState<IntegrationRecordView[]>([]);
+  const savedIntegrations = config?.integrations;
+  useEffect(() => {
+    let alive = true;
+    void integrationsClient.list().then((l) => { if (alive) setIntegrationList(l); }).catch(() => {});
+    return () => { alive = false; };
+  }, [savedIntegrations]);
   const setFold = (key: SectionKey, open: boolean): void => setCollapsed({ ...collapsed, [key]: !open });
 
+  // The group exists only once the config has loaded.
+  useEffect(() => {
+    if (!scrollToSchedules || !schedulesRef.current) return;
+    setScrollToSchedules(false);
+    // Instant under reduced motion; focus lands on the group the owner asked
+    // to see, so a keyboard user is there too (ship review, 2026-10-23).
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    schedulesRef.current.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+    schedulesRef.current.querySelector<HTMLElement>('button[aria-expanded]')?.focus({ preventScroll: true });
+  });
   if (!config) return null;
   const mailboxes = config.mailboxes ?? [];
   const email: EmailCapability = config.agentCapabilities?.[agent.id]?.email ?? { enabled: false, mailboxes: [], send: false, sending: 'draft' };
@@ -132,12 +189,13 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
   };
   const nameOf = (id: string): string => agents.find((a) => a.id === id)?.name
     ?? useStore.getState().restorableAgents.find((a) => a.id === id)?.name ?? id;
-  // Watching starts on Draft only (design 6A).
+  // A mailbox starts on Send on approval (owner, 2026-10-30; was Draft only,
+  // design 6A): the member can write and send, and nothing leaves until you say yes.
   const watchMailbox = (id: string): void => {
     if (id === current) return;
     if (holderOf(id)) { setMoving(id); return; }
     // A left-over holder that isn't on the team is moved without asking.
-    void save({ enabled: true, mailboxes: [id], send: false, sending: 'draft' }, !!mailboxHolder(config.agentCapabilities, id, agent.id));
+    void save({ enabled: true, mailboxes: [id], send: false, sending: 'approval' }, !!mailboxHolder(config.agentCapabilities, id, agent.id));
   };
   const stopWatching = (): void => { void save({ enabled: false, mailboxes: [], send: false, sending: 'draft' }); };
   const movingHolder = moving ? holderOf(moving) : undefined;
@@ -154,22 +212,32 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
   // The owner's side (E3): who else sends from the mailbox this member watches.
   const senders = current ? sendersFrom(config.agentCapabilities, current).filter((x) => x.agentId !== agent.id && reads(x.agentId)) : [];
 
-  // Add a mailbox: any connected address this member doesn't use yet. Watch
-  // is one each, and so is Send only; a choice that can't be made is greyed
-  // with its reason, never hidden.
+  // Give a mailbox: any connected address this member doesn't use yet. Reading
+  // is one each, and so is Only send; a choice that can't be made is greyed
+  // with its reason, never hidden. Only send needs someone reading the inbox,
+  // or the member's email would just wait (owner, 2026-10-30,
+  // docs/designs/mailbox-choice.md). A saved grant is never touched by this.
   const canWatch = !current;
   const canSendOnly = !sendFrom;
   const addable = mailboxes.filter((m) => m.id !== current && m.id !== sendFrom?.mailbox);
   const addHolder = addId ? holderOf(addId) : undefined;
+  const readBySomeone = (id: string): boolean => { const h = holderOf(id); return !!h && reads(h); };
+  const addSendReady = !!addId && readBySomeone(addId);
   const pickAdd = (id: string): void => {
     setAddId(id);
-    // A mailbox someone else watches most likely means Send only.
-    setAddKind(!id ? '' : canSendOnly && (holderOf(id) || !canWatch) ? 'send' : canWatch ? 'watch' : canSendOnly ? 'send' : '');
+    // A mailbox someone else reads most likely means Only send.
+    setAddKind(!id ? '' : canSendOnly && readBySomeone(id) ? 'send' : canWatch ? 'watch' : '');
+  };
+  // With one mailbox to give there is nothing to pick, so the question shows at once.
+  const openAdd = (): void => {
+    setAdding(true);
+    setCollapsed({ ...collapsed, email: false });
+    if (addable.length === 1) pickAdd(addable[0].id);
   };
   const closeAdd = (): void => { setAdding(false); setAddId(''); setAddKind(''); };
   const confirmAdd = (): void => {
     if (!addId || !addKind) return;
-    if (addKind === 'watch') watchMailbox(addId); else void saveGrant({ mailbox: addId, sending: 'draft' });
+    if (addKind === 'watch') watchMailbox(addId); else void saveGrant({ mailbox: addId, sending: 'approval' });
     closeAdd();
   };
   const inUse = (current ? 1 : 0) + (sendFrom ? 1 : 0);
@@ -201,6 +269,20 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
       if (!res.ok) setFailed(true);
     } catch { setFailed(true); }
   };
+  // Never filtered (owner, 2026-10-03): one that can't work yet shows why.
+  const integrationRows = [...integrationList].sort((a, b) => a.label.localeCompare(b.label));
+  const levelOf = (id: string): IntegrationLevel | undefined => integrationLevel(config, agent.id, id);
+  const integrationsHeld = integrationRows.filter((r) => levelOf(r.id)).length;
+  // The tools attach only on Claude's engine for now (TODOS, issue #109).
+  const onClaude = (agent.provider ?? 'claude') === 'claude';
+  const setIntegration = async (id: string, level: IntegrationLevel | null): Promise<void> => {
+    setFailed(false);
+    try {
+      const res = await integrationsClient.setAccess(agent.id, id, level);
+      if (!res.ok) { setFailed(true); return; }
+      if (res.restartNeeded && agent.ptyId && onClaude) useStore.getState().setPendingRestart(agent.id, { at: Date.now(), reason: 'integrations' });
+    } catch { setFailed(true); }
+  };
   const restartNow = (): void => { if (pending) useStore.getState().setPendingRestart(agent.id, { ...pending, now: true, failed: false }); };
 
   const openSettings = (): void => { window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Connections' } })); };
@@ -227,7 +309,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
 
         <div style={{ height: 8 }} />
         {/* Email: hidden in this build when SHOW_MAILBOXES is off. */}
-        {SHOW_MAILBOXES && <TriggerCard
+        {SHOW_MAILBOXES && <div ref={emailRef} data-email-group style={{ scrollMarginTop: 8 }}><TriggerCard
           title={t('capabilities.email')}
           blurb={t('capabilities.emailBlurb', { name })}
           summary={inUse ? t('capabilities.emailSummary', { count: inUse }) : t('capabilities.emailSummaryNone')}
@@ -302,12 +384,9 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
             </div>
           ) : adding ? (
             <div style={addPanel}>
-              <div style={{ ...h13, marginTop: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                {t('capabilities.addMailboxUse')}
-                <InfoTip label={t('capabilities.addMailboxUse')} text={t('capabilities.addMailboxInfo', { name })} />
-              </div>
+              <div style={{ ...h13, marginTop: 0 }}>{t('capabilities.addMailboxUse', { name })}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <Select label={t('capabilities.addMailboxUse')} value={addId} onChange={pickAdd} style={{ maxWidth: '100%', fontFamily: 'var(--cth-font-mono)', fontSize: 12 }}>
+                <Select label={t('capabilities.addMailboxUse', { name })} value={addId} onChange={pickAdd} style={{ maxWidth: '100%', fontFamily: 'var(--cth-font-mono)', fontSize: 12 }}>
                   <option value="">{t('capabilities.pickMailbox')}</option>
                   {addable.map((m) => {
                     const holder = holderOf(m.id);
@@ -318,37 +397,40 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
                 <button type="button" onClick={openSettings} style={{ ...link, marginInlineStart: 'auto' }}>{t('capabilities.addMailbox')}</button>
               </div>
               {addId && (
-                <RadioRows
-                  label={t('capabilities.addHow', { name })}
-                  value={addKind || undefined}
-                  options={[
-                    {
-                      value: 'watch', label: t('capabilities.addWatch'), disabled: !canWatch,
-                      // Visible only when it explains a greyed choice or a consequence;
-                      // what each choice means is behind the info icon.
-                      desc: !canWatch ? t('capabilities.addWatchTaken', { name, address: addressOf(current!) })
-                        : addHolder ? t('capabilities.addWatchMoves', { from: nameOf(addHolder), name }) : undefined
-                    },
-                    {
-                      value: 'send', label: t('capabilities.addSendOnly'), disabled: !canSendOnly,
-                      desc: !canSendOnly ? t('capabilities.addSendOnlyTaken', { name, address: addressOf(sendFrom!.mailbox) })
-                        : addHolder ? undefined : t('capabilities.addSendOnlyNobody')
-                    }
-                  ]}
-                  onChange={(v) => setAddKind(v as 'watch' | 'send')}
-                />
+                <>
+                  <div aria-hidden="true" style={h13}>{t('capabilities.addHow', { name })}</div>
+                  <RadioRows
+                    label={t('capabilities.addHow', { name })}
+                    value={addKind || undefined}
+                    options={[
+                      {
+                        value: 'watch', label: t('capabilities.addWatch'), disabled: !canWatch,
+                        desc: !canWatch ? t('capabilities.addWatchTaken', { name, address: addressOf(current!) })
+                          : addHolder ? t('capabilities.addWatchMoves', { from: nameOf(addHolder), name })
+                            : t('capabilities.addReadsDesc', { name })
+                      },
+                      {
+                        value: 'send', label: t('capabilities.addSendOnly'), disabled: !canSendOnly || !addSendReady,
+                        desc: !canSendOnly ? t('capabilities.addSendOnlyTaken', { name, address: addressOf(sendFrom!.mailbox) })
+                          : addSendReady ? t('capabilities.addSendsDesc', { name, holder: nameOf(addHolder!) })
+                            : t('capabilities.addSendOnlyNobody')
+                      }
+                    ]}
+                    onChange={(v) => setAddKind(v as 'watch' | 'send')}
+                  />
+                </>
               )}
-              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                <MiniButton onClick={confirmAdd} disabled={!addId || !addKind}>{t('capabilities.addIt')}</MiniButton>
+              <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                <MiniButton onClick={confirmAdd} disabled={!addId || !addKind}>{t('capabilities.addIt', { name })}</MiniButton>
                 <MiniButton onClick={closeAdd}>{t('capabilities.cancelAdd')}</MiniButton>
               </div>
             </div>
           ) : addable.length > 0 && (canWatch || canSendOnly) ? (
-            <button type="button" onClick={() => { setAdding(true); setCollapsed({ ...collapsed, email: false }); }} style={{ ...link, display: 'block', marginTop: 10 }}>{t('capabilities.addMailboxUse')}</button>
+            <button type="button" onClick={openAdd} style={{ ...link, display: 'block', marginTop: 10 }}>{t('capabilities.addMailboxUse', { name })}</button>
           ) : (
             // Nothing left to add: shown greyed with why, never hidden.
             <div style={{ ...hint, marginTop: 10 }}>
-              <span style={{ opacity: 0.55 }}>{t('capabilities.addMailboxUse')}</span>{' '}
+              <span style={{ opacity: 0.55 }}>{t('capabilities.addMailboxUse', { name })}</span>{' '}
               {addable.length === 0 ? (
                 <button type="button" onClick={openSettings} style={link}>{t('capabilities.addMailboxNoneLeft')}</button>
               ) : t('capabilities.addMailboxBothUsed', { name })}
@@ -360,11 +442,11 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
               <span>{movingHolder
                 ? t('capabilities.moveMailbox', { address: movingAddress, from: nameOf(movingHolder), to: name })
                 : t('capabilities.moveMailboxFree', { address: movingAddress })}</span>
-              <MiniButton autoFocus onClick={() => { void save({ ...email, enabled: true, mailboxes: [moving] }, true); }}>{t('capabilities.moveIt')}</MiniButton>
+              <MiniButton autoFocus onClick={() => { void save({ ...email, enabled: true, mailboxes: [moving], send: false, sending: 'approval' }, true); }}>{t('capabilities.moveIt')}</MiniButton>
               <MiniButton onClick={() => setMoving(null)}>{t('capabilities.keepIt')}</MiniButton>
             </div>
           )}
-        </TriggerCard>}
+        </TriggerCard></div>}
 
         <TriggerCard
           title={t('capabilities.connectors')}
@@ -409,23 +491,62 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
         </TriggerCard>
 
         <TriggerCard
+          title={t('capabilities.integrations')}
+          blurb={t('capabilities.integrationsBlurb', { name })}
+          summary={integrationRows.length ? t('capabilities.connectorsSummary', { granted: integrationsHeld, total: integrationRows.length }) : undefined}
+          open={!collapsed.integrations}
+          onToggle={(open) => setFold('integrations', open)}
+        >
+          {integrationRows.length === 0 ? (
+            <div style={hint}>
+              {t('capabilities.integrationsNone')}{' '}
+              <button type="button" onClick={openSettings} style={link}>{t('capabilities.integrationsAdd')}</button>
+            </div>
+          ) : (<>
+            {!onClaude && <div style={{ ...hint, marginBottom: 6 }}>{t('capabilities.integrationsClaudeOnly', { name })}</div>}
+            <div role="list">
+              {integrationRows.map((r, i) => {
+                const level = levelOf(r.id);
+                const cannot = !r.enabled ? t('capabilities.integrationOff') : authTypeNeedsSecret(r.authType) && !r.hasSecret ? t('capabilities.integrationNeedsKey') : '';
+                return (
+                  <div key={r.id} role="listitem" style={{ ...row, flexWrap: 'wrap', borderTop: i === 0 ? 'none' : row.borderTop }}>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, opacity: cannot ? 0.55 : 1, overflowWrap: 'anywhere' }}>{r.label}</span>
+                    {cannot && <span style={hint}>{cannot}</span>}
+                    <RadioRows
+                      inline
+                      label={t('capabilities.integrationAccess', { name, integration: r.label })}
+                      value={level ?? 'off'}
+                      options={[{ value: 'off', label: t('capabilities.integrationNone') }, { value: 'read', label: t('capabilities.booksReadOnly') }, { value: 'change', label: t('capabilities.integrationCanChange') }]}
+                      onChange={(v) => { if (v !== (level ?? 'off')) void setIntegration(r.id, v === 'off' ? null : v as IntegrationLevel); }}
+                    />
+                    <InfoTip label={t('capabilities.integrations')} text={r.call ? t('capabilities.integrationSavedCallInfo', { name }) : t('capabilities.integrationLevelsInfo', { name })} />
+                  </div>
+                );
+              })}
+            </div>
+          </>)}
+        </TriggerCard>
+
+        <div ref={schedulesRef} data-schedules-group style={{ scrollMarginTop: 8 }}>
+        <TriggerCard
           title={t('capabilities.schedules')}
           blurb={t('capabilities.schedulesBlurb', { name })}
           summary={schedulesOn ? t('capabilities.schedulesOn', { count: schedulesOn }) : t('capabilities.schedulesNone')}
           open={!collapsed.schedules}
           onToggle={(open) => setFold('schedules', open)}
         >
-          <AgentSchedules agentId={agent.id} agentName={name} />
+          <AgentSchedules key={agent.id} agentId={agent.id} agentName={name} businessType={config.businessType} sourceCard={agent.sourceCard} />
         </TriggerCard>
+        </div>
 
         {/* Outside the sections, so a closed Email section still shows them. */}
         <div aria-live="polite">
-          {pending && (pending.reason === 'connectors' || email.enabled || !!grant) && (
+          {pending && (pending.reason === 'connectors' || pending.reason === 'integrations' || email.enabled || !!grant) && (
             <div style={{ ...notice, background: 'var(--cth-amber-soft)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ flex: 1 }}>
                 {pending.failed ? t('capabilities.restartFailed', { name })
                   : pending.now ? t('capabilities.restarting', { name })
-                  : pending.reason === 'connectors' ? t('capabilities.connectorsPending', { name }) : t('capabilities.pending', { name })}
+                  : pending.reason === 'connectors' || pending.reason === 'integrations' ? t('capabilities.connectorsPending', { name }) : t('capabilities.pending', { name })}
               </span>
               {!pending.now && <MiniButton onClick={restartNow}>{t('capabilities.restartNow')}</MiniButton>}
             </div>
@@ -491,12 +612,13 @@ export function RadioRows({ label, value, options, onChange, inline = false }: {
       {options.map((o, i) => {
         const checked = o.value === value;
         if (o.disabled) {
-          // Greyed with its reason, never hidden (owner, 2026-10-03).
+          // Greyed with its reason, never hidden (owner, 2026-10-03). Only the
+          // radio and name dim: the reason is what the owner has to read.
           return (
-            <div key={o.value} role="radio" aria-checked={false} aria-disabled="true" style={{ ...row, borderTop: i === 0 ? 'none' : row.borderTop, opacity: 0.55 }}>
-              <span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, boxShadow: 'inset 0 0 0 1px var(--cth-line-input)' }} />
+            <div key={o.value} role="radio" aria-checked={false} aria-disabled="true" style={{ ...row, borderTop: i === 0 ? 'none' : row.borderTop }}>
+              <span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, opacity: 0.55, boxShadow: 'inset 0 0 0 1px var(--cth-line-input)' }} />
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: 13, fontWeight: 500 }}>{o.label}</span>
+                <span style={{ display: 'block', fontSize: 13, fontWeight: 500, opacity: 0.55 }}>{o.label}</span>
                 {o.desc && <span style={{ display: 'block', ...hint }}>{o.desc}</span>}
               </span>
             </div>
@@ -528,14 +650,14 @@ export function RadioRows({ label, value, options, onChange, inline = false }: {
 }
 
 const hint: CSSProperties = { fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)' };
-const h13: CSSProperties = { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--cth-ink-3)', margin: '14px 0 6px' };
+const h13: CSSProperties = { ...fieldLabel, margin: '14px 0 6px' };
 const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: '1px solid var(--cth-line)' };
 const notice: CSSProperties = { padding: '8px 10px', borderRadius: 'var(--cth-r-md)', fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink)', marginTop: 8 };
 const mailboxRow: CSSProperties = { padding: '10px 0', borderTop: '1px solid var(--cth-line)' };
 const mailboxTop: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 };
 const address: CSSProperties = { flex: 1, minWidth: 0, fontFamily: 'var(--cth-font-mono)', fontSize: 12.5, fontWeight: 500, overflowWrap: 'anywhere' };
 const facts: CSSProperties = { display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '6px 12px', alignItems: 'center', marginTop: 8, fontSize: 12.5 };
-const factKey: CSSProperties = { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--cth-ink-3)' };
+const factKey: CSSProperties = hint;
 const factValue: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--cth-ink)' };
 const addPanel: CSSProperties = { marginTop: 10, padding: 10, border: '1px solid var(--cth-line)', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card-2)' };
 

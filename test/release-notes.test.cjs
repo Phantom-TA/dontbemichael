@@ -363,6 +363,15 @@ test('the notes file we actually ship fits the toast', () => {
   assert.doesNotMatch(notes, /<[a-z]/i, 'the notes file must stay free of HTML');
 });
 
+test('package-lock.json carries the version in package.json', () => {
+  // Value: protects=a release names one version everywhere; fails_when=a bump edits one file and not the other; why_new=the lockfile had no check of its own; seam=none; no_claim=the published version
+  const read = (f) => JSON.parse(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'));
+  const { version } = read('package.json');
+  const lock = read('package-lock.json');
+  assert.equal(lock.version, version);
+  assert.equal(lock.packages[''].version, version);
+});
+
 test('electron-builder points the release notes at a file that exists', () => {
   // Without this field electron-updater silently falls back to the atom feed,
   // which is the whole bug. A typo here fails open and looks like nothing.

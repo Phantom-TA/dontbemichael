@@ -133,8 +133,8 @@ const MODEL_RE = /^[A-Za-z0-9 ._()[\]\/:@+-]{1,80}$/;
  *    --max-turns      cap agentic turns (runaway guard, strictly safety-↑)
  *    --output-format  headless output shape: text / json / stream-json
  *    --verbose        logging verbosity only
- *  Matched case-insensitively against the flag NAME (part before any `=`), so both
- *  `--flag value` and `--flag=value` are covered. NOTHING permission / sandbox /
+ *  Matched exactly against the flag NAME (part before any `=`), as the engines
+ *  read it, so both `--flag value` and `--flag=value` are covered. NOTHING permission / sandbox /
  *  approval / dir / config (incl. codex `-c`) / mcp / provider / base-url /
  *  system-prompt / settings related is ever allowlisted. */
 const SAFE_FLAG_NAMES: ReadonlySet<string> = new Set([
@@ -144,13 +144,17 @@ const SAFE_FLAG_NAMES: ReadonlySet<string> = new Set([
   '--verbose'
 ]);
 
+/** The safe flags that take a value. `--verbose` takes none, so a bare token
+ *  after it would reach the engine as its opening prompt. */
+const VALUE_FLAG_NAMES: ReadonlySet<string> = new Set(['--model', '--max-turns', '--output-format']);
+
 /** True if a commandFlags token is an allowed flag. Handles `--x` and `--x=value`
- *  (matches the NAME before `=`, case-insensitive); short `-x` forms are not in
- *  the allowlist and so are rejected by default. */
+ *  (matches the NAME before `=`, case as written: the engines don't read
+ *  `--MODEL`); short `-x` forms are not in the allowlist and so are rejected by
+ *  default. */
 function isSafeFlag(token: string): boolean {
   if (!token.startsWith('-')) return false;
-  const name = token.split('=', 1)[0].toLowerCase();
-  return SAFE_FLAG_NAMES.has(name);
+  return SAFE_FLAG_NAMES.has(token.split('=', 1)[0]);
 }
 
 function str(v: unknown): v is string { return typeof v === 'string'; }
@@ -207,37 +211,49 @@ export function validateHireManifest(raw: unknown): HireValidation {
       // DEFAULT-DENY: every flag-shaped token must name an allowlisted safe flag;
       // a bare token is allowed only as the value immediately following an allowed
       // `--flag` (so a value can never smuggle in a second, unknown flag).
-      let valueAllowed = false; // previous token was an allowed `--flag` (no inline =)
+      // A value flag written without `=` must get its value next: a bare token,
+      // never another flag and never the end of the list. An engine takes the
+      // next token as the value even when it starts with --, so
+      // "--model --max-turns HELLO" ran HELLO as the opening prompt, and a
+      // trailing "--model" took the app's own next argument as the model.
+      let valueFor: string | null = null; // the value flag still waiting for its value
       for (let i = 0; i < o.commandFlags.length; i++) {
         const f = o.commandFlags[i];
         if (!str(f) || !FLAG_RE.test(f)) {
           errors.push(`commandFlags entry ${JSON.stringify(f)} is not a safe flag token`);
-          valueAllowed = false;
+          valueFor = null;
           continue;
         }
         // The FIRST entry must be flag-shaped (defense in depth; kept explicit).
         if (i === 0 && !f.startsWith('-')) {
           errors.push('"commandFlags" must start with a flag (e.g. "--model")');
-          valueAllowed = false;
+          valueFor = null;
           continue;
         }
         if (f.startsWith('-')) {
+          if (valueFor) errors.push(`commandFlags entry ${JSON.stringify(valueFor)} needs its value before ${JSON.stringify(f)}`);
+          valueFor = null;
           if (!isSafeFlag(f)) {
             errors.push(`commandFlags entry ${JSON.stringify(f)} is not on the list of flags a shared hire may use. For safety, a shared hire may only include flags known to be harmless (${[...SAFE_FLAG_NAMES].join(', ')}). If you need this flag, add it by hand in the command field after importing.`);
-            valueAllowed = false;
+            continue;
+          }
+          const name = f.split('=', 1)[0];
+          if (f.includes('=') && !VALUE_FLAG_NAMES.has(name)) {
+            errors.push(`commandFlags entry ${JSON.stringify(f)}: ${name} takes no value`);
             continue;
           }
           commandFlags.push(f);
-          valueAllowed = !f.includes('='); // a `--flag value` form may take one value next
+          if (!f.includes('=') && VALUE_FLAG_NAMES.has(name)) valueFor = f;
         } else {
-          if (!valueAllowed) {
+          if (!valueFor) {
             errors.push(`commandFlags entry ${JSON.stringify(f)} is not allowed here (a value may only follow an allowed flag such as "--model")`);
             continue;
           }
           commandFlags.push(f);
-          valueAllowed = false; // consume the value; no chained second value
+          valueFor = null; // consume the value; no chained second value
         }
       }
+      if (valueFor) errors.push(`commandFlags entry ${JSON.stringify(valueFor)} needs a value after it`);
       if (commandFlags.length === 0) commandFlags = undefined;
     }
   }

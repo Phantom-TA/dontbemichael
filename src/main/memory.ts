@@ -107,6 +107,8 @@ export class MemoryManager {
   private companySignature: string | null = null;
   /** Company knowledge changed while a pass was running: run another after it. */
   private companyPending = false;
+  /** The search language changed: clear the palace on the next pass. */
+  private rebuildPending = false;
 
   constructor(
     private getHome: () => string | null,
@@ -137,8 +139,11 @@ export class MemoryManager {
         const p = res.stdout.trim().split(/\r?\n/)[0]?.trim();
         if (p && existsSync(p)) found = p;
       } else {
+        // SIGKILL at the timeout: an interactive shell ignores the default
+        // SIGTERM, so a slow rc file would otherwise block the main process
+        // past the timeout until it finished (as in shellEnv.ts).
         const res = spawnSync(process.env.SHELL ?? '/bin/zsh', ['-ilc', 'which mempalace'], {
-          encoding: 'utf8', timeout: 3000
+          encoding: 'utf8', timeout: 3000, killSignal: 'SIGKILL'
         });
         const p = res.stdout.trim().split('\n').pop();
         if (p && existsSync(p)) found = p;
@@ -281,6 +286,7 @@ export class MemoryManager {
     if (this.mining) return; // a previous pass is still running; let it finish
     this.mining = true;
     try {
+      if (this.rebuildPending) this.rebuild();
       await this.keepCompanyOnly();
       await this.indexCompanyKnowledge();
     } finally {
@@ -377,6 +383,30 @@ export class MemoryManager {
     if (mined.ok && synced.ok) this.companySignature = src.signature;
   }
 
+  /**
+   * The search language changed (Settings). MemPalace records which model
+   * built each section and refuses a search with another, so the palace is
+   * cleared and company knowledge indexed again with the new one. While off
+   * or not installed, the rebuild waits for the next pass that runs.
+   */
+  modelChanged(): void {
+    this.rebuildPending = true;
+    if (this.mining) { this.companyPending = true; return; } // one follow up pass rebuilds
+    void this.mineNow();
+  }
+
+  /** Clear the palace so the next index builds it with the current model. */
+  private rebuild(): void {
+    const palace = this.palacePath();
+    this.rebuildPending = false;
+    this.companySignature = null;
+    if (!palace || !existsSync(palace)) return;
+    try {
+      rmSync(palace, { recursive: true, force: true });
+      console.log(`[memory] cleared the index to build it with ${this.model()}`);
+    } catch { this.rebuildPending = true; /* locked: next pass */ }
+  }
+
   /** Index company knowledge now, after the owner added or removed a
    *  document, rather than at the next timed pass. */
   companyKnowledgeChanged(): void {
@@ -422,13 +452,6 @@ export class MemoryManager {
       });
       proc.on('error', (e) => settle({ ok: false, output: '', error: e.message }));
     });
-  }
-
-  /** Search by meaning (company knowledge only). Returns the CLI's text output. */
-  search(query: string, opts: { wing?: string; results?: number } = {}): Promise<{ ok: boolean; output: string; error?: string }> {
-    const args = ['search', query, '--results', String(opts.results ?? 5)];
-    if (opts.wing) args.push('--wing', opts.wing);
-    return this.runCli(args, 'search');
   }
 
   /** Session-start digest (~600-900 tokens). */

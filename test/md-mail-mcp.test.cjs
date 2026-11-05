@@ -65,7 +65,7 @@ test('md-mail relays tool calls to the broker with the agent token', { timeout: 
   const init = await c.send('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
   assert.equal(init.result.serverInfo.name, 'md-mail');
   const list = await c.send('tools/list', {});
-  assert.deepEqual(list.result.tools.map((x) => x.name), ['list_mailboxes', 'search', 'read', 'archive', 'mark_read', 'mark_junk', 'draft', 'propose', 'send']);
+  assert.deepEqual(list.result.tools.map((x) => x.name), ['list_mailboxes', 'search', 'read', 'save_attachment', 'archive', 'mark_read', 'mark_junk', 'draft', 'propose', 'send']);
 
   const ok = await c.send('tools/call', { name: 'list_mailboxes', arguments: {} });
   assert.equal(ok.result.isError, false);

@@ -52,6 +52,19 @@ export function rerouteToMichael<M extends { from: string; to: string; subject: 
   };
 }
 
+/** The hop count the app gives a message an agent sent (HIVE.md section 4);
+ *  a number the agent wrote is never used. A reply is one more than the
+ *  message it answers, so a chain of replies between agents reaches the loop
+ *  guard. A message that answers nothing starts a new chain at 0, and one
+ *  answering a message the app no longer remembers (sent before this run)
+ *  counts that message as 0. Michael's answers to the owner stay at 0: the
+ *  owner is not an agent, so that chain cannot loop, and the guard must never
+ *  drop an answer the owner is waiting for. */
+export function replyHops(inReplyTo: unknown, parentHops: number | undefined, toOwner: boolean): number {
+  if (toOwner || typeof inReplyTo !== 'string' || !inReplyTo) return 0;
+  return (parentHops ?? 0) + 1;
+}
+
 /** The note Michael gets when the loop guard drops a runaway message, so a
  *  ping pong is never silent. */
 export function hopDropNotice(

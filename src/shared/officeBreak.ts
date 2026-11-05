@@ -51,3 +51,12 @@ export function stopNeedsOwner(view: OfficeBreakView | null | undefined): boolea
 export function heldByBreak(view: OfficeBreakView | null | undefined, provider: string | undefined): boolean {
   return !!view && !view.checking && (provider ?? 'claude') === 'claude';
 }
+
+/** Whether an engine error counts toward the breaker's error storm. While the
+ *  office is stopped, every turn on the Claude plan is refused, a check's
+ *  included: that is the stop, not a member stuck in a loop, so the breaker is
+ *  left alone (business-mode-office-packs.md, plan limits). A member on another
+ *  engine keeps working, and its errors are its own. */
+export function countsTowardErrorStorm(view: OfficeBreakView | null | undefined, onClaudePlan: boolean): boolean {
+  return !view || !onClaudePlan;
+}

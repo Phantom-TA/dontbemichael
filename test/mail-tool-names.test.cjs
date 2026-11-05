@@ -35,10 +35,10 @@ const office = () => ({
 });
 const email = { mailbox: 'support', to: 'a@b.com', subject: 's', body: 'b' };
 
-test('the tool map holds its nine tools and nothing a plain object inherits', () => {
+test('the tool map holds its ten tools and nothing a plain object inherits', () => {
   // Value: protects=the one map both mail checks read; fails_when=MAIL_TOOL_OPS is a plain object literal again; why_new=no test looked up a name outside the nine; seam=none
   for (const name of INHERITED) assert.equal(MAIL_TOOL_OPS[name], undefined, name);
-  assert.deepEqual(Object.keys(MAIL_TOOL_OPS).sort(), ['archive', 'draft', 'list_mailboxes', 'mark_junk', 'mark_read', 'propose', 'read', 'search', 'send']);
+  assert.deepEqual(Object.keys(MAIL_TOOL_OPS).sort(), ['archive', 'draft', 'list_mailboxes', 'mark_junk', 'mark_read', 'propose', 'read', 'save_attachment', 'search', 'send']);
   assert.equal(MAIL_TOOL_OPS.send, 'send');
 });
 

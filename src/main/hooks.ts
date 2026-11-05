@@ -22,11 +22,12 @@ import type { ControlRegistry } from './control';
 import type { CircuitBreaker } from './breaker';
 import { estimateCostUsd } from './pricing';
 import { claudeProjectsRoot, projectDir } from './transcript';
-import { HOOK_PATH_UNCHECKED, HOOK_SENDER_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, isTerminalPrompt, validateHookEvent } from '../shared/hookEvents';
+import { HOOK_PATH_UNCHECKED, HOOK_SENDER_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, batchToolUseIds, isTerminalPrompt, validateHookEvent } from '../shared/hookEvents';
 export { TERMINAL_PROMPT_TYPES, isTerminalPrompt };
 import { resolveGodName } from '../shared/godIdentity';
 import { ownValue } from '../shared/ownValue';
 import { APP_NAME } from '../shared/appName';
+import { providerPreset } from '../shared/agentProvider';
 
 /** The same terminal prompt is relayed to Michael at most once in this window. */
 const PROMPT_RELAY_DEDUPE_MS = 10 * 60_000;
@@ -40,7 +41,9 @@ export const STUCK_AGAIN_MS = 30 * 60_000;
 /** A restart counts once the member's session starts again within this long;
  *  otherwise Michael hears they are still stuck (ship review, 2026-10-16). */
 export const STUCK_CONFIRM_MS = 60_000;
-/** Events that show a stuck member moved on: the stuck episode ends. */
+/** Events that show a stuck member moved on: the stuck episode ends. A
+ *  UserPromptSubmit does not end one already raised to Michael: a message to
+ *  the member is not a sign it recovered. */
 const STUCK_MOVED_ON = new Set(['UserPromptSubmit', 'PostToolUse', 'Stop']);
 
 /** A Claude Code session transcript: a .jsonl file in Claude's own projects
@@ -85,18 +88,19 @@ export const ASK_TOOL_REFUSAL =
   "Don't ask the owner here: nobody answers your terminal. File it as one new file in the hive's triage folder (your questions as one \"ask\", what you were doing in \"description\"). Michael checks it and puts it on the owner's ASK ME board.";
 
 import { GUARDED_TOOLS, harnessWriteDecision } from './harnessGuard';
+import { TurnCap } from './turnCap';
 import { FOLDER_READ_TOOLS, FOLDER_WRITE_TOOLS, agentTmpDecision, agentTmpName, folderDecision, folderToolTarget, AGENT_TMP_DIR, isSharedTempSave, researchFolderDecision, sharedTempWriteDecision, tempFolders, researchWallDecision, memberWallDecision } from '../shared/folderAccess';
 import { REFUSAL_WEB_TOOL, REFUSAL_WEB_TOOL_OFF, RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_SANDBOX_ONLY, RESEARCH_UNCHECKED_TOOL, researchText } from '../shared/research';
 import { folderLayoutFor } from './officeFile';
 import { expandTilde } from './fs';
 import { CONNECTOR_UNDECIDED, connectorAccess, MCP_RESOURCE_TOOLS } from '../shared/claudeConnectors';
-import { accessLine, agentAccessSummary } from '../shared/agentAccess';
+import { accessLine, unheldMailboxesLine, agentAccessSummary } from '../shared/agentAccess';
 import { MAIL_TOOL_OPS, mailAccess } from '../shared/mailboxes';
 import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, webAccess } from '../shared/webAccess';
 import { isQuickBooksConnectorTool, isQuickBooksResourceCall, quickbooksAccess, quickbooksCapability } from '../shared/quickbooks';
 import { handoffContext } from '../shared/safeClear';
 import { ownerQuestionsContext, ownerRequestsContext, stuckCardsContext } from '../shared/ownerRequests';
-import { lastAssistantText } from './transcriptText';
+import { lastAssistantLine, lastAssistantText, type SaidLine } from './transcriptText';
 import { stopReasonFor, type OfficeStopReason } from '../shared/officeBreak';
 import { RESTARTED_NOTE } from '../shared/upkeep';
 
@@ -139,6 +143,8 @@ interface HookPayload {
   /** Set by the hook program when it cut a call's long fields to fit a frame. */
   tool_input_trimmed?: boolean;
   tool_use_id?: string;
+  /** PostToolBatch only: the batch's calls, sent by the hook program with only their ids. */
+  tool_calls?: unknown;
   stop_hook_active?: boolean;
   prompt?: string;
   source?: string;
@@ -164,6 +170,8 @@ export type PlanSignal =
 
 export class HookServer {
   private server: Server | null = null;
+  /** Max turns per run, counted per agent (turnCap.ts). */
+  private turnCap = new TurnCap();
   /** agentId → the live session's transcript file, learned from hook payloads.
    *  Lets the harness read per-agent telemetry (e.g. current context size)
    *  even when several agents share one cwd. */
@@ -183,6 +191,7 @@ export class HookServer {
   /** The company profile last delivered to each agent's session: same once per
    *  session, again on change, rule as the goal. */
   private deliveredProfileByAgent = new Map<string, { sessionId: string | null; text: string | null }>();
+  private deliveredFoundationsByAgent = new Map<string, { sessionId: string | null; text: string | null }>();
   /** What roster each agent's session was last given, so it is sent again only on a change. */
   private deliveredRosterByAgent = new Map<string, { sessionId: string | null; layoutKey: string; statusKey: string }>();
   /** The session each agent was last given its memory index in. */
@@ -192,6 +201,10 @@ export class HookServer {
   private ownerRequestsShown = new Map<string, { sessionId: string | null; any: boolean }>();
   private stuckCardsShown = new Map<string, { sessionId: string | null; any: boolean }>();
   private ownerQuestionsShown = new Map<string, { sessionId: string | null; any: boolean }>();
+  /** Agents flagged to have their protocol re-injected on their next UserPromptSubmit
+   *  (used for Gemini CLI, which fires PreCompress / resume but drops hook output
+   *  until BeforeAgent / UserPromptSubmit, #298). */
+  private pendingProtocolReInjection = new Set<string>();
   /** The idle toast line shown last, so the next one differs, and when. */
   private lastIdleLine: string | null = null;
   private lastIdleAt: number | null = null;
@@ -255,8 +268,9 @@ export class HookServer {
     private getStandingGoal?: (agentId: string) => string | null,
     /** Optional observer of every hook boundary (agentId, event, message). The
      *  worker inbox-wake watchdog (workerWake.ts) feeds on this to learn when an
-     *  agent is parked on a permission/HITL prompt so it never types into it. */
-    private onEvent?: (agentId: string | undefined, event: string, message: string | undefined, toolName?: string) => void,
+     *  agent is parked on a permission/HITL prompt so it never types into it.
+     *  `subagent` is true for a Task subagent's frame. */
+    private onEvent?: (agentId: string | undefined, event: string, message: string | undefined, toolName?: string, subagent?: boolean) => void,
     /** Company knowledge's live state, so turning it on or off reaches running
      *  agents on their next prompt instead of at their next start. */
     private getKnowledge?: () => { active: boolean; cliPath?: string; root?: string; meaning?: { bin: string; palace: string } },
@@ -272,7 +286,15 @@ export class HookServer {
     /** The office break's signals (issue 124): a status line's usage windows,
      *  a turn cut off by the usage limit, a prompt taken, a turn finished.
      *  Optional so tests can omit it. */
-    private onPlan?: (signal: PlanSignal) => void
+    private onPlan?: (signal: PlanSignal) => void,
+    /** Company foundations as this agent reads them (office-foundations.md):
+     *  its job's section, the whole document for Michael, or null. Optional
+     *  so tests can omit it. */
+    private getFoundations?: (agentId: string) => string | null,
+    /** The folders the owner named on a Company foundations card that this
+     *  member's job uses, read only (eng review 2026-10-26, D1). Optional so
+     *  tests can omit it. */
+    private readFoldersOf?: (agentId: string) => string[]
   ) {}
 
   start(): void {
@@ -328,7 +350,8 @@ export class HookServer {
         // A gate that throws allows a built-in tool as before, but never an MCP
         // call (connectors fail closed, D8) and never a web tool for anyone
         // but Research (issue #230).
-        try { res = this.handle(payload); } catch {
+        try { res = this.handle(payload); } catch (e) {
+          try { this.hive.failureObserver?.('hook-server', e); } catch { /* the verdict below still goes out */ }
           const pre = payload.hook_event_name === 'PreToolUse';
           res = pre && isMcpCall(payload.tool_name) ? mcpDeny(CONNECTOR_UNDECIDED)
             : pre && WEB_TOOLS.has(payload.tool_name ?? '') && payload.agent_id !== RESEARCH_ID ? mcpDeny(WEB_SETTINGS_UNREADABLE)
@@ -364,7 +387,7 @@ export class HookServer {
   }
 
   /** Frames refused for a missing or wrong secret, by the agent they named
-   *  (or "unknown"). Kept for the telemetry health readout (TODOS.md); tests read it today. */
+   *  (or "unknown"). The health readout (telemetry:health) shows them. */
   rejectedFrames(): ReadonlyMap<string, number> {
     return this.rejected;
   }
@@ -451,6 +474,17 @@ export class HookServer {
     return this.transcriptPaths.get(agentId);
   }
 
+  /** The last thing this agent said, as one safe line, and when, for its
+   *  closing-time row. Read only from a transcript in the engine's own folder: the path
+   *  comes from a hook frame, which an agent could write. */
+  latestLine(agentId: string): SaidLine | undefined {
+    const file = this.transcriptPaths.get(agentId);
+    if (!file || !isClaudeTranscript(file)) return undefined;
+    const said = lastAssistantLine(file);
+    const text = said ? safeLine(said.text) : undefined;
+    return text ? { ...said, text } : undefined;
+  }
+
   /** The latest context-window accounting for an agent (current tokens + the real
    *  window size), or undefined if no statusLine tick has fired for it yet. */
   contextFor(agentId: string): { tokens: number; limit: number; ts: number } | undefined {
@@ -471,13 +505,14 @@ export class HookServer {
 
   private handle(p: HookPayload): unknown {
     const agentId = p.agent_id ?? undefined;
-    const event = p.hook_event_name ?? 'Unknown';
+    const rawEvent = p.hook_event_name ?? 'Unknown';
+    const event = rawEvent === 'BeforeAgent' ? 'UserPromptSubmit' : rawEvent;
     // A Task subagent's calls are checked as its team member (every gate below),
     // but its own finish, transcript and session are not the agent's: a
     // subagent stopping must not mark the agent idle or replace its transcript.
     const subagent = typeof p.subagent_id === 'string' && p.subagent_id.length > 0;
     if (subagent && event === 'SubagentStop') return {};
-    this.onEvent?.(agentId, event, p.message, p.tool_name);
+    this.onEvent?.(agentId, event, p.message, p.tool_name, subagent);
     // Before any early return below (SessionStart and Stop usually return early).
     if (agentId && !subagent && event !== 'Notification' && this.stuckEpisodes.has(agentId)) this.stuckProgress(agentId, event);
     if (agentId && !subagent && typeof p.transcript_path === 'string' && p.transcript_path) {
@@ -529,6 +564,9 @@ export class HookServer {
       return {};
     }
     if (event === 'UserPromptSubmit' && agentId && !subagent) this.plan({ kind: 'prompt', agentId });
+    // A compaction fires SessionStart (source "compact") in the middle of a run;
+    // it keeps the count, or the long runs this cap is for would never hit it.
+    if ((event === 'UserPromptSubmit' || (event === 'SessionStart' && p.source !== 'compact')) && agentId && !subagent) this.turnCap.newRun(agentId);
     if (event === 'Stop' && agentId && !subagent && !p.stop_hook_active) this.plan({ kind: 'turn', agentId });
 
     // 7C.3 — a graceful operator HALT overrides everything (incl. the inbox
@@ -596,14 +634,31 @@ export class HookServer {
     // token burst can't trip the Δoutput arms; PostCompact — or any SessionStart,
     // since a fresh session makes in-flight compaction state moot — closes it
     // down to the trailing grace (a no-op when nothing was compacting).
-    if (event === 'PreCompact' && agentId) this.breaker?.recordCompactStart(agentId);
+    if ((event === 'PreCompact' || event === 'PreCompress') && agentId) this.breaker?.recordCompactStart(agentId);
     // Logged so compaction can be measured (tools/agent-metrics.cjs).
-    if (event === 'PreCompact' && agentId) {
+    if ((event === 'PreCompact' || event === 'PreCompress') && agentId) {
       const trigger = (p as { trigger?: unknown }).trigger;
       try { this.hive.appendLog({ kind: 'compact', agentId, trigger: typeof trigger === 'string' ? trigger : 'unknown' }); } catch { /* best-effort */ }
     }
     if ((event === 'PostCompact' || event === 'SessionStart') && agentId) {
       this.breaker?.recordCompactEnd(agentId);
+    }
+    // A compaction or a clear keeps the same process, so no tools were added.
+    if (event === 'SessionStart' && agentId && p.source !== 'compact' && p.source !== 'clear') {
+      try { this.onSessionStart?.(agentId); } catch (e) { console.warn('[hooks] session start listener:', e); }
+    }
+
+    // Gemini PreCompress: Gemini fires PreCompress before compaction but ignores
+    // its reply. Mark the agent so the protocol is re-injected on its next
+    // prompt (BeforeAgent / UserPromptSubmit) instead (#298).
+    if (event === 'PreCompress' && agentId) {
+      const reg = this.hive.registry?.();
+      const meta = reg?.agents[agentId];
+      const provider = meta?.provider ?? 'claude';
+      const preset = providerPreset(provider);
+      if (preset.instructionsDelivery === 're-injected on compact') {
+        this.pendingProtocolReInjection.add(agentId);
+      }
     }
 
     if ((event === 'Stop' || event === 'SubagentStop') && agentId) {
@@ -637,6 +692,28 @@ export class HookServer {
             hookEventName: 'PreToolUse',
             permissionDecision: 'deny',
             permissionDecisionReason: d.reason ?? 'Denied by operator.'
+          }
+        };
+      }
+    }
+
+    // Max turns per run (turnCap.ts): Claude Code ignores --max-turns outside
+    // print mode, so the cap is counted here. Refuse the call AND stop the run;
+    // continue:false alone still lets this one call run first. An unreadable
+    // config skips only this cap; the gates below still refuse on their own.
+    if (event === 'PreToolUse' && agentId && !subagent) {
+      let max: number | undefined;
+      try { max = this.getConfig().maxTurns; } catch { max = undefined; }
+      const d = this.turnCap.toolCall(agentId, max);
+      if (d.stop) {
+        this.emitRefused(agentId, event, p, 'turn-cap');
+        return {
+          continue: false,
+          stopReason: d.reason,
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: d.reason
           }
         };
       }
@@ -685,7 +762,8 @@ export class HookServer {
 
     // Mailboxes added in Settings (md-mail): the agent's Capabilities for the
     // mailbox named in the call (the broker checks it again). The Claude
-    // account's Gmail and Calendar are connectors like any other, above.
+    // account's Calendar is a connector like any other, above; its Gmail is
+    // always refused there.
     if (event === 'PreToolUse' && agentId && /^mcp__md-mail__/.test(p.tool_name ?? '')) {
       const cfg = mcpConfig();
       const mdMail = /^mcp__md-mail__([a-z_]+)$/.exec(p.tool_name ?? '');
@@ -872,6 +950,10 @@ export class HookServer {
       // mailbox changes the layout key and the full roster goes out again.
       const cfg = this.getConfig();
       const r = this.hive.teamRoster((id) => accessLine(agentAccessSummary(cfg, id, this.roleReadsBooks?.(id) ?? false, this.memberPresent)));
+      // Mailboxes nobody reads yet ride with the roster, and change its layout
+      // key, so Michael knows to name a reader (settings-links-in-replies.md).
+      const unheld = unheldMailboxesLine(cfg, this.memberPresent);
+      if (r && unheld) { r.full = `${r.full}\n${unheld}`; r.layoutKey = `${r.layoutKey}|${unheld}`; }
       const sessionId = p.session_id ?? null;
       const last = this.deliveredRosterByAgent.get(agentId!);
       if (r) {
@@ -930,6 +1012,25 @@ export class HookServer {
       }
     }
 
+    // Company foundations (office-foundations.md, eng D1): the member's job
+    // section, or the whole document for Michael, delivered like the profile:
+    // at the start of each session and again when it changes. Never to
+    // Research (eng finding 1).
+    let foundations: string | null = null;
+    if ((event === 'SessionStart' || event === 'UserPromptSubmit') && agentId && this.getFoundations && !isResearchAgent) {
+      let text: string | null = null;
+      try { text = this.getFoundations(agentId); } catch { text = null; }
+      const sessionId = p.session_id ?? null;
+      const delivered = this.deliveredFoundationsByAgent.get(agentId);
+      const fresh = event === 'SessionStart' || !delivered || delivered.sessionId !== sessionId;
+      if (fresh || delivered.text !== text) {
+        this.deliveredFoundationsByAgent.set(agentId, { sessionId, text });
+        if (text) foundations = text;
+        // Silence would leave the old section alive in the model's context.
+        else if (!fresh && delivered?.text) foundations = 'COMPANY FOUNDATIONS. Your job no longer has a company foundations section; the answers given earlier no longer apply to your work.';
+      }
+    }
+
     // The agent's memory index (owner, 2026-09-25): once at the start of each
     // session, and never again within it, so it stays in the prompt cache. The
     // tidy-up's changes arrive with the next session.
@@ -974,12 +1075,41 @@ export class HookServer {
       ? this.hive.knowledgeUpdate(agentId, this.getKnowledge())
       : null;
 
-    if (steer || roster || goal || knowledgeNote || profile || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards) {
+    // Protocol re-injection for engines with no native system prompt channel (#298).
+    // On compaction or resume, auto-compaction summarizes history and drops initial
+    // rules; engines whose instructions delivery is 're-injected on compact'
+    // re-receive their protocol via additionalContext here.
+    let reInjectedProtocol: string | null = null;
+    if (event === 'SessionStart' && (p.source === 'compact' || p.source === 'resume') && agentId) {
+      const reg = this.hive.registry?.();
+      const meta = reg?.agents[agentId];
+      const provider = meta?.provider ?? 'claude';
+      const preset = providerPreset(provider);
+      if (preset.instructionsDelivery === 're-injected on compact') {
+        if (provider === 'gemini') {
+          // Gemini CLI ignores SessionStart output; mark the agent so its protocol
+          // is injected on the following BeforeAgent / UserPromptSubmit (#298).
+          if (p.source === 'resume' || p.source === 'compact') {
+            this.pendingProtocolReInjection.add(agentId);
+          }
+        } else {
+          reInjectedProtocol = this.hive.injectedPromptFor?.(agentId) ?? null;
+        }
+      }
+    }
+
+    if (event === 'UserPromptSubmit' && agentId && this.pendingProtocolReInjection.has(agentId)) {
+      this.pendingProtocolReInjection.delete(agentId);
+      reInjectedProtocol = this.hive.injectedPromptFor?.(agentId) ?? null;
+    }
+
+    if (steer || roster || goal || knowledgeNote || profile || foundations || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards || reInjectedProtocol) {
       this.emit(agentId, event, p);
+      const liveContext = [roster, profile, foundations, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean);
       return {
         hookSpecificOutput: {
           hookEventName: event,
-          additionalContext: [roster, profile, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean).join('\n\n')
+          additionalContext: [reInjectedProtocol, ...liveContext].filter(Boolean).join('\n\n')
         }
       };
     }
@@ -1134,7 +1264,17 @@ export class HookServer {
       const name = this.displayName(agentId);
       this.tellMichael(agentId, `${name} was restarted after all`, `${name}'s session started again after all, so the restart went through and ${name} is not stuck. Leave ${name}'s open work with them, and if you asked the owner whether ${name} is stuck, withdraw that question.`);
     } else if (STUCK_MOVED_ON.has(event)) {
+      // A message arriving is not recovery: a member still on its prompt gets
+      // them too. Keep a raised episode until real work shows.
+      if (ep.escalated && event === 'UserPromptSubmit') return;
       this.stuckEpisodes.delete(agentId);
+      if (!ep.escalated) return;
+      // Michael heard the member is stuck: tell him it is over, or the card he
+      // raised stays on Ask me long after the member got going (owner,
+      // 2026-10-23: Pete answered at 05:27, the card went up at 05:30).
+      this.relayedPrompts.delete(agentId);
+      const name = this.displayName(agentId);
+      this.tellMichael(agentId, `${name} is working again`, `${name} got past what stopped them and is working again, so ${name} is not stuck. If you put a question on the owner's Ask me board saying ${name} is stuck, withdraw it; if you have not raised it yet, don't. ${name} can take work again.`);
     }
   }
 
@@ -1268,7 +1408,7 @@ export class HookServer {
     }
     const layout = folderLayoutFor(cfg.businessFolder, folders, home);
     const godName = resolveGodName(reg.agents[reg.godId ?? 'god']?.name);
-    const agent = { isGod: !!me.isGod, cwd: me.cwd };
+    const agent = { isGod: !!me.isGod, cwd: me.cwd, readFolders: me.isGod ? [] : (this.readFoldersOf?.(agentId) ?? []) };
     // Judge the path as asked and the file it really is: a link inside the
     // agent's own folder can point anywhere (review, 2026-09-25).
     const asked = folderDecision(agent, layout, tool, target, ci, godName);
@@ -1293,6 +1433,9 @@ export class HookServer {
   /** Pulse's Kept safe (proposal 3): each step a setting stopped, by gate.
    *  A question sent on to Michael is routing, so it passes no gate. */
   onRefused?: (agentId: string | undefined, gate: RefusalGate) => void;
+  /** A member's session started (docs/designs/settings-links-in-replies.md:
+   *  a mailbox granted while they ran is usable from here on). */
+  onSessionStart?: (agentId: string) => void;
 
   // A refused call sends no step and is marked blocked, so the sidebar and
   // the office floor show nothing for a call that never ran.
@@ -1307,6 +1450,7 @@ export class HookServer {
       event,
       tool: p.tool_name,
       toolUseId: typeof p.tool_use_id === 'string' ? p.tool_use_id : undefined,
+      toolUseIds: event === 'PostToolBatch' ? batchToolUseIds(p.tool_calls) : undefined,
       notificationType: p.notification_type,
       source: p.source,
       message: p.message,
@@ -1366,10 +1510,16 @@ const TOOL_LINE_MAX = 80;
  *  agent cannot disguise the line the owner decides by. */
 export function toolLine(tool: unknown, input: unknown): string | undefined {
   const d = toolDetail(tool, input);
-  if (!d) return undefined;
+  return d ? safeLine(d) : undefined;
+}
+
+/** Any agent text as one line the owner may read: redacted, without control
+ *  or invisible characters, at most 80 characters (toolLine, and the last
+ *  thing an agent said on its closing-time row). */
+export function safeLine(text: string): string | undefined {
   // Invisible format characters are removed, not spaced, so one hidden
   // inside a token cannot split it past redaction.
-  const plain = d.replace(/\p{Cf}+/gu, '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, TOOL_LINE_SCAN_MAX);
+  const plain = text.replace(/\p{Cf}+/gu, '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, TOOL_LINE_SCAN_MAX);
   // Cut by code point so an emoji is never split in half.
   const redacted = redactSecrets(plain);
   if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(redacted)) return undefined;
