@@ -198,6 +198,50 @@ function scoreChunk(rec, queryTerms, queryRaw) {
   return score;
 }
 
+/** How many chars the end of `earlier` and the start of `later` have in common: the
+ *  overlap chunkText carries from one chunk into the next. 0 when they share none. */
+function sharedEdge(earlier, later) {
+  for (let n = Math.min(earlier.length, later.length, DEFAULT_CHUNK_OVERLAP); n > 0; n--) {
+    if (earlier.endsWith(later.slice(0, n))) return n;
+  }
+  return 0;
+}
+
+/** The part of `text` outside the `n` chars it shares with a neighbour, at its start or
+ *  its end. The edge can cut through a word: the neighbour then holds only part of it, so
+ *  the whole word stays in this chunk's own text. */
+function ownText(text, n, atStart) {
+  const isWordChar = (i) => i >= 0 && i < text.length && /\S/.test(text[i]);
+  if (atStart) {
+    let from = n;
+    if (isWordChar(from - 1) && isWordChar(from)) while (isWordChar(from - 1)) from--;
+    return text.slice(from);
+  }
+  let to = text.length - n;
+  if (isWordChar(to - 1) && isWordChar(to)) while (isWordChar(to)) to++;
+  return text.slice(0, to);
+}
+
+/** True when a chunk adds nothing to a result already kept: it sits next to that result
+ *  and every query match in it lies in the text the two share. Each neighbour is judged on
+ *  its own, so a chunk that holds the only place two words meet is never dropped. */
+function repeatsKept(rec, queryTerms, queryRaw, kept) {
+  const neighbours = kept.get(rec.docId);
+  if (!neighbours) return false;
+  const text = String(rec.text || '');
+  const before = neighbours.get(rec.chunkIdx - 1);
+  if (before !== undefined) {
+    const n = sharedEdge(before, text);
+    if (n && scoreChunk({ text: ownText(text, n, true) }, queryTerms, queryRaw) === 0) return true;
+  }
+  const after = neighbours.get(rec.chunkIdx + 1);
+  if (after !== undefined) {
+    const n = sharedEdge(text, after);
+    if (n && scoreChunk({ text: ownText(text, n, false) }, queryTerms, queryRaw) === 0) return true;
+  }
+  return false;
+}
+
 /** A short snippet of `text` centred on the first query-term hit. */
 function makeSnippet(text, queryTerms) {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
@@ -324,7 +368,7 @@ function ingest(kgRoot, input = {}) {
 /** Keyword-search the index. Returns ranked { docId, title, source, modality, chunkIdx, score, snippet }. */
 function search(kgRoot, query, opts = {}) {
   const limit = clampLimit(opts.limit, DEFAULT_SEARCH_LIMIT);
-  const queryTerms = tokenize(query);
+  const queryTerms = [...new Set(tokenize(query))]; // a word typed twice is one term
   if (!queryTerms.length) return [];
   const idxPath = path.join(kgRoot, 'index.jsonl');
   if (!fs.existsSync(idxPath)) return [];
@@ -344,7 +388,19 @@ function search(kgRoot, query, opts = {}) {
     || String(a.rec.docId).localeCompare(String(b.rec.docId))
     || (a.rec.chunkIdx - b.rec.chunkIdx));
 
-  return scored.slice(0, limit).map(({ rec, score }) => ({
+  // Adjacent chunks share their edge text, so one passage can sit in two chunks. Take results
+  // best first and skip a chunk that only repeats one already taken; its slot goes to the next.
+  const kept = new Map(); // docId -> chunkIdx -> text, for the results taken so far
+  const results = [];
+  for (const hit of scored) {
+    if (results.length >= limit) break;
+    if (repeatsKept(hit.rec, queryTerms, query, kept)) continue;
+    results.push(hit);
+    if (!kept.has(hit.rec.docId)) kept.set(hit.rec.docId, new Map());
+    kept.get(hit.rec.docId).set(hit.rec.chunkIdx, String(hit.rec.text || ''));
+  }
+
+  return results.map(({ rec, score }) => ({
     docId: rec.docId, title: rec.title, source: rec.source, modality: rec.modality,
     chunkIdx: rec.chunkIdx, score: Math.round(score * 1000) / 1000,
     snippet: makeSnippet(rec.text, queryTerms)

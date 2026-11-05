@@ -208,6 +208,95 @@ function writeFixture(dir, name, content) {
     assert.deepStrictEqual(kg.search(root, '   '), [], 'blank query');
   });
 
+  // ─── search: repeated words and overlapping chunks ──────────────────────
+  // chunkText carries DEFAULT_CHUNK_OVERLAP chars into the next chunk, so a passage near a
+  // chunk edge sits in two chunks. These layouts are built from the chunker itself and
+  // checked, so a change to the chunk size fails here rather than quietly testing nothing.
+  const filler = (n, tag) => Array.from({ length: n }, (_, i) => `${tag}${i}`).join(' ');
+  const padTo = (len) => { let pad = ''; for (let i = 0; pad.length < len; i++) pad += `w${i} `; return pad; };
+
+  test('search: a word typed more than once scores as it does typed once', () => {
+    const root = tmpRoot();
+    kg.ingest(root, { title: 'Shipping', text: 'We ship in three days. Shipping is free over fifty dollars.' });
+    // The exact phrase bonus is about the phrase as typed, so these queries are not phrases in the text.
+    const once = kg.search(root, 'free shipping')[0].score;
+    assert.strictEqual(kg.search(root, 'free shipping shipping free')[0].score, once);
+    assert.strictEqual(kg.search(root, 'free free free shipping')[0].score, once);
+  });
+
+  test('search: a passage inside the overlap of two chunks comes back once', () => {
+    const sentence = 'The quarterly zebrafish audit happens in March.';
+    let inTwoChunks = 0;
+    for (let at = 900; at <= 1190; at += 10) {
+      const text = `${padTo(at)}${sentence} ${filler(500, 'z')}`;
+      const held = kg.chunkText(text).filter((c) => c.includes(sentence)).length;
+      if (held < 2) continue;
+      inTwoChunks++;
+      const root = tmpRoot();
+      kg.ingest(root, { title: 'Audit', text });
+      const hits = kg.search(root, 'zebrafish audit');
+      assert.strictEqual(hits.length, 1, `sentence at ${at}, held by ${held} chunks: one result, not ${hits.length}`);
+    }
+    assert.ok(inTwoChunks > 0, 'the sweep put the sentence in the overlap of two chunks');
+  });
+
+  test('search: a skipped duplicate frees its slot for the next result', () => {
+    const sentence = 'The quarterly zebrafish audit happens in March.';
+    const root = tmpRoot();
+    const text = `${padTo(1100)}${sentence} ${filler(500, 'z')}`;
+    assert.ok(kg.chunkText(text).filter((c) => c.includes(sentence)).length > 1, 'layout puts the sentence in two chunks');
+    kg.ingest(root, { title: 'Audit', text });
+    kg.ingest(root, { title: 'Other', text: 'A zebrafish audit checklist for the lab.' });
+    const hits = kg.search(root, 'zebrafish audit', { limit: 2 });
+    assert.strictEqual(hits.length, 2, 'two results asked for, two different passages returned');
+    assert.strictEqual(new Set(hits.map((h) => h.docId)).size, 2);
+  });
+
+  test('search: neighbouring chunks that each match in their own text both come back', () => {
+    const root = tmpRoot();
+    const text = `zebrafish ${padTo(1300)}zebrafish ${filler(400, 'q')}`;
+    const chunks = kg.chunkText(text);
+    assert.ok(chunks[0].includes('zebrafish') && chunks[1].includes('zebrafish'), 'layout: the word is in chunks 0 and 1');
+    kg.ingest(root, { title: 'Lab', text });
+    const idx = kg.search(root, 'zebrafish').map((h) => h.chunkIdx).sort();
+    assert.deepStrictEqual(idx.slice(0, 2), [0, 1]);
+  });
+
+  test('search: a chunk that holds the only place two query words meet is kept', () => {
+    // Chunks 0 and 2 each match one word many times; chunk 1 holds the first word in its overlap
+    // with chunk 0 and the second in its overlap with chunk 2, so it ranks last. Neither
+    // neighbour alone has both words, so chunk 1 must not be dropped.
+    const text = `${'foo '.repeat(100)}${padTo(700)}foo ${padTo(1000)}bar ${padTo(150)}${'bar '.repeat(100)}`;
+    const chunks = kg.chunkText(text);
+    assert.ok(chunks.length >= 3, `layout: three chunks, got ${chunks.length}`);
+    assert.ok(/foo/.test(chunks[0]) && !/bar/.test(chunks[0]), 'layout: chunk 0 has foo only');
+    assert.ok(/foo/.test(chunks[1]) && /bar/.test(chunks[1]), 'layout: chunk 1 has both');
+    assert.ok(/bar/.test(chunks[2]) && !/foo/.test(chunks[2]), 'layout: chunk 2 has bar only');
+    const root = tmpRoot();
+    kg.ingest(root, { title: 'Words', text });
+    const hits = kg.search(root, 'foo bar');
+    assert.strictEqual(hits[hits.length - 1].chunkIdx, 1, 'chunk 1 ranks last');
+    assert.deepStrictEqual(hits.map((h) => h.chunkIdx).sort(), [0, 1, 2]);
+  });
+
+  test('search: a word the shared edge cuts through is still found in the chunk that holds it whole', () => {
+    // The next chunk can start partway into a word, so it holds only the end of "zebrafish".
+    // The chunk with the whole word must stay in the results even though its neighbour, which
+    // ranks higher on another word, shares the text around it.
+    let cut = null;
+    for (let at = 1000; at <= 1190 && !cut; at++) {
+      const text = `${padTo(at)}zebrafish ${filler(40, 'x')} ${'audit '.repeat(6)}${filler(300, 'z')}`;
+      const next = kg.chunkText(text)[1];
+      if (/^[a-z]{1,8}fish /.test(next) && !next.startsWith('zebrafish')) cut = text;
+    }
+    assert.ok(cut, 'layout: found a position where chunk 1 starts partway into the word');
+    const root = tmpRoot();
+    kg.ingest(root, { title: 'Lab', text: cut });
+    const hits = kg.search(root, 'zebrafish audit');
+    assert.deepStrictEqual(hits.map((h) => h.chunkIdx).sort().slice(0, 2), [0, 1]);
+    assert.strictEqual(hits[0].chunkIdx, 1, 'the chunk matching audit ranks first');
+  });
+
   // ─── the real agent CLI (out-of-process retrieval path) ─────────────────
   console.log('knowledge-graph agent CLI (kg.cjs) tests');
 
