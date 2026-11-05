@@ -115,6 +115,8 @@ export class CaseStudyService {
   /** At most one case study is prepared at a time; a new office, period,
    *  language or name choice starts over. */
   private prep: { key: string; office: string | null; input: CaseInput; state: 'preparing' | 'ready'; draft: CaseDraft | null; logo: CaseLogo | null; hasWork: boolean; waiting?: boolean } | null = null;
+  /** The draft of the last case study sent, for a Save from the same screen after Send. */
+  private sent: { key: string; draft: CaseDraft | null } | null = null;
   constructor(private readonly d: CaseStudyDeps) {}
   private now(): number { return this.d.now ? this.d.now() : Date.now(); }
 
@@ -245,7 +247,9 @@ export class CaseStudyService {
 
   /** The draft main holds for this case study, if any (prepared or retried). */
   private heldDraft(input: CaseInput): CaseDraft | null {
-    return this.prep?.key === this.keyOf(input) ? this.prep.draft : null;
+    const key = this.keyOf(input);
+    if (this.prep?.key === key) return this.prep.draft;
+    return this.sent?.key === key ? this.sent.draft : null;
   }
 
   /** Where the prepared case study stands, for the open office only. */
@@ -324,8 +328,11 @@ export class CaseStudyService {
     // counts as a member's work (index.ts logObserver, pulseBackfill.ts).
     this.d.log({ kind: 'case-study-sent', mailbox: box.id, to: CASE_STUDY_TO, text: "You sent a case study to Don't Be Michael" });
     this.d.inviteDone();
-    // Sent: the next Get featured prepares a fresh one.
+    // Sent: the next Get featured prepares a fresh one. The draft it sent stays
+    // for a Save from the same screen, so the saved page matches what went out
+    // (ship review, 2026-11-05).
     const waited = !!this.prep?.waiting;
+    this.sent = this.prep?.key === this.keyOf(input) ? { key: this.prep.key, draft: this.prep.draft } : null;
     this.prep = null;
     if (waited) this.d.onWaitingChange?.();
     return { ok: true };

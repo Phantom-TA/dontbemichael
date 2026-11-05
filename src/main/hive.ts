@@ -4558,10 +4558,17 @@ export class HiveManager {
       const told = new Set(this.guard.leftoversTold ?? []);
       const due = dueLeftovers(tasks as Parameters<typeof dueLeftovers>[0], Date.now(), told);
       if (due.length) {
-        // Recorded as told before it goes out, so a crash never sends it twice.
-        this.guard.leftoversTold = [...told, ...due.map((d) => d.key)];
+        // Recorded once it went out, so a failed write is tried again on the
+        // next tick and the question is never lost (ship review, 2026-11-05).
+        for (const d of due) {
+          const note = leftoverDueNote(d);
+          try {
+            post({ to: godId, act: 'inform', subject: note.subject, body: note.body, conversation: cardConversation(d.taskId) });
+            told.add(d.key);
+          } catch { /* tried again on the next tick */ }
+        }
+        this.guard.leftoversTold = [...told];
         this.saveGuard();
-        for (const d of due) tell(leftoverDueNote(d), d.taskId);
       }
     }
     const reg = this.registry();
@@ -5055,15 +5062,18 @@ export class HiveManager {
     if (!cleared) return false;
     // Three of one kind in a row: Michael asks whether to keep showing them (B5), once per member and kind.
     const { kind, raiser, cards } = cleared;
-    if (kind && gotItStreak(cards, raiser, kind) >= GOT_IT_STREAK) {
+    if (kind && gotItStreak(cards, raiser, kind, new Set(Object.keys(this.registry().agents ?? {}))) >= GOT_IT_STREAK) {
       const guard = this.guardState();
       const key = noticeKey(raiser, kind);
       const godId = this.registry().godId;
       if (godId && !(guard.noticeAsked ?? []).includes(key)) {
-        guard.noticeAsked = [...(guard.noticeAsked ?? []), key];
-        this.saveGuard();
         const note = keepShowingNote(kind, raiser, this.registry().agents[raiser]?.name ?? raiser);
-        try { this.send({ to: godId, act: 'inform', subject: note.subject, body: note.body, conversation: cardConversation(taskId) }, 'system'); } catch { /* asked again on the next Got it */ }
+        try {
+          this.send({ to: godId, act: 'inform', subject: note.subject, body: note.body, conversation: cardConversation(taskId) }, 'system');
+          // Recorded once it went out, so a failed send is asked again on the next Got it.
+          guard.noticeAsked = [...(guard.noticeAsked ?? []), key];
+          this.saveGuard();
+        } catch { /* asked again on the next Got it */ }
       }
     }
     return true;
@@ -5081,6 +5091,9 @@ export class HiveManager {
     this.rememberOwnerNote(raiser, skipNoticeLine(kind, day), `you pressed Don't show me these on Ask me, ${day}`);
     const godId = this.registry().godId;
     const name = this.registry().agents[raiser]?.name ?? raiser;
+    // Michael keeps it too, so he never makes that kind a card himself when it
+    // shows up in the member's report (ship review, 2026-11-05).
+    if (godId && raiser !== godId) this.rememberOwnerNote(godId, `From the owner (${day}): don't show me notices of this kind from ${name}: "${kind}". Make no card for them, even when they show up in ${name}'s report.`, `you pressed Don't show me these on Ask me, ${day}`);
     if (godId && raiser !== godId) {
       try {
         this.send({ to: godId, act: 'inform', subject: `Notices not needed: ${kind}`, body: `The owner pressed Don't show me these on "${cardText(title)}", a "${kind}" notice from ${name}. ${name} now has it in memory and stops filing that kind. Nothing to do.`, conversation: cardConversation(taskId) }, 'system');

@@ -9,7 +9,7 @@ import { execFile, spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync,
   unlinkSync, mkdirSync, renameSync, createWriteStream, copyFileSync, lstatSync,
-  readlinkSync, symlinkSync, realpathSync, watch as watchFs
+  readlinkSync, symlinkSync, realpathSync, chmodSync, watch as watchFs
 } from 'node:fs';
 import { promises as fsPromises } from 'node:fs';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
@@ -7616,7 +7616,7 @@ const caseStudy = new CaseStudyService({
 });
 ipcMain.handle('caseStudy:prepare', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.prepare(i) : { state: 'idle' }; });
 ipcMain.handle('caseStudy:status', () => caseStudy.status());
-ipcMain.handle('caseStudy:seen', () => { caseStudy.seen(); return true; });
+ipcMain.handle('caseStudy:seen', (evt) => { if (!fromAppPage(evt)) return false; caseStudy.seen(); return true; });
 ipcMain.handle('caseStudy:open', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.open(i) : null; });
 ipcMain.handle('caseStudy:draft', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.draft(i) : { ok: false, reason: 'failed' }; });
 // The owner can't change the case study (case-study-tab.md, D2 and D3): no
@@ -7773,6 +7773,9 @@ ipcMain.handle(EMAIL_IPC.openAttachment, async (evt, href: unknown, index: unkno
     mkdirSync(openedAttachmentsDir(), { recursive: true });
     // Marked as from outside before it opens, so Word or Excel open it in Protected View.
     const path = saveAttachmentFile({ folder: openedAttachmentsDir(), name: got.name, ending: kind.ending, bytes: got.bytes }, markFromOutsideNow);
+    // Read only: the folder is cleared at quit, so a change saved here would be
+    // lost; the app it opens in asks to save a copy elsewhere (ship review, 2026-11-05).
+    chmodSync(path, 0o444);
     const opened = await shell.openPath(path);
     console.log(`[mail] owner-attachment ${ref.mailbox} ${kind.id} ${got.bytes.length} ${opened ? 'open-failed' : 'ok'}`);
     return opened ? { ok: false, reason: 'failed', gmailUrl } : { ok: true };

@@ -104,8 +104,15 @@ test('a later leftover comes back to Michael at its time, once, even on a Done c
     { question: 3, decision: 'later', why: 'Decide after the call', at: future }
   ] }] }]);
   const due = () => toMichael().filter((m) => m.subject === 'Leftover question due: card g1');
+  // A failed write is tried again on the next tick, never lost (ship review, 2026-11-05).
+  const route = hive.routeMessage;
+  hive.routeMessage = () => { throw new Error('the disk is full'); };
+  hive.refreshOwnerRequests();
+  hive.routeMessage = route;
+  assert.equal(due().length, 0);
   hive.refreshOwnerRequests();
   assert.equal(due().length, 1, 'question 2 is due; question 3 is far off');
+  assert.match(due()[0].body, /ask it again on a new card, since that card is done/, 'a Done card stays done');
   assert.match(due()[0].body, /The question: "Please save Ellah's attachment into the Sales folder\."/);
   assert.match(due()[0].body, /Why it was kept for later: Save it once the call is set\./);
   hive.refreshOwnerRequests();
@@ -116,6 +123,23 @@ test('a later leftover comes back to Michael at its time, once, even on a Done c
   hive.writeTasks(board.tasks);
   hive.refreshOwnerRequests();
   assert.equal(due().length, 2);
+  assert.match(L.leftoverDueNote({ key: 'k', taskId: 'c1', title: 'T', question: 1, q: 'Q?', why: 'w', at: past, done: false }).body, /ask it again on the same card \(move the card to "blocked" with the ask\)/);
+});
+
+test('the leftover check keeps its start across a restart', async (t) => {
+  // Value: protects=an answer given after the check began is still listed after the app restarts; fails_when=the start is not saved or is reset at each launch; why_new=coverage audit, 2026-11-05 (was a source pin); seam=two real HiveManagers on one temp office
+  const { hive } = await office(t);
+  hive.writeTasks([]);
+  hive.refreshOwnerRequests();
+  const home = hive.getHome();
+  const saved = fs.readFileSync(path.join(home, 'private', 'leftovers-since.json'), 'utf8');
+  const answeredAt = new Date(Date.parse(JSON.parse(saved).since) + 60_000).toISOString();
+  const again = new HiveManager(() => home, () => true);
+  again.commit = () => {};
+  again.writeTasks([{ id: 'g1', title: 'GammaTile', status: 'todo', assignee: 'dwight', humanQA: [{ ...gamma, answeredAt }] }]);
+  again.refreshOwnerRequests();
+  assert.equal(fs.readFileSync(path.join(home, 'private', 'leftovers-since.json'), 'utf8'), saved, 'the same start');
+  assert.ok(again.stuckCards().some((c) => c.issue === 'leftovers' && c.id === 'g1'), 'the answer is still listed');
 });
 
 test('members decide each leftover, Michael records it, Not yet brings a question back, and Michael reads the history when asked', () => {

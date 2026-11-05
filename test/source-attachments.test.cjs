@@ -80,6 +80,35 @@ test('the owner gets exactly the attachment the email tab lists at that place', 
   assert.ok(locks.every((l) => l.readOnly), 'every folder opened read only');
 });
 
+test('a large email opens the attachment the tab lists at that place, part by part, and refuses one too big', async () => {
+  // Value: protects=the owner opens the file they clicked on an email over 25 MB, and an oversize file is refused before anything is written; fails_when=the part by part index drifts from the tab's list, or the size cap is dropped; why_new=coverage audit, 2026-11-05 (only the whole parse was tested); seam=fake IMAP with a body structure and downloads; no_claim=a real server's part numbering
+  const attached = (part, name, size, extra = {}) => ({ part, type: 'application/octet-stream', disposition: 'attachment', dispositionParameters: { filename: name }, size, ...extra });
+  const nodes = [{ part: '1', type: 'text/plain', size: 20 }, attached('2', 'Workflow.pdf', PDF.length), attached('3', 'Huge.zip', 30 * 1024 * 1024)];
+  const config = { mailboxes: [{ id: 'ops', address: 'sales@business.example', provider: 'other', imap: server, smtp: server, status: 'connected', createdAt: 1, updatedAt: 1 }] };
+  const downloads = [];
+  const svc = new MailService({
+    getConfig: () => config, getPassword: () => 'pw', markStatus: () => {},
+    createImap: () => {
+      let current = null;
+      return {
+        async connect() {}, async logout() {}, close() {},
+        async list() { return [{ path: 'INBOX' }]; },
+        async getMailboxLock(p) { current = p; return { release() {} }; },
+        async search(q) { return current === 'INBOX' && q.header?.['message-id'] === ID ? [7] : []; },
+        async fetchOne(uid) { return String(uid) === '7' ? { uid, size: 40 * 1024 * 1024, envelope: { subject: 'Big' }, bodyStructure: { type: 'multipart/mixed', childNodes: nodes } } : false; },
+        async download(_uid, part) { downloads.push(part); return { content: (async function* () { yield part === '2' ? PDF : Buffer.from('x'); })() }; },
+        fetch() { throw new Error('not used'); }
+      };
+    }
+  });
+  const pdf = await svc.originalAttachment('ops', ID, 0);
+  assert.equal(pdf.name, 'Workflow.pdf');
+  assert.ok(pdf.bytes.equals(PDF));
+  await assert.rejects(svc.originalAttachment('ops', ID, 1), /over \d+ MB/, 'refused before any download');
+  await assert.rejects(svc.originalAttachment('ops', ID, 2), /attachment/);
+  assert.deepEqual(downloads, ['2'], 'only the file asked for was downloaded');
+});
+
 test('main opens it in its own app from the app\'s own folder, checked and marked, and clears the folder at quit', () => {
   // Value: protects=E3 to E5: only kinds the office takes in, the save_attachment write and outside mark before it opens, never in the office, gone at quit; fails_when=the kind check, the mark, the folder or the cleanup is dropped; why_new=owner 2026-11-05; seam=source pins (Electron's shell is not run in tests)
   const main = read('src/main/index.ts');
@@ -89,7 +118,9 @@ test('main opens it in its own app from the app\'s own folder, checked and marke
   assert.match(body, /!fromAppPage\(evt\)/, 'owner only, from the app page');
   assert.match(body, /const kind = attachmentKind\(got\.bytes, got\.name\);\s*\/\/[^\n]*\n\s*if \(!kind\)/);
   assert.match(body, /saveAttachmentFile\(\{ folder: openedAttachmentsDir\(\), name: got\.name, ending: kind\.ending, bytes: got\.bytes \}, markFromOutsideNow\)/);
-  assert.match(body, /await shell\.openPath\(path\)/);
+  // Read only before it opens: the folder is cleared at quit, so a change
+  // saved there would be lost (ship review, 2026-11-05).
+  assert.match(body, /chmodSync\(path, 0o444\);\s*const opened = await shell\.openPath\(path\);/);
   assert.match(main, /const openedAttachmentsDir = \(\): string => join\(app\.getPath\('userData'\), 'opened-attachments'\);/);
   assert.match(main, /app\.on\('will-quit', \(\) => \{ try \{ rmSync\(openedAttachmentsDir\(\), \{ recursive: true, force: true \}\); \} catch/);
   assert.match(read('src/main/attachmentSave.ts'), /export function markFromOutsideNow\(path: string\): void \{\s*if \(process\.platform === 'darwin'\) \{[\s\S]{0,200}execFileSync\('xattr'/);

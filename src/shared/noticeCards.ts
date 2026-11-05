@@ -34,14 +34,17 @@ type Card = { assignee?: unknown; humanQA?: unknown };
  * it in a row, counting back from the latest. A "Don't show me these" ends
  * the run, and so does any other way a notice was cleared.
  */
-export function gotItStreak(cards: readonly Card[], raiser: string, kind: string): number {
+export function gotItStreak(cards: readonly Card[], raiser: string, kind: string, known?: ReadonlySet<string>): number {
   const key = noticeKey(raiser, kind);
   const cleared: { at: string; reason: string }[] = [];
   for (const c of cards) {
     if (!c || !Array.isArray(c.humanQA)) continue;
     for (const e of c.humanQA as Entry[]) {
       if (!e || e.kind !== 'report' || e.dismissedBy !== 'owner' || typeof e.dismissedAt !== 'string') continue;
-      const by = typeof e.raisedBy === 'string' && e.raisedBy ? e.raisedBy : typeof c.assignee === 'string' ? c.assignee : '';
+      // The same raiser the card's clear names (askMeRouting raiserOf): a
+      // stale or mistyped raisedBy falls back to the assignee.
+      const named = typeof e.raisedBy === 'string' && e.raisedBy && (!known || known.has(e.raisedBy)) ? e.raisedBy : '';
+      const by = named || (typeof c.assignee === 'string' ? c.assignee : '');
       const k = noticeKindOf(e);
       if (!k || noticeKey(by, k) !== key) continue;
       cleared.push({ at: e.dismissedAt, reason: typeof e.dismissedReason === 'string' ? e.dismissedReason : '' });

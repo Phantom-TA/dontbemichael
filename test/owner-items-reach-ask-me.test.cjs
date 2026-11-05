@@ -73,10 +73,31 @@ test('three Got its in a row tell Michael once to ask whether to keep showing th
   assert.equal(asked().length, 1, 'on the third');
   assert.match(asked()[0].body, /"raisedBy": "nick"/);
   assert.match(asked()[0].body, /"Keep showing them" and "Stop showing them"/);
+  // A board tick between Got its keeps the record (ship review, 2026-11-05).
+  hive.refreshOwnerRequests();
   assert.equal(hive.ackReport('n4', 0), true);
-  assert.equal(asked().length, 1, 'once per member and kind');
+  assert.equal(asked().length, 1, 'once per member and kind, across a board tick');
   assert.equal(hive.ackReport('n1', 0), false, 'a cleared notice cannot be cleared again');
   assert.equal(hive.ackReport('job', 0), true, 'a scheduled job report still clears with Got it');
+  assert.equal(hive.tasks().tasks.find((c) => c.id === 'job').humanQA[0].dismissedReason, N.GOT_IT);
+});
+
+test('a failed note is asked again, and a stale raisedBy counts for the card\'s member', async (t) => {
+  // Value: protects=Michael is asked to keep showing a kind even when the first note could not be written, and the count names the same member the card does (ship review, 2026-11-05); fails_when=the key is recorded before the send, or a mistyped raisedBy splits the count; why_new=both found in review; seam=real HiveManager with its send made to fail once
+  const { hive, toMichael } = await office(t);
+  const stale = (id) => notice(id, KIND, { raisedBy: 'nicky' });
+  hive.writeTasks([stale('n1'), stale('n2'), stale('n3'), stale('n4')]);
+  const asked = () => toMichael().filter((m) => m.subject === `Notices cleared: ${KIND}`);
+  hive.ackReport('n1', 0);
+  hive.ackReport('n2', 0);
+  const send = hive.send;
+  hive.send = () => { throw new Error('the disk is full'); };
+  assert.equal(hive.ackReport('n3', 0), true, 'the clear itself stands');
+  hive.send = send;
+  assert.equal(asked().length, 0);
+  hive.ackReport('n4', 0);
+  assert.equal(asked().length, 1, 'asked on the next Got it');
+  assert.match(asked()[0].body, /"raisedBy": "nick"/, 'the card\'s member, not the unknown id');
 });
 
 test('Don\'t show me these clears the notice, teaches the member, and tells Michael', async (t) => {
@@ -91,7 +112,11 @@ test('Don\'t show me these clears the notice, teaches the member, and tells Mich
   const [note] = hive.ownerNotes.pending('nick');
   assert.match(note.text, /don't show me notices of this kind: "App Store review result"\. Stop filing them/);
   assert.equal(toMichael().filter((m) => m.subject === `Notices not needed: ${KIND}`).length, 1);
+  // Michael keeps it too, so he makes no card for that kind from Nick's report.
+  const [mine] = hive.ownerNotes.pending('god');
+  assert.match(mine.text, /don't show me notices of this kind from Nick: "App Store review result"\. Make no card for them, even when they show up in Nick's report\./);
   assert.equal(hive.skipNotice('n1', 0), false, 'once');
+  assert.equal(hive.tasks().tasks.find((c) => c.id === 'job').humanQA[0].dismissedAt, undefined, 'a refused skip leaves the job report open');
 });
 
 test('members file every item for the owner, under a bar, and Michael never leaves one in his terminal', () => {

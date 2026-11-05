@@ -68,4 +68,6 @@ test('the card is on Ask me from Michael, and no toast says it any more', () => 
   assert.doesNotMatch(events, /AUTO_DISMISS|role="status"/);
   assert.match(events, /if \(useStore\.getState\(\)\.caseStudyOpen\) void window\.cth\.caseStudySeen/, 'ready with the screen open needs no card');
   assert.match(read('src/main/caseStudy.ts'), /open\(input: CaseInput\): CaseOpen \| null \{\s*\/\/[^\n]*\n\s*this\.seen\(\);/);
+  // Only the app's own page clears the card (ship review, 2026-11-05).
+  assert.match(read('src/main/index.ts'), /ipcMain\.handle\('caseStudy:seen', \(evt\) => \{ if \(!fromAppPage\(evt\)\) return false; caseStudy\.seen\(\); return true; \}\);/);
 });

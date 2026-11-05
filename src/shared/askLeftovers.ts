@@ -80,7 +80,7 @@ export function undecidedLeftovers(e: Entry | null | undefined): number[] {
   return leftoversOf(e).filter((n) => !decided.has(n));
 }
 
-type Card = { id?: unknown; title?: unknown; assignee?: unknown; humanQA?: unknown };
+type Card = { id?: unknown; title?: unknown; assignee?: unknown; status?: unknown; humanQA?: unknown };
 
 /**
  * Cards whose answered questions hold leftovers with no decision, for
@@ -110,7 +110,7 @@ export function leftoversToDecide(cards: readonly Card[], sinceMs: number): Stuc
 }
 
 /** A "later" leftover whose time has come. */
-export interface DueLeftover { key: string; taskId: string; title: string; question: number; q: string; why: string; at: string }
+export interface DueLeftover { key: string; taskId: string; title: string; question: number; q: string; why: string; at: string; done: boolean }
 
 /** The question's own words: the part's for one of several, else the ask's. */
 function questionText(e: Entry, n: number): string {
@@ -133,7 +133,7 @@ export function dueLeftovers(cards: readonly Card[], now: number, told: Readonly
         if (r.decision !== 'later' || !r.at || Date.parse(r.at) > now) continue;
         const key = `${c.id}|${index}|${r.question}|${r.at}`;
         if (told.has(key)) continue;
-        out.push({ key, taskId: c.id as string, title: (typeof c.title === 'string' && c.title.trim()) || (c.id as string), question: r.question, q: questionText(e, r.question), why: r.why, at: r.at });
+        out.push({ key, taskId: c.id as string, title: (typeof c.title === 'string' && c.title.trim()) || (c.id as string), question: r.question, q: questionText(e, r.question), why: r.why, at: r.at, done: c.status === 'done' });
       }
     });
   }
@@ -144,6 +144,9 @@ export function dueLeftovers(cards: readonly Card[], now: number, told: Readonly
 export function leftoverDueNote(d: DueLeftover): { subject: string; body: string } {
   return {
     subject: `Leftover question due: card ${cardText(d.taskId, 60)}`,
-    body: `A question the owner did not settle on card ${cardText(d.taskId, 60)} ("${cardText(d.title)}") was kept for ${d.at}, and that time has come. The question: "${cardText(d.q, 400)}". Why it was kept for later: ${cardText(d.why, 300)}. Have the team member who asked check it against what the office knows now, then ask it again on the same card (move the card to "blocked" with the ask), or record a new decision for it on that answered question, such as "later" with a new time or "dropped" with why.`
+    body: `A question the owner did not settle on card ${cardText(d.taskId, 60)} ("${cardText(d.title)}") was kept for ${d.at}, and that time has come. The question: "${cardText(d.q, 400)}". Why it was kept for later: ${cardText(d.why, 300)}. Have the team member who asked check it against what the office knows now, then ${d.done
+      // A Done card stays done (the board guard puts it back), so the question goes on a new card.
+      ? 'ask it again on a new card, since that card is done (a "blocked" card holding the ask, assigned to that member)'
+      : 'ask it again on the same card (move the card to "blocked" with the ask)'}, or record a new decision for it on that answered question, such as "later" with a new time or "dropped" with why.`
   };
 }

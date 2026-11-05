@@ -129,6 +129,9 @@ test('moving the office takes the owner\'s questions to Michael along', async (t
   fs.mkdirSync(path.dirname(token), { recursive: true });
   fs.writeFileSync(token, '{}');
   fs.writeFileSync(path.join(oldHome, 'private', 'card-guard.json'), '{"done":["c1"]}');
+  // The leftover check's start (ask-me-leftovers.md): without it a moved office
+  // would start the check again and drop answers still waiting for a decision.
+  fs.writeFileSync(path.join(oldHome, 'private', 'leftovers-since.json'), '{"since":"2026-11-05T19:00:00.000Z"}');
 
   fs.mkdirSync(newHome, { recursive: true });
   copyOfficeData(oldHome, newHome);
@@ -141,6 +144,7 @@ test('moving the office takes the owner\'s questions to Michael along', async (t
     'with the state it had'
   );
   assert.equal(fs.readFileSync(path.join(newHome, 'private', 'card-guard.json'), 'utf8'), '{"done":["c1"]}', 'the board guard still rides along');
+  assert.equal(fs.readFileSync(path.join(newHome, 'private', 'leftovers-since.json'), 'utf8'), '{"since":"2026-11-05T19:00:00.000Z"}', 'the leftover check keeps its start');
   assert.equal(fs.existsSync(agentMcpDir(newHome, 'kelly')), false, 'mail tokens are written again at start, never copied');
   assert.ok(fs.existsSync(path.join(privateOwnerSentDir(oldHome), `${q.id}.json`)), 'the old folder stays as a backup');
 });

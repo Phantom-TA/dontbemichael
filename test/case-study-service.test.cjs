@@ -205,6 +205,12 @@ test('the page is the app\'s own draft: the first headline choice and the drafte
   assert.match(page, /<span>Harbor Bakery handled<\/span> <span class="lock"[^>]*>1,284<\/span> <span>emails<\/span>/, 'the first headline choice, in the drafted words');
   assert.match(page, /A bakery on Don(&#39;|')t Be Michael/);
   assert.match(page, /Sorts the inbox/);
+  // Save after Send, from the same screen, prints what went out, never the
+  // built in words (ship review, 2026-11-05).
+  page = '';
+  assert.equal((await svc.pdf(input)).ok, true);
+  assert.match(page, /<span>Harbor Bakery handled<\/span>/, 'Save after Send keeps the sent draft');
+  assert.match(page, /Sorts the inbox/);
   // Without a draft the page uses the built in words.
   let plain = '';
   const bare = deps({ makePdf: async (html) => { plain = html; return { ok: true, pdf: Buffer.from('%PDF') }; } });

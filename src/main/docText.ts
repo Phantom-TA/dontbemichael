@@ -279,6 +279,21 @@ function tableEnd(xml: string, from: number): number {
 /** A Word table as a markdown table, its first row as the header. A table
  *  inside a cell comes through as that cell's text. */
 function wordTable(xml: string): string {
+  // A table inside a cell becomes one paragraph of that cell's text first, so
+  // the outer table's rows and cells split cleanly (ship review, 2026-11-05).
+  const inner = /<w:tbl[\s>]/g;
+  inner.lastIndex = 1;
+  let flat = '';
+  let at = 0;
+  for (let m = inner.exec(xml); m; m = inner.exec(xml)) {
+    const end = tableEnd(xml, m.index);
+    // Raw words here: they are escaped once, when the outer cell is read.
+    const text = xml.slice(m.index, end).split('</w:p>').map((p) => oneLine(wordRuns(p, false))).filter(Boolean).join(' ');
+    flat += `${xml.slice(at, m.index)}<w:p><w:r><w:t>${xmlText(text)}</w:t></w:r></w:p>`;
+    at = end;
+    inner.lastIndex = end;
+  }
+  xml = flat + xml.slice(at);
   const rows = xml.split('</w:tr>')
     .map((r) => r.split('</w:tc>').slice(0, -1).map((c) =>
       c.split('</w:p>').map((p) => oneLine(wordRuns(p))).filter(Boolean).join(' ').replace(/\|/g, '\\|')))
@@ -292,14 +307,23 @@ function wordTable(xml: string): string {
 /** A paragraph's text, keeping tabs and line breaks. `<w:t>` is a run of text;
  *  `<w:tab w:val=...>` (a tab STOP, not a tab character) and `<w:delText>`
  *  (tracked deletions) never match. */
-function wordRuns(p: string): string {
+function wordRuns(p: string, escape = true): string {
   let line = '';
   for (const m of p.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>|<w:tab\/>|<w:(?:br|cr)(?:\s[^>]*)?\/>/g)) {
-    if (m[1] !== undefined) line += decodeXml(m[1]);
+    if (m[1] !== undefined) line += escape ? mdText(decodeXml(m[1])) : decodeXml(m[1]);
     else line += m[0].startsWith('<w:tab') ? '\t' : '\n';
   }
   return line;
 }
+
+/** A Word document's own text as plain words in markdown: its brackets and
+ *  backticks are escaped, so a document from outside the office can never
+ *  render a link whose words hide where it goes, or a file chip (ship review,
+ *  2026-11-05). Only the headings, lists and tables this reader writes are live. */
+const mdText = (s: string): string => s.replace(/[\\`[\]]/g, (c) => `\\${c}`);
+
+/** Text put back inside `<w:t>`, as Word writes it. */
+const xmlText = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const oneLine = (s: string): string => s.replace(/\s*\n\s*/g, ' ').trim();
 

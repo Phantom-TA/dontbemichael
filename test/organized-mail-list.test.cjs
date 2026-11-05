@@ -126,7 +126,7 @@ test('a reset erases the list and its archive, and a home move takes both', () =
   // Value: protects=a reset leaves no senders or subjects behind, and a moved office keeps its list; fails_when=either file is missing from a hard list; why_new=new files; seam=source pins
   const { PRIVATE_ENTRIES } = loadTs('src/main/factoryReset.ts');
   for (const n of [O.ORGANIZED_FILE, O.ORGANIZED_ARCHIVE_DIR]) assert.ok(PRIVATE_ENTRIES.includes(n), n);
-  assert.match(read('src/main/homeFolder.ts'), /'organized\.jsonl', 'organized-archive'\]/);
+  assert.match(read('src/main/homeFolder.ts'), /'organized\.jsonl', 'organized-archive'[,\]]/);
 });
 
 test('the list reads its span, everyone\'s or one member\'s, newest first', async () => {
