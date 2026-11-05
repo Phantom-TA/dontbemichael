@@ -69,7 +69,7 @@ mailbox) never goes through `read`, so it gets no link and no chip. Out of scope
 | E1 (owner) | Send on approval card shows the email it answers | Card shows the draft only | Chip from the proposal's reply record, no agent change | approved (Add) | Owner D3 = Add, 2026-10-29 |
 | E2 (owner) | Open in Gmail | none | Button on the email tab and its error state, Gmail and Google Workspace mailboxes only | approved (Add) | Owner D4 = Add, 2026-10-29 |
 | E3 (owner) | Whole conversation in the tab | none | Earlier messages, collapsed | deferred | Owner D5 = Defer, 2026-10-29; TODOS.md |
-| E4 (owner) | Open or save attachments | none | Opening and saving deferred | deferred | Owner D6 = Defer, 2026-10-29; TODOS.md |
+| E4 (owner) | Open or save attachments | none | Opening and saving deferred | deferred, then open built | Owner D6 = Defer, 2026-10-29; TODOS.md. Open built 2026-11-05 on the owner's answer (docs/designs/source-attachments.md D1); save still deferred |
 | E4-list (owner) | Attachment names and sizes on the tab | none | Listed, not openable | approved | Part of the core tab; D6's Defer option text: "Names and sizes shown; opening is a TODO" |
 | R1 (owner) | Opening an email in the office never changes the mailbox (never marks it read, moves or flags it) | n/a | Read only: read only folder lock, PEEK fetch | approved | Owner D7 = A, 2026-10-29 |
 | DOC (owner) | Plan and CEO summary versions | n/a | approve | approved | Owner D8 = A, 2026-10-29; R2 and R5 stay open for eng review |

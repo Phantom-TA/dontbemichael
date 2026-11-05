@@ -9,7 +9,7 @@ import { execFile, spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync,
   unlinkSync, mkdirSync, renameSync, createWriteStream, copyFileSync, lstatSync,
-  readlinkSync, symlinkSync, realpathSync, watch as watchFs
+  readlinkSync, symlinkSync, realpathSync, chmodSync, watch as watchFs
 } from 'node:fs';
 import { promises as fsPromises } from 'node:fs';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
@@ -21,7 +21,8 @@ import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath, 
 import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { extractDocumentTextApart } from './docTextProcess';
-import { AttachmentSaveError, handOverAttachment } from './attachmentSave';
+import { AttachmentSaveError, handOverAttachment, markFromOutsideNow, saveAttachmentFile } from './attachmentSave';
+import { attachmentKind } from '../shared/attachmentKind';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
 import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, jobsAsking, knowledgeNoticeDue, michaelFoundations, namedFolders, readFoldersFor, sectionFor, settledAnswers, type FoundationId, type FoundationJob } from '../shared/foundations';
@@ -144,7 +145,7 @@ import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
 import * as integrations from './integrations';
 import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, classifyMailError, type AddMailboxInput } from './mail';
-import { EMAIL_IPC, gmailMessageUrl, parseEmailHref, type OriginalFailure, type OriginalResult } from '../shared/emailLink';
+import { EMAIL_IPC, gmailMessageUrl, parseEmailHref, type OpenAttachmentResult, type OriginalFailure, type OriginalResult } from '../shared/emailLink';
 import { fetchableUrl, frameNavigationAllowed, remotePictureUrls } from '../shared/emailFrame';
 import { fetchPictures } from './emailPictures';
 import { MailApprovals } from './mailApprovals';
@@ -1336,8 +1337,8 @@ function attachmentFolder(agentId: string): string | undefined {
 }
 
 /** A document's text, read in a process of its own. Null when it can't be read. */
-async function documentText(path: string, limitMs?: number): Promise<string | null> {
-  const r = await extractDocumentTextApart(path, { file: process.execPath, args: [docTextCliPath()], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }, limitMs);
+async function documentText(path: string, limitMs?: number, display = false): Promise<string | null> {
+  const r = await extractDocumentTextApart(path, { file: process.execPath, args: [docTextCliPath()], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }, limitMs, display);
   return r.kind === 'text' ? r.text : null;
 }
 
@@ -5521,7 +5522,8 @@ function askFilePlace(root: string, real: string, path: string): { place: string
  *  again here; the renderer's earlier verdict never decides. */
 ipcMain.handle('fs:readAskFile', async (_evt, p: unknown, who: unknown) => {
   if (!askFilePathOk(p)) return { ok: false, error: 'not found' };
-  const r = await readAskFile(p, askFileRoots(who), (path) => documentText(path));
+  // Shown as markdown in a file tab: the document's own text is escaped there.
+  const r = await readAskFile(p, askFileRoots(who), (path) => documentText(path, undefined, true));
   if (!r.ok) {
     if (r.error !== 'not found') console.warn(`[fs:readAskFile] ${r.error}: ${p}`);
     return r;
@@ -6351,6 +6353,10 @@ ipcMain.handle('owner:read', (_evt, ids: unknown) => {
 });
 ipcMain.handle('owner:nudge', (_evt, id: unknown) => ({ ok: typeof id === 'string' && hive.ownerRemind(id, 'nudge') }));
 ipcMain.handle('owner:dockVisible', (_evt, on: unknown) => { ownerDockVisible = on === true; return { ok: true }; });
+// It writes the owner's word into a member's memory, so only the app's own page may send it.
+ipcMain.handle('hive:skipNotice', (evt, taskId: unknown, index: unknown) => ({
+  ok: fromAppPage(evt) && typeof taskId === 'string' && Number.isInteger(index) && hive.skipNotice(taskId, index as number)
+}));
 ipcMain.handle('hive:ackReport', (_evt, taskId: unknown, index: unknown) => ({
   ok: typeof taskId === 'string' && Number.isInteger(index) && hive.ackReport(taskId, index as number)
 }));
@@ -7581,7 +7587,6 @@ const caseStudy = new CaseStudyService({
   fetchLogo: (site) => readSiteLogo(site, { decode: decodeCaseLogo, drawSvg: drawCaseSvg }),
   decodeLogo: decodeCaseLogo,
   drawSvg: drawCaseSvg,
-  readFile: (path, max) => { try { return statSync(path).size <= max ? readFileSync(path) : null; } catch { return null; } },
   makePdf: caseStudyPdf,
   mailSend: (mailbox, input) => mailService.send('owner:case-study', mailbox, input),
   senders: () => mailService.ownerSenders(),
@@ -7592,6 +7597,7 @@ const caseStudy = new CaseStudyService({
   paper: () => (['US', 'CA'].includes(app.getLocaleCountryCode().toUpperCase()) ? 'letter' : 'a4'),
   appVersion: app.getVersion(),
   office: pulseOffice,
+  onWaitingChange: () => { try { liveWebContents()?.send('caseStudy:waiting'); } catch { /* window gone */ } },
   onReady: () => {
     try { liveWebContents()?.send('caseStudy:ready'); } catch { /* window gone */ }
     // A desktop notice only while the window is in the background: in front,
@@ -7611,20 +7617,15 @@ const caseStudy = new CaseStudyService({
 });
 ipcMain.handle('caseStudy:prepare', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.prepare(i) : { state: 'idle' }; });
 ipcMain.handle('caseStudy:status', () => caseStudy.status());
+ipcMain.handle('caseStudy:seen', (evt) => { if (!fromAppPage(evt)) return false; caseStudy.seen(); return true; });
 ipcMain.handle('caseStudy:open', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.open(i) : null; });
 ipcMain.handle('caseStudy:draft', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.draft(i) : { ok: false, reason: 'failed' }; });
-ipcMain.handle('caseStudy:logo', (_evt, fresh: unknown) => caseStudy.logo(fresh === true));
-ipcMain.handle('caseStudy:pickLogo', async () => {
-  const win = BrowserWindow.getFocusedWindow();
-  const opts = { properties: ['openFile' as const], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }] };
-  const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
-  if (res.canceled || !res.filePaths[0]) return { ok: false, reason: 'cancelled' };
-  return caseStudy.pickedLogo(res.filePaths[0]);
-});
-ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, edits: unknown, openMailApp: unknown) => {
+// The owner can't change the case study (case-study-tab.md, D2 and D3): no
+// logo pick, and Save and Send carry no words; main prints its own draft.
+ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, openMailApp: unknown) => {
   const i = caseInput(input);
   if (!i) return { ok: false, kind: 'failed' };
-  const out = await caseStudy.pdf(i, edits);
+  const out = await caseStudy.pdf(i);
   if (!out.ok) return out;
   const win = BrowserWindow.getFocusedWindow();
   const opts = { defaultPath: join(app.getPath('documents'), 'case-study.pdf'), filters: [{ name: 'PDF', extensions: ['pdf'] }] };
@@ -7639,9 +7640,9 @@ ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, edits: unknown,
   if (openMailApp === true) { const url = caseStudy.mailto(i); if (url) void shell.openExternal(url).catch(() => undefined); }
   return { ok: true, path: paths.pdf };
 });
-ipcMain.handle('caseStudy:send', (_evt, input: unknown, edits: unknown, mailbox: unknown, permission: unknown) => {
+ipcMain.handle('caseStudy:send', (_evt, input: unknown, mailbox: unknown, permission: unknown) => {
   const i = caseInput(input);
-  return i ? caseStudy.send(i, edits, mailbox, permission) : { ok: false, kind: 'failed', reason: '' };
+  return i ? caseStudy.send(i, mailbox, permission) : { ok: false, kind: 'failed', reason: '' };
 });
 ipcMain.handle('caseStudy:dismissInvite', () => pulse.caseStudyInviteDone());
 ipcMain.handle('runCompare:lastRuns', (_evt, agentId: unknown) => (typeof agentId === 'string' ? runCompare.lastRuns(agentId) : []));
@@ -7749,6 +7750,42 @@ ipcMain.handle(EMAIL_IPC.pictures, async (evt, href: unknown): Promise<{ picture
   const email = mailService.keptOriginal(ref.mailbox, ref.messageId);
   if (!email?.html) return { pictures: {}, failed: 0 };
   return fetchPictures(remotePictureUrls(email.html).map((raw) => ({ raw, url: fetchableUrl(raw) })));
+});
+/** Where the owner's opened attachments land: the app's own folder, never the
+ *  office, so no team member reads them; cleared when the app quits
+ *  (docs/designs/source-attachments.md, E4). */
+const openedAttachmentsDir = (): string => join(app.getPath('userData'), 'opened-attachments');
+app.on('will-quit', () => { try { rmSync(openedAttachmentsDir(), { recursive: true, force: true }); } catch { /* next quit */ } });
+/** The owner opens one of an email's attachments from its tab: fetched as the
+ *  tab fetched the email, held to save_attachment's size cap and kind check,
+ *  written with its safe write (marked as from outside) and opened in its own
+ *  app. Anything else stays in the mail app (E3). */
+ipcMain.handle(EMAIL_IPC.openAttachment, async (evt, href: unknown, index: unknown): Promise<OpenAttachmentResult> => {
+  const ref = typeof href === 'string' ? parseEmailHref(href) : null;
+  if (!ref || !fromAppPage(evt) || typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index > 500) {
+    return { ok: false, reason: 'broken', gmailUrl: null };
+  }
+  const gmailUrl = gmailUrlFor(ref.mailbox, ref.messageId);
+  try {
+    const got = await mailService.originalAttachment(ref.mailbox, ref.messageId, index);
+    const kind = attachmentKind(got.bytes, got.name);
+    // No name or Message-ID in the log (the office log rule, D14).
+    if (!kind) { console.log(`[mail] owner-attachment ${ref.mailbox} kind`); return { ok: false, reason: 'kind', gmailUrl }; }
+    mkdirSync(openedAttachmentsDir(), { recursive: true });
+    // Marked as from outside before it opens, so Word or Excel open it in Protected View.
+    const path = saveAttachmentFile({ folder: openedAttachmentsDir(), name: got.name, ending: kind.ending, bytes: got.bytes }, markFromOutsideNow);
+    // Read only: the folder is cleared at quit, so a change saved here would be
+    // lost; the app it opens in asks to save a copy elsewhere (ship review, 2026-11-05).
+    chmodSync(path, 0o444);
+    const opened = await shell.openPath(path);
+    console.log(`[mail] owner-attachment ${ref.mailbox} ${kind.id} ${got.bytes.length} ${opened ? 'open-failed' : 'ok'}`);
+    return opened ? { ok: false, reason: 'failed', gmailUrl } : { ok: true };
+  } catch (e) {
+    const err = classifyMailError(e);
+    const tooBig = err.kind === 'refused' && /over|too-big/.test(err.message);
+    console.log(`[mail] owner-attachment ${ref.mailbox} ${tooBig ? 'too-big' : 'failed'}`);
+    return { ok: false, reason: tooBig ? 'too-big' : 'failed', gmailUrl };
+  }
 });
 ipcMain.handle(EMAIL_IPC.cancel, (evt, href: unknown): void => {
   const ref = typeof href === 'string' ? parseEmailHref(href) : null;

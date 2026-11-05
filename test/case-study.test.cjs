@@ -95,17 +95,6 @@ test('a fresh screen starts from the draft, built in headline words and role des
   assert.equal(cs.startingEdits(f, { headlines: {}, team: {} }, 'away').headline.figure, 'away');
 });
 
-test("a number typed into the headline's words is caught; elsewhere it is the owner's (D20)", () => {
-  const f = facts();
-  const typed = { headline: { figure: 'email', before: 'We saved 20 hours and handled', after: 'emails' }, about: 'Baking since 1998', quote: 'I stopped at 5 am', team: { pam: 'Sorts mail' }, subtitle: '', why: '' };
-  const r = cs.cleanEdits(f, typed);
-  assert.equal(r.headlineNumber, true);
-  assert.equal(r.edits.about, 'Baking since 1998');
-  assert.equal(cs.cleanEdits(f, { ...typed, headline: { figure: 'email', before: 'We handled', after: 'emails' } }).headlineNumber, false);
-  assert.equal(cs.cleanEdits(f, { ...typed, headline: { figure: 'sent', before: 'a', after: 'b' } }).edits.headline, null, 'a figure the period lacks is dropped');
-  assert.equal(cs.cleanEdits(f, null).edits.headline, null);
-});
-
 test('the prompt reads only the allowed facts; the name is out with D8 off, the CEO always', () => {
   const p = cs.draftPrompt(facts());
   assert.match(p, /Harbor Bakery/);
@@ -256,7 +245,6 @@ test("the subtitle and the closing must name Don't Be Michael; every built in he
     }
     assert.match(cs.builtInSubtitle(fl), /Don't Be Michael/);
     assert.match(cs.builtInWhy(fl), /Don't Be Michael/);
-    assert.equal(cs.cleanEdits(fl, cs.startingEdits(fl, { headlines: {}, team: {} })).headlineNumber, false, `${lang}: a built in headline never trips the number check`);
   }
   assert.match(page(f), /Don't Be Michael case study|Don&#39;t Be Michael case study/, 'the label above the headline names the product');
 });

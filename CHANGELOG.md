@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [0.3.6] (2026-11-05)
+
+### Added
+- **Anything a team member finds for you reaches Needs you.** Things only you can do wait on a card until you press Done, and notices with real stakes (money, a deadline, a customer waiting, a platform rejecting something, security or legal) show as notices. Routine email stays with the team. "Don't show me these" stops a kind, and after three Got its of one kind Michael asks whether to keep showing them.
+- **A question you leave open is never just dropped.** The team member who asked decides each one: drop it, settle it, ask again now, or ask again later, however far off. A later one comes back at its time, even after the card is done, and "Not yet" brings a question back.
+- **Open the original a document was made from.** Team members name a document's source, a file tab turns full paths into chips that open, and the email tab opens an attachment in its own app, read only.
+- **Minimize the Needs you column** to a slim strip with the count, and the top bar pill hides while the column shows.
+- **A new version and a ready case study are Michael's cards on Needs you,** instead of popups that could be missed.
+
+### Changed
+- The case study opens as a tab, and you can't change it; you send or save it as the team wrote it.
+- A Word document keeps its headings, lists and tables, in a file tab and for the team.
+- A change you ask for on something that leaves the office comes back to you before it goes.
+- A card about an email links that email, even when a teammate did the work, and Michael fixes any card that doesn't, or that offers to send your changes without showing you again.
+- A card that points to a file is a short summary: the result, up to three figures, what needs you, then the file. Amounts read as plain text.
+
+### Fixed
+- No more "Data Access Blocked" notice from macOS when the office starts or you make a case study.
+- A message preview never cuts a character in half (#558, with thanks to @dhruvprmr).
+- Knowledge search counts a repeated word once and returns a passage once, not twice (#682, with thanks to @Phantom-TA).
+
 ## [0.3.5] (2026-11-03)
 
 ### Added

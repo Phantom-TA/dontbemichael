@@ -171,7 +171,9 @@ shows for the period, spend included. Nothing on the page is an estimate, and th
 writes no customer names, email subjects or bodies, file names or anything from a team member's
 memory.
 
-- **Nothing leaves unless you press Send.** You see the whole page and can edit every word first.
+- **Nothing leaves unless you press Send.** You see the whole page first. The app writes it from your
+  office's own figures for the last 30 days, and its words can't be changed by hand, so nothing on it
+  is typed in beside the counts. If you don't want it published, don't send it.
   Send goes from one of your own connected mailboxes to hello@dontbemichael.com, with the page
   attached as a web page (HTML) and a PDF copy, and only after you tick that Don't Be Michael may publish it on its website and
   will take it down if you ask. The email is in your Sent folder like any other.
@@ -179,8 +181,8 @@ memory.
   of the website in your company profile and the logo image it names, once, over HTTPS, from public
   addresses only, and keeps the logo in your office's private folder. That website sees an ordinary
   web request from your computer. It is the one time the app itself reads a web page; everything
-  else on the internet goes through your Research team member. Turn off **Show the business name**
-  and no logo is used.
+  else on the internet goes through your Research team member. The page always shows your business
+  name, logo and website.
 - A case study is a submission you choose to make, not usage data: the app does not tell us that
   you opened the screen, and nothing is sent in the background.
 

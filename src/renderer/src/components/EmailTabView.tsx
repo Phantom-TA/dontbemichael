@@ -44,6 +44,18 @@ export function EmailTabView({ tab }: { tab: FileTab }) {
   const [load, setLoad] = useState<Load>({ status: 'reading' });
   const [tries, setTries] = useState(0);
   const [pics, setPics] = useState<Pictures>({ status: 'hidden' });
+  // Each attachment the owner opened: opening, or why it did not open
+  // (docs/designs/source-attachments.md). Whether it opens is known only once
+  // main has fetched and checked it.
+  const [att, setAtt] = useState<Record<number, 'opening' | 'kind' | 'too-big' | 'failed'>>({});
+  const openAttachment = (i: number): void => {
+    if (!href || att[i] === 'opening') return;
+    setAtt((m) => ({ ...m, [i]: 'opening' }));
+    void window.cth.mailOpenAttachment(href, i).then(
+      (r) => setAtt((m) => { const next = { ...m }; if (r.ok) delete next[i]; else next[i] = r.reason === 'kind' || r.reason === 'too-big' ? r.reason : 'failed'; return next; }),
+      () => setAtt((m) => ({ ...m, [i]: 'failed' }))
+    );
+  };
   const title = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -141,10 +153,24 @@ export function EmailTabView({ tab }: { tab: FileTab }) {
         {e.attachments.length > 0 && (
           <ul style={{ listStyle: 'none', margin: 0, padding: '10px 20px 14px', borderTop: '1px solid var(--cth-line)', background: 'var(--cth-card)' }}>
             {e.attachments.map((a, i) => (
-              <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, lineHeight: '22px', color: 'var(--cth-ink-2)' }}>
-                <span aria-hidden style={{ color: 'var(--cth-ink-3)', display: 'grid' }}><Icon name="file" size={0.875} /></span>
-                <span dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-                <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{sizeWords(a.size)}</span>
+              <li key={i} style={{ display: 'flex', flexDirection: 'column', fontSize: 12, lineHeight: '22px', color: 'var(--cth-ink-2)' }}>
+                <button
+                  type="button"
+                  className="cth-email-attachment"
+                  onClick={() => openAttachment(i)}
+                  disabled={att[i] === 'opening'}
+                  aria-label={t('emailTab.attachmentOpen', { name: a.name })}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '0 6px', margin: '0 -6px', border: 0, borderRadius: 'var(--cth-r-sm)', background: 'transparent', cursor: att[i] === 'opening' ? 'default' : 'pointer', fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-2)', textAlign: 'start' }}
+                >
+                  <span aria-hidden style={{ color: 'var(--cth-ink-3)', display: 'grid' }}><Icon name="file" size={0.875} /></span>
+                  <span dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--cth-indigo-text)' }}>{a.name}</span>
+                  <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{att[i] === 'opening' ? t('emailTab.attachmentOpening') : sizeWords(a.size)}</span>
+                </button>
+                {att[i] && att[i] !== 'opening' && (
+                  <span role="status" style={{ paddingInlineStart: 22, fontSize: 11.5, lineHeight: '16px', color: 'var(--cth-ink-3)' }}>
+                    {t(att[i] === 'kind' ? 'emailTab.attachmentKind' : att[i] === 'too-big' ? 'emailTab.attachmentTooBig' : 'emailTab.attachmentFailed')}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

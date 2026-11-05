@@ -248,11 +248,14 @@ export function FileChip({ path, check, who, onGone }: {
  * is looked up by name here, once per set of names; one found in the office's
  * folders is drawn as its file's chip (owner, 2026-10-19).
  */
-export function FileText({ source, who, checks: given, variant = 'card' }: {
+export function FileText({ source, who, checks: given, variant = 'card', root, baseRel }: {
   source: string;
   who: Who;
   checks?: Checks;
   variant?: MarkdownVariant;
+  /** A document in a file tab: its folder and name, so pictures beside it show. */
+  root?: string;
+  baseRel?: string;
 }) {
   const names = useMemo(() => askFileNames(source), [source]);
   const nameKey = names.join('\n');
@@ -318,5 +321,5 @@ export function FileText({ source, who, checks: given, variant = 'card' }: {
       onGone={onGone}
     />;
   }, [checks, gone, raisedBy, assignee, onGone]);
-  return <MarkdownPreview source={shown} variant={variant} fileChip={paths.length ? fileChip : undefined} placeLinks folderTeam={team} />;
+  return <MarkdownPreview source={shown} variant={variant} root={root} baseRel={baseRel} fileChip={paths.length ? fileChip : undefined} placeLinks folderTeam={team} />;
 }

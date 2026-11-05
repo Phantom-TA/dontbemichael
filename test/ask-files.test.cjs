@@ -252,7 +252,7 @@ test('FileText looks names up and Michael names files by full path with their en
   const main = fs.readFileSync(path.resolve(__dirname, '../src/main/index.ts'), 'utf8');
   assert.match(main, /ipcMain\.handle\('fs:askFileNames'[\s\S]{0,600}askFileByName\(n, roots\)/);
   const hive = fs.readFileSync(path.resolve(__dirname, '../src/main/hive.ts'), 'utf8');
-  assert.match(hive, /name each file by its full path, with its file ending, in backticks, so the owner can open it/);
+  assert.match(hive, /put only a file in backticks, by its full path with its file ending, so the owner can open it/);
 });
 
 test('a full folder path in a code span is a chip that shows the folder, and stays text when the office does not hold it', async (t) => {

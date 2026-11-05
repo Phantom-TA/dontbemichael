@@ -145,7 +145,8 @@ test('Michael writes options and parts, and team members settle what the owner l
   assert.match(hive, /When you offer choices, put them in "options" on the ask, as \[\{"label": "\.\.\."\}\], with "recommended": true on the one you recommend, and leave them out of the text\./);
   assert.match(hive, /An ask has options or parts, never both, and the owner may answer only some of the parts\./);
   assert.match(hive, /make the first option "Done, I did it"/);
-  assert.match(hive, /When the owner's answers come back through \$\{michael\} with questions left unanswered, settle what you can yourself and file again only for what you still need\./);
+  // Since 2026-11-05 (ask-me-leftovers.md) each one left open gets a decision, never just left.
+  assert.match(hive, /When the owner's answers come back through \$\{michael\} with questions left unanswered or answered "Not yet", decide each one/);
   assert.doesNotMatch(hive, /Give each option its own bullet or number/);
 });
 
@@ -210,22 +211,23 @@ test('the list reminder keeps its start across restarts, so a list written befor
 // Owner, 2026-10-29 (GreenWorld reply card): "Send with my changes" gave no
 // place to say what the changes were. An option that needs the owner's words
 // carries a short question; the box asks it once that option is picked, and
-// Reply waits for an answer.
+// Reply waits for an answer. Since 2026-11-04 Michael's example reads "Change
+// it, show me again" (docs/designs/ask-me-changes-come-back.md).
 test('an option that needs the owner\'s words asks for them, and Reply waits for them', () => {
   const ask = {
     q: '**Dennis replied, and Dwight needs your call on the answer.**',
     options: [
       { label: 'Send as written', recommended: true },
-      { label: 'Send with my changes', note: '  What should change?\n ' },
+      { label: 'Change it, show me again', note: '  What should change?\n ' },
       { label: "Don't reply, close it", note: '' }
     ]
   };
   const shape = readAskShape(ask);
   assert.equal(shape.kind, 'choice');
-  assert.deepEqual(shape.options[1], { label: 'Send with my changes', note: 'What should change?' });
+  assert.deepEqual(shape.options[1], { label: 'Change it, show me again', note: 'What should change?' });
   assert.equal(shape.options[2].note, undefined, 'an empty note is no note');
   assert.equal(readAskShape({ q: 'x', options: [{ label: 'a', note: 'x'.repeat(300) }] }).options[0].note.length, 120);
-  assert.equal(labeledAnswer(shape, { pick: 1, note: 'Drop the second paragraph' }), 'Picked: Send with my changes. Note: Drop the second paragraph');
+  assert.equal(labeledAnswer(shape, { pick: 1, note: 'Drop the second paragraph' }), 'Picked: Change it, show me again. Note: Drop the second paragraph');
 
   const tab = read('src/renderer/src/components/AskMeTab.tsx');
   assert.match(tab, /const pickedNote = shape\.kind === 'choice' && pk\.pick !== undefined \? shape\.options\[pk\.pick\]\?\.note : undefined;/);

@@ -57,7 +57,11 @@ test('main moves a refused install to the manual download, and the toast keeps w
   assert.match(branch, /state: 'available-manual', version, notes, reason: message, installFailed: true,/);
   assert.match(branch, /downloadUrl: installerUrl\(version, process\.platform, process\.arch\)/);
   assert.match(branch, /failPendingRestart\(message\);\s*return;/);
-  const toast = read('src/renderer/src/components/UpdateToast.tsx');
-  assert.match(toast, /if \(!res\.ok\) \{ setStatus\(\(cur\) => cur \?\? prev\); setBusy\(false\); \}/);
-  assert.doesNotMatch(toast, /setStatus\(prev\)/);
+  // Michael's update card keeps no copy of the old status: it shows the feed,
+  // where each actionable push from main replaces the last (owner, 2026-11-04).
+  const card = read('src/renderer/src/components/UpdateCard.tsx');
+  assert.match(card, /if \(!res\.ok\) setRestarting\(false\);/);
+  assert.doesNotMatch(card, /setStatus|prev\b/);
+  const feed = read('src/renderer/src/shell/useNeedsYou.ts');
+  assert.match(feed, /const need = updateNeed\(s as Parameters<typeof updateNeed>\[0\]\);\s*if \(need\) publish\(\{ update: need \}\);/);
 });

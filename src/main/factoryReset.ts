@@ -44,6 +44,7 @@ export const PRIVATE_ENTRIES = [
   'mailbox-grant-notes.json',
   'house-rules-seen.json',
   'ask-list-since.json',
+  'leftovers-since.json',
   'research-stamp.key',
   'research-threads.json',
   'research-outbox',
@@ -89,6 +90,8 @@ export const APP_DATA_ENTRIES = [
   'mail-send-journal.json',
   'broker-write-journal.json',
   'mail-proposals.json',
+  // Attachments the owner opened from an email tab (source-attachments.md).
+  'opened-attachments',
   'trigger-history.json',
   'owner-dock-keys.json',
   'slack-reply.json',

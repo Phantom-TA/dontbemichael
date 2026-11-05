@@ -49,8 +49,15 @@ export type OriginalResult =
   | { ok: true; email: OriginalEmail; gmailUrl: string | null }
   | { ok: false; reason: OriginalFailure; gmailUrl: string | null };
 
-/** The two owner only calls main answers for the email tab. */
-export const EMAIL_IPC = { original: 'mail:original', pictures: 'mail:originalPictures', cancel: 'mail:originalCancel' } as const;
+/** The owner only calls main answers for the email tab. */
+export const EMAIL_IPC = { original: 'mail:original', pictures: 'mail:originalPictures', cancel: 'mail:originalCancel', openAttachment: 'mail:openAttachment' } as const;
+
+/** Opening one of an email's attachments from its tab (source-attachments.md):
+ *  opened in its own app, or why not. `kind`: not a kind the office takes in
+ *  (a program, a script, an archive, a web page, a file with macros). */
+export type OpenAttachmentResult =
+  | { ok: true }
+  | { ok: false; reason: 'kind' | 'too-big' | 'failed' | 'broken'; gmailUrl: string | null };
 
 const MAILBOX_ID = /^[a-z0-9][a-z0-9-]{0,59}$/;
 

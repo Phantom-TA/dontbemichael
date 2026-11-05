@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore, type Agent } from '@/store/store';
 import type { HarnessConfig } from '@/store/config';
@@ -9,6 +9,7 @@ import { useRestoreTeam } from '@/hooks/useRestoreTeam';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useNeedsYouCount } from './useNeedsYou';
 import { focusNeedsYouPill } from './rightColumn';
+import { MinimizeColumnButton } from './NeedsYouRail';
 
 /**
  * The Needs you board (branding/DESIGN.md 7.6 and 7.8): the questions Michael
@@ -22,6 +23,14 @@ export function NeedsYouBoard() {
   const godName = useResolvedGodName();
   const count = useNeedsYouCount();
   const [closeHover, setCloseHover] = useState(false);
+  // Michael's paper plane lands top right; with the pill hidden while the
+  // column shows, this count catches it (needs-you-pill-hides.md, E3).
+  const [bump, setBump] = useState(0);
+  useEffect(() => {
+    const on = () => setBump((n) => n + 1);
+    window.addEventListener('cth:needs-you-ping', on);
+    return () => window.removeEventListener('cth:needs-you-ping', on);
+  }, []);
   const close = () => { useStore.getState().setRightColumn('closed'); focusNeedsYouPill(); };
   // With Michael stopped nothing here is routed (owner, 2026-10-30): say so,
   // so an answer is not given into a silence.
@@ -38,13 +47,15 @@ export function NeedsYouBoard() {
           {t('shell.needsYou')}
         </h2>
         {count > 0 && (
-          <span style={{
+          <span key={bump} className={bump ? 'cth-needs-bump' : undefined} style={{
             minWidth: 20, height: 20, padding: '0 6px', borderRadius: 'var(--cth-r-pill)', display: 'inline-grid', placeItems: 'center',
             background: 'var(--cth-coral-strong)', color: 'var(--cth-on-coral)',
             fontFamily: 'var(--cth-font-mono)', fontSize: 11, fontWeight: 600
           }}>{count}</span>
         )}
         <InfoTip text={t('shell.needsYouInfo', { godName })} />
+        {/* Minimize to a slim strip with the count (needs-you-minimize.md, D2). */}
+        <span style={{ marginInlineStart: 'auto', display: 'inline-flex' }}><MinimizeColumnButton size={26} /></span>
         {count === 0 && <button
           onClick={close}
           onMouseEnter={() => setCloseHover(true)}
@@ -52,7 +63,7 @@ export function NeedsYouBoard() {
           aria-label={t('panel.close')}
           title={t('panel.close')}
           style={{
-            marginInlineStart: 'auto', width: 24, height: 24, padding: 0, border: 'none', borderRadius: 'var(--cth-r-sm)',
+            width: 24, height: 24, padding: 0, border: 'none', borderRadius: 'var(--cth-r-sm)',
             cursor: 'pointer',
             background: closeHover ? 'var(--cth-neutral-soft)' : 'transparent',
             color: closeHover ? 'var(--cth-ink-2)' : 'var(--cth-ink-3)',

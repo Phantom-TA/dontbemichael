@@ -46,13 +46,13 @@ test('cancelling the quit warning is wired to the restart handler', () => {
 });
 
 test('the renderer restores its notice when the restart reports a cancel', () => {
-  const src = read('src/renderer/src/components/UpdateToast.tsx');
+  // Michael's update card on Ask me holds the restart now (owner, 2026-11-04).
+  const src = read('src/renderer/src/components/UpdateCard.tsx');
   const fn = src.slice(src.indexOf('const restart = async'));
   const body = fn.slice(0, fn.indexOf('\n  };'));
-  assert.ok(/if \(!res\.ok\) \{ setStatus\(\(cur\) => cur \?\? prev\); setBusy\(false\); \}/.test(body),
-    'a cancelled restart has to put the notice back AND clear busy — clearing one '
-    + 'without the other leaves either a dead button or no way to retry; a status '
-    + 'main pushed meanwhile (a refused install) wins over the old one');
+  assert.ok(/if \(!res\.ok\) setRestarting\(false\);/.test(body) && /catch \{ setRestarting\(false\); \}/.test(body),
+    'a cancelled or failed restart has to bring the card back, or there is no way '
+    + 'to retry; the card shows whatever status main pushed meanwhile');
 });
 
 test('a re-entry guard refuses a duplicate restart instead of firing quitAndInstall twice', () => {

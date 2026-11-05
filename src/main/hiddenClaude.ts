@@ -259,6 +259,13 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
           // Last, so nothing passed in can point the check back at ~/.claude.
           ...(isolated?.env ?? {}),
           ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
+          // Claude in Chrome off: these checks never use a browser. Without it a
+          // settings folder that never said "off" (the isolated one, or an
+          // owner's that never set it) makes Claude Code look for its extension
+          // in Chrome's own folder, and macOS shows "Data Access Blocked" for
+          // the app (case study, 2026-11-04). An env var, not --no-chrome, so an
+          // older Claude Code that lacks the flag still starts.
+          CLAUDE_CODE_ENABLE_CFC: '0',
         } as Record<string, string>,
       });
     } catch (e) {

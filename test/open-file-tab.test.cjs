@@ -209,13 +209,13 @@ test('CSV and TSV do not invent final records for empty files or trailing line e
 test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, watchers dropped on reload', () => {
   // Value: protects=the owner's tab and column behavior and the watcher cap; fails_when=the column hides on a file tab, the bottom bar shows on one, a restart lands on a file tab, or watchers leak; why_new=all new; seam=none
   const store = read('src/renderer/src/store/store.ts');
-  assert.match(store, /if \(view === 'file'\) \{ set\(\{ floorView: view \}\); return; \}/, 'a file tab is never written to cth.floorView');
+  assert.match(store, /if \(view === 'file' \|\| view === 'case-study'\) \{ set\(\{ floorView: view \}\); return; \}/, 'a file tab (and the case study tab) is never written to cth.floorView');
   assert.match(store, /if \(view === 'office' \|\| view === 'file'\) return \{\};/, 'opening the column on a file tab (or Pulse) stays on it (F1, D14)');
   const app = read('src/renderer/src/App.tsx');
   assert.match(app, /const columnView = floorView === 'office' \|\| floorView === 'file';\s*const columnShown = columnOpen && columnView;/);
-  assert.match(app, /display: columnView \? 'flex' : 'none'/, 'the column style too, not only columnShown');
+  assert.match(app, /display: columnView && !minimized \? 'flex' : 'none'/, 'the column style too, not only columnShown');
   assert.match(app, /\{floorView === 'file' && <FileTabView \/>\}/);
-  assert.match(app, /const barHidden = floorView === 'pulse' \|\| floorView === 'file';/, 'no Talk to Michael bar on a file tab or Pulse (owner, 2026-10-16)');
+  assert.match(app, /const barHidden = floorView === 'pulse' \|\| floorView === 'file' \|\| floorView === 'case-study';/, 'no Talk to Michael bar on a file tab, Pulse or the case study (owner, 2026-10-16)');
   assert.match(read('src/renderer/src/components/FileTabView.tsx'), /<div ref=\{scroller\} className="cth-file-tab"/);
   assert.match(read('src/renderer/src/design/global.css'), /\.cth-file-tab \.cth-md-preview \{ max-width: none; \}/, 'a report fills the file tab, no 72ch cap');
   const bar = read('src/renderer/src/shell/TopBar.tsx');
@@ -226,7 +226,7 @@ test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, w
   assert.match(main, /wc\.once\('destroyed', drop\);\n\s+wc\.once\('render-process-gone', drop\);\n\s+wc\.on\('did-start-navigation'/, 'a reload or crash drops its watchers');
   assert.match(main, /if \(askFileWatches\.get\(wc\.id\) === forWindow\) askFileWatches\.delete\(wc\.id\);\n\s+wc\.off\('destroyed', drop\);\n\s+wc\.off\('render-process-gone', drop\);\n\s+wc\.off\('did-start-navigation', onNavigate\);/, 'each drop removes its own listeners and never clears a newer map');
   assert.match(main, /const watcher = watchFs\(dirname\(v\.path\)/, 'the folder is watched, so a rename over the file is seen');
-  assert.match(main, /ipcMain\.handle\('fs:readAskFile'[\s\S]*?const r = await readAskFile\(p, askFileRoots\(who\), \(path\) => documentText\(path\)\);/, 'main checks the folders itself');
+  assert.match(main, /ipcMain\.handle\('fs:readAskFile'[\s\S]*?const r = await readAskFile\(p, askFileRoots\(who\), \(path\) => documentText\(path, undefined, true\)\);/, 'main checks the folders itself');
   const hive = read('src/main/hive.ts');
   assert.match(hive, /Name files by their full path in backticks so the owner can open them/, 'E4');
   assert.match(hive, /then the full paths of its files, each in backticks/, 'E4b');
@@ -271,7 +271,9 @@ test('R3a: a Word file a member saved shows its words in a tab, read by the docu
   const doc = await readAskFile('Email attachments/Workflow.docx', roots, words);
   assert.equal(doc.ok, true);
   assert.equal(doc.kind, 'document');
-  assert.equal(doc.text, 'Workflow edits\nSecond step');
+  assert.equal(doc.text, 'Workflow edits\n\nSecond step');
+  // Its headings, lists and tables come as markdown, so the tab shows it the way it shows a report (owner, 2026-11-05).
+  assert.match(read('src/renderer/src/components/FileTabView.tsx'), /else if \(read\.kind === 'document'\) \{[^}]*body = <FileText source=\{read\.text \?\? ''\} who=\{tab\.who\} variant="document" \/>;/);
   assert.equal(doc.size, Buffer.byteLength(doc.text));
   assert.equal((await askFileVerdict('Email attachments/Workflow.docx', roots)).verdict, 'open', 'Open in app still reaches the file');
 

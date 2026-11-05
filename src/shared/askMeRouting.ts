@@ -105,8 +105,8 @@ export function answerMessages(p: {
       // docs/designs/ask-me-options.md): what they left unanswered goes to the
       // one who raised it, who comes back only for what they still need.
       p.raiser === MICHAEL_ID
-        ? 'Check each question of the ask against the answer. Settle any the owner left unanswered yourself where you can, and ask the owner again only for what you still need.'
-        : `Check each question of the ask against the answer. Send any the owner left unanswered to ${p.raiserName} with the answers: they settle what they can and file back to you only what they still need. Ask the owner again only for that.`,
+        ? 'Check each question of the ask against the answer. Decide each one the owner left unanswered or answered "Not yet": dropped, settled, ask again now, or ask again later at a time you choose, however far off. Record each decision on the answered question as "leftovers", and ask the owner again now only for what you still need now.'
+        : `Check each question of the ask against the answer. Send any the owner left unanswered or answered "Not yet" to ${p.raiserName} with the answers: they decide each one (dropped, settled, ask again now, or ask again later at a time they choose, however far off) and tell you. Record each decision on the answered question as "leftovers", and ask the owner again now only for what they still need now.`,
       ...(p.answeredAt ? [`Answered at ${p.answeredAt}.`] : [])
     ].join('\n')
   };
@@ -195,9 +195,13 @@ export function mergeHumanQA(onDisk: unknown[], incoming: unknown[], only?: numb
 /* ───────────────── Options and several questions (ask-me-options.md) ───────────────── */
 
 /** One option Michael wrote on an ask. `note` is set on an option that needs
- *  the owner's own words ("Send with my changes"): a short question the box
+ *  the owner's own words ("Change it, show me again"): a short question the box
  *  asks once it is picked, and Reply waits for an answer to it. */
-export interface AskOption { label: string; recommended?: boolean; note?: string }
+export interface AskOption {
+  label: string; recommended?: boolean; note?: string;
+  /** A "Not yet": picking it leaves the question to come back (askLeftovers.ts). */
+  later?: boolean;
+}
 
 /** How much of an option's question the box shows. */
 const OPTION_NOTE_MAX = 120;
@@ -224,7 +228,7 @@ function readOptions(v: unknown): AskOption[] | null {
     const label = o && typeof o === 'object' ? text((o as { label?: unknown }).label) : null;
     if (!label) return null;
     const note = text((o as { note?: unknown }).note)?.replace(/\s+/g, ' ').slice(0, OPTION_NOTE_MAX);
-    out.push({ label, ...((o as { recommended?: unknown }).recommended === true ? { recommended: true } : {}), ...(note ? { note } : {}) });
+    out.push({ label, ...((o as { recommended?: unknown }).recommended === true ? { recommended: true } : {}), ...(note ? { note } : {}), ...((o as { later?: unknown }).later === true ? { later: true } : {}) });
   }
   return out;
 }

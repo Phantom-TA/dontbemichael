@@ -24,19 +24,10 @@ const slow = <T,>(v: T, name = ''): Promise<T> => { calls.push(name); return new
   caseStudyPrepare: () => slow(ready, 'prepare'),
   caseStudyStatus: () => slow(ready),
   caseStudyDraft: () => slow({ ok: true, draft }),
-  caseStudyLogo: () => slow({ ok: false, reason: 'no-site' }),
   onCaseStudyReady: () => () => {},
   onCaseStudyShow: () => () => {}
 };
 (window as unknown as { screenTest: unknown }).screenTest = {
-  /** Types into a panel field the way React sees a keystroke. */
-  type: (label: string, text: string) => {
-    const field = [...document.querySelectorAll('label')].find((l) => l.textContent?.startsWith(label))?.querySelector('textarea, input') as HTMLTextAreaElement | null;
-    if (!field) return false;
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, text);
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-    return true;
-  },
   state: () => {
     const frame = document.querySelector('iframe') as HTMLIFrameElement | null;
     return {
@@ -45,9 +36,14 @@ const slow = <T,>(v: T, name = ''): Promise<T> => { calls.push(name); return new
       headline: frame?.contentDocument?.querySelector('.headline')?.textContent ?? null,
       mailbox: document.body.innerText.includes('ceo@x.example'),
       editableOnPage: !!frame?.contentDocument?.querySelector('[contenteditable], [data-part]'),
+      // Every control outside the page but the mailbox and the permission tick
+      // (case-study-tab.md, D2 and D3): none may change the page.
+      controls: [...document.querySelectorAll('textarea, select, input')]
+        .filter((el) => !((el as HTMLInputElement).name === 'cs-mailbox' || (el as HTMLInputElement).type === 'checkbox')).length,
+      buttons: [...document.querySelectorAll('button')].map((b) => b.textContent?.trim() ?? ''),
       about: frame?.contentDocument?.querySelector('.ch-before .prose')?.textContent ?? null,
       calls
     };
   }
 };
-createRoot(document.getElementById('root')!).render(<StrictMode><CaseStudyScreen onClose={() => {}} /></StrictMode>);
+createRoot(document.getElementById('root')!).render(<StrictMode><div style={{ position: 'fixed', inset: 0, display: 'flex' }}><CaseStudyScreen /></div></StrictMode>);

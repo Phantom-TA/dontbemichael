@@ -10,7 +10,7 @@ import { UpdateBadge } from '@/components/UpdateBadge';
 import { CliUpdateBadge } from '@/components/CliUpdateNotice';
 import { OfficeBreakChip } from '@/components/OfficeBreakNotice';
 import { pillState, useNeedsYou, useNeedsYouCount } from './useNeedsYou';
-import { NEEDS_YOU_PILL_ID } from './rightColumn';
+import { NEEDS_YOU_PILL_ID, pillHidden } from './rightColumn';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import lockupLight from '@brandkit/logo/lockup/dbm-lockup-horizontal-light.svg?url';
 import lockupDark from '@brandkit/logo/lockup/dbm-lockup-horizontal-dark.svg?url';
@@ -93,6 +93,8 @@ export function ViewTabs() {
   const setView = useStore((s) => s.setFloorView);
   const fileTabs = useStore((s) => s.fileTabs);
   const activeFileTab = useStore((s) => s.activeFileTab);
+  const caseStudyOpen = useStore((s) => s.caseStudyOpen);
+  const caseStudyBusy = useStore((s) => s.caseStudyBusy);
 
   // No count on Tasks (owner, 2026-10-01): a blocked count beside the Needs
   // you count read as the same thing with a different number. Coral numbers
@@ -129,7 +131,7 @@ export function ViewTabs() {
       {/* Files opened from a reply or a card (docs/designs/open-file-tab.md):
           after a hairline, each a select button and a close button side by
           side. They shrink to fit (DD2); the fixed tabs and Needs you never move. */}
-      {fileTabs.length > 0 && <span aria-hidden style={{ width: 1, height: 18, background: 'var(--cth-line-2)', margin: '0 4px', flexShrink: 0 }} />}
+      {(fileTabs.length > 0 || caseStudyOpen) && <span aria-hidden style={{ width: 1, height: 18, background: 'var(--cth-line-2)', margin: '0 4px', flexShrink: 0 }} />}
       {fileTabs.map((f) => {
         const on = view === 'file' && activeFileTab === f.id;
         const icon = f.kind === 'email' ? 'mail' : f.kind === 'excel' || f.kind === 'csv' ? 'sheet' : f.kind === 'image' ? 'image' : 'file';
@@ -166,8 +168,55 @@ export function ViewTabs() {
           </span>
         );
       })}
+      {/* The case study (docs/designs/case-study-tab.md, D1): one tab while it is
+          open, after the files and not counted with them. Nothing on it can be
+          changed (D2), so the X closes it at once. */}
+      {caseStudyOpen && (() => {
+        const on = view === 'case-study';
+        return (
+          <span className="cth-titlebar-nodrag" style={{
+            display: 'inline-flex', alignItems: 'center', height: 32, flex: '0 1 auto', minWidth: 72,
+            borderRadius: 'var(--cth-r-md)', background: on ? 'var(--cth-ink)' : 'transparent',
+            transition: 'background var(--cth-dur-fast) var(--cth-ease)'
+          }}>
+            <button
+              onClick={() => setView('case-study')}
+              aria-pressed={on}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0, height: 32,
+                padding: '0 4px', paddingInlineStart: 11, border: 'none', background: 'transparent', cursor: 'pointer',
+                color: on ? 'var(--cth-bg)' : 'var(--cth-ink-2)', fontFamily: 'var(--cth-font-ui)', fontSize: 13, fontWeight: 500
+              }}
+            >
+              <span aria-hidden style={{ display: 'grid', placeItems: 'center', flexShrink: 0 }}><Icon name="file" size={0.875} /></span>
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('caseStudy.tab')}</span>
+            </button>
+            <button
+              className="cth-file-tab-close"
+              onClick={closeCaseStudy}
+              disabled={caseStudyBusy}
+              aria-label={t('caseStudy.closeTab')}
+              style={{
+                width: 22, height: 22, flexShrink: 0, marginInlineEnd: 5, display: 'grid', placeItems: 'center',
+                border: 'none', borderRadius: 5, background: 'transparent', cursor: caseStudyBusy ? 'default' : 'pointer',
+                color: on ? 'var(--cth-bg)' : 'var(--cth-ink-3)', opacity: caseStudyBusy ? 0.35 : on ? 0.75 : 1
+              }}
+            >
+              <Icon name="x" size={0.75} />
+            </button>
+          </span>
+        );
+      })()}
     </div>
   );
+}
+
+/** Close the Case study tab, then read where main's preparation stands, so
+ *  Pulse's button says it right (sent: the next Get featured prepares anew). */
+function closeCaseStudy(): void {
+  const st = useStore.getState();
+  st.setCaseStudyOpen(false);
+  void window.cth.caseStudyStatus().then((p) => useStore.getState().setCaseStudyPrep(p.state)).catch(() => undefined);
 }
 
 const countBubble: CSSProperties = {
@@ -307,21 +356,44 @@ export function NeedsYouButton() {
     lastCount.current = count;
   }, [status, count, godName, t]);
   const live = <span aria-live="polite" style={visuallyHidden}>{announce}</span>;
+  // The column shows the count already: the pill steps out of the top bar and
+  // the buttons beside it close the gap (needs-you-pill-hides.md, D1 and D2).
+  // The screen reader line stays (E1).
+  const hidden = useStore((s) => pillHidden(s.rightColumn, s.floorView));
+  // Hiding and coming back ease (global.css, .cth-pill-slot): the pill's width
+  // (a grid column from 0fr to 1fr, so its real width, whatever its text) and
+  // the row's 8 px gap move together, so the buttons beside it glide. Going
+  // away, the pill first fades and slides on the compositor, which keeps
+  // running while switching to the office keeps the page busy, and the gap
+  // closes only once the column has slid in (owner, 2026-11-05: still abrupt
+  // going away, and slower). Kept mounted and inert while hidden.
+  const slot = (body: ReactNode) => (<>{live}
+    <span
+      className="cth-pill-slot"
+      data-hidden={hidden || undefined}
+      aria-hidden={hidden || undefined}
+      {...({ inert: hidden ? '' : undefined } as Record<string, unknown>)}
+    >
+      <span style={{ minWidth: 0, overflow: 'clip', overflowClipMargin: 14, display: 'inline-flex', whiteSpace: 'nowrap' }}>
+        <span className="cth-pill-face" style={{ display: 'inline-flex' }}>{body}</span>
+      </span>
+    </span>
+  </>);
 
   // Unknown (launch, before the first read): an empty quiet pill, never a
   // false "Nothing needs you" (D3).
   if (state === 'blank') {
-    return <>{live}<span aria-hidden="true" className="cth-titlebar-nodrag" style={{ ...quietPill, width: 132 }} /></>;
+    return slot(<span aria-hidden="true" className="cth-titlebar-nodrag" style={{ ...quietPill, width: 132 }} />);
   }
   // Nothing waits: a plain label, not a button (D2).
   if (state === 'quiet') {
     // Only reports waiting: a quiet pill that opens the board, never coral (14A).
     if (reports > 0) {
-      return <>{live}<button onClick={openBoard} className="cth-titlebar-nodrag" style={{ ...quietPill, border: 'none', fontFamily: 'var(--cth-font-ui)', cursor: 'pointer', color: 'var(--cth-ink-2)' }}>{t('shell.reports', { count: reports })}</button></>;
+      return slot(<button onClick={openBoard} className="cth-titlebar-nodrag" style={{ ...quietPill, border: 'none', fontFamily: 'var(--cth-font-ui)', cursor: 'pointer', color: 'var(--cth-ink-2)' }}>{t('shell.reports', { count: reports })}</button>);
     }
-    return <>{live}<span className="cth-titlebar-nodrag" style={quietPill}>{t('shell.nothingNeedsYou')}</span></>;
+    return slot(<span className="cth-titlebar-nodrag" style={quietPill}>{t('shell.nothingNeedsYou')}</span>);
   }
-  return (<>{live}
+  return slot(
     <button
       key={bump}
       id={NEEDS_YOU_PILL_ID}
@@ -342,7 +414,7 @@ export function NeedsYouButton() {
         fontFamily: 'var(--cth-font-mono)', fontSize: 12, fontWeight: 600
       }}>{count}</span>
     </button>
-  </>);
+  );
 }
 
 const quietPill: CSSProperties = {

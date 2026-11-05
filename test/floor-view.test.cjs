@@ -28,8 +28,8 @@ test('the office shows by default, and the choice is remembered', () => {
 // top bar; the board covers the office and leaves room for the bottom bar.
 test('the view tabs sit in the top bar, and the board covers the office above the bottom bar', () => {
   const app = read('src/renderer/src/App.tsx');
-  const office = app.indexOf('<StudioStage config={config} bleed={columnShown ? sidebarWidth + 10 : 0} />');
-  const board = app.indexOf("{floorView !== 'office' && (");
+  const office = app.indexOf('<StudioStage config={config} bleed={columnShown ? columnW + 10 : 0} />');
+  const board = app.indexOf("{floorView !== 'office' && floorView !== 'case-study' && (");
   const bottom = app.indexOf('<BottomBar />');
   assert.ok(office > 0 && board > office && bottom > board, 'office, then the board over it, then the bottom bar over both');
   assert.match(app.slice(board, board + 700), /position: 'absolute', inset: 0, zIndex: 50,[\s\S]*paddingBottom: barHidden \? 0 : 96,[\s\S]*\{floorView === 'tasks' && <TasksKanban \/>\}/);
@@ -118,15 +118,15 @@ test('Tasks and Who talks to whom take the whole window: the right column hides 
   // A file tab keeps the column beside it (open-file-tab.md, F1); Tasks and the graph still hide it.
   // Pulse hides it like Tasks (owner, 2026-10-15).
   assert.match(app, /const columnView = floorView === 'office' \|\| floorView === 'file';\s*const columnShown = columnOpen && columnView;/);
-  assert.match(app, /\{columnShown && \(\n\s+<SidebarSplitter/);
-  assert.match(app, /display: columnView \? 'flex' : 'none', flexDirection: 'column'/);
+  assert.match(app, /\{columnFull && \(\n\s+<SidebarSplitter/);
+  assert.match(app, /display: columnView && !minimized \? 'flex' : 'none', flexDirection: 'column'/);
   assert.match(app, /\{\(columnOpen \|\| exiting\) && \(/, 'the column stays mounted while hidden');
   const store = read('src/renderer/src/store/store.ts');
   assert.match(store, /function officeView\(view: FloorView\): \{ floorView\?: FloorView \} \{\n\s+if \(view === 'office' \|\| view === 'file'\) return \{\};\n\s+try \{ window\.localStorage\.setItem\(LS_FLOOR_VIEW, 'office'\); \}/);
   assert.equal((store.match(/\.\.\.officeView\(s\.floorView\)/g) || []).length, 8, 'select, openAgentMemory, openAgentProfile (Pulse), openAgentWork (a stopped Michael), openAgentEmail (a member link in agent text), openNeedsYou and both Michael tab requests');
   // Each also claims the center from the wide 1:1 (wide-dock.test.cjs, 8A).
-  assert.match(store, /rightColumn: 'person', centerClaim: 'column', \.\.\.officeView\(s\.floorView\) \};/);
-  assert.match(store, /rightColumn: 'board',\n\s+centerClaim: 'column',\n\s+\.\.\.officeView\(s\.floorView\),/);
+  assert.match(store, /rightColumn: 'person', centerClaim: 'column', columnMinimized: false, \.\.\.officeView\(s\.floorView\) \};/);
+  assert.match(store, /rightColumn: 'board',\n\s+centerClaim: 'column', columnMinimized: false,\n\s+\.\.\.officeView\(s\.floorView\),/);
 });
 
 test('the program mark is a link on the platform\'s right side, over the pods, opening the chamber\'s site in the browser', () => {
@@ -151,4 +151,33 @@ test('the program mark is a link on the platform\'s right side, over the pods, o
   assert.match(read('src/main/index.ts'), /setWindowOpenHandler\(\(\{ url \}\) => \{\s*if \(\/\^https\?:\\\/\\\/\/i\.test\(url\)\) shell\.openExternal\(url\);/, 'a new window link opens in the browser');
   assert.match(read('src/renderer/src/design/global.css'), /\.cth-st-mark:hover, \.cth-st-mark:focus-visible \{ opacity: 1; text-decoration: underline; \}/);
   assert.doesNotMatch(read('src/renderer/src/scene/studio/StudioArt.tsx'), /FloorMark/, 'no second copy in the SVG');
+});
+
+test('the case study opens as one tab, is never saved, waits while sending, and closes back to the last view', () => {
+  // Value: protects=the case study is a tab, not an overlay (case-study-tab.md, D1); fails_when=a second open makes another tab, the tab is saved as the start view, the X closes mid send, or closing leaves the owner on an empty view; why_new=owner 2026-11-04; seam=the real store in its own process
+  const r = freshRun({ 'cth.floorView': 'pulse' }, `
+    const s = () => store.getState();
+    s().setCaseStudyOpen(true);
+    const opened = [s().floorView, s().caseStudyOpen, mem['cth.floorView']];
+    s().setFloorView('tasks');
+    s().setCaseStudyOpen(true);
+    const again = s().floorView;
+    s().setCaseStudyBusy(true);
+    s().setCaseStudyOpen(false);
+    const busy = s().caseStudyOpen;
+    s().setCaseStudyBusy(false);
+    s().setCaseStudyOpen(false);
+    return { opened, again, busy, closed: [s().floorView, s().caseStudyOpen] };`);
+  assert.deepEqual(r.opened, ['case-study', true, 'pulse'], 'shown, and the saved start view is still Pulse');
+  assert.equal(r.again, 'case-study', 'a second open selects the same tab');
+  assert.equal(r.busy, true, 'the X waits while a send or save runs');
+  assert.deepEqual(r.closed, ['tasks', false], 'closing goes back to the last view');
+  const app = read('src/renderer/src/App.tsx');
+  assert.match(app, /\{caseStudyOpen && \([\s\S]{0,300}display: floorView === 'case-study' \? 'flex' : 'none'[\s\S]{0,120}<CaseStudyScreen \/>/, 'mounted while open, shown on its tab');
+  assert.match(app, /const barHidden = floorView === 'pulse' \|\| floorView === 'file' \|\| floorView === 'case-study';/);
+  const bar = read('src/renderer/src/shell/TopBar.tsx');
+  assert.match(bar, /\{caseStudyOpen && \(\(\) => \{[\s\S]{0,200}const on = view === 'case-study';/);
+  assert.match(bar, /onClick=\{closeCaseStudy\}\s*disabled=\{caseStudyBusy\}/);
+  assert.doesNotMatch(read('src/renderer/src/components/pulse/CaseStudyScreen.tsx'), /<Dialog|from '@\/shell\/Dialog'/, 'no overlay');
+  assert.doesNotMatch(read('src/renderer/src/components/pulse/PulseView.tsx'), /<CaseStudyScreen/);
 });

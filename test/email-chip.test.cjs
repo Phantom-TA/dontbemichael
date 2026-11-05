@@ -78,10 +78,11 @@ test('a reply card shows the email it answers', () => {
 
 test('members and Michael carry an email\'s link into the filing and the ask', () => {
   const hive = read('src/main/hive.ts');
-  assert.match(hive, /When a filing is built on an email you read .* put that email's link from your mail read \(its "link"/);
+  // Since 2026-11-05 a message about an email carries its link too (the Will Cox card).
+  assert.match(hive, /When a filing or a message to \$\{michael\} is about an email you read .* put that email's link from your mail read \(its "link"/);
   assert.match(hive, /When the ask is built on an email, keep the email link the team member gave \(an email: link\) as written/);
   assert.match(hive, /an ask built on an email keeps that email's link/);
   assert.match(hive, /A filing built on an email carries that email's link from the mail read/);
-  assert.match(read('resources/md-mail-mcp.cjs'), /Its "link" names this email for the owner: put it, as written, in any filing built on this email\./);
+  assert.match(read('resources/md-mail-mcp.cjs'), /Its "link" names this email for the owner: put it, as written, in any filing or message about this email\./);
   assert.match(read('src/main/mail.ts'), /const link = emailLinkFor\(mailbox!, msg\);\s*return \{ status: 200, body: link \? \{ \.\.\.msg, link \} : msg \};/);
 });

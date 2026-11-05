@@ -36,6 +36,8 @@ export interface HumanQA {
   kind?: string;
   /** A foundation card's question id (shared/foundations.ts). */
   foundation?: string;
+  /** A notice's kind, from a member's "notice" filing (shared/noticeCards.ts). */
+  noticeKind?: string;
 }
 
 export interface HiveTask {

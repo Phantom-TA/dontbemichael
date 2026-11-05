@@ -6,7 +6,7 @@ import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
 import type { OrganizedList } from '../shared/organizedRecord';
 import type { PulseView } from '../shared/pulseView';
-import type { CaseDraftResult, CaseInput, CaseLogo, CaseOpen, CasePrep, CaseSaveResult, CaseSendOutcome } from '../shared/caseStudy';
+import type { CaseDraftResult, CaseInput, CaseOpen, CasePrep, CaseSaveResult, CaseSendOutcome } from '../shared/caseStudy';
 import type { FoundationsView } from '../shared/foundations';
 import type { PulseHealthView } from '../shared/pulseHealth';
 import type { ResearchConfig } from '../shared/research';
@@ -14,7 +14,7 @@ import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { OfficeRecord } from '../shared/officeRecord';
 import type { MailboxRecord, AgentCapabilities, MailProvider, MailServer } from '../shared/mailboxes';
-import type { OriginalResult } from '../shared/emailLink';
+import type { OpenAttachmentResult, OriginalResult } from '../shared/emailLink';
 import type { ClaudeConnectorsState } from '../shared/claudeConnectors';
 import type { ScheduledMission, ScheduleRequest } from '../shared/missions';
 import type { MailProposal, ProposalDecision, StandingApproval } from '../shared/mailProposals';
@@ -1048,6 +1048,8 @@ const api = {
   /** The owner's email tab (docs/designs/original-email-view.md): the email an
    *  `email:` link names, as it came, from the owner's own mailbox. */
   mailOriginal: (href: string): Promise<OriginalResult> => ipcRenderer.invoke('mail:original', href),
+  /** Open one of an email's attachments in its own app (source-attachments.md); index from 0 in the tab's list. */
+  mailOpenAttachment: (href: string, index: number): Promise<OpenAttachmentResult> => ipcRenderer.invoke('mail:openAttachment', href, index),
   /** Its pictures from the web, fetched by main, as data URIs. */
   mailOriginalPictures: (href: string): Promise<{ pictures: Record<string, string>; failed: number }> => ipcRenderer.invoke('mail:originalPictures', href),
   /** The tab closed: stop an open still running. */
@@ -1537,13 +1539,11 @@ const api = {
   /** The office's facts for the page, the fonts and the mailboxes; null with no office. */
   caseStudyOpen: (input: CaseInput): Promise<CaseOpen | null> => ipcRenderer.invoke('caseStudy:open', input),
   caseStudyDraft: (input: CaseInput): Promise<CaseDraftResult> => ipcRenderer.invoke('caseStudy:draft', input),
-  /** The kept logo, or a read of the website; `fresh` reads the site again. */
-  caseStudyLogo: (fresh: boolean): Promise<CaseLogo> => ipcRenderer.invoke('caseStudy:logo', fresh),
-  caseStudyPickLogo: (): Promise<CaseLogo> => ipcRenderer.invoke('caseStudy:pickLogo'),
-  /** Main builds the page and the PDF from these edits; `openMailApp` opens the mail app after saving. */
-  caseStudySavePdf: (input: CaseInput, edits: unknown, openMailApp: boolean): Promise<CaseSaveResult> => ipcRenderer.invoke('caseStudy:savePdf', input, edits, openMailApp),
+  /** Main builds the page and the PDF from its own draft (no words from the
+   *  screen, case-study-tab.md D2); `openMailApp` opens the mail app after saving. */
+  caseStudySavePdf: (input: CaseInput, openMailApp: boolean): Promise<CaseSaveResult> => ipcRenderer.invoke('caseStudy:savePdf', input, openMailApp),
   /** Sends to the fixed address only; the screen names the mailbox and ticks permission. */
-  caseStudySend: (input: CaseInput, edits: unknown, mailbox: string, permission: boolean): Promise<CaseSendOutcome> => ipcRenderer.invoke('caseStudy:send', input, edits, mailbox, permission),
+  caseStudySend: (input: CaseInput, mailbox: string, permission: boolean): Promise<CaseSendOutcome> => ipcRenderer.invoke('caseStudy:send', input, mailbox, permission),
   caseStudyDismissInvite: (): Promise<boolean> => ipcRenderer.invoke('caseStudy:dismissInvite'),
   /** Starts preparing the case study in the background (or says where it stands). */
   caseStudyPrepare: (input: CaseInput): Promise<CasePrep> => ipcRenderer.invoke('caseStudy:prepare', input),
@@ -1553,6 +1553,14 @@ const api = {
     const h = (): void => cb();
     ipcRenderer.on('caseStudy:ready', h);
     return () => { ipcRenderer.removeListener('caseStudy:ready', h); };
+  },
+  /** A prepared case study no longer waits on Ask me (opened, Later, or the screen was open). */
+  caseStudySeen: (): Promise<boolean> => ipcRenderer.invoke('caseStudy:seen'),
+  /** Whether a prepared case study waits on Ask me changed: read the status again. */
+  onCaseStudyWaiting: (cb: () => void): (() => void) => {
+    const h = (): void => cb();
+    ipcRenderer.on('caseStudy:waiting', h);
+    return () => { ipcRenderer.removeListener('caseStudy:waiting', h); };
   },
   /** The owner clicked the desktop notice: open the screen. */
   onCaseStudyShow: (cb: () => void): (() => void) => {
@@ -1623,6 +1631,8 @@ const api = {
   },
   /** "Got it" on a report card (14A). */
   ackReport: (taskId: string, index: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('hive:ackReport', taskId, index),
+  /** "Don't show me these" on a notice card (owner-items-reach-ask-me.md D2). */
+  skipNotice: (taskId: string, index: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('hive:skipNotice', taskId, index),
   /** Send on approval: emails waiting for the owner on Ask me, and the owner's decision. */
   listMailProposals: (): Promise<MailProposal[]> => ipcRenderer.invoke('mailProposals:list'),
   decideMailProposal: (id: string, decision: ProposalDecision, edit: { subject?: string; body?: string }, note?: string, standing?: string): Promise<{ ok: boolean; error?: string }> =>
@@ -2011,8 +2021,8 @@ const api = {
   /** DEV ONLY — fabricate an update status so the toast can be inspected without
    *  cutting a release. Refused (`{ok:false}`) in a packaged build; see the
    *  handler in updater.ts. Call it from the devtools console:
-   *    await window.cth.updateSimulate()                       // notify-only digest toast
-   *    await window.cth.updateSimulate({ state: 'downloaded' }) // restart-to-update toast
+   *    await window.cth.updateSimulate()                       // Michael's Download card on Ask me
+   *    await window.cth.updateSimulate({ state: 'downloaded' }) // Michael's Restart card on Ask me
    *    await window.cth.updateSimulate({ drop: true })          // the centered release page
    *    await window.cth.updateSimulate({ notes: '<!-- drop -->…' }) // your own drop */
   updateSimulate: (opts?: {

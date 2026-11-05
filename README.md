@@ -41,9 +41,9 @@ runs on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.3.5: Get featured with a case study of your office.**
-> Pulse builds a customer story page in your own brand. In 0.3.4, one team member gets access to
-> one outside service.
+> **New in 0.3.6: Anything your team finds for you reaches Needs you.**
+> A question you leave open comes back when it matters. In 0.3.5, Pulse builds a case study of
+> your office.
 
 ## Contents
 
@@ -125,7 +125,9 @@ business runs on, and each team member works from the one that matches its job.
 - **Attachments land in its own folder.** A team member saves an attachment to Email attachments in
   its own folder and reads it there. Programs, scripts and archives are refused, and what is saved
   is marked as a download and never run. A teammate who needs the file asks for it, and the app
-  copies it across, so nobody opens another team member's folder.
+  copies it across, so nobody opens another team member's folder. When you open an email a card
+  is built on, a click on one of its attachments opens a read only copy in its own app; programs,
+  scripts and other kinds the office doesn't take in stay in your mail app.
 - **Put it on a clock.** Add a schedule like "Check the support inbox" every hour in the same tab,
   with a focus area for each run, and the team member sorts new mail, answers it as its Sending
   setting allows and tells Michael what needs you. A new Executive Admin arrives with an Inbox to zero job already set.
@@ -245,14 +247,14 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 </table>
 
 **Running the office**
-- **Needs you.** When the team needs a decision, Michael puts it on the Needs you board. Your answer goes back to whoever asked, and they remember it. Michael gets it too, as work he routes and then closes. Choices show as rows you pick with a click, and several questions get a line each; answer only some, and the rest go back to whoever asked.
+- **Needs you.** When the team needs a decision, Michael puts it on the Needs you board. Your answer goes back to whoever asked, and they remember it. Michael gets it too, as work he routes and then closes. Choices show as rows you pick with a click, and several questions get a line each; answer only some, or answer "Not yet", and the rest go back to whoever asked, who decides each one: drop it, settle it, ask again now or ask again later. Things only you can do wait on a card until you press Done, and notices with real stakes, such as money or a deadline, wait until you clear them with Got it or Don't show me these. A card about an email links that email, and a card that points to a file sums it up in a few lines: the result, up to three figures, what needs you, then the file. Minimize the board to a slim strip on the right edge that keeps the count in sight.
 - **Michael answers in the app.** A question you type in the Talk to Michael box opens a conversation above it. Each question shows where it stands, such as Michael has it, Waiting for you or Answered, and his reply arrives under it, with one count on the arrow beside the box and one notification per answer. It opens on your latest question, and older ones fold behind Show earlier. Commands such as /clear still go straight to his terminal. Scheduled outcomes, such as a weekly summary, arrive on Needs you as quiet Report cards you clear with Got it.
 - **Schedules.** Each team member's jobs on a clock live in the On a schedule section of its Access tab. Say when and which job ("Follow up on unpaid invoices", every weekday at 9), and the team member does it the way its Work style says. One job can have several "when" lines, like every 2 hours on weekdays plus 2 pm on weekends. A team member can ask for a schedule change; Michael decides it, and asks you on Needs you only when he can't settle it. Michael's Office schedule tab lists every job that is on.
 - **A mailbox for each team member.** Connect Gmail, Google Workspace, iCloud, Yahoo, Zoho or any other IMAP mailbox with an app password in Settings, Connections, Mailboxes. The password is tested before it is saved and stays encrypted on your computer. Then add it on a team member's Access tab to watch its inbox, and choose Can send, Send on approval or Draft only. Each mailbox has one team member watching it; others can be added to send only from it. Outlook is not supported yet.
 - **Claude connectors.** Settings, Connections, Claude connectors lists every connector on your Claude account (HubSpot, Google Drive, Gmail, QuickBooks and the rest), read from Claude by itself. Each is off until you turn it on; then give it to the team members who need it on their Access tab. QuickBooks keeps Read only or Can make changes, and Oscar starts on and Read only. Your own Claude Code servers, plugin servers included, never reach the team.
 - **Integrations.** Add an outside service with a custom REST integration in Settings. Nobody has it until you give it to a team member on its Access tab, as Read only or Can change, and taking it away holds on the next call. The app keeps the key. A connection can hold one saved call: the team member sends only its words, and the app builds the request. For team members on Claude.
 - **Every team member's panel.** Profile first (the job, its folder and the instructions it works from), then Access (email, Claude connectors, integrations and schedules), Messages as a day by day history, Memory as readable notes, and Work, its session live.
-- **Office, Tasks, Pulse, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, Pulse (what the office got done and what each team member costs, with ways to save that change nothing until you click Apply), and who talks to whom. Get featured in Pulse builds a case study page of your office in your own brand, for you to send us. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these. Word, Excel, PowerPoint and PDF files show their words in a tab too, with Open in app for the file itself. A team folder named on a card opens that folder.
+- **Office, Tasks, Pulse, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, Pulse (what the office got done and what each team member costs, with ways to save that change nothing until you click Apply), and who talks to whom. Get featured in Pulse builds a case study page of your office in your own brand, for you to send us; it opens as a tab of its own. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these. Word files show in a tab with their headings, lists and tables, and Excel, PowerPoint and PDF files show their words, each with Open in app for the file itself. A document a team member writes from an email or its attachment links the original file and the email. A team folder named on a card opens that folder.
 - **Webhooks.** Another app sends a webhook (set it up in Settings, Connections) and Michael picks it up; the sender can check on the work and get its result.
 - **A fresh start without losing work.** A team member that has sat idle with a long conversation writes a handoff of anything unfinished, then starts fresh. You can bring the old conversation back.
 
@@ -266,7 +268,7 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 - A team member opens only its own folder. Michael can read his team's folders but not change them. On a Mac, Claude Code's sandbox and the app both enforce this. On Windows, the app checks Claude's file tools, but shell commands are not limited yet.
 
 **Also**
-- **Updates.** The app tells you when a new version is out and links to the download.
+- **Updates.** A new version downloads in the background and arrives as a card from Michael on Needs you, with Later and Restart to update (or Download, for an install that can't update itself). Nothing restarts until you click.
 - **Claude Code updates.** When Claude Code updates itself, team members already running stay on the old version until they restart. A "team upgrade ready" chip and note offer to close the office the safe way (everyone saves first) and reopen on the new version. Nothing restarts until you click.
 
 <div align="right">(<a href="#what-it-is">↑ back to top</a>)</div>

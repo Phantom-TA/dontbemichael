@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { OPEN_EXTENSIONS, extensionOf } from '@shared/askFiles';
-import { MarkdownPreview } from '@/markdown/MarkdownPreview';
+import { FileText } from './FileChip';
 import { useStore } from '@/store/store';
 import type { FileTab } from '@/store/fileTabs';
 import { PixelButton } from './PixelButton';
@@ -90,7 +90,7 @@ function FileTabBody({ tab }: { tab: FileTab }) {
     return () => { mounted.current = false; clearTimeout(copyTimer.current); };
   }, []);
 
-  // Copy reads what the tab shows at the click: the page for Markdown, every
+  // Copy reads what the tab shows at the click: the page for Markdown or a Word file, every
   // row for a CSV, the shown picture (copy-document.md, A1, E2, E3).
   const copyTab = async () => {
     if (read.status !== 'ok') return;
@@ -104,7 +104,7 @@ function FileTabBody({ tab }: { tab: FileTab }) {
         });
       } else {
         let data: CopyData = { text: read.text ?? '' };
-        if (kind === 'markdown' && scroller.current) data = cleanCopy(scroller.current);
+        if ((kind === 'markdown' || kind === 'document') && scroller.current) data = cleanCopy(scroller.current);
         else if (kind === 'csv') {
           const rows = parseDelimited(read.text ?? '', extensionOf(tab.id) === 'tsv' ? '\t' : ',');
           if (rows && rows.length) data = tableCopy(rows);
@@ -136,8 +136,8 @@ function FileTabBody({ tab }: { tab: FileTab }) {
       const start = range.commonAncestorContainer;
       const inPre = (start instanceof Element ? start : start.parentElement)?.closest('pre');
       let data: CopyData;
-      // Text, JSON and a document's words: as shown, no formatting to keep.
-      if (read.kind === 'text' || read.kind === 'json' || read.kind === 'document') data = { text: shown };
+      // Text and JSON: as shown, no formatting to keep.
+      if (read.kind === 'text' || read.kind === 'json') data = { text: shown };
       else if (inPre) data = { text: shown, html: `<pre>${escapeHtml(shown)}</pre>` };
       else data = cleanCopy(range.cloneContents());
       e.clipboardData.setData('text/plain', data.text);
@@ -174,14 +174,20 @@ function FileTabBody({ tab }: { tab: FileTab }) {
   else if (read.kind === 'image') {
     body = <img ref={picture} src={read.url} alt={tab.title} style={{ display: 'block', maxWidth: '100%', height: 'auto', borderRadius: 'var(--cth-r-md)' }} />;
   } else if (read.kind === 'markdown') {
-    // Pictures beside the report show, read inside its own folder; links to
-    // local files stay inert (E2 not taken).
+    // Pictures beside the report show, read inside its own folder. A full path
+    // in it (a Source line's original, source-attachments.md) is a file chip,
+    // with Ask me's folder check by who raised the tab; relative links between
+    // documents stay inert (open-file-tab.md E2, owner 2026-10-10).
     const slash = Math.max(tab.id.lastIndexOf('/'), tab.id.lastIndexOf('\\'));
-    body = <MarkdownPreview source={read.text ?? ''} root={tab.id.slice(0, slash)} baseRel={tab.id.slice(slash + 1)} />;
+    body = <FileText source={read.text ?? ''} who={tab.who} variant="document" root={tab.id.slice(0, slash)} baseRel={tab.id.slice(slash + 1)} />;
   } else if (read.kind === 'csv') {
     const rows = parseDelimited(read.text ?? '', extensionOf(tab.id) === 'tsv' ? '\t' : ',');
     body = rows && rows.length ? <CsvTable rows={rows} /> : <Mono text={read.text ?? ''} />;
-  } else if (read.kind === 'document') body = <DocumentWords text={read.text ?? ''} />;
+  } else if (read.kind === 'document') {
+    // The document reader gives a Word file's headings, lists and tables as
+    // markdown, so it shows like the original (owner, 2026-11-05).
+    body = <FileText source={read.text ?? ''} who={tab.who} variant="document" />;
+  }
   else body = <Mono text={read.text ?? ''} />;
 
   return (
@@ -212,7 +218,7 @@ function FileTabBody({ tab }: { tab: FileTab }) {
         {read.status !== 'not found' && <PixelButton variant="secondary" size="sm" onClick={reveal}>{revealLabel}</PixelButton>}
       </div>
       {/* cth-file-tab lifts the Markdown reading cap: a report fills the pane. */}
-      <div ref={scroller} className="cth-file-tab" onCopy={copySelection} style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: read.status === 'ok' && read.kind === 'markdown' && read.size > 0 ? 0 : '16px 20px' }}>
+      <div ref={scroller} className="cth-file-tab" onCopy={copySelection} style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: read.status === 'ok' && (read.kind === 'markdown' || read.kind === 'document') && read.size > 0 ? 0 : '16px 20px' }}>
         {body}
       </div>
     </div>
@@ -229,16 +235,6 @@ function Mono({ text }: { text: string }) {
 }
 
 /** A document's words, one paragraph to a line, at a width that reads well. */
-function DocumentWords({ text }: { text: string }) {
-  return (
-    <div style={{ maxWidth: 760, fontSize: 14, lineHeight: '22px', color: 'var(--cth-ink)' }}>
-      {text.split('\n').filter((line) => line.trim()).map((line, i) => (
-        <p key={i} dir="auto" style={{ margin: '0 0 10px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{line}</p>
-      ))}
-    </div>
-  );
-}
-
 function CsvTable({ rows }: { rows: string[][] }) {
   const { t } = useTranslation();
   const [head, ...rest] = rows;
