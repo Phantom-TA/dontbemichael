@@ -191,4 +191,9 @@ test("Michael's change option says the new version comes back, never that it goe
   assert.doesNotMatch(text, /Send with my changes/);
   assert.match(text, /never that it goes out with the changes \(house rule 10\)/);
   assert.match(text, /route any answer asking for changes the same way, on older cards too/);
+  // The design mockup the card was built from shows the same choice, so a later
+  // build from it never brings the old label back.
+  const mockup = fs.readFileSync(path.resolve(__dirname, '..', 'docs/designs/original-email-view.html'), 'utf8');
+  assert.match(mockup, /<li>Change it, show me again<\/li>/);
+  assert.doesNotMatch(mockup, /Send with my changes/);
 });
