@@ -7,7 +7,7 @@ It is generated from the pull requests themselves rather than from commit metada
 dropped because their git email does not happen to match their GitHub account. It is regenerated
 from merged pull requests, so you appear without having to ask.
 
-**164 people** have contributed so far.
+**165 people** have contributed so far.
 
 <a href="https://github.com/agentvivekkumar/dontbemichael/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=agentvivekkumar/dontbemichael" alt="Contributor avatars">
@@ -23,7 +23,7 @@ requests, and a pull request always has a real account behind it.
 | Contributor | Contributions | First | Most recent |
 |---|---:|---|---|
 | [@amartya1523](https://github.com/amartya1523) | 90 | 2026-10-10 | 2026-11-01 |
-| [@agentvivekkumar](https://github.com/agentvivekkumar) | 78 | 2026-09-15 | 2026-11-02 |
+| [@agentvivekkumar](https://github.com/agentvivekkumar) | 81 | 2026-09-15 | 2026-11-05 |
 | [@coolstack-coder](https://github.com/coolstack-coder) | 13 | 2026-10-29 | 2026-11-01 |
 | [@SantoshMalana](https://github.com/SantoshMalana) | 9 | 2026-10-12 | 2026-10-13 |
 | [@dhruvpuri](https://github.com/dhruvpuri) | 7 | 2026-10-10 | 2026-10-10 |
@@ -36,6 +36,7 @@ requests, and a pull request always has a real account behind it.
 | [@Johanofcourse](https://github.com/Johanofcourse) | 3 | 2026-10-17 | 2026-10-21 |
 | [@mohuxaiphasalik](https://github.com/mohuxaiphasalik) | 3 | 2026-10-18 | 2026-10-18 |
 | [@Manibharadwaj](https://github.com/Manibharadwaj) | 3 | 2026-10-21 | 2026-10-21 |
+| [@Phantom-TA](https://github.com/Phantom-TA) | 3 | 2026-10-29 | 2026-11-05 |
 | [@init-pushu](https://github.com/init-pushu) | 2 | 2026-10-10 | 2026-10-12 |
 | [@shrinivas-sn](https://github.com/shrinivas-sn) | 2 | 2026-10-11 | 2026-10-11 |
 | [@coolman-97](https://github.com/coolman-97) | 2 | 2026-10-12 | 2026-10-21 |
@@ -48,7 +49,6 @@ requests, and a pull request always has a real account behind it.
 | [@Utsavd7](https://github.com/Utsavd7) | 2 | 2026-10-18 | 2026-10-18 |
 | [@lukmanj19](https://github.com/lukmanj19) | 2 | 2026-10-21 | 2026-10-21 |
 | [@soham842op](https://github.com/soham842op) | 2 | 2026-10-27 | 2026-10-29 |
-| [@Phantom-TA](https://github.com/Phantom-TA) | 2 | 2026-10-29 | 2026-10-31 |
 | [@josephzhang0602](https://github.com/josephzhang0602) | 1 | 2026-10-10 | 2026-10-10 |
 | [@rajukancharla21](https://github.com/rajukancharla21) † | 1 | 2026-10-10 | 2026-10-10 |
 | [@Junaid522](https://github.com/Junaid522) | 1 | 2026-10-10 | 2026-10-10 |
@@ -186,8 +186,9 @@ requests, and a pull request always has a real account behind it.
 | [@Shivani767](https://github.com/Shivani767) | 1 | 2026-10-31 | 2026-10-31 |
 | [@amrit2611](https://github.com/amrit2611) | 1 | 2026-10-31 | 2026-10-31 |
 | [@swarshah09](https://github.com/swarshah09) | 1 | 2026-10-31 | 2026-10-31 |
+| [@dhruvprmr](https://github.com/dhruvprmr) | 1 | 2026-11-05 | 2026-11-05 |
 
-_392 pull requests from 164 people._
+_397 pull requests from 165 people._
 
 ## † Contributions that never got the merged badge
 
