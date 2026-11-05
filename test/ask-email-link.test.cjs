@@ -38,6 +38,14 @@ test('an ask about an email with no link to it is flagged until the link is ther
   assert.equal(R.askMissesEmailLink({ ...willCox, noEmail: true }, SINCE), false, 'about email in general');
   assert.equal(R.askMissesEmailLink({ ...willCox, askedAt: '2026-11-01T10:00:00Z' }, SINCE), false, 'an older ask keeps its look');
   assert.equal(R.askMissesEmailLink({ q: '**Approve the price change for Northwind?**', askedAt: '2026-11-05T20:10:00Z' }, SINCE), false, 'no email named');
+  // Ship review, 2026-11-05: what counts, and what must not nag every turn.
+  const at = '2026-11-05T20:10:00Z';
+  assert.equal(R.askMissesEmailLink({ q: '**Approve the reply to Will Cox?** Pam sends it.', askedAt: at }, SINCE), true, 'a reply is about a message someone sent');
+  assert.equal(R.askMissesEmailLink({ q: '**Send the quote email to Northwind?**', askedAt: at }, SINCE), false, 'new outbound mail has no original');
+  assert.equal(R.askMissesEmailLink({ q: '**Approve the price change?** Oscar wrote the report.', askedAt: at }, SINCE), false, 'a bare "wrote" is not an email');
+  assert.equal(R.askMissesEmailLink({ q: '**Turn on Email on Pam\'s Access tab?**', askedAt: at }, SINCE), false, 'a setting');
+  assert.equal(R.askMissesEmailLink({ kind: 'foundation', q: 'Inbox triage ran without our brand voice; her email tone is unknown.', askedAt: at }, SINCE), false, 'a foundation question');
+  assert.equal(R.askMissesEmailLink({ q: '**Approve the reply?** (email: dana@x.com)', askedAt: at }, SINCE), true, 'an address is not a link');
 });
 
 test('a change option that sends without another look is flagged; one that comes back is not', () => {
@@ -46,6 +54,13 @@ test('a change option that sends without another look is flagged; one that comes
   const fixed = { ...willCox, parts: [willCox.parts[0], { q: 'Send the reply?', options: [{ label: 'Approve, Pam sends it' }, { label: 'Change it, show me again', note: 'What should change?' }] }] };
   assert.equal(R.askChangeSends(fixed, SINCE), false);
   assert.equal(R.askChangeSends({ q: 'x', askedAt: '2026-11-05T20:10:00Z', options: [{ label: 'Post it with your edits' }] }, SINCE), true);
+  // Ship review, 2026-11-05: only an option that sends, and only when it does not come back.
+  const opt = (label) => R.askChangeSends({ q: 'x', askedAt: '2026-11-05T20:10:00Z', options: [{ label }] }, SINCE);
+  assert.equal(opt('Send it with changes'), true);
+  assert.equal(opt('Edit it and send'), true);
+  assert.equal(opt("Send with my changes, don't show me again"), true, 'an aside about showing does not excuse it');
+  assert.equal(opt('Go ahead with the changes'), false, 'an inside approval sends nothing');
+  assert.equal(opt('Preview with my changes'), false);
 });
 
 test('both reach Michael\'s tidy list each turn, with what to do', () => {

@@ -23,4 +23,7 @@ test('Michael writes a card with a file as a short summary, with plain amounts',
   assert.ok(hive.includes('- \\`backticks\\` for file paths and commands only; amounts and account names stay plain text;'), 'the protocol');
   assert.doesNotMatch(hive, /Put amounts and account names in backticks/);
   assert.doesNotMatch(hive, /backticks\\` for paths, commands, values, and identifiers/);
+  // Michael's standing rule says the same (ship review, 2026-11-05).
+  assert.ok(hive.includes('put file paths and commands in \\`backticks\\`, and amounts and account names in plain text;'));
+  assert.doesNotMatch(hive, /values and identifiers in \\`backticks/);
 });
