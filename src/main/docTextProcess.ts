@@ -24,7 +24,7 @@ export interface DocTextLaunch {
   env?: NodeJS.ProcessEnv;
 }
 
-export function extractDocumentTextApart(srcPath: string, launch: DocTextLaunch, timeoutMs = DOC_TEXT_TIME_LIMIT_MS): Promise<DocExtraction> {
+export function extractDocumentTextApart(srcPath: string, launch: DocTextLaunch, timeoutMs = DOC_TEXT_TIME_LIMIT_MS, display = false): Promise<DocExtraction> {
   return new Promise((resolve) => {
     let out = '';
     let settled = false;
@@ -38,7 +38,7 @@ export function extractDocumentTextApart(srcPath: string, launch: DocTextLaunch,
     let child: ChildProcess;
     try {
       // Its own process group off Windows, so a timeout stops the OCR helper too.
-      child = spawn(launch.file, [...launch.args, '--json', srcPath], {
+      child = spawn(launch.file, [...launch.args, '--json', ...(display ? ['--display'] : []), srcPath], {
         env: launch.env,
         detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'ignore'],

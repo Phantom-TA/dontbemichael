@@ -79,7 +79,10 @@ const EXPORT_ADVICE: Record<string, string> = {
   ppt: 'Old PowerPoint (.ppt) files can\'t be read yet. Open it and save it as .pptx or PDF, then add that instead.'
 };
 
-export async function extractDocumentText(srcPath: string): Promise<DocExtraction> {
+/** `display`: the text is for the app to show as markdown (a file tab), so a
+ *  Word document's own brackets and backticks are escaped there. Agents and the
+ *  knowledge store read the plain words (ship review, 2026-11-05). */
+export async function extractDocumentText(srcPath: string, opts: { display?: boolean } = {}): Promise<DocExtraction> {
   const ext = extname(srcPath).slice(1).toLowerCase();
 
   let size: number;
@@ -94,7 +97,7 @@ export async function extractDocumentText(srcPath: string): Promise<DocExtractio
 
   const advice = ownValue(EXPORT_ADVICE, ext);
   if (advice) return { kind: 'unreadable', reason: advice };
-  if (WORD.has(ext)) return fromOoxml(srcPath, 'docx', readWord);
+  if (WORD.has(ext)) return fromOoxml(srcPath, 'docx', (files) => readWord(files, opts.display === true));
   if (SLIDES.has(ext)) return fromOoxml(srcPath, 'pptx', readSlides);
   if (SHEETS.has(ext)) return fromOoxml(srcPath, 'xlsx', readSheets);
   if (ext === 'pdf') return readPdf(srcPath);
@@ -163,7 +166,7 @@ function fromOoxml(srcPath: string, kind: 'docx' | 'pptx' | 'xlsx', read: OoxmlR
 
 const MODALITY = { docx: 'doc', pptx: 'slides', xlsx: 'sheet' } as const;
 
-function readWord(files: Record<string, Uint8Array>): string {
+function readWord(files: Record<string, Uint8Array>, escape = false): string {
   // Body first, then the parts an owner still expects to be searchable: notes,
   // and the letterhead (address, phone) that lives in headers and footers.
   const order = (name: string) =>
@@ -175,7 +178,7 @@ function readWord(files: Record<string, Uint8Array>): string {
   return Object.keys(files)
     .filter((n) => order(n) >= 0)
     .sort((a, b) => order(a) - order(b) || a.localeCompare(b))
-    .map((n) => wordMarkdown(strFromU8(files[n]), shape))
+    .map((n) => wordMarkdown(strFromU8(files[n]), shape, escape))
     .join('\n\n');
 }
 
@@ -225,12 +228,12 @@ function wordListKinds(numbering: Uint8Array | undefined): WordShape['ordered'] 
  *  keep their shape, so a copy an agent makes reads like the original instead
  *  of one run of text (owner, 2026-11-05). Plain paragraphs are separated by a
  *  blank line, list items by a line break. */
-function wordMarkdown(xml: string, shape: WordShape): string {
+function wordMarkdown(xml: string, shape: WordShape, escape = false): string {
   const blocks: { text: string; list: boolean }[] = [];
   let listLevel = -1;
   const paragraphs = (part: string): void => {
     for (const p of part.split('</w:p>')) {
-      const text = wordRuns(p);
+      const text = wordRuns(p, escape);
       if (!text.trim()) continue;
       const style = p.match(/<w:pStyle w:val="([^"]*)"/)?.[1] ?? '';
       const heading = shape.headings.get(style) ?? Number(style.match(/^Heading([1-6])$/i)?.[1] ?? 0);
@@ -255,7 +258,7 @@ function wordMarkdown(xml: string, shape: WordShape): string {
   for (let m = tables.exec(xml); m; m = tables.exec(xml)) {
     paragraphs(xml.slice(at, m.index));
     at = tableEnd(xml, m.index);
-    const table = wordTable(xml.slice(m.index, at));
+    const table = wordTable(xml.slice(m.index, at), escape);
     if (table) blocks.push({ text: table, list: false });
     listLevel = -1;
     tables.lastIndex = at;
@@ -278,7 +281,7 @@ function tableEnd(xml: string, from: number): number {
 
 /** A Word table as a markdown table, its first row as the header. A table
  *  inside a cell comes through as that cell's text. */
-function wordTable(xml: string): string {
+function wordTable(xml: string, escape = false): string {
   // A table inside a cell becomes one paragraph of that cell's text first, so
   // the outer table's rows and cells split cleanly (ship review, 2026-11-05).
   const inner = /<w:tbl[\s>]/g;
@@ -296,7 +299,7 @@ function wordTable(xml: string): string {
   xml = flat + xml.slice(at);
   const rows = xml.split('</w:tr>')
     .map((r) => r.split('</w:tc>').slice(0, -1).map((c) =>
-      c.split('</w:p>').map((p) => oneLine(wordRuns(p))).filter(Boolean).join(' ').replace(/\|/g, '\\|')))
+      c.split('</w:p>').map((p) => oneLine(wordRuns(p, escape))).filter(Boolean).join(' ').replace(/\|/g, '\\|')))
     .filter((cells) => cells.some((c) => c));
   if (!rows.length) return '';
   const width = Math.max(...rows.map((r) => r.length));
@@ -307,7 +310,7 @@ function wordTable(xml: string): string {
 /** A paragraph's text, keeping tabs and line breaks. `<w:t>` is a run of text;
  *  `<w:tab w:val=...>` (a tab STOP, not a tab character) and `<w:delText>`
  *  (tracked deletions) never match. */
-function wordRuns(p: string, escape = true): string {
+function wordRuns(p: string, escape = false): string {
   let line = '';
   for (const m of p.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>|<w:tab\/>|<w:(?:br|cr)(?:\s[^>]*)?\/>/g)) {
     if (m[1] !== undefined) line += escape ? mdText(decodeXml(m[1])) : decodeXml(m[1]);
@@ -316,10 +319,11 @@ function wordRuns(p: string, escape = true): string {
   return line;
 }
 
-/** A Word document's own text as plain words in markdown: its brackets and
- *  backticks are escaped, so a document from outside the office can never
- *  render a link whose words hide where it goes, or a file chip (ship review,
- *  2026-11-05). Only the headings, lists and tables this reader writes are live. */
+/** A Word document's own text as plain words in markdown, for a file tab: its
+ *  brackets and backticks are escaped, so a document from outside the office
+ *  can never render a link whose words hide where it goes, or a file chip (ship
+ *  review, 2026-11-05). Only the headings, lists and tables this reader writes
+ *  are live. */
 const mdText = (s: string): string => s.replace(/[\\`[\]]/g, (c) => `\\${c}`);
 
 /** Text put back inside `<w:t>`, as Word writes it. */

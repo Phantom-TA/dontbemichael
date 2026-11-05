@@ -21,13 +21,15 @@ import { extractDocumentText, isImagePath } from './docText';
 
 async function main(): Promise<number> {
   const json = process.argv[2] === '--json';
-  const file = process.argv[json ? 3 : 2];
+  // `--json --display <file>`: the app's own read for a file tab (docText.ts).
+  const display = json && process.argv[3] === '--display';
+  const file = process.argv[json ? (display ? 4 : 3) : 2];
   if (!file) {
     process.stderr.write('usage: doc-text <file>\n');
     return 2;
   }
   if (json) {
-    process.stdout.write(JSON.stringify(await extractDocumentText(file)));
+    process.stdout.write(JSON.stringify(await extractDocumentText(file, { display })));
     return 0;
   }
   if (isImagePath(file)) {

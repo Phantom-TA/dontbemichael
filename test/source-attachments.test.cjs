@@ -145,6 +145,10 @@ test('a document in a file tab shows full paths as chips, and relative links sta
   const view = read('src/renderer/src/components/FileTabView.tsx');
   assert.match(view, /<FileText source=\{read\.text \?\? ''\} who=\{tab\.who\} variant="document" root=\{tab\.id\.slice\(0, slash\)\} baseRel=\{tab\.id\.slice\(slash \+ 1\)\} \/>/);
   assert.doesNotMatch(view, /onOpenMarkdownLink/);
+  // The file tab asks for the display read, so a Word file's own brackets can't form links there.
+  const main = read('src/main/index.ts');
+  assert.match(main, /readAskFile\(p, askFileRoots\(who\), \(path\) => documentText\(path, undefined, true\)\)/);
+  assert.match(read('src/main/docTextProcess.ts'), /\[\.\.\.launch\.args, '--json', \.\.\.\(display \? \['--display'\] : \[\]\), srcPath\]/);
 });
 
 test('team members link a document\'s source: the original by full path, the email by its link', () => {

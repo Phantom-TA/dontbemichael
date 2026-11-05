@@ -226,7 +226,7 @@ test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, w
   assert.match(main, /wc\.once\('destroyed', drop\);\n\s+wc\.once\('render-process-gone', drop\);\n\s+wc\.on\('did-start-navigation'/, 'a reload or crash drops its watchers');
   assert.match(main, /if \(askFileWatches\.get\(wc\.id\) === forWindow\) askFileWatches\.delete\(wc\.id\);\n\s+wc\.off\('destroyed', drop\);\n\s+wc\.off\('render-process-gone', drop\);\n\s+wc\.off\('did-start-navigation', onNavigate\);/, 'each drop removes its own listeners and never clears a newer map');
   assert.match(main, /const watcher = watchFs\(dirname\(v\.path\)/, 'the folder is watched, so a rename over the file is seen');
-  assert.match(main, /ipcMain\.handle\('fs:readAskFile'[\s\S]*?const r = await readAskFile\(p, askFileRoots\(who\), \(path\) => documentText\(path\)\);/, 'main checks the folders itself');
+  assert.match(main, /ipcMain\.handle\('fs:readAskFile'[\s\S]*?const r = await readAskFile\(p, askFileRoots\(who\), \(path\) => documentText\(path, undefined, true\)\);/, 'main checks the folders itself');
   const hive = read('src/main/hive.ts');
   assert.match(hive, /Name files by their full path in backticks so the owner can open them/, 'E4');
   assert.match(hive, /then the full paths of its files, each in backticks/, 'E4b');

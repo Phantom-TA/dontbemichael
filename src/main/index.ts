@@ -1337,8 +1337,8 @@ function attachmentFolder(agentId: string): string | undefined {
 }
 
 /** A document's text, read in a process of its own. Null when it can't be read. */
-async function documentText(path: string, limitMs?: number): Promise<string | null> {
-  const r = await extractDocumentTextApart(path, { file: process.execPath, args: [docTextCliPath()], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }, limitMs);
+async function documentText(path: string, limitMs?: number, display = false): Promise<string | null> {
+  const r = await extractDocumentTextApart(path, { file: process.execPath, args: [docTextCliPath()], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }, limitMs, display);
   return r.kind === 'text' ? r.text : null;
 }
 
@@ -5522,7 +5522,8 @@ function askFilePlace(root: string, real: string, path: string): { place: string
  *  again here; the renderer's earlier verdict never decides. */
 ipcMain.handle('fs:readAskFile', async (_evt, p: unknown, who: unknown) => {
   if (!askFilePathOk(p)) return { ok: false, error: 'not found' };
-  const r = await readAskFile(p, askFileRoots(who), (path) => documentText(path));
+  // Shown as markdown in a file tab: the document's own text is escaped there.
+  const r = await readAskFile(p, askFileRoots(who), (path) => documentText(path, undefined, true));
   if (!r.ok) {
     if (r.error !== 'not found') console.warn(`[fs:readAskFile] ${r.error}: ${p}`);
     return r;

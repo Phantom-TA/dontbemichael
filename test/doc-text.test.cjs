@@ -141,12 +141,16 @@ test('Word: a table inside a cell stays in that cell, and the document\'s own te
   // Value: protects=a customer table with a table in a cell keeps its rows, and words from an outside document can't render a link that hides where it goes or a file chip (ship review, 2026-11-05); fails_when=rows split on the inner table, or brackets and backticks pass through unescaped; why_new=the first version split nested rows and rendered Word text as live markdown; seam=real docx parts
   const cell = (...paras) => `<w:tc><w:tcPr/>${paras.join('')}</w:tc>`;
   const inner = `<w:tbl><w:tblPr/><w:tr>${cell(para(run('i1')))}${cell(para(run('i2')))}</w:tr><w:tr>${cell(para(run('i3')))}${cell(para(run('i4')))}</w:tr></w:tbl>`;
-  const r = await extractDocumentText(docx('nested.docx', [
+  const src = docx('nested.docx', [
     `<w:tbl><w:tblPr/><w:tr>${cell(para(run('A')))}${cell(para(run('B')))}</w:tr><w:tr>${cell(para(run('C')), inner, '<w:p/>')}${cell(para(run('D')))}</w:tr></w:tbl>`,
     para(run('See [the invoice](https://example.test/pay) and `/Users/x/secret.txt` \\ here'))
-  ]));
-  assert.equal(r.text, [
-    '| A | B |\n| --- | --- |\n| C i1 i2 i3 i4 | D |',
+  ]);
+  const table = '| A | B |\n| --- | --- |\n| C i1 i2 i3 i4 | D |';
+  // Agents and search get the document's own words as written.
+  assert.equal((await extractDocumentText(src)).text, [table, 'See [the invoice](https://example.test/pay) and `/Users/x/secret.txt` \\ here'].join('\n\n'));
+  // A file tab shows it as markdown, so there its own text is escaped (ship review, 2026-11-05).
+  assert.equal((await extractDocumentText(src, { display: true })).text, [
+    table,
     'See \\[the invoice\\](https://example.test/pay) and \\`/Users/x/secret.txt\\` \\\\ here'
   ].join('\n\n'));
 });
