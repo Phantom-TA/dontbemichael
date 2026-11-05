@@ -59,6 +59,9 @@ export interface GuardState {
   reminders: Record<string, Reminder>;
   /** Each Waiting card's check back clock (card-lifecycle.md section 8). */
   waiting?: Record<string, WaitingClock>;
+  /** Member and notice kinds Michael was told to ask about keeping
+   *  (noticeCards.ts), so he is told once. Absent in older saves. */
+  noticeAsked?: string[];
 }
 
 /** The state as it is saved, so a tick that changed nothing writes nothing.

@@ -11,6 +11,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { type HiveTask, type HumanQA } from './TasksKanban';
 import { compareByNewestAsk } from './askMeOrder';
 import { answerMessages, askAsText, isAnswered, isReport, isWithdrawn, labeledAnswer, openAskIndexes, openReportIndexes, partAnswerText, raiserOf, readAskShape, type AskShape } from '@shared/askMeRouting';
+import { noticeKindOf } from '@shared/noticeCards';
 import { isComposingKey } from '@shared/imeGuard';
 import { useRtl } from '@/i18n/useDirection';
 import { ScheduleRequestCards } from './ScheduleRequestCards';
@@ -504,6 +505,16 @@ export function AskMeTab() {
                 {sending === row.key ? translate('askMe.sending') : translate('askMe.respond')}
               </PixelButton>
             </div>
+            )}
+            {/* A notice (a report with a kind) can teach its member to stop
+                filing that kind (owner-items-reach-ask-me.md D2). */}
+            {isReport(open) && !!noticeKindOf(open) && (
+              <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end' }}>
+                <button disabled={sending === row.key} style={quietLink}
+                  onClick={() => { void window.cth.skipNotice(t.id, row.index).then(() => refreshNeedsYou()); }}>
+                  {translate('askMe.skipNotice')}
+                </button>
+              </div>
             )}
             {failed === row.key && (
               <div role="alert" style={{ marginTop: 6, fontSize: 11, lineHeight: '15px', color: 'var(--cth-coral-text)' }}>{translate('askMe.mailFailed')}</div>

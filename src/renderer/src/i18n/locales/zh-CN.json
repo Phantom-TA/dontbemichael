@@ -94,6 +94,7 @@
     "mailFailed": "没能保存。请再试一次。",
     "report": "报告",
     "gotIt": "知道了",
+    "skipNotice": "不再显示此类",
     "fileFiles": "此问题中的文件",
     "fileOpen": "打开",
     "fileReveal": "在访达中显示",

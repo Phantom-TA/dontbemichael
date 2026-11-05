@@ -128,7 +128,7 @@ test('an owner action on a website keeps the link from the email, from the team 
   const hive = read('src/main/hive.ts');
   const own = /only (a link on )?the sender\\?'s own site, never a tracking or shortened (one|link)/;
   const parts = [
-    ['team member files or tells Michael', /give the exact link the email or page offers for it, copied as it is, in your filing or message to \$\{michael\}/],
+    ["team member files it", /give the exact link the email or page offers for it, copied as it is, in your filing, so it reaches the owner's ask/],
     ['ask rule', /When the ask is something the owner does on a website, such as signing in, accepting terms or paying, link straight to where they do it/],
     ['Michael standing rule', /when the ask is something the owner does on a website \(signing in, accepting terms, paying\), link straight to where they do it/],
     ['HIVE doc rule', /\n- an action the owner takes on a website \(signing in, accepting terms, paying\) links straight to where they do it,/],

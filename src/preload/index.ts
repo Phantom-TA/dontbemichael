@@ -1631,6 +1631,8 @@ const api = {
   },
   /** "Got it" on a report card (14A). */
   ackReport: (taskId: string, index: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('hive:ackReport', taskId, index),
+  /** "Don't show me these" on a notice card (owner-items-reach-ask-me.md D2). */
+  skipNotice: (taskId: string, index: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('hive:skipNotice', taskId, index),
   /** Send on approval: emails waiting for the owner on Ask me, and the owner's decision. */
   listMailProposals: (): Promise<MailProposal[]> => ipcRenderer.invoke('mailProposals:list'),
   decideMailProposal: (id: string, decision: ProposalDecision, edit: { subject?: string; body?: string }, note?: string, standing?: string): Promise<{ ok: boolean; error?: string }> =>

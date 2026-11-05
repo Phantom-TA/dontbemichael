@@ -6352,6 +6352,10 @@ ipcMain.handle('owner:read', (_evt, ids: unknown) => {
 });
 ipcMain.handle('owner:nudge', (_evt, id: unknown) => ({ ok: typeof id === 'string' && hive.ownerRemind(id, 'nudge') }));
 ipcMain.handle('owner:dockVisible', (_evt, on: unknown) => { ownerDockVisible = on === true; return { ok: true }; });
+// It writes the owner's word into a member's memory, so only the app's own page may send it.
+ipcMain.handle('hive:skipNotice', (evt, taskId: unknown, index: unknown) => ({
+  ok: fromAppPage(evt) && typeof taskId === 'string' && Number.isInteger(index) && hive.skipNotice(taskId, index as number)
+}));
 ipcMain.handle('hive:ackReport', (_evt, taskId: unknown, index: unknown) => ({
   ok: typeof taskId === 'string' && Number.isInteger(index) && hive.ackReport(taskId, index as number)
 }));

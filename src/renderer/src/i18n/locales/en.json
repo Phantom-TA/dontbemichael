@@ -94,6 +94,7 @@
     "mailFailed": "Couldn't save that. Try again.",
     "report": "Report",
     "gotIt": "Got it",
+    "skipNotice": "Don't show me these",
     "fileFiles": "Files in this question",
     "fileOpen": "Open",
     "fileReveal": "Show in Finder",

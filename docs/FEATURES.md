@@ -276,6 +276,7 @@ moving, and brings you only the decisions that need you.
   file it saved and the email, both a click away from the file tab. In an email tab, a click on an
   attachment opens it in its own app; programs, scripts and other kinds the office doesn't take in
   stay in your mail app.
+- Anything a team member finds for you now reaches Ask me, never only a line in a report: things only you can do wait on a card until you press Done, and notices with real stakes (money, a deadline, a customer waiting, a platform rejecting something, security or legal) show as notices. Routine email stays with the team. "Don't show me these" on a notice stops that kind, and after you clear three of one kind with Got it, Michael asks whether to keep showing them.
 - A Word document keeps its headings, bulleted and numbered lists and tables when the team reads
   it, so a copy a team member makes reads like the original, and a Word file in a tab shows
   formatted instead of as plain lines.
