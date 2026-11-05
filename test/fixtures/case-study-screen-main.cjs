@@ -13,7 +13,9 @@ app.whenReady().then(async () => {
     let state = null;
     for (let i = 0; i < 50; i++) {
       state = await win.webContents.executeJavaScript('screenTest.state()');
-      if (state.headline) break;
+      // The built in headline shows before the draft's words arrive, so wait
+      // for the draft's own text too (a slow Windows runner read in between).
+      if (state.headline && state.about && !state.loading) break;
       await new Promise((r) => setTimeout(r, 100));
     }
     if (process.env.CASE_SCREEN_SHOT) require('node:fs').writeFileSync(process.env.CASE_SCREEN_SHOT, (await win.webContents.capturePage()).toPNG());
