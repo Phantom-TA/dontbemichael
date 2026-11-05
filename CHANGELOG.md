@@ -19,6 +19,8 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - The case study opens as a tab, and you can't change it; you send or save it as the team wrote it.
 - A Word document keeps its headings, lists and tables, in a file tab and for the team.
 - A change you ask for on something that leaves the office comes back to you before it goes.
+- A card about an email links that email, even when a teammate did the work, and Michael fixes any card that doesn't, or that offers to send your changes without showing you again.
+- A card that points to a file is a short summary: the result, up to three figures, what needs you, then the file. Amounts read as plain text.
 
 ### Fixed
 - No more "Data Access Blocked" notice from macOS when the office starts or you make a case study.

@@ -42,6 +42,10 @@ moving, and brings you only the decisions that need you.
   office and team folders open. A team folder named on a card opens that folder.
 - A document a team member writes from an email or its attachment links its source: the original
   file it saved and the email, both a click away from the file tab.
+- An Ask me card about an email links that email, even when a teammate did the rest of the work,
+  and Michael fixes any card that doesn't. A card that points to a file is a short summary: the
+  result in bold, at most three figures, one to a line, what needs you, then the file. Amounts
+  read as plain text.
 - Ask Michael anything from the Talk to Michael box: he answers in a conversation that opens above
   it on your latest question, with older ones folded behind Show earlier, and each question shows
   where it stands until it is answered. Scheduled outcomes, such as a
@@ -153,6 +157,7 @@ moving, and brings you only the decisions that need you.
 ### 6. You stay in charge
 - When you ask for changes to an email, a post or a quote, you see the changed version before it
   goes. The choice reads "Change it, show me again", and a yes covers only the version you saw.
+  Michael rewords any choice that would send your changes without showing you again.
 - Pulse counts only the office's own share of a Claude plan: its work at the plan's rate, learned
   from the plan's weekly usage meter, so your other Claude use is never charged to the office.
 - Opening the app is clear: a team member counts as in as soon as they have started, and the card
@@ -271,7 +276,14 @@ moving, and brings you only the decisions that need you.
 - Asking for changes on an approval no longer sends the changed version unseen. The choice now
   reads "Change it, show me again": the team member makes the changes and brings them back, on
   the email card for a member on Send on approval and as a new approval for anyone else. Before,
-  a team member allowed to send without asking edited and sent at the planned time.
+  a team member allowed to send without asking edited and sent at the planned time. Michael now
+  rewords any choice that would still send your changes without showing you again.
+- An Ask me card about an email links that email, even when a teammate did the rest of the work:
+  team members put the email's link in any message about it, and Michael asks for a missing one
+  before the card goes up.
+- A card that points to a file is a short summary of it: the result in bold, at most three
+  figures, one to a line, what needs you, then the file. Amounts and account names read as plain
+  text.
 - A new version of the app arrives as a card from Michael on Ask me, with Later and Restart to
   update (or Download, for an install that can't update itself), in place of the popup in the
   corner of the office. Later puts it off for that version until the app starts again.

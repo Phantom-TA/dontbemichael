@@ -20,6 +20,15 @@
 **Effort:** S
 **Priority:** P3
 
+### Wider phrasings for the two card checks
+
+**What:** Teach the email link check possessive and verb forms ("Will's email", "Dana emailed us", "the message Will sent") and to leave Slack and chat threads alone; teach the change option check "Approve with my changes", "Send with my changes, then show me again", and to apply a negation only to the words just before "show me again".
+
+**Why:** Both checks are a backstop to Michael's rules and only read English words; these phrasings slip past or, for one compliant label, flag it until he uses the canonical wording. Ship review pass 2, 2026-11-05.
+
+**Effort:** S
+**Priority:** P3
+
 ### The Ask me count can run one ahead for a moment
 
 **What:** Count the case study and update cards from the same check the cards render with (the case study screen open, a restart in progress).

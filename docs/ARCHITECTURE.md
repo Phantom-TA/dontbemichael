@@ -265,7 +265,9 @@ src/
                              Got its after which Michael asks whether to keep showing a kind
                              (docs/designs/owner-items-reach-ask-me.md)
     ownerRequests.ts         Michael's open requests from the owner, Blocked cards with nothing asked, the launch
-                             catch-up and "hasn't moved this" in office hours (docs/designs/card-lifecycle.md), and
+                             catch-up and "hasn't moved this" in office hours (docs/designs/card-lifecycle.md), the
+                             asks he is told to tidy (asksToTidy: open off Blocked, several open, written as a list,
+                             about an email with no email: link, a change option that sends without coming back), and
                              the owner's questions in Michael's conversation dock (docs/designs/michael-replies.md)
     mailProposals.ts         Send on approval's rules: proposals and their states, what an approved send may carry,
                              standing approvals and the fit check's prompt, threading from a Send only member's own sends
