@@ -92,7 +92,10 @@ src/
     claudeAccount.ts         which Claude plan the owner's account is on (plan fields of Claude Code's account record only)
     github.ts                GitHub issue + CI run ingestion via the gh CLI
     shellEnv.ts              resolve PATH and shell env for child processes
-    mail.ts                  IMAP/SMTP client for connected mailboxes; the broker calls it for md-mail tool calls
+    mail.ts                  IMAP/SMTP client for connected mailboxes; the broker calls it for md-mail tool calls, and
+                             fetches an attachment the owner opens from an email tab (originalAttachment); index.ts
+                             writes it read only to the app's private folder, cleared at quit, and opens it in its
+                             own app (docs/designs/source-attachments.md)
     attachmentSave.ts        writes an email attachment into a member's Email attachments folder (never replaces, never
                              executable, marked as a download) and knows which files the app saved, so only those go on
                              to a teammate (docs/designs/agent-save-attachment.md)
@@ -144,7 +147,8 @@ src/
     agentFolders.ts          each agent's folder under ~/Documents/<Business> (Michael's), plus the Office folder
     homeFolder.ts            office (harness home) folder checks behind the "can't find your office" screen
     harnessGuard.ts          PreToolUse guard that keeps agents from saving work in the harness folder
-    docText.ts / docTextCli.ts   Word, Excel, PowerPoint, PDF and scan reading; macOcr.ts reads scans and photos with
+    docText.ts / docTextCli.ts   Word, Excel, PowerPoint, PDF and scan reading (Word as markdown with its headings, lists
+                             and tables, escaped only for a file tab); macOcr.ts reads scans and photos with
                              macOS Vision, winOcr.ts with the OCR built into Windows (both through PowerShell or the
                              system's own engine, no bundled Tesseract)
     claudeCliVersion.ts      installed Claude Code version, for the Opus 5.5 / Opus 5 model floor, the hook floor
@@ -158,7 +162,9 @@ src/
     transcriptText.ts        reads a hidden Claude call's answer from its own session transcript
     screenAnswer.ts          reads a hidden Claude call's answer off its screen while it streams (a live preview)
     hiddenClaude.ts          runs a hidden Claude session in a PTY of its own, never shown, and returns its answer; the trust
-                             layer calls it directly, the other background checks reach it through hiddenModel.ts
+                             layer calls it directly, the other background checks reach it through hiddenModel.ts.
+                             Like every session the app starts (hive.ts for the team), it runs with Claude in Chrome off
+                             (CLAUDE_CODE_ENABLE_CFC=0)
     hiddenModel.ts           runs a background text check on Michael's engine: Claude through hiddenClaude.ts, Codex through
                              `codex exec` with every tool off, any other engine refused so the caller keeps its fallback; the
                              hire check, the memory tidy up, the standing check and the Work style helpers use it
@@ -253,6 +259,11 @@ src/
                              Michael as a request to route the follow up; Report cards are entries of kind report;
                              an ask's options or several questions, and the owner's answer in words
                              (docs/designs/ask-me-options.md)
+    askLeftovers.ts          the questions an answered ask left unsettled (unanswered or "Not yet") and the decision
+                             Michael records for each: dropped, settled, ask now or ask later (docs/designs/ask-me-leftovers.md)
+    noticeCards.ts           notice cards on Ask me: a notice's kind, Got it and "Don't show me these", and the run of
+                             Got its after which Michael asks whether to keep showing a kind
+                             (docs/designs/owner-items-reach-ask-me.md)
     ownerRequests.ts         Michael's open requests from the owner, Blocked cards with nothing asked, the launch
                              catch-up and "hasn't moved this" in office hours (docs/designs/card-lifecycle.md), and
                              the owner's questions in Michael's conversation dock (docs/designs/michael-replies.md)
@@ -307,13 +318,17 @@ src/
     CommandCenterPanel,      Michael's control surface (Profile/Access/Work/Office schedule/Memory/Advanced tabs, plus
                              History once a webhook exists; Advanced holds Monitor and Activity). Office schedule is a
                              read-only list of every enabled job
-    AskMeTab,                the Ask me cards on the Needs you board, agents' schedule requests included, and
-                             Report cards (cleared with Got it); AskAnswerFields draws an ask's options and
-                             several questions
+    AskMeTab,                the Ask me cards on the Needs you board, agents' schedule requests included, Report
+                             cards (cleared with Got it), notice cards (Got it or Don't show me these) and action
+                             cards (Done); AskAnswerFields draws an ask's options and several questions
+    UpdateCard,              a new version of the app as Michael's card on Ask me (Later, Restart to update or
+                             Download); the app makes it, nothing goes in tasks.json
     pulse/PulseView,         Pulse, the office's performance and cost view (branding/DESIGN.md 7.27); pulse/RunSuggestions
                              draws the run suggestion cards at the top of its Recommendations; pulse/CaseStudyScreen
-                             is Get featured's screen (the page read only, its words beside it, and Send), and
-                             pulse/CaseStudyCard is Michael's Ask me card when a case study prepared in the background is ready
+                             is Get featured's tab (the page read only, with the mailbox, the permission tick, Send and
+                             Save beside it; docs/designs/case-study-tab.md), pulse/CaseStudyCard is Michael's Ask me
+                             card when a case study prepared in the background is ready, and pulse/CaseStudyEvents
+                             takes main's case study events on any view
     FoundationCard,          a Company foundations question on Needs you (branding/DESIGN.md 7.27a), and a list
                              question's card with its seen items (7.27b); shell/foundationSave.ts runs its Save
     KnowledgeDocList,        Settings > Memory & Knowledge: the company knowledge documents, each with Open
@@ -358,8 +373,8 @@ src/
                              never deletes it, and a Done card shows Michael's result (hiveTasks.ts holds the card
                              types and parser)
     FileChip,                a file named in a reply, an Ask me card or a task, as a chip in place of its path
-                             (markdown/remarkFileChips.ts finds them); FileTabView shows an opened file in its tab
-                             (store/fileTabs.ts keeps the tabs; docs/designs/open-file-tab.md); a team folder named on a
+                             (markdown/remarkFileChips.ts finds them); FileTabView shows an opened file in its tab,
+                             full paths in it as chips (store/fileTabs.ts keeps the tabs; docs/designs/open-file-tab.md); a team folder named on a
                              card is a chip too (markdown/remarkFolderChips.ts, FolderChip)
     OfficeBreakNotice,       the office break's card on Ask me and its chip in the top bar
     SilentEngine,            the Not reporting cards on Needs you, the amber tag on a member's pod and panel, and
@@ -369,7 +384,8 @@ src/
     scene/studio/            the office studio: isometric SVG stage, pods, Michael's office, life layer (branding/DESIGN.md 8)
     scene/office/            the cast, the idle lines, and each character's prop and department icon (props.tsx,
                              PersonAvatar)
-    shell/                   top bar (view tabs: Office, Tasks, Pulse, Who talks to whom, then file tabs), bottom bar, Needs you board,
+    shell/                   top bar (view tabs: Office, Tasks, Pulse, Who talks to whom, then the case study and file
+                             tabs), bottom bar, Needs you board and NeedsYouRail, its minimized strip with the count,
                              panel chrome, dialogs; releaseBindings.ts gives a leaving hire's work back to teammates,
                              deleteTeamMember.ts deletes a team member for good (pauses their schedules, gives
                              their work back, stops them),

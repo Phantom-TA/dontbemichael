@@ -28,21 +28,31 @@ moving, and brings you only the decisions that need you.
   only he sees, and he works it in order: answers it, folds it into a card, or puts it on Ask me.
   One activity's questions arrive as one ask: choices show as rows you pick with a click, with
   Michael's recommendation tagged, and several questions get a line each. You never have to
-  answer them all: what you leave blank goes back through Michael to whoever asked, and comes
-  back to you only if they still need it.
+  answer them all: what you leave blank or answer "Not yet" goes back through Michael to whoever
+  asked, and they decide it: drop it, settle it, ask again now, or ask again later. Michael keeps
+  that decision on the card, and a later one comes back at its time, even after the card is done.
 - A To do card shows when its next step is due, in your local time, and its person is reminded
   then, even after the app was closed.
 - A question stays on Ask me until you answer it, Michael withdraws it, or you delete the team
   member who asked, and your answer goes only to Michael.
 - A file Michael names in a reply, an Ask me card or a task shows as a chip. Markdown, text, JSON,
   CSV and pictures open in an office tab beside Who talks to whom and refresh when the file
-  changes; Word, Excel, PowerPoint and PDF files show their words in a tab, with Open in app for
-  the file itself. Only files in the office and team folders open. A team folder named on a card
-  opens that folder.
+  changes; Word files show in a tab with their headings, lists and tables, and Excel, PowerPoint
+  and PDF files show their words, each with Open in app for the file itself. Only files in the
+  office and team folders open. A team folder named on a card opens that folder.
+- A document a team member writes from an email or its attachment links its source: the original
+  file it saved and the email, both a click away from the file tab.
 - Ask Michael anything from the Talk to Michael box: he answers in a conversation that opens above
   it on your latest question, with older ones folded behind Show earlier, and each question shows
   where it stands until it is answered. Scheduled outcomes, such as a
   weekly summary, arrive on Ask me as quiet Report cards you clear with Got it.
+- Anything a team member finds for you reaches Ask me, never only a line in a report: things only
+  you can do wait on a card until you press Done, and notices with real stakes (money, a deadline,
+  a customer waiting, a platform rejecting something, security or legal) show as notices. Routine
+  email stays with the team. "Don't show me these" on a notice stops that kind, and after you
+  clear three of one kind with Got it, Michael asks whether to keep showing them.
+- A new version of the app, or a case study prepared in the background, arrives as a card from
+  Michael on Ask me and stays until you act on it or choose Later.
 - Only Michael sends you desktop notifications. Talk 1:1 with any team member when you want to.
 
 ### 2. Hire the right person in four steps
@@ -89,7 +99,8 @@ moving, and brings you only the decisions that need you.
 - See the email a question or a reply is built on, as it came: an Email chip on the card opens it
   in an office tab, straight from your mailbox, even after it was archived. Opening it never marks
   it read or moves it, pictures from the web stay hidden until you show them, and Gmail mailboxes
-  get Open in Gmail.
+  get Open in Gmail. A click on one of its attachments opens a read only copy in its own app;
+  programs, scripts and other kinds the office doesn't take in stay in your mail app.
 - A team member saves an email attachment to Email attachments in its own folder and reads it
   there. Programs, scripts and archives are refused, and what is saved is marked as a download and
   never run. A teammate who needs the file asks for it, and the app copies it across, so nobody
@@ -158,7 +169,10 @@ moving, and brings you only the decisions that need you.
   your Claude account never show as connectors, and no team member can use them.
 - Spending money, deleting things and anything public come to you first, on the Needs you board.
   While anything waits it stays open; when nothing at all waits it gets out of the way and the
-  office fills the window.
+  office fills the window. Minimize it to a slim strip on the right edge, so a report or email in
+  a tab reads at nearly the full width: the strip keeps the count in sight and opens the column
+  again with one click. The coral Needs you button in the top bar hides while the column is on
+  screen.
 - Private folders: each team member opens only its own; Michael can read the team's work but not
   change it. Enforced by Claude Code's sandbox on a Mac. On Windows, the app checks Claude's file
   tools, but shell commands are not limited yet.
@@ -211,12 +225,13 @@ moving, and brings you only the decisions that need you.
 - Get featured on our website: Pulse builds a customer story page of your office, laid out like a
   landing page. A headline built from a number Pulse counted, a snapshot of your business, a band of
   results with what the team cost, how the work went before, a chart of how your office is set up
-  (you, Michael and every team member with their jobs, times, tools and count), your own words, the
-  hours the office worked while you were away, and a closing call to action. The page is in your
-  brand: your logo large in a hero of your colour, read from your website (SVG logos too) or picked
-  by you, every word is editable, and every number comes from Pulse. Send it to us from your
-  own mailbox as a web page with a PDF copy, or save both. After a
-  month of work, Pulse invites you once.
+  (you, Michael and every team member with their jobs, times, tools and count), the hours the
+  office worked while you were away, and a closing call to action. The page is in your brand: your
+  logo large in a hero of your colour, read from your website (SVG logos too), and every number
+  comes from Pulse. It opens as a tab beside your other tabs, and the page is the app's own,
+  written from your office's figures for the last 30 days, with nothing to change by hand. Send it
+  to us from your own mailbox as a web page with a PDF copy, or save both. After a month of work,
+  Pulse invites you once.
 
 ### 8. Built for small business owners
 - Setup by kind of business: restaurant and food, retail, professional services, home services,

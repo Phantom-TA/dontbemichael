@@ -1,5 +1,34 @@
 # TODOS
 
+## Ask me notices and leftovers (from the ship review of mit/ceo-review-workflow-clarity, 2026-11-05)
+
+### A skipped kind still surfaces when it has real stakes
+
+**What:** Word the "Don't show me these" memory lines (the member's and Michael's) so a notice of that kind that carries real stakes (money, a deadline, a rejection or suspension, security or legal) still gets a card.
+
+**Why:** The kind label is the member's own words, so a later App Store rejection filed under a kind the owner turned off for routine results is held back by both the member and Michael. Red team, pass 2.
+
+**Effort:** S
+**Priority:** P2
+
+### Small board timing edges
+
+**What:** Give `dueLeftovers` the board with the guard's fixes merged in, as `dueReminders` gets, and have `gotItStreak` resolve the raiser with `raiserOf` itself.
+
+**Why:** A leftover that comes due in the same tick an agent reopens a Done card is worded for the same card; a notice whose member left the team counts under the old id while the clear names Michael, so the keep-showing question never comes. Both rare. Red team and state machines specialist, pass 2.
+
+**Effort:** S
+**Priority:** P3
+
+### The Ask me count can run one ahead for a moment
+
+**What:** Count the case study and update cards from the same check the cards render with (the case study screen open, a restart in progress).
+
+**Why:** While the case study tab is open, or while a restart is under way, the pill and the strip count a card Ask me hides. It clears when main hears the case study was seen, or when the app restarts. Red team, pass 1.
+
+**Effort:** S
+**Priority:** P3
+
 ## Memory and voice trust gaps (from the 0.2.7 ship review, 2026-10-26; owner chose TODOS)
 
 ### Owner standing per note, not per tidy pass
