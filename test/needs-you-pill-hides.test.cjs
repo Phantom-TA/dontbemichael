@@ -31,12 +31,17 @@ test('the pill hides exactly while the column shows', () => {
   assert.match(read('src/renderer/src/App.tsx'), /const columnView = floorView === 'office' \|\| floorView === 'file';/);
 });
 
-test('the pill leaves the layout but its screen reader line stays, and focus waits for it', () => {
-  // Value: protects=D2 (the gap closes), E1 (a new ask is still announced) and E2 (focus lands on the pill once back); fails_when=the hidden pill keeps its space, the live region goes with it, or focus is asked before the pill exists; why_new=owner 2026-11-05; seam=source pins
+test('the pill eases out of the layout and back, its screen reader line stays, and focus waits for it', () => {
+  // Value: protects=D2 (the gap closes), smooth hiding (owner, 2026-11-05: "it should smooth animate"), E1 (a new ask is still announced) and E2 (focus lands on the pill once back); fails_when=the hidden pill keeps its space, jumps instead of easing, stays reachable while hidden, loses the live region, or focus is asked before the pill exists; why_new=owner 2026-11-05; seam=source pins (the easing was measured in Electron: 122 px to 0 over 240 ms)
   const bar = read('src/renderer/src/shell/TopBar.tsx');
-  assert.match(bar, /const hidden = useStore\(\(s\) => pillHidden\(s\.rightColumn, s\.floorView\)\);\s*if \(hidden\) return live;/);
-  const live = bar.indexOf('const live = <span aria-live="polite"');
-  assert.ok(live > 0 && live < bar.indexOf('if (hidden) return live;'), 'the live region is built before the pill hides');
+  assert.match(bar, /const hidden = useStore\(\(s\) => pillHidden\(s\.rightColumn, s\.floorView\)\);/);
+  assert.match(bar, /const slot = \(body: ReactNode\) => \(<>\{live\}/, 'every state keeps the live region beside the pill');
+  assert.match(bar, /gridTemplateColumns: hidden \? '0fr' : '1fr',\s*opacity: hidden \? 0 : 1, marginInlineStart: hidden \? -8 : 0/, 'width, opacity and the 8 px gap move together');
+  assert.match(bar, /\{\.\.\.\(\{ inert: hidden \? '' : undefined \} as Record<string, unknown>\)\}/, 'not reachable while hidden');
+  assert.equal((bar.match(/return slot\(/g) ?? []).length, 4, 'all four pill states ease');
+  const css = read('src/renderer/src/design/global.css');
+  assert.match(css, /\.cth-pill-slot \{ transition: grid-template-columns 240ms var\(--cth-ease\), opacity 200ms var\(--cth-ease\), margin-inline-start 240ms var\(--cth-ease\); \}/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.cth-pill-slot \{ transition: none; \} \}/);
   assert.match(read('src/renderer/src/shell/rightColumn.ts'), /afterLeave\(\(\) => requestAnimationFrame\(\(\) => document\.getElementById\(NEEDS_YOU_PILL_ID\)\?\.focus\(\)\)\);/);
 });
 

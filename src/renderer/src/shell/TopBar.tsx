@@ -360,22 +360,38 @@ export function NeedsYouButton() {
   // the buttons beside it close the gap (needs-you-pill-hides.md, D1 and D2).
   // The screen reader line stays (E1).
   const hidden = useStore((s) => pillHidden(s.rightColumn, s.floorView));
-  if (hidden) return live;
+  // Hiding and coming back ease over the column's own 240 ms: the pill's width
+  // (a grid column from 0fr to 1fr, so the real width, whatever its text), its
+  // opacity and the row's 8 px gap move together, so the buttons beside it
+  // glide rather than jump. Kept mounted and inert while hidden.
+  const slot = (body: ReactNode) => (<>{live}
+    <span
+      className="cth-pill-slot"
+      aria-hidden={hidden || undefined}
+      {...({ inert: hidden ? '' : undefined } as Record<string, unknown>)}
+      style={{
+        display: 'inline-grid', gridTemplateColumns: hidden ? '0fr' : '1fr',
+        opacity: hidden ? 0 : 1, marginInlineStart: hidden ? -8 : 0
+      }}
+    >
+      <span style={{ minWidth: 0, overflow: 'clip', overflowClipMargin: 14, display: 'inline-flex', whiteSpace: 'nowrap' }}>{body}</span>
+    </span>
+  </>);
 
   // Unknown (launch, before the first read): an empty quiet pill, never a
   // false "Nothing needs you" (D3).
   if (state === 'blank') {
-    return <>{live}<span aria-hidden="true" className="cth-titlebar-nodrag" style={{ ...quietPill, width: 132 }} /></>;
+    return slot(<span aria-hidden="true" className="cth-titlebar-nodrag" style={{ ...quietPill, width: 132 }} />);
   }
   // Nothing waits: a plain label, not a button (D2).
   if (state === 'quiet') {
     // Only reports waiting: a quiet pill that opens the board, never coral (14A).
     if (reports > 0) {
-      return <>{live}<button onClick={openBoard} className="cth-titlebar-nodrag" style={{ ...quietPill, border: 'none', fontFamily: 'var(--cth-font-ui)', cursor: 'pointer', color: 'var(--cth-ink-2)' }}>{t('shell.reports', { count: reports })}</button></>;
+      return slot(<button onClick={openBoard} className="cth-titlebar-nodrag" style={{ ...quietPill, border: 'none', fontFamily: 'var(--cth-font-ui)', cursor: 'pointer', color: 'var(--cth-ink-2)' }}>{t('shell.reports', { count: reports })}</button>);
     }
-    return <>{live}<span className="cth-titlebar-nodrag" style={quietPill}>{t('shell.nothingNeedsYou')}</span></>;
+    return slot(<span className="cth-titlebar-nodrag" style={quietPill}>{t('shell.nothingNeedsYou')}</span>);
   }
-  return (<>{live}
+  return slot(
     <button
       key={bump}
       id={NEEDS_YOU_PILL_ID}
@@ -396,7 +412,7 @@ export function NeedsYouButton() {
         fontFamily: 'var(--cth-font-mono)', fontSize: 12, fontWeight: 600
       }}>{count}</span>
     </button>
-  </>);
+  );
 }
 
 const quietPill: CSSProperties = {

@@ -601,6 +601,10 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-rail-pulse { animation: cth-rail-pulse 900ms var(--cth-ease) 1; }
 @keyframes cth-rail-pulse { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.25); } }
 @media (prefers-reduced-motion: reduce) { .cth-rail-pulse { animation: none; } }
+/* The top bar's Needs you pill eases out while the column shows and back in
+   (docs/designs/needs-you-pill-hides.md), over the column's 240 ms. */
+.cth-pill-slot { transition: grid-template-columns 240ms var(--cth-ease), opacity 200ms var(--cth-ease), margin-inline-start 240ms var(--cth-ease); }
+@media (prefers-reduced-motion: reduce) { .cth-pill-slot { transition: none; } }
 /* The wide panel (wide panel WD2, WD8): its text at most 720 px across and
    centered, the terminal across the whole panel; the office dims behind it.
    Padding, not a max width, so a tab's own ground still fills the panel; it
