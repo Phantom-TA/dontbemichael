@@ -90,6 +90,29 @@ test('routine, verbs and the quoted gist', () => {
   assert.equal(gist({ subject: 'x'.repeat(200), body: '' }).length, 160);
 });
 
+test('message previews keep whole characters at the conversation and notice limits', () => {
+  for (const max of [160, 120]) {
+    const prefix = 'a'.repeat(max - 2);
+    for (const character of ['😀', '👨‍👩‍👧', '🇮🇳', '👍🏽', 'e\u0301']) {
+      const text = `${prefix}${character} tail`;
+      const expected = `${prefix}${character}…`;
+      assert.equal(gist({ subject: text, body: '' }, max), expected);
+      assert.equal(gist({ subject: '', body: `\n  ${text}\nsecond line` }, max), expected);
+    }
+  }
+});
+
+test('a preview that fits in whole characters is not shortened', () => {
+  const text = `${'a'.repeat(158)}🇮🇳e\u0301`;
+  assert.equal(gist({ subject: text, body: '' }), text);
+  assert.equal(gist({ subject: '', body: text }), text);
+});
+
+test('preview truncation still prefers the subject and collapses whitespace', () => {
+  assert.equal(gist({ subject: '  Hello\n\tworld  ', body: 'Ignored body' }, 8), 'Hello w…');
+  assert.equal(gist({ subject: '  ', body: '\n  First\t line\nsecond line' }, 8), 'First l…');
+});
+
 test('business questions about closing time remain conversations', () => {
   const subjects = [
     'What is the closing time for this deal?',
