@@ -148,7 +148,7 @@ test('the wide choice is remembered on this computer, never set by the window, a
 test('wide, the column keeps its slot so the office never reflows, and the office dims under the top bar', () => {
   // Value: protects=the office behind stays put and the coral pill stays live (WD8); fails_when=the slot or the bleed changes, the dimming covers the top bar, or the office stays reachable by Tab; why_new=eng 2 and WD13; seam=source pin
   const app = read('src/renderer/src/App.tsx');
-  assert.match(app, /<StudioStage config=\{config\} bleed=\{columnShown \? sidebarWidth \+ 10 : 0\} \/>/, 'bleed unchanged');
+  assert.match(app, /<StudioStage config=\{config\} bleed=\{columnShown \? columnW \+ 10 : 0\} \/>/, 'bleed unchanged');
   assert.match(app, /\{wide && <div aria-hidden style=\{\{ width: sidebarWidth \+ 6, flexShrink: 0 \}\} \/>\}/, 'the slot');
   assert.match(app, /\? \{ position: 'absolute', top: 12, bottom: 12, left: '10%', right: '10%', margin: 0 \}/, '10% in from each side');
   assert.match(app, /\{\(wide \|\| dockWide\) && <div aria-hidden className="cth-wide-scrim" style=\{\{ position: 'absolute', inset: 0, zIndex: 190/, 'inside the row under the top bar');

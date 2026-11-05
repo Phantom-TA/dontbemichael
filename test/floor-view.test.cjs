@@ -28,7 +28,7 @@ test('the office shows by default, and the choice is remembered', () => {
 // top bar; the board covers the office and leaves room for the bottom bar.
 test('the view tabs sit in the top bar, and the board covers the office above the bottom bar', () => {
   const app = read('src/renderer/src/App.tsx');
-  const office = app.indexOf('<StudioStage config={config} bleed={columnShown ? sidebarWidth + 10 : 0} />');
+  const office = app.indexOf('<StudioStage config={config} bleed={columnShown ? columnW + 10 : 0} />');
   const board = app.indexOf("{floorView !== 'office' && floorView !== 'case-study' && (");
   const bottom = app.indexOf('<BottomBar />');
   assert.ok(office > 0 && board > office && bottom > board, 'office, then the board over it, then the bottom bar over both');
@@ -118,15 +118,15 @@ test('Tasks and Who talks to whom take the whole window: the right column hides 
   // A file tab keeps the column beside it (open-file-tab.md, F1); Tasks and the graph still hide it.
   // Pulse hides it like Tasks (owner, 2026-10-15).
   assert.match(app, /const columnView = floorView === 'office' \|\| floorView === 'file';\s*const columnShown = columnOpen && columnView;/);
-  assert.match(app, /\{columnShown && \(\n\s+<SidebarSplitter/);
-  assert.match(app, /display: columnView \? 'flex' : 'none', flexDirection: 'column'/);
+  assert.match(app, /\{columnFull && \(\n\s+<SidebarSplitter/);
+  assert.match(app, /display: columnView && !minimized \? 'flex' : 'none', flexDirection: 'column'/);
   assert.match(app, /\{\(columnOpen \|\| exiting\) && \(/, 'the column stays mounted while hidden');
   const store = read('src/renderer/src/store/store.ts');
   assert.match(store, /function officeView\(view: FloorView\): \{ floorView\?: FloorView \} \{\n\s+if \(view === 'office' \|\| view === 'file'\) return \{\};\n\s+try \{ window\.localStorage\.setItem\(LS_FLOOR_VIEW, 'office'\); \}/);
   assert.equal((store.match(/\.\.\.officeView\(s\.floorView\)/g) || []).length, 8, 'select, openAgentMemory, openAgentProfile (Pulse), openAgentWork (a stopped Michael), openAgentEmail (a member link in agent text), openNeedsYou and both Michael tab requests');
   // Each also claims the center from the wide 1:1 (wide-dock.test.cjs, 8A).
-  assert.match(store, /rightColumn: 'person', centerClaim: 'column', \.\.\.officeView\(s\.floorView\) \};/);
-  assert.match(store, /rightColumn: 'board',\n\s+centerClaim: 'column',\n\s+\.\.\.officeView\(s\.floorView\),/);
+  assert.match(store, /rightColumn: 'person', centerClaim: 'column', columnMinimized: false, \.\.\.officeView\(s\.floorView\) \};/);
+  assert.match(store, /rightColumn: 'board',\n\s+centerClaim: 'column', columnMinimized: false,\n\s+\.\.\.officeView\(s\.floorView\),/);
 });
 
 test('the program mark is a link on the platform\'s right side, over the pods, opening the chamber\'s site in the browser', () => {

@@ -213,7 +213,7 @@ test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, w
   assert.match(store, /if \(view === 'office' \|\| view === 'file'\) return \{\};/, 'opening the column on a file tab (or Pulse) stays on it (F1, D14)');
   const app = read('src/renderer/src/App.tsx');
   assert.match(app, /const columnView = floorView === 'office' \|\| floorView === 'file';\s*const columnShown = columnOpen && columnView;/);
-  assert.match(app, /display: columnView \? 'flex' : 'none'/, 'the column style too, not only columnShown');
+  assert.match(app, /display: columnView && !minimized \? 'flex' : 'none'/, 'the column style too, not only columnShown');
   assert.match(app, /\{floorView === 'file' && <FileTabView \/>\}/);
   assert.match(app, /const barHidden = floorView === 'pulse' \|\| floorView === 'file' \|\| floorView === 'case-study';/, 'no Talk to Michael bar on a file tab, Pulse or the case study (owner, 2026-10-16)');
   assert.match(read('src/renderer/src/components/FileTabView.tsx'), /<div ref=\{scroller\} className="cth-file-tab"/);

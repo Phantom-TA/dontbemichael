@@ -596,6 +596,11 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 @keyframes cth-col-out { from { transform: none; opacity: 1; } to { transform: translateX(var(--cth-col-shift, 100%)); opacity: 0; } }
 [dir="rtl"] .cth-col-in, [dir="rtl"] .cth-col-out { --cth-col-shift: -100%; }
 @media (prefers-reduced-motion: reduce) { .cth-col-in, .cth-col-out { animation: none; } }
+/* The minimized column's count pulses once when an ask arrives
+   (docs/designs/needs-you-minimize.md, D3). */
+.cth-rail-pulse { animation: cth-rail-pulse 900ms var(--cth-ease) 1; }
+@keyframes cth-rail-pulse { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.25); } }
+@media (prefers-reduced-motion: reduce) { .cth-rail-pulse { animation: none; } }
 /* The wide panel (wide panel WD2, WD8): its text at most 720 px across and
    centered, the terminal across the whole panel; the office dims behind it.
    Padding, not a max width, so a tab's own ground still fills the panel; it

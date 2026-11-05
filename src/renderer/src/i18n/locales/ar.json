@@ -2221,7 +2221,10 @@
     "dismiss": "لا تُعِد {{name}}",
     "noAgentTitle": "مكتبك فارغ",
     "noAgentBody": "وظّف أول عضو في فريقك لتبدأ.",
-    "send": "إرسال"
+    "send": "إرسال",
+    "minimizeColumn": "تصغير «يحتاجك»",
+    "railOpen": "فتح «يحتاجك»",
+    "railOpenCount": "فتح «يحتاجك»، {{count}} بانتظارك"
   },
   "studio": {
     "summary": "{{count}} أشخاص في المكتب",

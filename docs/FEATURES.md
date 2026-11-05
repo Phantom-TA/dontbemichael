@@ -266,6 +266,9 @@ moving, and brings you only the decisions that need you.
 - The case study opens as a tab in the top bar, next to your other tabs, instead of covering the
   whole office. Its page is the app's own: written from your office's figures for the last 30 days,
   with nothing to change by hand. You read it, then send it or save it.
+- The Needs you column can be minimized to a slim strip on the right edge, so a report or email
+  in a tab reads at nearly the full width. The strip keeps the count in sight and opens the column
+  again with one click; a new ask makes it pulse instead of opening.
 - No more "Data Access Blocked" notice from macOS when you make a case study or the office starts.
   Claude Code's Claude in Chrome is now off for the team and the app's background checks. With
   no saved setting it looked for its browser extension in Chrome's folder, which macOS blocks. The

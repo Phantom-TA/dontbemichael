@@ -9,6 +9,7 @@ import { TasksKanban } from '@/components/TasksKanban';
 import { PulseView } from '@/components/pulse/PulseView';
 import { FileTabView } from '@/components/FileTabView';
 import { CaseStudyScreen } from '@/components/pulse/CaseStudyScreen';
+import { NeedsYouRail, RAIL_W } from '@/shell/NeedsYouRail';
 import { MemoryGraphPanel } from '@/components/MemoryGraphPanel';
 import { useHive } from '@/hooks/useHive';
 import { useGodNameSync } from '@/i18n/useGodNameSync';
@@ -76,6 +77,7 @@ export function App() {
   const { t } = useTranslation();
   const rightColumn = useStore(s => s.rightColumn);
   const sidebarWidth = useStore(s => s.sidebarWidth);
+  const columnMinimized = useStore(s => s.columnMinimized);
   const panelWide = useStore(s => s.panelWide);
   const setSidebarWidth = useStore(s => s.setSidebarWidth);
   const ideOpen = useStore(s => s.ideOpen);
@@ -370,6 +372,12 @@ export function App() {
   // The wide 1:1 takes the center from it when the owner opened it last (8A).
   const dockWide = useDockCentered();
   const wide = panelCentered({ panelWide, panelOpen: columnShown && rightColumn === 'person' && !!agent, dockCentered: dockWide });
+  // Minimized (docs/designs/needs-you-minimize.md): the column stays mounted but
+  // hidden, and a slim rail with the count takes its place, so the office or
+  // the tab gets nearly the whole width. Never while a panel is wide (E4).
+  const minimized = columnMinimized && !wide;
+  const columnFull = columnShown && !minimized;
+  const columnW = minimized ? RAIL_W : sidebarWidth;
   // While wide the office and the bottom bar are out of reach (WD13). The
   // wide 1:1 leaves the right column live beside it (owner, 2026-10-17).
   useEffect(() => { stageRef.current?.toggleAttribute('inert', wide || dockWide); }, [wide, dockWide]);
@@ -431,7 +439,8 @@ export function App() {
     const onDown = (e: PointerEvent) => {
       const target = e.target as Element | null;
       if (!target || columnRef.current?.contains(target)) return;
-      if (target.closest(`#${NEEDS_YOU_PILL_ID}, .cth-splitter`)) return;
+      // The minimized rail opens the column again (needs-you-minimize.md).
+      if (target.closest(`#${NEEDS_YOU_PILL_ID}, .cth-splitter, [data-needs-you-rail]`)) return;
       useStore.getState().setRightColumn('closed');
     };
     window.addEventListener('pointerdown', onDown, true);
@@ -534,7 +543,7 @@ export function App() {
       <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
         <div ref={stageRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', background: 'var(--cth-bg)' }}>
           <div ref={floorRef} style={{ display: 'contents' }}>
-            <StudioStage config={config} bleed={columnShown ? sidebarWidth + 10 : 0} />
+            <StudioStage config={config} bleed={columnShown ? columnW + 10 : 0} />
           </div>
           {/* Over the office only, never over Tasks or the graph (DESIGN.md 7.6). */}
           {floorView === 'office' && <RestoreTeamBanner config={config} />}
@@ -611,7 +620,7 @@ export function App() {
           )}
         </div>
 
-        {columnShown && (
+        {columnFull && (
           <SidebarSplitter
             width={sidebarWidth}
             onChange={setSidebarWidth}
@@ -633,7 +642,7 @@ export function App() {
             className={columnOpen ? 'cth-col-in' : 'cth-col-out'}
             style={{
               width: wide ? 'auto' : sidebarWidth, flexShrink: 0, minHeight: 0, zIndex: wide ? 200 : 60,
-              display: columnView ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden',
+              display: columnView && !minimized ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden',
               ...(wide
                 // 10% of the window in from each side, under the top bar (WD2).
                 ? { position: 'absolute', top: 12, bottom: 12, left: '10%', right: '10%', margin: 0 }
@@ -654,12 +663,13 @@ export function App() {
             )}
           </div>
         )}
+        {columnShown && minimized && <NeedsYouRail />}
         {/* While wide: the office dims under the top bar, so the coral pill
             stays bright, and a click on it does nothing (WD4, WD8); the
             column's slot stays, so the office keeps its size (eng 2). */}
         {(wide || dockWide) && <div aria-hidden className="cth-wide-scrim" style={{ position: 'absolute', inset: 0, zIndex: 190, background: 'var(--cth-backdrop)',
           // The wide 1:1 dims the office only; the column (and its splitter) stay bright.
-          ...(dockWide && columnShown ? { insetInlineEnd: sidebarWidth + 16 } : {}) }} />}
+          ...(dockWide && columnShown ? { insetInlineEnd: columnW + 16 } : {}) }} />}
         {/* The wide 1:1 is drawn here, outside the stage that goes inert
             (eng review R1, D14): the wide panel's frame, or with the right
             column open the office's width beside it, never over Needs you
@@ -667,7 +677,7 @@ export function App() {
             into it. */}
         <div id={DOCK_CENTER_ID} style={{
           position: 'absolute', top: 12, bottom: 12, zIndex: 200,
-          ...(columnShown ? { insetInlineStart: 24, insetInlineEnd: sidebarWidth + 28 } : { insetInlineStart: '10%', insetInlineEnd: '10%' }),
+          ...(columnShown ? { insetInlineStart: 24, insetInlineEnd: columnW + 28 } : { insetInlineStart: '10%', insetInlineEnd: '10%' }),
           display: dockWide ? 'flex' : 'none', flexDirection: 'column', pointerEvents: 'none'
         }} />
         {wide && <div aria-hidden style={{ width: sidebarWidth + 6, flexShrink: 0 }} />}

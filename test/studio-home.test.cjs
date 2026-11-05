@@ -98,7 +98,7 @@ test('a card above its pod is anchored by its bottom edge, so it grows away from
 
 test('the app shows the studio, not the pixel floor', () => {
   const app = read('src/renderer/src/App.tsx');
-  assert.match(app, /<StudioStage config=\{config\} bleed=\{columnShown \? sidebarWidth \+ 10 : 0\} \/>/);
+  assert.match(app, /<StudioStage config=\{config\} bleed=\{columnShown \? columnW \+ 10 : 0\} \/>/);
   assert.doesNotMatch(app, /<OfficeFloor \/>/);
 });
 
@@ -330,7 +330,7 @@ test('Michael\'s office has a name plate by the door, not an M badge (owner, 202
 test('the right column has no ground of its own; its cards sit on the office (owner, 2026-09-30)', () => {
   const app = read('src/renderer/src/App.tsx');
   // Closed, the office takes the window (docs/designs/needs-you-empty-state.md D1).
-  assert.match(app, /<StudioStage config=\{config\} bleed=\{columnShown \? sidebarWidth \+ 10 : 0\} \/>/);
+  assert.match(app, /<StudioStage config=\{config\} bleed=\{columnShown \? columnW \+ 10 : 0\} \/>/);
   const col = app.slice(app.indexOf("The right column has no ground of its own"), app.indexOf("{columnMode === 'board' || !agent ? ("));
   assert.doesNotMatch(col, /background:|backdropFilter|boxShadow/);
   const stage = read('src/renderer/src/scene/studio/StudioStage.tsx');

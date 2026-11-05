@@ -2221,7 +2221,10 @@
     "dismiss": "Leave {{name}} out",
     "noAgentTitle": "Your office is empty",
     "noAgentBody": "Hire your first team member to get started.",
-    "send": "Send"
+    "send": "Send",
+    "minimizeColumn": "Minimize Needs you",
+    "railOpen": "Open Needs you",
+    "railOpenCount": "Open Needs you, {{count}} waiting"
   },
   "studio": {
     "summary": "{{count}} people in the office",

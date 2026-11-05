@@ -355,6 +355,12 @@ interface State {
   /** `claim: false` for the app's own opening (an ask arriving), which never
    *  takes the center from the 1:1 (8A counts the owner's actions only). */
   setRightColumn: (column: RightColumn, opts?: { claim?: boolean }) => void;
+  /** The column shrunk to a slim strip with the count (docs/designs/needs-you-minimize.md):
+   *  for this session only, never while a panel is wide. Every owner action that
+   *  opens the column (the pill, a person, a chip) brings it back full size; an
+   *  ask arriving does not (D3). */
+  columnMinimized: boolean;
+  setColumnMinimized: (on: boolean) => void;
   /** Open the Needs you board from an owner action (the pill, the coral strip,
    *  a "for you" chip). Asks the board to put focus in a reply field (D10),
    *  on `taskId`'s card when given (D11). */
@@ -1035,12 +1041,12 @@ export const useStore = create<State>((set, get) => ({
   openAgentProfile: (agentId) => { attemptLeave({ selectedId: agentId, rightColumn: 'person' }, () => set((s) => {
     const seq = (s.ccTabRequest?.seq ?? 0) + 1;
     persistAgents(s.agents, agentId);
-    return { selectedId: agentId, ccTabRequest: { tab: 'profile', seq }, rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView) };
+    return { selectedId: agentId, ccTabRequest: { tab: 'profile', seq }, rightColumn: 'person' as const, centerClaim: 'column' as const, columnMinimized: false, ...officeView(s.floorView) };
   })); },
   openAgentWork: (agentId) => { attemptLeave({ selectedId: agentId, rightColumn: 'person' }, () => set((s) => {
     const seq = (s.ccTabRequest?.seq ?? 0) + 1;
     persistAgents(s.agents, agentId);
-    return { selectedId: agentId, ccTabRequest: { tab: 'terminal', seq }, rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView) };
+    return { selectedId: agentId, ccTabRequest: { tab: 'terminal', seq }, rightColumn: 'person' as const, centerClaim: 'column' as const, columnMinimized: false, ...officeView(s.floorView) };
   })); },
   openAgentEmail: (agentId) => { attemptLeave({ selectedId: agentId, rightColumn: 'person' }, () => set((s) => {
     const seq = (s.ccTabRequest?.seq ?? 0) + 1;
@@ -1049,7 +1055,7 @@ export const useStore = create<State>((set, get) => ({
       selectedId: agentId,
       ccTabRequest: { tab: 'capabilities', seq },
       emailRequest: { agentId, seq: (s.emailRequest?.seq ?? 0) + 1 },
-      rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView)
+      rightColumn: 'person' as const, centerClaim: 'column' as const, columnMinimized: false, ...officeView(s.floorView)
     };
   })); },
   emailRequest: null,
@@ -1064,7 +1070,7 @@ export const useStore = create<State>((set, get) => ({
       ccTabRequest: { tab: 'memory', seq },
       memoryFocusRequest: { agentId, seq },
       rightColumn: 'person' as const,
-      centerClaim: 'column' as const,
+      centerClaim: 'column' as const, columnMinimized: false,
       ...officeView(s.floorView)
     };
   })); },
@@ -1075,10 +1081,10 @@ export const useStore = create<State>((set, get) => ({
     const blocked = tab !== 'human' && !!s0.selectedId && !canOpen(s0.selectedId, s0.goneHome);
     attemptLeave(blocked ? null : { selectedId: s0.selectedId, rightColumn: tab === 'human' ? 'board' : 'person' }, () =>
       set((s) => tab === 'human'
-        ? { rightColumn: 'board' as const, centerClaim: 'column' as const, ...officeView(s.floorView) }
+        ? { rightColumn: 'board' as const, centerClaim: 'column' as const, columnMinimized: false, ...officeView(s.floorView) }
         : s.selectedId && !canOpen(s.selectedId, s.goneHome)
           ? {}
-          : { ccTabRequest: { tab, seq: (s.ccTabRequest?.seq ?? 0) + 1 }, rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView) }));
+          : { ccTabRequest: { tab, seq: (s.ccTabRequest?.seq ?? 0) + 1 }, rightColumn: 'person' as const, centerClaim: 'column' as const, columnMinimized: false, ...officeView(s.floorView) }));
   },
   missions: [],
   missionsStatus: 'loading',
@@ -1107,7 +1113,7 @@ export const useStore = create<State>((set, get) => ({
   panelWide: initialPanelWide,
   setPanelWide: (on) => {
     try { window.localStorage.setItem(LS_PANEL_WIDE, on ? '1' : '0'); } catch { /* noop */ }
-    set(on ? { panelWide: on, centerClaim: 'column' } : { panelWide: on });
+    set(on ? { panelWide: on, centerClaim: 'column', columnMinimized: false } : { panelWide: on });
   },
   dockWide: initialDockWide,
   setDockWide: (on) => {
@@ -1140,17 +1146,21 @@ export const useStore = create<State>((set, get) => ({
   select: (id) => { attemptLeave(canOpen(id, get().goneHome) ? { selectedId: id, rightColumn: 'person' } : null, () => set((s) => {
     if (!canOpen(id, s.goneHome)) return {};
     persistAgents(s.agents, id);
-    return { selectedId: id, ccTabRequest: null, memoryFocusRequest: null, rightColumn: 'person', centerClaim: 'column', ...officeView(s.floorView) };
+    return { selectedId: id, ccTabRequest: null, memoryFocusRequest: null, rightColumn: 'person', centerClaim: 'column', columnMinimized: false, ...officeView(s.floorView) };
   })); },
   goneHome: [],
   setGoneHome: (ids) => set((s) => (ids.length === s.goneHome.length && ids.every((id) => s.goneHome.includes(id)) ? {} : { goneHome: ids })),
   rightColumn: 'closed',
+  columnMinimized: false,
+  setColumnMinimized: (on) => set({ columnMinimized: on }),
   setRightColumn: (column, opts) => { attemptLeave({ selectedId: get().selectedId, rightColumn: column }, () => set(
-    column !== 'closed' && opts?.claim !== false ? { rightColumn: column, centerClaim: 'column' } : { rightColumn: column }
+    column !== 'closed' && opts?.claim !== false ? { rightColumn: column, centerClaim: 'column', columnMinimized: false }
+      // A closed column opens again full size (needs-you-minimize.md).
+      : column === 'closed' ? { rightColumn: column, columnMinimized: false } : { rightColumn: column }
   )); },
   openNeedsYou: (opts) => { attemptLeave({ selectedId: get().selectedId, rightColumn: 'board' }, () => set((s) => ({
     rightColumn: 'board',
-    centerClaim: 'column',
+    centerClaim: 'column', columnMinimized: false,
     ...officeView(s.floorView),
     needsYouFocus: { seq: (s.needsYouFocus?.seq ?? 0) + 1, ...(opts?.taskId ? { taskId: opts.taskId } : {}) }
   }))); },

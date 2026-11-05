@@ -43,3 +43,11 @@ export function columnEscAction(e: {
 export function focusNeedsYouPill(): void {
   afterLeave(() => document.getElementById(NEEDS_YOU_PILL_ID)?.focus());
 }
+
+/** Whether the minimized column's strip pulses for this count change: only when
+ *  the count rises, so a new ask is noticed without the column opening
+ *  (docs/designs/needs-you-minimize.md, D3). A fall (an answer) or the first
+ *  read never pulses. */
+export function railPulses(prev: number | null, next: number): boolean {
+  return prev !== null && next > prev;
+}

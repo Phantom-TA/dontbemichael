@@ -9,6 +9,7 @@ import { useRestoreTeam } from '@/hooks/useRestoreTeam';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useNeedsYouCount } from './useNeedsYou';
 import { focusNeedsYouPill } from './rightColumn';
+import { MinimizeColumnButton } from './NeedsYouRail';
 
 /**
  * The Needs you board (branding/DESIGN.md 7.6 and 7.8): the questions Michael
@@ -45,6 +46,8 @@ export function NeedsYouBoard() {
           }}>{count}</span>
         )}
         <InfoTip text={t('shell.needsYouInfo', { godName })} />
+        {/* Minimize to a slim strip with the count (needs-you-minimize.md, D2). */}
+        <span style={{ marginInlineStart: 'auto', display: 'inline-flex' }}><MinimizeColumnButton size={26} /></span>
         {count === 0 && <button
           onClick={close}
           onMouseEnter={() => setCloseHover(true)}
@@ -52,7 +55,7 @@ export function NeedsYouBoard() {
           aria-label={t('panel.close')}
           title={t('panel.close')}
           style={{
-            marginInlineStart: 'auto', width: 24, height: 24, padding: 0, border: 'none', borderRadius: 'var(--cth-r-sm)',
+            width: 24, height: 24, padding: 0, border: 'none', borderRadius: 'var(--cth-r-sm)',
             cursor: 'pointer',
             background: closeHover ? 'var(--cth-neutral-soft)' : 'transparent',
             color: closeHover ? 'var(--cth-ink-2)' : 'var(--cth-ink-3)',

@@ -86,8 +86,8 @@ test('wide, the conversation and box are drawn outside the office, beside the ri
   const app = read('src/renderer/src/App.tsx');
   const host = app.indexOf('<div id={DOCK_CENTER_ID}');
   assert.ok(host > app.indexOf('<BottomBar />') && host > app.indexOf('className="cth-wide-scrim"'), 'after the stage closes, beside the column');
-  assert.match(app, /\.\.\.\(columnShown \? \{ insetInlineStart: 24, insetInlineEnd: sidebarWidth \+ 28 \} : \{ insetInlineStart: '10%', insetInlineEnd: '10%' \}\),\n\s*display: dockWide \? 'flex' : 'none'/, 'left of the column when it shows, else the wide panel frame');
-  assert.match(app, /\.\.\.\(dockWide && columnShown \? \{ insetInlineEnd: sidebarWidth \+ 16 \} : \{\}\)/, 'the dimming stops at the column');
+  assert.match(app, /\.\.\.\(columnShown \? \{ insetInlineStart: 24, insetInlineEnd: columnW \+ 28 \} : \{ insetInlineStart: '10%', insetInlineEnd: '10%' \}\),\n\s*display: dockWide \? 'flex' : 'none'/, 'left of the column when it shows, else the wide panel frame');
+  assert.match(app, /\.\.\.\(dockWide && columnShown \? \{ insetInlineEnd: columnW \+ 16 \} : \{\}\)/, 'the dimming stops at the column');
   assert.equal((app.match(/columnRef\.current\?\.toggleAttribute\('inert', [^)]*\)/g) || []).join(), "columnRef.current?.toggleAttribute('inert', launchLock)", 'the column stays live: only the launch lock holds it');
   const bar = read('src/renderer/src/shell/BottomBar.tsx');
   assert.match(bar, /\{createPortal\(\n\s*<div ref=\{composerRef\}/);

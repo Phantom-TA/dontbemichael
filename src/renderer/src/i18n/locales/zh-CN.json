@@ -2221,7 +2221,10 @@
     "dismiss": "不带回 {{name}}",
     "noAgentTitle": "你的办公室还是空的",
     "noAgentBody": "招聘第一位团队成员即可开始。",
-    "send": "发送"
+    "send": "发送",
+    "minimizeColumn": "收起“需要你处理”",
+    "railOpen": "打开“需要你处理”",
+    "railOpenCount": "打开“需要你处理”，{{count}} 项等待中"
   },
   "studio": {
     "summary": "办公室里有 {{count}} 人",
