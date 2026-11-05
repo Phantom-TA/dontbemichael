@@ -276,6 +276,9 @@ moving, and brings you only the decisions that need you.
   file it saved and the email, both a click away from the file tab. In an email tab, a click on an
   attachment opens it in its own app; programs, scripts and other kinds the office doesn't take in
   stay in your mail app.
+- A Word document keeps its headings, bulleted and numbered lists and tables when the team reads
+  it, so a copy a team member makes reads like the original, and a Word file in a tab shows
+  formatted instead of as plain lines.
 - No more "Data Access Blocked" notice from macOS when you make a case study or the office starts.
   Claude Code's Claude in Chrome is now off for the team and the app's background checks. With
   no saved setting it looked for its browser extension in Chrome's folder, which macOS blocks. The

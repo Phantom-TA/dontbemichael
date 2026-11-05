@@ -271,7 +271,9 @@ test('R3a: a Word file a member saved shows its words in a tab, read by the docu
   const doc = await readAskFile('Email attachments/Workflow.docx', roots, words);
   assert.equal(doc.ok, true);
   assert.equal(doc.kind, 'document');
-  assert.equal(doc.text, 'Workflow edits\nSecond step');
+  assert.equal(doc.text, 'Workflow edits\n\nSecond step');
+  // Its headings, lists and tables come as markdown, so the tab shows it the way it shows a report (owner, 2026-11-05).
+  assert.match(read('src/renderer/src/components/FileTabView.tsx'), /else if \(read\.kind === 'document'\) \{[^}]*body = <FileText source=\{read\.text \?\? ''\} who=\{tab\.who\} variant="document" \/>;/);
   assert.equal(doc.size, Buffer.byteLength(doc.text));
   assert.equal((await askFileVerdict('Email attachments/Workflow.docx', roots)).verdict, 'open', 'Open in app still reaches the file');
 

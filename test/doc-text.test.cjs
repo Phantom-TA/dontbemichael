@@ -97,8 +97,44 @@ test('Word: paragraphs, tabs and escaped characters come through as text', async
   ]);
   const r = await extractDocumentText(p);
   assert.equal(r.kind, 'text');
-  assert.equal(r.text, 'Returns & Refunds\nItem\tWindow\nRefunds within 30 days with a receipt.');
+  // A blank line between paragraphs, so a markdown copy keeps them apart.
+  assert.equal(r.text, 'Returns & Refunds\n\nItem\tWindow\n\nRefunds within 30 days with a receipt.');
   assert.equal(r.extractor, 'docx-xml@1');
+});
+
+test('Word: headings, bulleted and numbered lists and tables keep their shape as markdown', async () => {
+  // Value: protects=a customer's Word document copied by an agent reads like the original (owner, 2026-11-05: a workflow document came out as one run of text); fails_when=headings, list markers, nesting or the table are dropped, or a translated heading style is missed; why_new=owner 2026-11-05; seam=real docx parts
+  const styled = (style, ...runs) => `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr>${runs.join('')}</w:p>`;
+  const item = (numId, level, text) =>
+    `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="${level}"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>${run(text)}</w:p>`;
+  const cell = (text) => `<w:tc><w:tcPr/>${para(run(text))}</w:tc>`;
+  const r = await extractDocumentText(docx('workflow.docx', [
+    styled('Heading1', run('Contact form')),
+    styled('berschrift2', run('Goal')),
+    para(run('Route patients to the CX team.')),
+    item(3, 0, 'Simplify the steps'),
+    item(3, 0, 'Tasks go only to the coordinator'),
+    item(2, 0, 'Inquiry type dropdown:'),
+    item(2, 1, 'Am I a Candidate?'),
+    item(2, 1, 'Other'),
+    `<w:tbl><w:tblPr/><w:tblGrid/><w:tr>${cell('Branch')}${cell('Actions')}</w:tr><w:tr>${cell('Spam | junk')}${cell('Flag it')}</w:tr></w:tbl>`,
+    para(run('After the table.'))
+  ], {
+    'word/styles.xml': `<w:styles ${W}><w:style w:type="paragraph" w:styleId="berschrift2"><w:name w:val="heading 2"/></w:style></w:styles>`,
+    'word/numbering.xml': `<w:numbering ${W}>`
+      + '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum>'
+      + '<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl><w:lvl w:ilvl="1"><w:numFmt w:val="bullet"/></w:lvl></w:abstractNum>'
+      + '<w:num w:numId="3"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num></w:numbering>'
+  }));
+  assert.equal(r.kind, 'text');
+  assert.equal(r.text, [
+    '# Contact form',
+    '## Goal',
+    'Route patients to the CX team.',
+    '1. Simplify the steps\n1. Tasks go only to the coordinator\n- Inquiry type dropdown:\n    - Am I a Candidate?\n    - Other',
+    '| Branch | Actions |\n| --- | --- |\n| Spam \\| junk | Flag it |',
+    'After the table.'
+  ].join('\n\n'));
 });
 
 test('Word: a tab STOP definition is not mistaken for a tab character', async () => {
