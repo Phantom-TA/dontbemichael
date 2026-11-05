@@ -34,7 +34,6 @@ import { AgentAvatar } from '../AgentAvatar';
 import { InfoTip } from '../InfoTip';
 import { PixelButton } from '../PixelButton';
 import { RunSuggestions } from './RunSuggestions';
-import { CaseStudyScreen } from './CaseStudyScreen';
 import { caseLangOf } from '@shared/caseStudy';
 import { Icon, type IconName } from '../Icon';
 import { useDialog } from '@/shell/useDialog';
@@ -272,7 +271,6 @@ export function PulseView() {
   const [notice, setNotice] = useState<string>('');
   // The case study screen and its one time invitation (docs/designs/case-study.md, D7).
   // It is prepared in main in the background; the screen opens once it is ready.
-  const caseOpen = useStore((s) => s.caseStudyOpen);
   const setCaseOpen = useStore((s) => s.setCaseStudyOpen);
   const casePrep = useStore((s) => s.caseStudyPrep);
   const setCasePrep = useStore((s) => s.setCaseStudyPrep);
@@ -859,7 +857,6 @@ export function PulseView() {
             </>)}
         </div>
       )}
-      {caseOpen && <CaseStudyScreen onClose={() => { setCaseOpen(false); void load(); void window.cth.caseStudyStatus().then((p) => setCasePrep(p.state)).catch(() => undefined); }} />}
       <div aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{notice}</div>
       {body}
       {detail && view && <MemberDetail id={detail} data={view} name={nameOf(detail)} onClose={() => setDetail(null)} money={view.planLearning ? (): string => t('pulse.measuring') : money} />}

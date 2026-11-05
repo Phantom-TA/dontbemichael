@@ -254,6 +254,9 @@ interface State {
    *  background, and whether its screen is open over Pulse. */
   caseStudyPrep: 'idle' | 'preparing' | 'ready';
   caseStudyOpen: boolean;
+  /** A send or save is running on the case study: its tab's X waits. */
+  caseStudyBusy: boolean;
+  setCaseStudyBusy: (busy: boolean) => void;
   setCaseStudyPrep: (state: 'idle' | 'preparing' | 'ready') => void;
   setCaseStudyOpen: (open: boolean) => void;
   /** The file tab shown while `floorView` is 'file'. */
@@ -564,7 +567,9 @@ function officeView(view: FloorView): { floorView?: FloorView } {
   return { floorView: 'office' };
 }
 
-export type FloorView = 'office' | 'tasks' | 'pulse' | 'graph' | 'file';
+/** 'case-study' is the Case study tab (docs/designs/case-study-tab.md): open
+ *  while `caseStudyOpen`, never saved, like a file tab. */
+export type FloorView = 'office' | 'tasks' | 'pulse' | 'graph' | 'file' | 'case-study';
 const initialFloorView: FloorView = (() => {
   try {
     const v = window.localStorage.getItem(LS_FLOOR_VIEW);
@@ -1084,8 +1089,15 @@ export const useStore = create<State>((set, get) => ({
   fileTabs: [],
   caseStudyPrep: 'idle',
   caseStudyOpen: false,
+  caseStudyBusy: false,
+  setCaseStudyBusy: (caseStudyBusy) => set({ caseStudyBusy }),
   setCaseStudyPrep: (caseStudyPrep) => set({ caseStudyPrep }),
-  setCaseStudyOpen: (caseStudyOpen) => set({ caseStudyOpen }),
+  // The Case study tab (docs/designs/case-study-tab.md, D1): opening shows it
+  // (a second open selects the same tab); closing goes back to the last fixed
+  // view when it was showing.
+  setCaseStudyOpen: (open) => set((s) => (open
+    ? { caseStudyOpen: true, floorView: 'case-study', taskDetailId: null }
+    : s.caseStudyBusy ? {} : { caseStudyOpen: false, floorView: s.floorView === 'case-study' ? s.lastFixedView : s.floorView })),
   activeFileTab: null,
   lastFixedView: initialFloorView === 'tasks' || initialFloorView === 'graph' || initialFloorView === 'pulse' ? initialFloorView : 'office',
   ideInitialFile: null,
@@ -1527,7 +1539,7 @@ export const useStore = create<State>((set, get) => ({
   setFloorView: (view) => {
     // A file tab is never saved: after a restart the app opens on the last
     // fixed view (open-file-tab.md, R4).
-    if (view === 'file') { set({ floorView: view }); return; }
+    if (view === 'file' || view === 'case-study') { set({ floorView: view }); return; }
     try { window.localStorage.setItem(LS_FLOOR_VIEW, view); } catch { /* per-Mac nicety only */ }
     // Another view chosen over the file: the 1:1 stays at the side (decision 2).
     set({ floorView: view, lastFixedView: view, dockAsideForFile: false });

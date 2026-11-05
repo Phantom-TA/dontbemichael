@@ -56,11 +56,12 @@ function deps(over = {}) {
   return { svc: new CaseStudyService(d), calls };
 }
 const input = { lang: 'en', period: 'last-30', showName: true };
-const edits = { headline: { figure: 'email', before: 'Harbor Bakery handled', after: 'emails' }, subtitle: 's', about: 'a', quote: '', team: {}, why: 'w' };
 
 test('the screen input is checked, and the last 30 days end today', () => {
+  // Value: protects=the owner can't change the case study (case-study-tab.md, D3): only its language comes from the screen; fails_when=a period or a hidden name sent by the screen reaches main; why_new=owner 2026-11-04; seam=none
   assert.equal(caseInput({ lang: 'fr', period: 'last-30' }), null);
-  assert.deepEqual(caseInput({ lang: 'ar', period: 'this-month', showName: false }), { lang: 'ar', period: 'this-month', showName: false });
+  assert.deepEqual(caseInput({ lang: 'ar', period: 'this-month', showName: false }), { lang: 'ar', period: 'last-30', showName: true }, 'always the last 30 days with the name shown');
+  assert.deepEqual(caseInput({ lang: 'en' }), { lang: 'en', period: 'last-30', showName: true });
   const r = caseRange('last-30', NOW);
   assert.equal(r.to, '2026-11-03');
   assert.equal(r.from, '2026-10-05');
@@ -88,7 +89,7 @@ test('no measured work: no draft call, and Save and Send refuse (D19)', async ()
   const { svc, calls } = deps({ figures: () => ({ snapshot: empty, days: [] }) });
   assert.deepEqual(await svc.draft(input), { ok: false, reason: 'no-work' });
   assert.equal(calls.model, 0);
-  assert.deepEqual(await svc.send(input, edits, 'ceo', true), { ok: false, kind: 'no-work' });
+  assert.deepEqual(await svc.send(input, 'ceo', true), { ok: false, kind: 'no-work' });
   assert.equal(svc.open(input).hasWork, false);
 });
 
@@ -105,7 +106,7 @@ test('the draft runs a second time only for parts the first left out', async () 
 
 test('Send goes to our address only, logs its own kind with no member, and ends the invitation', async () => {
   const { svc, calls } = deps();
-  assert.deepEqual(await svc.send(input, edits, 'ceo', true), { ok: true });
+  assert.deepEqual(await svc.send(input, 'ceo', true), { ok: true });
   assert.equal(calls.sends[0].mailbox, 'ceo');
   assert.equal(calls.sends[0].input.to, 'hello@dontbemichael.com');
   assert.deepEqual(calls.sends[0].input.files.map((x) => [x.filename, x.contentType]), [['case-study.html', 'text/html'], ['case-study.pdf', 'application/pdf']], 'the web page to publish and its PDF copy (D28)');
@@ -121,22 +122,21 @@ test('Send goes to our address only, logs its own kind with no member, and ends 
   assert.deepEqual(logPoints([{ ...line, ts: NOW }], 0, NOW + 1, new Set(['pam'])), []);
 });
 
-test('Send refuses without the tick, from a mailbox that cannot send, or with a typed number in the headline', async () => {
+test('Send refuses without the tick or from a mailbox that cannot send', async () => {
   const { svc, calls } = deps();
-  assert.deepEqual(await svc.send(input, edits, 'ceo', false), { ok: false, kind: 'no-permission' });
-  assert.deepEqual(await svc.send(input, edits, 'old', true), { ok: false, kind: 'no-mailbox' });
-  assert.deepEqual(await svc.send(input, { ...edits, headline: { figure: 'email', before: 'Saved 20 hours and handled', after: 'emails' } }, 'ceo', true), { ok: false, kind: 'headline-number' });
+  assert.deepEqual(await svc.send(input, 'ceo', false), { ok: false, kind: 'no-permission' });
+  assert.deepEqual(await svc.send(input, 'old', true), { ok: false, kind: 'no-mailbox' });
   assert.equal(calls.sends.length, 0);
   assert.equal(calls.invite, 0);
 });
 
 test('a timeout or an interrupted send may have gone out; a refusal shows the mailbox reason', async () => {
-  const fail = (err) => deps({ mailSend: async () => { throw err; } }).svc.send(input, edits, 'ceo', true);
+  const fail = (err) => deps({ mailSend: async () => { throw err; } }).svc.send(input, 'ceo', true);
   assert.deepEqual(await fail(new MailError('timeout', 'This email may already have gone out ... tell Michael', true)), { ok: false, kind: 'maybe-sent' });
   assert.deepEqual(await fail(new MailError('refused', 'This email may already have gone out ... tell Michael', false, true)), { ok: false, kind: 'maybe-sent' });
   assert.deepEqual(await fail(new MailError('auth', 'Not sent. The password was not accepted.')), { ok: false, kind: 'failed', reason: 'The password was not accepted.' });
   const broken = deps({ makePdf: async () => ({ ok: false, reason: 'failed' }) });
-  assert.deepEqual(await broken.svc.send(input, edits, 'ceo', true), { ok: false, kind: 'failed', reason: '' });
+  assert.deepEqual(await broken.svc.send(input, 'ceo', true), { ok: false, kind: 'failed', reason: '' });
 });
 
 test('the mail app link carries our address, the subject and the permission line', () => {
@@ -186,11 +186,12 @@ test('after Send the next Get featured prepares a fresh case study', async () =>
   await new Promise((r) => setImmediate(r));
   await new Promise((r) => setImmediate(r));
   assert.equal(svc.status().state, 'ready');
-  assert.deepEqual(await svc.send(input, edits, 'ceo', true), { ok: true });
+  assert.deepEqual(await svc.send(input, 'ceo', true), { ok: true });
   assert.deepEqual(svc.status(), { state: 'idle' });
 });
 
-test('the headline is a drafted choice only: words sent from the screen are replaced by main\'s own (D24)', async () => {
+test('the page is the app\'s own draft: the first headline choice and the drafted words, nothing from the screen (case-study-tab.md, D2)', async () => {
+  // Value: protects=the owner can't change the page; fails_when=main prints any words but its own draft or built in ones, or a later headline choice; why_new=owner 2026-11-04 (replaces D24's pick); seam=fake model and PDF
   let page = '';
   const { svc } = deps({
     runModel: async () => ({ ok: true, text: JSON.stringify({ subtitle: "A bakery on Don't Be Michael", about: 'Bakes bread', why: "Don't Be Michael frees the owner", headlines: { email: 'Harbor Bakery handled {n} emails', task: 'Harbor Bakery finished {n} tasks', away: 'Harbor Bakery worked {n} hours while the owner was away' }, team: { pam: 'Sorts the inbox', god: 'Routes the work' } }) }),
@@ -199,30 +200,16 @@ test('the headline is a drafted choice only: words sent from the screen are repl
   svc.prepare(input);
   await new Promise((r) => setImmediate(r));
   await new Promise((r) => setImmediate(r));
-  const fudged = { ...edits, headline: { figure: 'task', before: 'Saved the owner a fortune and finished', after: 'tasks overnight' } };
-  assert.deepEqual(await svc.send(input, fudged, 'ceo', true), { ok: true });
-  assert.match(page, /<span>Harbor Bakery finished<\/span> <span class="lock"[^>]*>96<\/span> <span>tasks<\/span>/);
-  assert.doesNotMatch(page, /fortune|overnight/);
-});
-
-test('a picked SVG logo is drawn first and kept; the owner\'s brand colour paints the page we receive (owner, 2026-11-03)', async () => {
-  const kept = [];
-  const { svc, calls } = deps({
-    readFile: () => Buffer.from('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 10"></svg>'),
-    drawSvg: async () => Buffer.from('drawn png'),
-    decodeLogo: (b) => (b.toString() === 'drawn png' ? { png: Buffer.from('PNG'), colour: '#B08D57' } : null),
-    writeLogo: (png, colour) => kept.push(colour)
-  });
-  const r = await svc.pickedLogo('/logo.svg');
-  assert.equal(r.ok, true);
-  assert.deepEqual(kept, ['#B08D57']);
-  assert.deepEqual(await svc.send(input, { ...edits, brand: '#0a7d4f' }, 'ceo', true), { ok: true });
-  const web = calls.sends[0].input.files[0].content.toString('utf8');
-  const pal = require('./load-ts.cjs')('src/shared/caseStudy.ts').heroPalette('#0A7D4F');
-  assert.match(web, new RegExp(`--hero:${pal.hero}`), 'the picked colour, made readable');
-  const hidden = deps();
-  await hidden.svc.send({ ...input, showName: false }, { ...edits, brand: '#0a7d4f' }, 'ceo', true);
-  assert.doesNotMatch(hidden.calls.sends[0].input.files[0].content.toString('utf8'), new RegExp(`--hero:${pal.hero}`), 'never with the name hidden (D8)');
+  assert.equal(svc.send.length, 3, 'send takes the input, the mailbox and the tick: no words');
+  assert.deepEqual(await svc.send(input, 'ceo', true), { ok: true });
+  assert.match(page, /<span>Harbor Bakery handled<\/span> <span class="lock"[^>]*>1,284<\/span> <span>emails<\/span>/, 'the first headline choice, in the drafted words');
+  assert.match(page, /A bakery on Don(&#39;|')t Be Michael/);
+  assert.match(page, /Sorts the inbox/);
+  // Without a draft the page uses the built in words.
+  let plain = '';
+  const bare = deps({ makePdf: async (html) => { plain = html; return { ok: true, pdf: Buffer.from('%PDF') }; } });
+  assert.equal((await bare.svc.pdf(input)).ok, true);
+  assert.match(plain, /Don(&#39;|')t Be Michael/);
 });
 
 test('Save writes the PDF as .pdf and never replaces a file beside it with the page (ship review)', () => {
@@ -264,7 +251,7 @@ test('a case study prepared in the background waits on Ask me until it is opened
   const sent = deps();
   sent.svc.prepare(input);
   await settle();
-  assert.deepEqual(await sent.svc.send(input, edits, 'ceo', true), { ok: true });
+  assert.deepEqual(await sent.svc.send(input, 'ceo', true), { ok: true });
   assert.deepEqual(sent.svc.status(), { state: 'idle' }, 'a sent one waits for nothing');
 
   const empty = snapshot({ outcomes: [{ kind: 'email', total: 0 }, { kind: 'sent', total: 0 }, { kind: 'task', total: 0 }, { kind: 'check', total: 0 }] });

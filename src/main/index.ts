@@ -7581,7 +7581,6 @@ const caseStudy = new CaseStudyService({
   fetchLogo: (site) => readSiteLogo(site, { decode: decodeCaseLogo, drawSvg: drawCaseSvg }),
   decodeLogo: decodeCaseLogo,
   drawSvg: drawCaseSvg,
-  readFile: (path, max) => { try { return statSync(path).size <= max ? readFileSync(path) : null; } catch { return null; } },
   makePdf: caseStudyPdf,
   mailSend: (mailbox, input) => mailService.send('owner:case-study', mailbox, input),
   senders: () => mailService.ownerSenders(),
@@ -7615,18 +7614,12 @@ ipcMain.handle('caseStudy:status', () => caseStudy.status());
 ipcMain.handle('caseStudy:seen', () => { caseStudy.seen(); return true; });
 ipcMain.handle('caseStudy:open', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.open(i) : null; });
 ipcMain.handle('caseStudy:draft', (_evt, input: unknown) => { const i = caseInput(input); return i ? caseStudy.draft(i) : { ok: false, reason: 'failed' }; });
-ipcMain.handle('caseStudy:logo', (_evt, fresh: unknown) => caseStudy.logo(fresh === true));
-ipcMain.handle('caseStudy:pickLogo', async () => {
-  const win = BrowserWindow.getFocusedWindow();
-  const opts = { properties: ['openFile' as const], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }] };
-  const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
-  if (res.canceled || !res.filePaths[0]) return { ok: false, reason: 'cancelled' };
-  return caseStudy.pickedLogo(res.filePaths[0]);
-});
-ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, edits: unknown, openMailApp: unknown) => {
+// The owner can't change the case study (case-study-tab.md, D2 and D3): no
+// logo pick, and Save and Send carry no words; main prints its own draft.
+ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, openMailApp: unknown) => {
   const i = caseInput(input);
   if (!i) return { ok: false, kind: 'failed' };
-  const out = await caseStudy.pdf(i, edits);
+  const out = await caseStudy.pdf(i);
   if (!out.ok) return out;
   const win = BrowserWindow.getFocusedWindow();
   const opts = { defaultPath: join(app.getPath('documents'), 'case-study.pdf'), filters: [{ name: 'PDF', extensions: ['pdf'] }] };
@@ -7641,9 +7634,9 @@ ipcMain.handle('caseStudy:savePdf', async (_evt, input: unknown, edits: unknown,
   if (openMailApp === true) { const url = caseStudy.mailto(i); if (url) void shell.openExternal(url).catch(() => undefined); }
   return { ok: true, path: paths.pdf };
 });
-ipcMain.handle('caseStudy:send', (_evt, input: unknown, edits: unknown, mailbox: unknown, permission: unknown) => {
+ipcMain.handle('caseStudy:send', (_evt, input: unknown, mailbox: unknown, permission: unknown) => {
   const i = caseInput(input);
-  return i ? caseStudy.send(i, edits, mailbox, permission) : { ok: false, kind: 'failed', reason: '' };
+  return i ? caseStudy.send(i, mailbox, permission) : { ok: false, kind: 'failed', reason: '' };
 });
 ipcMain.handle('caseStudy:dismissInvite', () => pulse.caseStudyInviteDone());
 ipcMain.handle('runCompare:lastRuns', (_evt, agentId: unknown) => (typeof agentId === 'string' ? runCompare.lastRuns(agentId) : []));

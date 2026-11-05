@@ -6,7 +6,7 @@ import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
 import type { OrganizedList } from '../shared/organizedRecord';
 import type { PulseView } from '../shared/pulseView';
-import type { CaseDraftResult, CaseInput, CaseLogo, CaseOpen, CasePrep, CaseSaveResult, CaseSendOutcome } from '../shared/caseStudy';
+import type { CaseDraftResult, CaseInput, CaseOpen, CasePrep, CaseSaveResult, CaseSendOutcome } from '../shared/caseStudy';
 import type { FoundationsView } from '../shared/foundations';
 import type { PulseHealthView } from '../shared/pulseHealth';
 import type { ResearchConfig } from '../shared/research';
@@ -1537,13 +1537,11 @@ const api = {
   /** The office's facts for the page, the fonts and the mailboxes; null with no office. */
   caseStudyOpen: (input: CaseInput): Promise<CaseOpen | null> => ipcRenderer.invoke('caseStudy:open', input),
   caseStudyDraft: (input: CaseInput): Promise<CaseDraftResult> => ipcRenderer.invoke('caseStudy:draft', input),
-  /** The kept logo, or a read of the website; `fresh` reads the site again. */
-  caseStudyLogo: (fresh: boolean): Promise<CaseLogo> => ipcRenderer.invoke('caseStudy:logo', fresh),
-  caseStudyPickLogo: (): Promise<CaseLogo> => ipcRenderer.invoke('caseStudy:pickLogo'),
-  /** Main builds the page and the PDF from these edits; `openMailApp` opens the mail app after saving. */
-  caseStudySavePdf: (input: CaseInput, edits: unknown, openMailApp: boolean): Promise<CaseSaveResult> => ipcRenderer.invoke('caseStudy:savePdf', input, edits, openMailApp),
+  /** Main builds the page and the PDF from its own draft (no words from the
+   *  screen, case-study-tab.md D2); `openMailApp` opens the mail app after saving. */
+  caseStudySavePdf: (input: CaseInput, openMailApp: boolean): Promise<CaseSaveResult> => ipcRenderer.invoke('caseStudy:savePdf', input, openMailApp),
   /** Sends to the fixed address only; the screen names the mailbox and ticks permission. */
-  caseStudySend: (input: CaseInput, edits: unknown, mailbox: string, permission: boolean): Promise<CaseSendOutcome> => ipcRenderer.invoke('caseStudy:send', input, edits, mailbox, permission),
+  caseStudySend: (input: CaseInput, mailbox: string, permission: boolean): Promise<CaseSendOutcome> => ipcRenderer.invoke('caseStudy:send', input, mailbox, permission),
   caseStudyDismissInvite: (): Promise<boolean> => ipcRenderer.invoke('caseStudy:dismissInvite'),
   /** Starts preparing the case study in the background (or says where it stands). */
   caseStudyPrepare: (input: CaseInput): Promise<CasePrep> => ipcRenderer.invoke('caseStudy:prepare', input),

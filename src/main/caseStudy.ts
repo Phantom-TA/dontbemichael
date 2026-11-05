@@ -2,13 +2,13 @@
  * The case study service (docs/designs/case-study.md): gathers the office's
  * facts, drafts the words, reads the logo, makes the PDF and sends it as the
  * owner's own action. Main builds the page and the PDF itself and fixes the
- * recipient (outside voice O4): the screen hands over only the edited text,
- * the toggles, the period and the chosen mailbox.
+ * recipient (outside voice O4). The owner can't change the page
+ * (case-study-tab.md, D2 and D3): the screen hands over only its language and
+ * the chosen mailbox, and main prints its own draft.
  *
  *   screen ─ caseStudy:open  ─► open()   ─► facts + fonts + mailboxes
  *          ─ caseStudy:draft ─► draft()  ─► one hidden model call, a second
  *                                            for parts the first left out
- *          ─ caseStudy:logo  ─► logo()   ─► kept logo, or a read of the site
  *          ─ caseStudy:pdf   ─► savePdf()─► web page + PDF copy ─► where the owner picks
  *          ─ caseStudy:send  ─► send()   ─► web page + PDF copy ─► MailService.send
  *                                            as 'owner:case-study' ─► office log
@@ -17,7 +17,7 @@
  * in as deps, so the rules here test as a node module.
  */
 import {
-  builtInHeadline, CASE_STUDY_TO, caseStudyEmail, caseWhen, cleanEdits, draftPrompt, fontFaceCss, hasWork, heroPalette, memberFigure, mergeDrafts, missingParts, pageHtml, parseDraft,
+  CASE_STUDY_TO, caseStudyEmail, caseWhen, draftPrompt, fontFaceCss, hasWork, heroPalette, memberFigure, mergeDrafts, missingParts, pageHtml, parseDraft, startingEdits,
   type CaseDraft, type CaseDraftResult, type CaseFont, type CasePrep, type CaseInput, type CaseLang, type CaseLogo, type CaseMember, type CaseOpen, type CasePeriod,
   type CaseSendOutcome, type CaseStudyFacts, type HeroPalette, type Paper
 } from '../shared/caseStudy';
@@ -32,7 +32,6 @@ export const CASE_LANGS: readonly CaseLang[] = ['en', 'ar', 'zh-CN'];
 /** The screen's draft gives up after this long (eng C4). */
 export const CASE_DRAFT_TIMEOUT_MS = 60_000;
 /** A picked logo file is read up to this size. */
-export const PICKED_LOGO_MAX_BYTES = 5_000_000;
 
 export interface CaseStudyDeps {
   config: () => { businessName?: string; businessCity?: string; businessType?: string; companyProfile?: CompanyProfile };
@@ -54,7 +53,6 @@ export interface CaseStudyDeps {
   decodeLogo: (bytes: Buffer) => { png: Buffer; colour: string | null } | null;
   /** Draws an SVG logo to PNG bytes. */
   drawSvg?: (svg: Buffer) => Promise<Buffer | null>;
-  readFile: (path: string, maxBytes: number) => Buffer | null;
   /** Renders the page in a hidden window, across as many pages as it needs. */
   makePdf: (html: string, paper: Paper) => Promise<{ ok: true; pdf: Buffer } | { ok: false; reason: 'failed' }>;
   mailSend: (mailbox: string, input: { to: string; subject: string; body: string; files: Array<{ filename: string; content: Buffer; contentType: string }> }) => Promise<{ sent: boolean }>;
@@ -93,12 +91,14 @@ export function savePaths(picked: string, exists: (path: string) => boolean, now
   return { pdf: picked, html: `${base} ${now()}.html` };
 }
 
-/** The screen's input from IPC, or null when it isn't one. */
+/** The screen's input from IPC, or null when it isn't one. Only the language
+ *  is the screen's: the owner can't change the case study (case-study-tab.md,
+ *  D3), so it is always the last 30 days with the business name shown,
+ *  whatever the screen sends. */
 export function caseInput(v: unknown): CaseInput | null {
   const r = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
   const lang = (CASE_LANGS as readonly unknown[]).includes(r.lang) ? r.lang as CaseLang : null;
-  const period = (CASE_PERIODS as readonly unknown[]).includes(r.period) ? r.period as CasePeriod : null;
-  return lang && period ? { lang, period, showName: r.showName !== false } : null;
+  return lang ? { lang, period: 'last-30', showName: true } : null;
 }
 
 /** The period's local days: the last 30 up to today, or this month so far. */
@@ -277,38 +277,20 @@ export class CaseStudyService {
     return { ok: true, logo: toDataUrl(r.png), palette: heroPalette(r.colour) };
   }
 
-  /** A logo the owner picked: PNG, JPEG, WebP or SVG, decoded and kept (D3). */
-  async pickedLogo(path: string): Promise<{ ok: true; logo: string; palette: HeroPalette } | { ok: false; reason: 'not-image' }> {
-    const bytes = this.d.readFile(path, PICKED_LOGO_MAX_BYTES);
-    const isSvg = !!bytes && /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg\b/i.test(bytes.toString('utf8', 0, 2048));
-    const png = bytes && isSvg && this.d.drawSvg ? await this.d.drawSvg(bytes).catch(() => null) : bytes;
-    const done = png ? this.d.decodeLogo(png) : null;
-    if (!done) return { ok: false, reason: 'not-image' };
-    this.d.writeLogo(done.png, done.colour);
-    return { ok: true, logo: toDataUrl(done.png), palette: heroPalette(done.colour) };
-  }
 
   /** The page from the owner's edits, checked the way Send checks them: the
    *  web page we publish, standalone with its fonts, and its PDF copy (D28). */
-  async pdf(input: CaseInput, rawEdits: unknown): Promise<{ ok: true; pdf: Buffer; html: Buffer; facts: CaseStudyFacts } | { ok: false; kind: 'headline-number' | 'no-work' | 'failed' }> {
+  async pdf(input: CaseInput): Promise<{ ok: true; pdf: Buffer; html: Buffer; facts: CaseStudyFacts } | { ok: false; kind: 'no-work' | 'failed' }> {
     const facts = this.facts(input);
     if (!facts || !hasWork(facts.figures)) return { ok: false, kind: 'no-work' };
-    const { edits: typed, headlineNumber } = cleanEdits(facts, rawEdits);
-    if (headlineNumber) return { ok: false, kind: 'headline-number' };
-    // The headline is one of the drafted choices only (D24): main takes the
-    // figure the owner picked and fills in its words itself, from the draft it
-    // holds or the built in ones, so no words from the screen sit beside the
-    // number.
-    const held = this.heldDraft(input);
-    const edits = typed.headline
-      ? { ...typed, headline: { figure: typed.headline.figure, ...(held?.headlines[typed.headline.figure] ?? builtInHeadline(facts, typed.headline.figure)) } }
-      : typed;
+    // The page is the app's own (case-study-tab.md, D2): main's draft, or the
+    // built in words where it has none. Nothing the screen sends is read, so
+    // no words can sit beside Pulse's numbers.
+    const edits = startingEdits(facts, this.heldDraft(input) ?? { headlines: {}, team: {} });
     const fontCss = fontFaceCss(this.d.fonts());
-    // The owner's brand colour, when picked, over the logo's (never with the name hidden, D8).
-    const branded = facts.showName && edits.brand ? { ...facts, palette: heroPalette(edits.brand) } : facts;
-    const out = await this.d.makePdf(pageHtml(branded, edits, { fontCss, mode: 'print' }), facts.paper).catch(() => ({ ok: false as const, reason: 'failed' as const }));
+    const out = await this.d.makePdf(pageHtml(facts, edits, { fontCss, mode: 'print' }), facts.paper).catch(() => ({ ok: false as const, reason: 'failed' as const }));
     this.d.log({ kind: 'case-study-pdf', ok: out.ok });
-    return out.ok ? { ok: true, pdf: out.pdf, html: Buffer.from(pageHtml(branded, edits, { fontCss }), 'utf8'), facts } : { ok: false, kind: out.reason };
+    return out.ok ? { ok: true, pdf: out.pdf, html: Buffer.from(pageHtml(facts, edits, { fontCss }), 'utf8'), facts } : { ok: false, kind: out.reason };
   }
 
   /**
@@ -318,11 +300,11 @@ export class CaseStudyService {
    * kind (eng A2). A timeout or an interrupted earlier send may have gone out,
    * and says so in the screen's words, never the mail text that names Michael.
    */
-  async send(input: CaseInput, rawEdits: unknown, mailbox: unknown, permission: unknown): Promise<CaseSendOutcome> {
+  async send(input: CaseInput, mailbox: unknown, permission: unknown): Promise<CaseSendOutcome> {
     if (permission !== true) return { ok: false, kind: 'no-permission' };
     const box = this.d.senders().find((s) => s.id === mailbox && s.canSend);
     if (!box) return { ok: false, kind: 'no-mailbox' };
-    const page = await this.pdf(input, rawEdits);
+    const page = await this.pdf(input);
     if (!page.ok) return page.kind === 'failed' ? { ok: false, kind: 'failed', reason: '' } : { ok: false, kind: page.kind };
     const mail = caseStudyEmail(page.facts);
     try {

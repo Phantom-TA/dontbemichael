@@ -8,6 +8,7 @@ import { StudioStage } from '@/scene/studio/StudioStage';
 import { TasksKanban } from '@/components/TasksKanban';
 import { PulseView } from '@/components/pulse/PulseView';
 import { FileTabView } from '@/components/FileTabView';
+import { CaseStudyScreen } from '@/components/pulse/CaseStudyScreen';
 import { MemoryGraphPanel } from '@/components/MemoryGraphPanel';
 import { useHive } from '@/hooks/useHive';
 import { useGodNameSync } from '@/i18n/useGodNameSync';
@@ -80,6 +81,7 @@ export function App() {
   const ideOpen = useStore(s => s.ideOpen);
   const setIdeOpen = useStore(s => s.setIdeOpen);
   const floorView = useStore(s => s.floorView);
+  const caseStudyOpen = useStore(s => s.caseStudyOpen);
   const godId = useStore(s => s.agents.find((a) => a.isGod)?.id) ?? 'god';
 
   const [config, setConfig] = useState<HarnessConfig | null>(null);
@@ -356,7 +358,8 @@ export function App() {
   // (owner, 2026-10-16).
   const columnView = floorView === 'office' || floorView === 'file';
   const columnShown = columnOpen && columnView;
-  const barHidden = floorView === 'pulse' || floorView === 'file';
+  // The Case study tab fills the window like Pulse (case-study-tab.md, D1).
+  const barHidden = floorView === 'pulse' || floorView === 'file' || floorView === 'case-study';
   const columnRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const lastColumnMode = useRef<'board' | 'person'>('board');
@@ -556,7 +559,18 @@ export function App() {
               </div>
             </div>
           )}
-          {floorView !== 'office' && (
+          {/* The case study stays mounted while its tab is open, so a send in
+              flight, the draft and the page survive a switch to another tab
+              (case-study-tab.md, E1); it shows only on its own tab. */}
+          {caseStudyOpen && (
+            <div style={{
+              position: 'absolute', inset: 0, zIndex: 50, background: 'var(--cth-bg)',
+              display: floorView === 'case-study' ? 'flex' : 'none', flexDirection: 'column'
+            }}>
+              <CaseStudyScreen />
+            </div>
+          )}
+          {floorView !== 'office' && floorView !== 'case-study' && (
             <div style={{
               position: 'absolute', inset: 0, zIndex: 50,
               display: 'flex', flexDirection: 'column',

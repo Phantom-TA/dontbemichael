@@ -93,6 +93,8 @@ export function ViewTabs() {
   const setView = useStore((s) => s.setFloorView);
   const fileTabs = useStore((s) => s.fileTabs);
   const activeFileTab = useStore((s) => s.activeFileTab);
+  const caseStudyOpen = useStore((s) => s.caseStudyOpen);
+  const caseStudyBusy = useStore((s) => s.caseStudyBusy);
 
   // No count on Tasks (owner, 2026-10-01): a blocked count beside the Needs
   // you count read as the same thing with a different number. Coral numbers
@@ -129,7 +131,7 @@ export function ViewTabs() {
       {/* Files opened from a reply or a card (docs/designs/open-file-tab.md):
           after a hairline, each a select button and a close button side by
           side. They shrink to fit (DD2); the fixed tabs and Needs you never move. */}
-      {fileTabs.length > 0 && <span aria-hidden style={{ width: 1, height: 18, background: 'var(--cth-line-2)', margin: '0 4px', flexShrink: 0 }} />}
+      {(fileTabs.length > 0 || caseStudyOpen) && <span aria-hidden style={{ width: 1, height: 18, background: 'var(--cth-line-2)', margin: '0 4px', flexShrink: 0 }} />}
       {fileTabs.map((f) => {
         const on = view === 'file' && activeFileTab === f.id;
         const icon = f.kind === 'email' ? 'mail' : f.kind === 'excel' || f.kind === 'csv' ? 'sheet' : f.kind === 'image' ? 'image' : 'file';
@@ -166,8 +168,55 @@ export function ViewTabs() {
           </span>
         );
       })}
+      {/* The case study (docs/designs/case-study-tab.md, D1): one tab while it is
+          open, after the files and not counted with them. Nothing on it can be
+          changed (D2), so the X closes it at once. */}
+      {caseStudyOpen && (() => {
+        const on = view === 'case-study';
+        return (
+          <span className="cth-titlebar-nodrag" style={{
+            display: 'inline-flex', alignItems: 'center', height: 32, flex: '0 1 auto', minWidth: 72,
+            borderRadius: 'var(--cth-r-md)', background: on ? 'var(--cth-ink)' : 'transparent',
+            transition: 'background var(--cth-dur-fast) var(--cth-ease)'
+          }}>
+            <button
+              onClick={() => setView('case-study')}
+              aria-pressed={on}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0, height: 32,
+                padding: '0 4px', paddingInlineStart: 11, border: 'none', background: 'transparent', cursor: 'pointer',
+                color: on ? 'var(--cth-bg)' : 'var(--cth-ink-2)', fontFamily: 'var(--cth-font-ui)', fontSize: 13, fontWeight: 500
+              }}
+            >
+              <span aria-hidden style={{ display: 'grid', placeItems: 'center', flexShrink: 0 }}><Icon name="file" size={0.875} /></span>
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('caseStudy.tab')}</span>
+            </button>
+            <button
+              className="cth-file-tab-close"
+              onClick={closeCaseStudy}
+              disabled={caseStudyBusy}
+              aria-label={t('caseStudy.closeTab')}
+              style={{
+                width: 22, height: 22, flexShrink: 0, marginInlineEnd: 5, display: 'grid', placeItems: 'center',
+                border: 'none', borderRadius: 5, background: 'transparent', cursor: caseStudyBusy ? 'default' : 'pointer',
+                color: on ? 'var(--cth-bg)' : 'var(--cth-ink-3)', opacity: caseStudyBusy ? 0.35 : on ? 0.75 : 1
+              }}
+            >
+              <Icon name="x" size={0.75} />
+            </button>
+          </span>
+        );
+      })()}
     </div>
   );
+}
+
+/** Close the Case study tab, then read where main's preparation stands, so
+ *  Pulse's button says it right (sent: the next Get featured prepares anew). */
+function closeCaseStudy(): void {
+  const st = useStore.getState();
+  st.setCaseStudyOpen(false);
+  void window.cth.caseStudyStatus().then((p) => useStore.getState().setCaseStudyPrep(p.state)).catch(() => undefined);
 }
 
 const countBubble: CSSProperties = {

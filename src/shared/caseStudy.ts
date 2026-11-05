@@ -140,7 +140,7 @@ export type CaseSendOutcome =
   | { ok: true }
   | { ok: false; kind: 'failed'; reason: string }
   | { ok: false; kind: 'maybe-sent' }
-  | { ok: false; kind: 'headline-number' | 'no-work' | 'no-permission' | 'no-mailbox' };
+  | { ok: false; kind: 'no-work' | 'no-permission' | 'no-mailbox' };
 /** The case study being prepared in main (owner, 2026-11-03: the owner never
  *  waits on an empty frame). `ready` carries what the screen opens with. */
 export type CasePrep =
@@ -150,7 +150,7 @@ export type CasePrep =
       /** Prepared in the background and not yet opened or put off with Later:
        *  Michael's card on Ask me says it is ready (owner, 2026-11-04). */
       waiting?: boolean };
-export type CaseSaveResult = { ok: true; path: string } | { ok: false; kind: 'headline-number' | 'no-work' | 'failed' | 'cancelled' };
+export type CaseSaveResult = { ok: true; path: string } | { ok: false; kind: 'no-work' | 'failed' | 'cancelled' };
 
 /** Every member is on the page (owner, D27: the page may run past one).
  *  A bound only so a very large roster can't swamp the draft prompt. */
@@ -638,35 +638,6 @@ export function startingEdits(facts: CaseStudyFacts, draft: CaseDraft, figure?: 
     quote: '',
     team,
     why: draft.why ?? builtInWhy(facts)
-  };
-}
-
-/** Clean edits from the screen: every part a string within its cap, the
- *  headline's figure one the period has, and no typed number in the headline's
- *  words (D20). Returns the reason when the headline breaks that rule. */
-export function cleanEdits(facts: CaseStudyFacts, raw: unknown): { edits: CaseStudyEdits; headlineNumber: boolean } {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const c = CAPS[facts.lang];
-  const str = (v: unknown, max: number): string => (typeof v === 'string' ? cutText(v.replace(/\s+/g, ' ').trim(), max) : '');
-  const h = r.headline && typeof r.headline === 'object' ? r.headline as Record<string, unknown> : null;
-  const choices = headlineChoices(facts.figures);
-  const figure = h && typeof h.figure === 'string' && (choices as string[]).includes(h.figure) ? h.figure as HeadlineFigure : null;
-  const before = h ? str(h.before, c.headlineWords) : '';
-  const after = h ? str(h.after, c.headlineWords) : '';
-  const team: Record<string, string> = {};
-  const rt = r.team && typeof r.team === 'object' ? r.team as Record<string, unknown> : {};
-  for (const m of facts.members.slice(0, TEAM_ROWS)) team[m.id] = str(rt[m.id], c.teamLine);
-  return {
-    edits: {
-      headline: figure ? { figure, before, after } : null,
-      subtitle: str(r.subtitle, c.subtitle),
-      about: str(r.about, c.about),
-      quote: str(r.quote, c.quote),
-      team,
-      why: str(r.why, c.why),
-      ...(typeof r.brand === 'string' && /^#[0-9a-f]{6}$/i.test(r.brand) ? { brand: r.brand.toUpperCase() } : {})
-    },
-    headlineNumber: hasNumber(before, facts.lang) || hasNumber(after, facts.lang)
   };
 }
 
