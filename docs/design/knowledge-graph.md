@@ -147,9 +147,13 @@ line and exits 0.
 
 **Scoring (`scoreChunk`):** the query is lowercased and tokenized, stop words dropped. For each
 query term found in a chunk, add `1 + ln(1 + count)`; add 2 when the term is in the title; add
-0.5 per distinct term matched; add 5 when the whole query appears as written. Results come back
-highest first with a snippet around the first hit. The app's own search calls the same code, so
-results match what agents see.
+0.5 per distinct term matched; add 5 when the whole query appears as written. A word typed more
+than once is one term. Results come back highest first with a snippet around the first hit.
+Neighbouring chunks share 150 characters of overlap, so a passage there sits in two chunks: a chunk is
+skipped when a result already returned, right next to it, holds every match it has, and its slot
+goes to the next result. A chunk that holds the only place two query words meet stays, because
+each neighbour is judged on its own. The app's own search calls the same code, so results match
+what agents see.
 
 ### 5.2 What agents are told
 
