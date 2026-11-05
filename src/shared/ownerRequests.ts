@@ -411,7 +411,7 @@ export function waitingDueNote(
  *  holding an open question the wrong way (`issue`). */
 export interface StuckCard {
   id: string; title: string; assignee?: string;
-  issue?: 'filing' | 'triage' | 'ask-off-blocked' | 'several-asks' | 'bad-next' | 'ask-as-list' | 'gone-quiet' | 'leftovers';
+  issue?: 'filing' | 'triage' | 'ask-off-blocked' | 'several-asks' | 'bad-next' | 'ask-as-list' | 'gone-quiet' | 'leftovers' | 'no-email-link' | 'change-sends';
   /** Leftover questions with no decision, in words (askLeftovers.ts). */
   leftovers?: string;
   /** A Waiting card gone quiet: who it waits on, since when, follow ups done. */
@@ -455,6 +455,46 @@ export function askAsList(entry: { q?: unknown; askedAt?: unknown; options?: unk
   return (entry.q.match(LIST_LINES) ?? []).length >= 2;
 }
 
+type AskText = { q?: unknown; askedAt?: unknown; options?: unknown; parts?: unknown; noEmail?: unknown };
+
+/** Every question and option label of an ask, as one text. */
+function askWords(entry: AskText): { text: string; labels: string[] } {
+  const labels: string[] = [];
+  const texts = [typeof entry.q === 'string' ? entry.q : ''];
+  const take = (opts: unknown): void => {
+    if (Array.isArray(opts)) for (const o of opts) if (o && typeof (o as { label?: unknown }).label === 'string') labels.push((o as { label: string }).label);
+  };
+  take(entry.options);
+  if (Array.isArray(entry.parts)) for (const p of entry.parts) {
+    if (p && typeof (p as { q?: unknown }).q === 'string') texts.push((p as { q: string }).q);
+    take((p as { options?: unknown })?.options);
+  }
+  return { text: texts.join('\n'), labels };
+}
+
+const askedSince = (entry: AskText, since: number): boolean => {
+  const at = typeof entry.askedAt === 'string' ? Date.parse(entry.askedAt) : NaN;
+  return Number.isFinite(at) && at >= since;
+};
+
+/** An ask about a particular email (a reply, a thread, what someone wrote)
+ *  with no link to it, so the owner can't open the original (owner,
+ *  2026-11-05: the Will Cox card). "noEmail": true marks an ask about email
+ *  in general, not one message. */
+export function askMissesEmailLink(entry: AskText | null | undefined, since: number): boolean {
+  if (!entry || entry.noEmail === true || !askedSince(entry, since)) return false;
+  const { text } = askWords(entry);
+  if (/\]\(email:|<email:|\(email:/i.test(text)) return false;
+  return /\b(e-?mails?|thread|replied|wrote|inbox)\b/i.test(text);
+}
+
+/** A choice that sends something with the owner's changes before they see
+ *  them again, which house rule 10 forbids (owner, 2026-11-04). */
+export function askChangeSends(entry: AskText | null | undefined, since: number): boolean {
+  if (!entry || !askedSince(entry, since)) return false;
+  return askWords(entry).labels.some((l) => /\bwith (my|your|the) (changes|edits)\b/i.test(l) && !/\b(again|back|show)\b/i.test(l));
+}
+
 /**
  * Open questions held the wrong way (owner, 2026-10-04). A question stays on
  * Ask me until the owner answers it or Michael withdraws it, so a card that
@@ -463,7 +503,7 @@ export function askAsList(entry: { q?: unknown; askedAt?: unknown; options?: unk
  * questions into one, or withdraws what no longer matters. An ask written as
  * a list since `since` (ms) is listed too (askAsList).
  */
-export function asksToTidy(tasks: CardLike[], since = Infinity): StuckCard[] {
+export function asksToTidy(tasks: CardLike[], since = Infinity, checksSince = Infinity): StuckCard[] {
   const out: StuckCard[] = [];
   for (const t of tasks) {
     if (!t || typeof t.id !== 'string') continue;
@@ -479,6 +519,9 @@ export function asksToTidy(tasks: CardLike[], since = Infinity): StuckCard[] {
     else if (open > 1) out.push(stuckOf(t, 'several-asks'));
     const qa = t.humanQA as unknown as Parameters<typeof askAsList>[0][] | undefined;
     if (openAskIndexes(t.humanQA as never).some((i) => askAsList(qa?.[i], since))) out.push(stuckOf(t, 'ask-as-list'));
+    const asks = openAskIndexes(t.humanQA as never).map((i) => (t.humanQA as unknown as AskText[] | undefined)?.[i]);
+    if (asks.some((e) => askMissesEmailLink(e, checksSince))) out.push(stuckOf(t, 'no-email-link'));
+    if (asks.some((e) => askChangeSends(e, checksSince))) out.push(stuckOf(t, 'change-sends'));
   }
   return out;
 }
@@ -492,6 +535,8 @@ const STUCK_HEADS: Record<NonNullable<StuckCard['issue']> | 'nothing-asked', str
   'bad-next': 'CARDS WITH A NEXT TIME THE APP CANNOT READ. Nobody is reminded when it comes. Set "nextAt" on each to an ISO date and time with its offset, such as 2026-10-12T09:00:00+01:00, or remove it.',
   'ask-as-list': 'ASKS WRITTEN AS A LIST. The owner can only type an answer to these. Rewrite the open humanQA entry on each card: keep only the bold sentence and the short context in "q"; put a choice in "options", as [{"label": "..."}] with "recommended": true on the one you recommend, or several questions in "parts", as [{"q": "..."}], giving a question its own "options" when it is a choice. Keep its "askedAt" and "raisedBy".',
   leftovers: 'LEFTOVER QUESTIONS WITHOUT A DECISION. The owner left these questions unanswered, or answered them "Not yet". Nothing unresolved is dropped: the team member who asked decides each one, and you record it on that answered humanQA entry, adding to its "leftovers" list {"question": <its number on the card, 1 for a single question>, "decision": "dropped" | "settled" | "now" | "later", "why": "<a short reason>", "at": "<ISO date and time with its offset, for later>"}. "now" means it goes back on Ask me now; "later" brings it back at "at", however far off, and the app tells you when it comes. There is no time limit on deciding: weigh who is waiting and any deadline. They stay here until each one has a decision.',
+  'no-email-link': 'ASKS ABOUT AN EMAIL WITH NO LINK TO IT. The owner can\'t open the original from the card. Ask the team member who read that email for its link from their mail read (an email: link, like [Dana Ortiz, 27 Oct](email:...)), and put it in the ask beside the words naming the email, as written. If the ask is about email in general, not one message, set "noEmail": true on that humanQA entry.',
+  'change-sends': 'CHANGE OPTIONS THAT SEND WITHOUT ANOTHER LOOK. House rule 10: a changed version comes back to the owner before it goes. Reword each option such as "Send with my changes" to "Change it, show me again", keeping its "note".',
   'several-asks': 'CARDS WITH MORE THAN ONE OPEN QUESTION. The owner sees every one of them on Ask me. Keep one open question per card: fold what still matters into the newest, and withdraw the others by setting "dismissedAt" (the time) and a short "dismissedReason" on each.'
 };
 
@@ -500,7 +545,7 @@ export function stuckCardsContext(stuck: StuckCard[]): string | null {
   if (!stuck.length) return null;
   const parts: string[] = [];
   const now = Date.now();
-  for (const kind of ['filing', 'triage', 'nothing-asked', 'gone-quiet', 'leftovers', 'ask-off-blocked', 'several-asks', 'ask-as-list', 'bad-next'] as const) {
+  for (const kind of ['filing', 'triage', 'nothing-asked', 'gone-quiet', 'leftovers', 'ask-off-blocked', 'several-asks', 'ask-as-list', 'no-email-link', 'change-sends', 'bad-next'] as const) {
     const cards = stuck.filter((c) => (c.issue ?? 'nothing-asked') === kind);
     if (!cards.length) continue;
     parts.push([
