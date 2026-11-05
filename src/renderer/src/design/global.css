@@ -602,9 +602,20 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 @keyframes cth-rail-pulse { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.25); } }
 @media (prefers-reduced-motion: reduce) { .cth-rail-pulse { animation: none; } }
 /* The top bar's Needs you pill eases out while the column shows and back in
-   (docs/designs/needs-you-pill-hides.md), over the column's 240 ms. */
-.cth-pill-slot { transition: grid-template-columns 240ms var(--cth-ease), opacity 200ms var(--cth-ease), margin-inline-start 240ms var(--cth-ease); }
-@media (prefers-reduced-motion: reduce) { .cth-pill-slot { transition: none; } }
+   (docs/designs/needs-you-pill-hides.md).
+   Coming back: the gap opens (0 to 440 ms), then the pill fades in (160 to
+   520 ms). Going away: the pill fades and slides first on the compositor
+   (0 to 340 ms), then the gap closes once the column has slid in (260 to
+   700 ms), so the office's busy first frames never eat the motion. */
+.cth-pill-slot { display: inline-grid; grid-template-columns: 1fr; margin-inline-start: 0;
+  transition: grid-template-columns 440ms cubic-bezier(.4,0,.2,1), margin-inline-start 440ms cubic-bezier(.4,0,.2,1); }
+.cth-pill-slot[data-hidden] { grid-template-columns: 0fr; margin-inline-start: -8px;
+  transition-duration: 440ms; transition-delay: 260ms; }
+.cth-pill-face { will-change: opacity, transform; opacity: 1; transform: none;
+  transition: opacity 360ms cubic-bezier(.4,0,.2,1) 160ms, transform 360ms cubic-bezier(.4,0,.2,1) 160ms; }
+.cth-pill-slot[data-hidden] .cth-pill-face { opacity: 0; transform: translateX(14px) scale(.94);
+  transition-duration: 340ms; transition-delay: 0ms; }
+@media (prefers-reduced-motion: reduce) { .cth-pill-slot, .cth-pill-face { transition: none; } }
 /* The wide panel (wide panel WD2, WD8): its text at most 720 px across and
    centered, the terminal across the whole panel; the office dims behind it.
    Padding, not a max width, so a tab's own ground still fills the panel; it

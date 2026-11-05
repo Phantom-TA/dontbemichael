@@ -360,21 +360,23 @@ export function NeedsYouButton() {
   // the buttons beside it close the gap (needs-you-pill-hides.md, D1 and D2).
   // The screen reader line stays (E1).
   const hidden = useStore((s) => pillHidden(s.rightColumn, s.floorView));
-  // Hiding and coming back ease over the column's own 240 ms: the pill's width
-  // (a grid column from 0fr to 1fr, so the real width, whatever its text), its
-  // opacity and the row's 8 px gap move together, so the buttons beside it
-  // glide rather than jump. Kept mounted and inert while hidden.
+  // Hiding and coming back ease (global.css, .cth-pill-slot): the pill's width
+  // (a grid column from 0fr to 1fr, so its real width, whatever its text) and
+  // the row's 8 px gap move together, so the buttons beside it glide. Going
+  // away, the pill first fades and slides on the compositor, which keeps
+  // running while switching to the office keeps the page busy, and the gap
+  // closes only once the column has slid in (owner, 2026-11-05: still abrupt
+  // going away, and slower). Kept mounted and inert while hidden.
   const slot = (body: ReactNode) => (<>{live}
     <span
       className="cth-pill-slot"
+      data-hidden={hidden || undefined}
       aria-hidden={hidden || undefined}
       {...({ inert: hidden ? '' : undefined } as Record<string, unknown>)}
-      style={{
-        display: 'inline-grid', gridTemplateColumns: hidden ? '0fr' : '1fr',
-        opacity: hidden ? 0 : 1, marginInlineStart: hidden ? -8 : 0
-      }}
     >
-      <span style={{ minWidth: 0, overflow: 'clip', overflowClipMargin: 14, display: 'inline-flex', whiteSpace: 'nowrap' }}>{body}</span>
+      <span style={{ minWidth: 0, overflow: 'clip', overflowClipMargin: 14, display: 'inline-flex', whiteSpace: 'nowrap' }}>
+        <span className="cth-pill-face" style={{ display: 'inline-flex' }}>{body}</span>
+      </span>
     </span>
   </>);
 

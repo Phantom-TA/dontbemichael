@@ -32,16 +32,23 @@ test('the pill hides exactly while the column shows', () => {
 });
 
 test('the pill eases out of the layout and back, its screen reader line stays, and focus waits for it', () => {
-  // Value: protects=D2 (the gap closes), smooth hiding (owner, 2026-11-05: "it should smooth animate"), E1 (a new ask is still announced) and E2 (focus lands on the pill once back); fails_when=the hidden pill keeps its space, jumps instead of easing, stays reachable while hidden, loses the live region, or focus is asked before the pill exists; why_new=owner 2026-11-05; seam=source pins (the easing was measured in Electron: 122 px to 0 over 240 ms)
+  // Value: protects=D2 (the gap closes), smooth hiding (owner, 2026-11-05: "it should smooth animate"), E1 (a new ask is still announced) and E2 (focus lands on the pill once back); fails_when=the hidden pill keeps its space, jumps instead of easing, stays reachable while hidden, loses the live region, or focus is asked before the pill exists; why_new=owner 2026-11-05; seam=source pins (the easing was measured in Electron)
   const bar = read('src/renderer/src/shell/TopBar.tsx');
   assert.match(bar, /const hidden = useStore\(\(s\) => pillHidden\(s\.rightColumn, s\.floorView\)\);/);
   assert.match(bar, /const slot = \(body: ReactNode\) => \(<>\{live\}/, 'every state keeps the live region beside the pill');
-  assert.match(bar, /gridTemplateColumns: hidden \? '0fr' : '1fr',\s*opacity: hidden \? 0 : 1, marginInlineStart: hidden \? -8 : 0/, 'width, opacity and the 8 px gap move together');
+  assert.match(bar, /className="cth-pill-slot"\s*data-hidden=\{hidden \|\| undefined\}/);
+  assert.match(bar, /<span className="cth-pill-face" style=\{\{ display: 'inline-flex' \}\}>\{body\}<\/span>/, 'the fade is its own layer');
   assert.match(bar, /\{\.\.\.\(\{ inert: hidden \? '' : undefined \} as Record<string, unknown>\)\}/, 'not reachable while hidden');
   assert.equal((bar.match(/return slot\(/g) ?? []).length, 4, 'all four pill states ease');
   const css = read('src/renderer/src/design/global.css');
-  assert.match(css, /\.cth-pill-slot \{ transition: grid-template-columns 240ms var\(--cth-ease\), opacity 200ms var\(--cth-ease\), margin-inline-start 240ms var\(--cth-ease\); \}/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.cth-pill-slot \{ transition: none; \} \}/);
+  // Going away: the fade first on the compositor, then the gap closes once
+  // the column has slid in (owner, 2026-11-05: still abrupt going away, and
+  // slower). Measured in Electron: fade 0 to about 300 ms, width 122 px to 0
+  // from 260 to 700 ms; coming back, width over 440 ms, fade 160 to 520 ms.
+  assert.match(css, /\.cth-pill-slot\[data-hidden\] \{ grid-template-columns: 0fr; margin-inline-start: -8px;\s*transition-duration: 440ms; transition-delay: 260ms; \}/);
+  assert.match(css, /\.cth-pill-face \{ will-change: opacity, transform;/);
+  assert.match(css, /\.cth-pill-slot\[data-hidden\] \.cth-pill-face \{ opacity: 0; transform: translateX\(14px\) scale\(\.94\);\s*transition-duration: 340ms; transition-delay: 0ms; \}/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.cth-pill-slot, \.cth-pill-face \{ transition: none; \} \}/);
   assert.match(read('src/renderer/src/shell/rightColumn.ts'), /afterLeave\(\(\) => requestAnimationFrame\(\(\) => document\.getElementById\(NEEDS_YOU_PILL_ID\)\?\.focus\(\)\)\);/);
 });
 
