@@ -411,7 +411,9 @@ export function waitingDueNote(
  *  holding an open question the wrong way (`issue`). */
 export interface StuckCard {
   id: string; title: string; assignee?: string;
-  issue?: 'filing' | 'triage' | 'ask-off-blocked' | 'several-asks' | 'bad-next' | 'ask-as-list' | 'gone-quiet';
+  issue?: 'filing' | 'triage' | 'ask-off-blocked' | 'several-asks' | 'bad-next' | 'ask-as-list' | 'gone-quiet' | 'leftovers';
+  /** Leftover questions with no decision, in words (askLeftovers.ts). */
+  leftovers?: string;
   /** A Waiting card gone quiet: who it waits on, since when, follow ups done. */
   quiet?: { waitingOn?: string; since: string; followUps: number };
 }
@@ -489,6 +491,7 @@ const STUCK_HEADS: Record<NonNullable<StuckCard['issue']> | 'nothing-asked', str
   'ask-off-blocked': 'OPEN QUESTIONS ON CARDS OUT OF BLOCKED. Each of these cards left Blocked with a question still open, and the owner still sees it on Ask me until they answer it or you withdraw it. For each one: if you moved the card out of Blocked and the work still needs the answer, move it back to "blocked". If the owner moved it, the card is done, or the question no longer matters, withdraw the question by setting "dismissedAt" (the time) and a short "dismissedReason" on that humanQA entry. Never move a card the owner moved.',
   'bad-next': 'CARDS WITH A NEXT TIME THE APP CANNOT READ. Nobody is reminded when it comes. Set "nextAt" on each to an ISO date and time with its offset, such as 2026-10-12T09:00:00+01:00, or remove it.',
   'ask-as-list': 'ASKS WRITTEN AS A LIST. The owner can only type an answer to these. Rewrite the open humanQA entry on each card: keep only the bold sentence and the short context in "q"; put a choice in "options", as [{"label": "..."}] with "recommended": true on the one you recommend, or several questions in "parts", as [{"q": "..."}], giving a question its own "options" when it is a choice. Keep its "askedAt" and "raisedBy".',
+  leftovers: 'LEFTOVER QUESTIONS WITHOUT A DECISION. The owner left these questions unanswered, or answered them "Not yet". Nothing unresolved is dropped: the team member who asked decides each one, and you record it on that answered humanQA entry, adding to its "leftovers" list {"question": <its number on the card, 1 for a single question>, "decision": "dropped" | "settled" | "now" | "later", "why": "<a short reason>", "at": "<ISO date and time with its offset, for later>"}. "now" means it goes back on Ask me now; "later" brings it back at "at", however far off, and the app tells you when it comes. There is no time limit on deciding: weigh who is waiting and any deadline. They stay here until each one has a decision.',
   'several-asks': 'CARDS WITH MORE THAN ONE OPEN QUESTION. The owner sees every one of them on Ask me. Keep one open question per card: fold what still matters into the newest, and withdraw the others by setting "dismissedAt" (the time) and a short "dismissedReason" on each.'
 };
 
@@ -497,7 +500,7 @@ export function stuckCardsContext(stuck: StuckCard[]): string | null {
   if (!stuck.length) return null;
   const parts: string[] = [];
   const now = Date.now();
-  for (const kind of ['filing', 'triage', 'nothing-asked', 'gone-quiet', 'ask-off-blocked', 'several-asks', 'ask-as-list', 'bad-next'] as const) {
+  for (const kind of ['filing', 'triage', 'nothing-asked', 'gone-quiet', 'leftovers', 'ask-off-blocked', 'several-asks', 'ask-as-list', 'bad-next'] as const) {
     const cards = stuck.filter((c) => (c.issue ?? 'nothing-asked') === kind);
     if (!cards.length) continue;
     parts.push([
@@ -506,7 +509,7 @@ export function stuckCardsContext(stuck: StuckCard[]): string | null {
         ? `- triage/${cardText(c.id, 80)}: ${cardText(c.title)}${c.assignee ? ` (from ${cardText(c.assignee, 40)})` : ''}`
         : `- card ${cardText(c.id, 60)}: ${cardText(c.title)}${c.assignee ? ` (with ${cardText(c.assignee, 40)})` : ''}${c.quiet
           ? `, waiting on ${c.quiet.waitingOn ? cardText(c.quiet.waitingOn, 60) : 'someone outside the office'} for ${daysAgo(c.quiet.since, now)}, ${c.quiet.followUps} follow up${c.quiet.followUps === 1 ? '' : 's'} done`
-          : ''}`),
+          : ''}${c.leftovers ? `: ${cardText(c.leftovers, 400)}` : ''}`),
       ...(cards.length > LIST_MAX ? [`- and ${cards.length - LIST_MAX} more`] : [])
     ].join('\n'));
   }

@@ -145,7 +145,8 @@ test('Michael writes options and parts, and team members settle what the owner l
   assert.match(hive, /When you offer choices, put them in "options" on the ask, as \[\{"label": "\.\.\."\}\], with "recommended": true on the one you recommend, and leave them out of the text\./);
   assert.match(hive, /An ask has options or parts, never both, and the owner may answer only some of the parts\./);
   assert.match(hive, /make the first option "Done, I did it"/);
-  assert.match(hive, /When the owner's answers come back through \$\{michael\} with questions left unanswered, settle what you can yourself and file again only for what you still need\./);
+  // Since 2026-11-05 (ask-me-leftovers.md) each one left open gets a decision, never just left.
+  assert.match(hive, /When the owner's answers come back through \$\{michael\} with questions left unanswered or answered "Not yet", decide each one/);
   assert.doesNotMatch(hive, /Give each option its own bullet or number/);
 });
 

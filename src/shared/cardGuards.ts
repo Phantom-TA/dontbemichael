@@ -62,6 +62,9 @@ export interface GuardState {
   /** Member and notice kinds Michael was told to ask about keeping
    *  (noticeCards.ts), so he is told once. Absent in older saves. */
   noticeAsked?: string[];
+  /** Later leftovers Michael was told have come due (askLeftovers.ts), so he
+   *  is told once per time. Absent in older saves. */
+  leftoversTold?: string[];
 }
 
 /** The state as it is saved, so a tick that changed nothing writes nothing.

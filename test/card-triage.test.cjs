@@ -57,9 +57,10 @@ test('questions the owner left unanswered go to whoever raised them, not straigh
   // Value: protects=no question is lost and the owner is never made to answer every one; fails_when=the relay drops the check or keeps the old re-ask line; why_new=owner, 2026-10-15 (ask-me-options.md, eng review D1); seam=answerMessages
   const base = { taskId: 'c1', title: 'T', q: '1. A? 2. B?', a: '1: yes. Not answered: 2' };
   const [m] = answerMessages({ ...base, raiser: 'pam', raiserName: 'Pam' });
-  assert.match(m.body, /Check each question of the ask against the answer\. Send any the owner left unanswered to Pam with the answers: they settle what they can and file back to you only what they still need\. Ask the owner again only for that\./);
+  // Since 2026-11-05 (ask-me-leftovers.md) they decide each one and Michael records it.
+  assert.match(m.body, /Check each question of the ask against the answer\. Send any the owner left unanswered or answered "Not yet" to Pam with the answers: they decide each one \(dropped, settled, ask again now, or ask again later at a time they choose, however far off\) and tell you\. Record each decision on the answered question as "leftovers", and ask the owner again now only for what they still need now\./);
   const [g] = answerMessages({ ...base, raiser: 'god', raiserName: 'Michael' });
-  assert.match(g.body, /Settle any the owner left unanswered yourself where you can, and ask the owner again only for what you still need\./);
+  assert.match(g.body, /Decide each one the owner left unanswered or answered "Not yet": dropped, settled, ask again now, or ask again later at a time you choose, however far off\. Record each decision on the answered question as "leftovers"/);
   for (const x of [m, g]) {
     assert.doesNotMatch(x.body, /add one new ask on this card holding only those questions/);
     assert.doesNotMatch(x.body, /[\u2013\u2014]/);

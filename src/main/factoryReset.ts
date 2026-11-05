@@ -44,6 +44,7 @@ export const PRIVATE_ENTRIES = [
   'mailbox-grant-notes.json',
   'house-rules-seen.json',
   'ask-list-since.json',
+  'leftovers-since.json',
   'research-stamp.key',
   'research-threads.json',
   'research-outbox',

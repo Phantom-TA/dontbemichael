@@ -107,7 +107,7 @@ test('members file every item for the owner, under a bar, and Michael never leav
   assert.ok(hive.includes("Nothing meant for the owner goes only in your terminal, which the owner never reads"));
   assert.ok(hive.includes(`a notice with a real consequence (${bar}), make the card yourself as for a filing`));
   assert.ok(hive.includes('A routine notice below that bar get'));
-  assert.match(hive, /An "action" becomes a "blocked" card whose ask says what to do, with the link the filing gives, and the options "Done, I did it" \(recommended\) and "I need help"/);
+  assert.match(hive, /An "action" becomes a "blocked" card whose ask says what to do, with the link the filing gives, and the options "Done, I did it" \(recommended\), "Not yet" with "later": true, and "I need help"/);
   assert.match(hive, /A "notice" becomes a report: [^\n]*"kind": "report", "noticeKind": "<the filing\\'s noticeKind>"/);
   assert.ok(hive.includes('When the app tells you the owner cleared several notices of one kind in a row ("Notices cleared"), ask the owner as it says.'));
   // The protocol every member reads.
