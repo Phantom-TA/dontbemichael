@@ -39,9 +39,19 @@ export function columnEscAction(e: {
 }
 
 /** Give focus back to the pill after the column closes, when it is a button.
- *  When the close waits on Edit agent's "Discard changes?", only after it. */
+ *  When the close waits on Edit agent's "Discard changes?", only after it. The
+ *  pill hides while the column shows (needs-you-pill-hides.md), so it comes
+ *  back on the next render: wait a frame for it. */
 export function focusNeedsYouPill(): void {
-  afterLeave(() => document.getElementById(NEEDS_YOU_PILL_ID)?.focus());
+  afterLeave(() => requestAnimationFrame(() => document.getElementById(NEEDS_YOU_PILL_ID)?.focus()));
+}
+
+/** Whether the top bar's Needs you pill hides (docs/designs/needs-you-pill-hides.md,
+ *  D1): while the column shows on the current view (the board, a person's panel
+ *  or the minimized strip), each of which shows the count already. The column
+ *  shows on the office and file tabs only, as App's `columnView` rule. */
+export function pillHidden(rightColumn: 'closed' | 'board' | 'person', floorView: string): boolean {
+  return rightColumn !== 'closed' && (floorView === 'office' || floorView === 'file');
 }
 
 /** Whether the minimized column's strip pulses for this count change: only when

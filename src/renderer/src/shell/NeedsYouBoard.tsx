@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore, type Agent } from '@/store/store';
 import type { HarnessConfig } from '@/store/config';
@@ -23,6 +23,14 @@ export function NeedsYouBoard() {
   const godName = useResolvedGodName();
   const count = useNeedsYouCount();
   const [closeHover, setCloseHover] = useState(false);
+  // Michael's paper plane lands top right; with the pill hidden while the
+  // column shows, this count catches it (needs-you-pill-hides.md, E3).
+  const [bump, setBump] = useState(0);
+  useEffect(() => {
+    const on = () => setBump((n) => n + 1);
+    window.addEventListener('cth:needs-you-ping', on);
+    return () => window.removeEventListener('cth:needs-you-ping', on);
+  }, []);
   const close = () => { useStore.getState().setRightColumn('closed'); focusNeedsYouPill(); };
   // With Michael stopped nothing here is routed (owner, 2026-10-30): say so,
   // so an answer is not given into a silence.
@@ -39,7 +47,7 @@ export function NeedsYouBoard() {
           {t('shell.needsYou')}
         </h2>
         {count > 0 && (
-          <span style={{
+          <span key={bump} className={bump ? 'cth-needs-bump' : undefined} style={{
             minWidth: 20, height: 20, padding: '0 6px', borderRadius: 'var(--cth-r-pill)', display: 'inline-grid', placeItems: 'center',
             background: 'var(--cth-coral-strong)', color: 'var(--cth-on-coral)',
             fontFamily: 'var(--cth-font-mono)', fontSize: 11, fontWeight: 600

@@ -106,7 +106,7 @@ test('every store action that changes the panel asks the guard first', () => {
   assert.doesNotMatch(store, /useStore\.setState\(\{[^}]*rightColumn/, 'nothing sets the column behind the store\'s back');
   const app = read('src/renderer/src/App.tsx');
   assert.match(app, /afterLeave\(\(\) => document\.querySelector<HTMLElement>\('\[data-closing-bar\]'\)\?\.focus/, 'the closing bar takes focus only once the panel closed');
-  assert.match(read('src/renderer/src/shell/rightColumn.ts'), /afterLeave\(\(\) => document\.getElementById\(NEEDS_YOU_PILL_ID\)\?\.focus\(\)\)/);
+  assert.match(read('src/renderer/src/shell/rightColumn.ts'), /afterLeave\(\(\) => requestAnimationFrame\(\(\) => document\.getElementById\(NEEDS_YOU_PILL_ID\)\?\.focus\(\)\)\)/, 'after the guard, and a frame for the pill to come back (needs-you-pill-hides.md, E2)');
 });
 
 test('Esc: a field with text is left first, then a wide panel goes back to the side, then the column closes', () => {

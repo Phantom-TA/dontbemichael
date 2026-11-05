@@ -10,7 +10,7 @@ import { UpdateBadge } from '@/components/UpdateBadge';
 import { CliUpdateBadge } from '@/components/CliUpdateNotice';
 import { OfficeBreakChip } from '@/components/OfficeBreakNotice';
 import { pillState, useNeedsYou, useNeedsYouCount } from './useNeedsYou';
-import { NEEDS_YOU_PILL_ID } from './rightColumn';
+import { NEEDS_YOU_PILL_ID, pillHidden } from './rightColumn';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import lockupLight from '@brandkit/logo/lockup/dbm-lockup-horizontal-light.svg?url';
 import lockupDark from '@brandkit/logo/lockup/dbm-lockup-horizontal-dark.svg?url';
@@ -356,6 +356,11 @@ export function NeedsYouButton() {
     lastCount.current = count;
   }, [status, count, godName, t]);
   const live = <span aria-live="polite" style={visuallyHidden}>{announce}</span>;
+  // The column shows the count already: the pill steps out of the top bar and
+  // the buttons beside it close the gap (needs-you-pill-hides.md, D1 and D2).
+  // The screen reader line stays (E1).
+  const hidden = useStore((s) => pillHidden(s.rightColumn, s.floorView));
+  if (hidden) return live;
 
   // Unknown (launch, before the first read): an empty quiet pill, never a
   // false "Nothing needs you" (D3).

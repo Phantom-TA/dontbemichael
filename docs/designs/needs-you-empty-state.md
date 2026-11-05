@@ -128,6 +128,9 @@ https://claude.ai/artifact/HbTomdPsAGtzCemotorLi6
   Since 2026-11-05 (owner) the column can be minimized to a slim strip that keeps
   the coral count in sight; it is never hidden while asks wait, so D12 holds
   (docs/designs/needs-you-minimize.md).
+  Since 2026-11-05 (owner) the top bar pill hides while the column shows, which
+  shows the count itself; the plane's landing bumps the board's count then, and
+  focus returns to the pill once it is back (docs/designs/needs-you-pill-hides.md).
 
 Follows from the decisions above, no separate choice:
 

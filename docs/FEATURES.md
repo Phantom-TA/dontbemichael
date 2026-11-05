@@ -269,6 +269,9 @@ moving, and brings you only the decisions that need you.
 - The Needs you column can be minimized to a slim strip on the right edge, so a report or email
   in a tab reads at nearly the full width. The strip keeps the count in sight and opens the column
   again with one click; a new ask makes it pulse instead of opening.
+- The coral Needs you button in the top bar hides while the Needs you column is on screen, since
+  the column shows the same count. It comes back on Tasks, Pulse, Who talks to whom and the case
+  study, and whenever the column closes.
 - No more "Data Access Blocked" notice from macOS when you make a case study or the office starts.
   Claude Code's Claude in Chrome is now off for the team and the app's background checks. With
   no saved setting it looked for its browser extension in Chrome's folder, which macOS blocks. The
