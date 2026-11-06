@@ -131,6 +131,54 @@ function tokenize(s) {
   return out;
 }
 
+/**
+ * Fold the common endings of an English word, so a plural or a tense meets the
+ * word it comes from: "refunds" and "refund", "shipping" and "ship", "priced" and
+ * "price" all give one key. Only plain a to z words longer than three letters
+ * change; other scripts, numbers and short words stay as they are. The key is
+ * for matching only and is never shown. Stemming a key again gives the same key:
+ * one pass can leave an ending another pass would fold ("lenses", "lens"), so the
+ * pass repeats until nothing changes.
+ */
+function stem(word) {
+  const w = String(word);
+  if (w.length <= 3) return w;
+  // Every chunk's words are stemmed on every search, and a store's words repeat,
+  // so each stem is worked out once. The cap keeps an odd store from growing it.
+  let k = STEM_CACHE.get(w);
+  if (k !== undefined) return k;
+  k = w;
+  if (/^[a-z]+$/.test(w)) for (let prev = ''; prev !== k;) { prev = k; k = stemOnce(k); }
+  if (STEM_CACHE.size >= STEM_CACHE_MAX) STEM_CACHE.clear();
+  STEM_CACHE.set(w, k);
+  return k;
+}
+const STEM_CACHE = new Map();
+const STEM_CACHE_MAX = 50000;
+
+function stemOnce(word) {
+  let w = word;
+  if (w.length <= 3) return w;
+  if (w.endsWith('sses')) w = w.slice(0, -2);                        // classes → class
+  else if (w.endsWith('ies') && w.length > 4) w = w.slice(0, -3) + 'y'; // policies → policy
+  else if (w.endsWith('s') && !/[sui]s$/.test(w)) w = w.slice(0, -1); // refunds → refund, not status
+  if (w.endsWith('ied') && w.length > 4) {
+    w = w.slice(0, -3) + 'y';                                          // studied → study
+  } else {
+    for (const suffix of ['ing', 'ed']) {
+      if (!w.endsWith(suffix)) continue;
+      const base = w.slice(0, -suffix.length);
+      // Only when a vowel then a consonant is left: "speed" and "string" keep theirs.
+      if (base.length < 3 || !/[aeiouy][^aeiouy]/.test(base)) break;
+      // shipping → shipp → ship, but billing → bill and added → add.
+      w = base.length > 3 && /([^aeiouylsz])\1$/.test(base) ? base.slice(0, -1) : base;
+      break;
+    }
+  }
+  if (w.length > 3 && w.endsWith('e')) w = w.slice(0, -1);           // price and priced → pric
+  return w;
+}
+
 /** First markdown heading or first non-empty line, trimmed and length-capped. */
 function deriveTitle(text) {
   const lines = String(text || '').split('\n');
@@ -174,19 +222,21 @@ function chunkText(text, opts = {}) {
 /**
  * Score one index record against the query. Term-frequency (log-damped) over
  * distinct query terms, a title-match boost, a distinct-term coverage bonus, and
- * an exact-phrase bonus. Returns 0 when no query term appears.
+ * an exact-phrase bonus. Words are compared by their stem, so "refunds" counts
+ * for "refund". Returns 0 when no query term appears.
  */
 function scoreChunk(rec, queryTerms, queryRaw) {
   if (!queryTerms.length) return 0;
   const text = String(rec.text || '');
   const titleLc = String(rec.title || '').toLowerCase();
   const tf = Object.create(null);
-  for (const tok of tokenize(text)) tf[tok] = (tf[tok] || 0) + 1;
+  for (const tok of tokenize(text)) { const k = stem(tok); tf[k] = (tf[k] || 0) + 1; }
   // A title boosts a term only as a whole word, as the body is matched.
-  const titleTokens = new Set(tokenize(titleLc));
+  const titleTokens = new Set(tokenize(titleLc).map(stem));
   let score = 0;
   let matched = 0;
-  for (const term of queryTerms) {
+  // "refund refunds" is one term, as a word typed twice is.
+  for (const term of new Set(queryTerms.map(stem))) {
     const c = tf[term] || 0;
     if (c > 0) { matched++; score += 1 + Math.log(1 + c); }
     if (titleTokens.has(term)) score += 2;
@@ -247,7 +297,13 @@ function makeSnippet(text, queryTerms) {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
   if (!t) return '';
   const lc = t.toLowerCase();
+  const stems = new Set(queryTerms.map(stem));
   let at = -1;
+  // The first English word whose stem was asked for: "policies" for a search
+  // for "policy", which no plain substring of the text would find.
+  for (const m of lc.matchAll(/[a-z]+/g)) {
+    if (m[0].length > 3 && stems.has(stem(m[0]))) { at = m.index; break; }
+  }
   for (const term of queryTerms) {
     const idx = lc.indexOf(term);
     if (idx !== -1 && (at === -1 || idx < at)) at = idx;
@@ -368,7 +424,8 @@ function ingest(kgRoot, input = {}) {
 /** Keyword-search the index. Returns ranked { docId, title, source, modality, chunkIdx, score, snippet }. */
 function search(kgRoot, query, opts = {}) {
   const limit = clampLimit(opts.limit, DEFAULT_SEARCH_LIMIT);
-  const queryTerms = [...new Set(tokenize(query))]; // a word typed twice is one term
+  // A word typed twice is one term, and so is a word typed in two forms ("refund refunds").
+  const queryTerms = [...new Set(tokenize(query).map(stem))];
   if (!queryTerms.length) return [];
   const idxPath = path.join(kgRoot, 'index.jsonl');
   if (!fs.existsSync(idxPath)) return [];
@@ -510,6 +567,6 @@ function stats(kgRoot) {
 
 module.exports = {
   ingest, search, list, getDoc, removeDoc, reindex, docFile, stats,
-  detectModality, extractText, chunkText, tokenize, scoreChunk, makeSnippet, deriveTitle,
+  detectModality, extractText, chunkText, tokenize, stem, scoreChunk, makeSnippet, deriveTitle,
   DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
 };
