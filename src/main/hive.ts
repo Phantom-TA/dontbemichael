@@ -42,12 +42,12 @@ import { FOLDER_READ_TOOLS, FOLDER_WRITE_TOOLS, type AgentFolderPolicy } from '.
 import { STOP_FAILURE_MATCHER } from '../shared/officeBreak';
 import {
   existsSync, mkdirSync, readFileSync, writeFileSync, renameSync,
-  readdirSync, statSync, lstatSync, realpathSync, rmSync, appendFileSync,
+  readdirSync, statSync, lstatSync, mkdtempSync, realpathSync, rmSync, appendFileSync,
   symlinkSync, unlinkSync, copyFileSync, cpSync, chmodSync,
   openSync, fstatSync, closeSync, ftruncateSync, writeSync, readSync, constants, type Stats
 } from 'node:fs';
 import { join, dirname, basename, isAbsolute, relative, resolve, sep } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, createHash, createHmac } from 'node:crypto';
 import { readMessageFile, researchDeliveredId } from './messageFile';
@@ -999,8 +999,21 @@ export class HiveManager {
     const root = this.root();
     if (!root) return null;
     if (process.platform === 'win32') return this.pipeName;
-    return join(root, 'hooks.sock');
+    const sock = join(root, 'hooks.sock');
+    // A socket path holds 104 bytes on macOS (108 on Linux), and a longer one
+    // is cut short without an error: the file lands under the cut name, the
+    // stale-socket cleanup never finds it, and the next launch fails with
+    // EADDRINUSE. An office in iCloud or Google Drive runs past that easily.
+    if (Buffer.byteLength(sock) < (process.platform === 'darwin' ? 104 : 108)) return sock;
+    return this.shortSockPath() ?? sock;
   }
+  /** A folder of our own for a socket that would not fit: mkdtemp makes it
+   *  0700 with a random name, once per launch, so (as for the Windows pipe)
+   *  no other account can work the path out and take the channel first. */
+  private shortSockPath(): string | null {
+    try { return this.shortSock ??= join(mkdtempSync(join(tmpdir(), 'dbm-')), 'hooks.sock'); } catch { return null; }
+  }
+  private shortSock: string | undefined;
   private readonly pipeName = `\\\\.\\pipe\\dbm-hooks-${randomBytes(16).toString('hex')}`;
   private shimPath(): string | null {
     const root = this.root();
