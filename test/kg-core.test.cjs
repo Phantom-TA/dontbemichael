@@ -143,11 +143,12 @@ function writeFixture(dir, name, content) {
       ['price', 'prices', 'priced', 'pricing'],
       ['invoice', 'invoices', 'invoiced', 'invoicing'],
       ['bill', 'bills', 'billed', 'billing'],
-      ['add', 'adds', 'added', 'adding'],
+      ['order', 'orders', 'ordered', 'ordering'],
+      ['book', 'books', 'booked', 'booking'],
       ['policy', 'policies'],
       ['study', 'studies', 'studied'],
       ['class', 'classes'],
-      ['tax', 'taxes'],
+      ['lens', 'lenses'],
       ['business', 'businesses']
     ];
     for (const words of families) {
@@ -163,6 +164,43 @@ function writeFixture(dir, name, content) {
     for (const w of ['refunds', 'shipping', 'lenses', 'priced', 'studies', 'businesses', 'addresses']) {
       assert.strictEqual(kg.stem(kg.stem(w)), kg.stem(w), `stemming ${w} again changes nothing`);
     }
+  });
+
+  test('stem: a word is never cut into a different short word', () => {
+    // Review of #684: a stem under 4 letters is another real word, and a few longer words fold into one.
+    const apart = [
+      ['time', 'tim'], ['times', 'tim'], ['timing', 'tim'], ['care', 'car'], ['caring', 'car'],
+      ['rate', 'rat'], ['rating', 'rat'], ['site', 'sit'], ['sitting', 'sit'], ['code', 'cod'], ['coding', 'cod'],
+      ['same', 'sam'], ['done', 'don'], ['made', 'mad'], ['news', 'new'], ['goods', 'good'], ['means', 'mean'],
+      ['evening', 'even'], ['united', 'unit'], ['notes', 'not'], ['note', 'not']
+    ];
+    for (const [a, b] of apart) assert.notStrictEqual(kg.stem(a), kg.stem(b), `${a} must not meet ${b}`);
+  });
+
+  test('stem: numbers, other scripts and very long tokens come back as they are', () => {
+    for (const w of ['12345', 'sku42', 'réception']) assert.strictEqual(kg.stem(w), w);
+    const long = 'bed'.repeat(20) + 'ed';
+    assert.strictEqual(kg.stem(long), long, 'a token past 32 letters is not stemmed');
+  });
+
+  test('scoreChunk: a plural in the title gets the title boost for its word', () => {
+    const terms = kg.tokenize('refund');
+    const plural = kg.scoreChunk({ title: 'Refunds', text: 'ask for a refund within thirty days' }, terms, 'refund');
+    const other = kg.scoreChunk({ title: 'Returns', text: 'ask for a refund within thirty days' }, terms, 'refund');
+    assert.ok(plural > other, 'Refunds in the title counts for refund');
+  });
+
+  test('makeSnippet: centres on the whole word that matched, not a word that contains its stem', () => {
+    // Enough words in between that the first snippet's worth of text cannot hold both.
+    const filler = (n, tag) => Array.from({ length: n }, (_, i) => `${tag}${i}`).join(' ');
+    const text = `Apricot jam is on the shelf. ${filler(80, 'pad')} Our pricing changed in March.`;
+    const snip = kg.makeSnippet(text, ['pric']);
+    assert.ok(snip.includes('pricing changed'), 'the snippet shows the match');
+    assert.ok(!snip.includes('Apricot'), 'not the word that holds the stem');
+    const another = `We cannot ship another box today. ${filler(80, 'pad')} The notes are in the drawer.`;
+    assert.ok(kg.makeSnippet(another, [kg.stem('notes')]).includes('notes are'), 'notes, not another or cannot');
+    const ship = `Our relationship with the courier is good. ${filler(80, 'pad')} We ship on Mondays.`;
+    assert.ok(kg.makeSnippet(ship, [kg.stem('shipping')]).includes('ship on Mondays'), 'ship, not relationship');
   });
 
   // ─── ingest → search round-trip: TEXT modality ──────────────────────────

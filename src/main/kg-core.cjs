@@ -134,48 +134,65 @@ function tokenize(s) {
 /**
  * Fold the common endings of an English word, so a plural or a tense meets the
  * word it comes from: "refunds" and "refund", "shipping" and "ship", "priced" and
- * "price" all give one key. Only plain a to z words longer than three letters
- * change; other scripts, numbers and short words stay as they are. The key is
- * for matching only and is never shown. Stemming a key again gives the same key:
- * one pass can leave an ending another pass would fold ("lenses", "lens"), so the
- * pass repeats until nothing changes.
+ * "price" all give one key. Only plain a to z words of 4 to 32 letters change;
+ * other scripts, numbers, short words and very long tokens stay as they are. The
+ * key is for matching only and is never shown. Stemming a key again gives the
+ * same key: one pass can leave an ending another pass would fold ("lenses",
+ * "lens"), so the pass repeats until nothing changes.
+ *
+ * A stem never gets shorter than 4 letters, because short stems are other real
+ * words: "time" would meet the name Tim, "care" would meet car, "notes" the stop
+ * word "not". A step that would cut that far is skipped. A few longer words that
+ * would fold into a different word ("goods" and good, "evening" and even) are
+ * kept whole, and so is a word whose stem is a stop word.
  */
 function stem(word) {
   const w = String(word);
-  if (w.length <= 3) return w;
+  if (w.length < MIN_STEM) return w;
   // Every chunk's words are stemmed on every search, and a store's words repeat,
   // so each stem is worked out once. The cap keeps an odd store from growing it.
   let k = STEM_CACHE.get(w);
   if (k !== undefined) return k;
+  // Words that never change take no slot, so numbers and other scripts cannot
+  // fill the cache.
+  if (w.length > MAX_STEM_INPUT || !/^[a-z]+$/.test(w) || NO_STEM.has(w)) return w;
   k = w;
-  if (/^[a-z]+$/.test(w)) for (let prev = ''; prev !== k;) { prev = k; k = stemOnce(k); }
+  for (let prev = ''; prev !== k;) { prev = k; k = stemOnce(k); }
+  if (STOPWORDS.has(k)) k = w;
   if (STEM_CACHE.size >= STEM_CACHE_MAX) STEM_CACHE.clear();
   STEM_CACHE.set(w, k);
   return k;
 }
+const MIN_STEM = 4;
+// Longer tokens are rarely words, and each pass costs their length, so a crafted
+// "bededed…" cannot make stemming grow with the square of its length.
+const MAX_STEM_INPUT = 32;
+// Words a step would fold into another real word of 4 letters or more.
+const NO_STEM = new Set(['goods', 'means', 'evening', 'evenings', 'united', 'news']);
 const STEM_CACHE = new Map();
 const STEM_CACHE_MAX = 50000;
 
 function stemOnce(word) {
   let w = word;
-  if (w.length <= 3) return w;
-  if (w.endsWith('sses')) w = w.slice(0, -2);                        // classes → class
-  else if (w.endsWith('ies') && w.length > 4) w = w.slice(0, -3) + 'y'; // policies → policy
-  else if (w.endsWith('s') && !/[sui]s$/.test(w)) w = w.slice(0, -1); // refunds → refund, not status
-  if (w.endsWith('ied') && w.length > 4) {
-    w = w.slice(0, -3) + 'y';                                          // studied → study
+  // Each step applies only when it leaves at least MIN_STEM letters.
+  const cut = (next) => { if (next.length >= MIN_STEM) w = next; };
+  if (w.endsWith('sses')) cut(w.slice(0, -2));                        // classes → class
+  else if (w.endsWith('ies')) cut(w.slice(0, -3) + 'y');              // policies → policy
+  else if (w.endsWith('s') && !/[sui]s$/.test(w)) cut(w.slice(0, -1)); // refunds → refund, not status
+  if (w.endsWith('ied')) {
+    cut(w.slice(0, -3) + 'y');                                         // studied → study
   } else {
     for (const suffix of ['ing', 'ed']) {
       if (!w.endsWith(suffix)) continue;
       const base = w.slice(0, -suffix.length);
       // Only when a vowel then a consonant is left: "speed" and "string" keep theirs.
-      if (base.length < 3 || !/[aeiouy][^aeiouy]/.test(base)) break;
-      // shipping → shipp → ship, but billing → bill and added → add.
-      w = base.length > 3 && /([^aeiouylsz])\1$/.test(base) ? base.slice(0, -1) : base;
+      if (!/[aeiouy][^aeiouy]/.test(base)) break;
+      // shipping → shipp → ship, but billing → bill.
+      cut(/([^aeiouylsz])\1$/.test(base) && base.length > MIN_STEM ? base.slice(0, -1) : base);
       break;
     }
   }
-  if (w.length > 3 && w.endsWith('e')) w = w.slice(0, -1);           // price and priced → pric
+  if (w.endsWith('e')) cut(w.slice(0, -1));                           // price and priced → pric
   return w;
 }
 
@@ -299,14 +316,20 @@ function makeSnippet(text, queryTerms) {
   const lc = t.toLowerCase();
   const stems = new Set(queryTerms.map(stem));
   let at = -1;
-  // The first English word whose stem was asked for: "policies" for a search
-  // for "policy", which no plain substring of the text would find.
-  for (const m of lc.matchAll(/[a-z]+/g)) {
-    if (m[0].length > 3 && stems.has(stem(m[0]))) { at = m.index; break; }
+  // The first whole a to z word whose stem was asked for: "policies" for a search
+  // for "policy", which no plain substring of the text would find. A whole word,
+  // so "pricing" never lands inside "apricot" or "notes" inside "another".
+  for (const m of lc.matchAll(/[a-z0-9]+/g)) {
+    if (stems.has(stem(m[0]))) { at = m.index; break; }
   }
-  for (const term of queryTerms) {
-    const idx = lc.indexOf(term);
-    if (idx !== -1 && (at === -1 || idx < at)) at = idx;
+  // Other scripts have no a to z words to walk, so their terms are found as
+  // written, and only when no word matched.
+  if (at === -1) {
+    for (const term of queryTerms) {
+      if (/^[a-z0-9]+$/.test(term)) continue;
+      const idx = lc.indexOf(term);
+      if (idx !== -1 && (at === -1 || idx < at)) at = idx;
+    }
   }
   if (at === -1) return t.length > SNIPPET_RADIUS * 2 ? t.slice(0, SNIPPET_RADIUS * 2) + '…' : t;
   const start = Math.max(0, at - SNIPPET_RADIUS);
