@@ -126,6 +126,28 @@ test('a later leftover comes back to Michael at its time, once, even on a Done c
   assert.match(L.leftoverDueNote({ key: 'k', taskId: 'c1', title: 'T', question: 1, q: 'Q?', why: 'w', at: past, done: false }).body, /ask it again on the same card \(move the card to "blocked" with the ask\)/);
 });
 
+test('a leftover due in the tick an agent reopens a Done card is worded for the Done card', async (t) => {
+  // Value: protects=dueLeftovers reads the board with the guard's fixes, as dueReminders does (TODOS "Small board timing edges"); fails_when=the note says "ask it again on the same card" for a card the guard puts back in Done, or a deleted Done card's due leftover is missed; why_new=red team pass 2, 2026-11-05; seam=real HiveManager board tick on a temp office
+  const { hive, toMichael } = await office(t);
+  const later = { ...gamma, leftovers: [{ question: 2, decision: 'later', why: 'Save it once the call is set', at: new Date(Date.now() + 400).toISOString() }] };
+  hive.writeTasks([
+    { id: 'g1', title: 'GammaTile', status: 'done', assignee: 'dwight', humanQA: [later] },
+    { id: 'g2', title: 'Gone', status: 'done', assignee: 'dwight', humanQA: [later] }
+  ]);
+  hive.refreshOwnerRequests();
+  // The guard has seen both Done and nothing is due yet. Then the time comes,
+  // and before the next tick an agent reopens g1 and deletes g2.
+  await new Promise((r) => setTimeout(r, 500));
+  hive.writeTasks([{ id: 'g1', title: 'GammaTile', status: 'doing', assignee: 'dwight', humanQA: [later] }]);
+  hive.refreshOwnerRequests();
+  const due = (id) => toMichael().filter((m) => m.subject === `Leftover question due: card ${id}`);
+  assert.equal(hive.tasks().tasks.find((c) => c.id === 'g1').status, 'done', 'the guard put it back');
+  assert.equal(due('g1').length, 1);
+  assert.match(due('g1')[0].body, /ask it again on a new card, since that card is done/);
+  assert.equal(due('g2').length, 1, 'a deleted Done card that comes back keeps its leftover');
+  assert.match(due('g2')[0].body, /since that card is done/);
+});
+
 test('the leftover check keeps its start across a restart', async (t) => {
   // Value: protects=an answer given after the check began is still listed after the app restarts; fails_when=the start is not saved or is reset at each launch; why_new=coverage audit, 2026-11-05 (was a source pin); seam=two real HiveManagers on one temp office
   const { hive } = await office(t);

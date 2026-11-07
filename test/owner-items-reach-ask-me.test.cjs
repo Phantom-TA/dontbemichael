@@ -61,6 +61,23 @@ test('the Got it count runs per member and kind, and Don\'t show me these ends i
   assert.equal(N.GOT_IT_STREAK, 3);
 });
 
+test('the Got it count names the raiser the clear names, so a member who left counts as Michael', () => {
+  // Value: protects=the Got it run counts under the id ackReport resolves (raiserOf), TODOS "Small board timing edges"; fails_when=a notice whose raiser and assignee left the team counts under the old id while the clear names Michael, or a stale raisedBy does not fall back to the assignee; why_new=red team pass 2, 2026-11-05; seam=none
+  const cleared = (assignee, raisedBy, at) => ({ assignee, humanQA: [{ kind: 'report', noticeKind: KIND, ...(raisedBy ? { raisedBy } : {}), dismissedBy: 'owner', dismissedAt: at, dismissedReason: N.GOT_IT }] });
+  const team = new Set(['god', 'nick']);
+  const cards = [
+    cleared('kevin', 'kevin', '2026-11-01T00:00:00Z'),
+    cleared('kevin', undefined, '2026-11-02T00:00:00Z'),
+    cleared('god', 'kevin', '2026-11-03T00:00:00Z'),
+    cleared('nick', 'typo', '2026-11-04T00:00:00Z'),
+    cleared('nick', 'nick', '2026-11-05T00:00:00Z')
+  ];
+  assert.equal(N.gotItStreak(cards, 'god', KIND, team), 3, 'Kevin left: his three count as Michael, as their clears did');
+  assert.equal(N.gotItStreak(cards, 'kevin', KIND, team), 0, 'never under the old id');
+  assert.equal(N.gotItStreak(cards, 'nick', KIND, team), 2, 'a mistyped raisedBy falls back to the assignee');
+  assert.equal(N.gotItStreak(cards, 'kevin', KIND), 3, 'with no team given, every id counts');
+});
+
 test('three Got its in a row tell Michael once to ask whether to keep showing them', async (t) => {
   // Value: protects=D2 and B5 (data backed proposals, never a silent skip, never asked twice); fails_when=Michael is not told, is told on the second, or is told again on the fourth; why_new=owner 2026-11-05; seam=real HiveManager on a temp office
   const { hive, toMichael } = await office(t);
