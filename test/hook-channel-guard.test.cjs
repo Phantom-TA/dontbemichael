@@ -82,3 +82,43 @@ test('an error once the channel is open is logged but never blocks the team', as
   assert.equal(server.channelError(), null);
   assert.deepEqual(logs.at(-1), { kind: 'hook-server-error', code: 'EMFILE' });
 });
+
+/** A team folder like one in Google Drive, whose hooks.sock runs past the
+ *  104 bytes a socket path may hold on macOS (108 on Linux). */
+function longHome(t) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'md-long-'));
+  const home = path.join(base, 'Library', 'CloudStorage', 'GoogleDrive-owner.name@example-bakery.co.in', 'My Drive', 'Bakery Office');
+  fs.mkdirSync(home, { recursive: true });
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  return home;
+}
+
+test('a long team folder path gets a socket path that fits, in a private folder', { skip: process.platform === 'win32' }, (t) => {
+  // Value: protects=the hook channel of an office kept in iCloud or Google Drive; fails_when=sockPath returns a path the OS cuts short; why_new=bug found by repro (EADDRINUSE from the second launch on); seam=none
+  const home = longHome(t);
+  const hive = new HiveManager(() => home);
+  assert.ok(Buffer.byteLength(path.join(hive.root(), 'hooks.sock')) >= 104, 'the plain path really is too long');
+  const sock = hive.sockPath();
+  assert.ok(Buffer.byteLength(sock) < 104, sock);
+  assert.equal(hive.sockPath(), sock, 'the same path for the whole launch');
+  assert.equal(fs.statSync(path.dirname(sock)).mode & 0o777, 0o700, 'only this account can reach it');
+  assert.notEqual(new HiveManager(() => home).sockPath(), sock, 'a new launch never reuses a path someone could predict');
+  t.after(() => fs.rmSync(path.dirname(sock), { recursive: true, force: true }));
+});
+
+test('a long team folder path still opens its hook channel on the next launch', { skip: process.platform === 'win32' }, async (t) => {
+  // Value: protects=team members can start after a restart or a crash; fails_when=the first launch's socket file, left under a cut short name, blocks the next listen; why_new=bug found by repro; seam=none
+  const home = longHome(t);
+  const launch = async () => {
+    const server = new HookServer(new HiveManager(() => home), () => null, () => ({ notifications: false }));
+    server.start();
+    await server.whenOpen();
+    return server;
+  };
+  // The first launch's socket is still there (it crashed, or Electron left it).
+  const first = await launch();
+  const second = await launch();
+  t.after(() => { first.stop(); second.stop(); });
+  assert.equal(first.channelError(), null);
+  assert.equal(second.channelError(), null);
+});
