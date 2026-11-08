@@ -147,8 +147,13 @@ line and exits 0.
 
 **Scoring (`scoreChunk`):** the query is lowercased and tokenized, stop words dropped. For each
 query term found in a chunk, add `1 + ln(1 + count)`; add 2 when the term is in the title; add
-0.5 per distinct term matched; add 5 when the whole query appears as written. A word typed more
-than once is one term. Results come back highest first with a snippet around the first hit.
+0.5 per distinct term matched; add 5 when the whole query appears as written. Words in the query,
+the chunk and the title are compared by a light English stem (`stem`), so a plural or a tense finds
+its word: "refunds" finds "refund", "shipping" finds "ship". Only plain a to z words of 4 to 32
+letters are stemmed, and a stem is never shorter than 4 letters or a stop word, so "time" does not
+meet the name Tim and "notes" does not become "not". A word typed more than once, or in two forms,
+is one term. Results come back highest first with a snippet around the first whole word that
+matched.
 Neighbouring chunks share 150 characters of overlap, so a passage there sits in two chunks: a chunk is
 skipped when a result already returned, right next to it, holds every match it has, and its slot
 goes to the next result. A chunk that holds the only place two query words meet stays, because

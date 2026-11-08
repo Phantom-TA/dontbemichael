@@ -135,6 +135,74 @@ function writeFixture(dir, name, content) {
     assert.ok(exact > partial, 'whole-word title match should receive a boost');
   });
 
+  // ─── stem ───────────────────────────────────────────────────────────────
+  test('stem: a plural or a tense gives the same key as its word', () => {
+    const families = [
+      ['refund', 'refunds', 'refunded', 'refunding'],
+      ['ship', 'ships', 'shipped', 'shipping'],
+      ['price', 'prices', 'priced', 'pricing'],
+      ['invoice', 'invoices', 'invoiced', 'invoicing'],
+      ['bill', 'bills', 'billed', 'billing'],
+      ['order', 'orders', 'ordered', 'ordering'],
+      ['book', 'books', 'booked', 'booking'],
+      ['policy', 'policies'],
+      ['study', 'studies', 'studied'],
+      ['class', 'classes'],
+      ['lens', 'lenses'],
+      ['business', 'businesses']
+    ];
+    for (const words of families) {
+      assert.strictEqual(new Set(words.map(kg.stem)).size, 1, `${words.join(', ')} → ${words.map(kg.stem).join(', ')}`);
+    }
+  });
+
+  test('stem: short words, other endings, numbers and other scripts stay apart', () => {
+    for (const w of ['status', 'analysis', 'speed', 'string', 'thing', 'art', 'sku42', 'réception', 'الاسترداد', '退款']) {
+      assert.strictEqual(kg.stem(w), w, `${w} is left as it is`);
+    }
+    assert.notStrictEqual(kg.stem('article'), kg.stem('art'), 'a longer word is not cut down to a shorter one');
+    for (const w of ['refunds', 'shipping', 'lenses', 'priced', 'studies', 'businesses', 'addresses']) {
+      assert.strictEqual(kg.stem(kg.stem(w)), kg.stem(w), `stemming ${w} again changes nothing`);
+    }
+  });
+
+  test('stem: a word is never cut into a different short word', () => {
+    // Review of #684: a stem under 4 letters is another real word, and a few longer words fold into one.
+    const apart = [
+      ['time', 'tim'], ['times', 'tim'], ['timing', 'tim'], ['care', 'car'], ['caring', 'car'],
+      ['rate', 'rat'], ['rating', 'rat'], ['site', 'sit'], ['sitting', 'sit'], ['code', 'cod'], ['coding', 'cod'],
+      ['same', 'sam'], ['done', 'don'], ['made', 'mad'], ['news', 'new'], ['goods', 'good'], ['means', 'mean'],
+      ['evening', 'even'], ['united', 'unit'], ['notes', 'not'], ['note', 'not']
+    ];
+    for (const [a, b] of apart) assert.notStrictEqual(kg.stem(a), kg.stem(b), `${a} must not meet ${b}`);
+  });
+
+  test('stem: numbers, other scripts and very long tokens come back as they are', () => {
+    for (const w of ['12345', 'sku42', 'réception']) assert.strictEqual(kg.stem(w), w);
+    const long = 'bed'.repeat(20) + 'ed';
+    assert.strictEqual(kg.stem(long), long, 'a token past 32 letters is not stemmed');
+  });
+
+  test('scoreChunk: a plural in the title gets the title boost for its word', () => {
+    const terms = kg.tokenize('refund');
+    const plural = kg.scoreChunk({ title: 'Refunds', text: 'ask for a refund within thirty days' }, terms, 'refund');
+    const other = kg.scoreChunk({ title: 'Returns', text: 'ask for a refund within thirty days' }, terms, 'refund');
+    assert.ok(plural > other, 'Refunds in the title counts for refund');
+  });
+
+  test('makeSnippet: centres on the whole word that matched, not a word that contains its stem', () => {
+    // Enough words in between that the first snippet's worth of text cannot hold both.
+    const filler = (n, tag) => Array.from({ length: n }, (_, i) => `${tag}${i}`).join(' ');
+    const text = `Apricot jam is on the shelf. ${filler(80, 'pad')} Our pricing changed in March.`;
+    const snip = kg.makeSnippet(text, ['pric']);
+    assert.ok(snip.includes('pricing changed'), 'the snippet shows the match');
+    assert.ok(!snip.includes('Apricot'), 'not the word that holds the stem');
+    const another = `We cannot ship another box today. ${filler(80, 'pad')} The notes are in the drawer.`;
+    assert.ok(kg.makeSnippet(another, [kg.stem('notes')]).includes('notes are'), 'notes, not another or cannot');
+    const ship = `Our relationship with the courier is good. ${filler(80, 'pad')} We ship on Mondays.`;
+    assert.ok(kg.makeSnippet(ship, [kg.stem('shipping')]).includes('ship on Mondays'), 'ship, not relationship');
+  });
+
   // ─── ingest → search round-trip: TEXT modality ──────────────────────────
   test('ingest a markdown doc, then search finds it with a snippet', () => {
     const root = tmpRoot();
@@ -222,6 +290,26 @@ function writeFixture(dir, name, content) {
     const once = kg.search(root, 'free shipping')[0].score;
     assert.strictEqual(kg.search(root, 'free shipping shipping free')[0].score, once);
     assert.strictEqual(kg.search(root, 'free free free shipping')[0].score, once);
+  });
+
+  test('search: a plural or a tense finds the word it comes from', () => {
+    const root = tmpRoot();
+    const refund = kg.ingest(root, { title: 'Returns', text: 'A customer can ask for a refund within thirty days.' });
+    const ship = kg.ingest(root, { title: 'Delivery', text: 'We ship every weekday from the Leeds warehouse.' });
+    // The match sits past the first snippet's worth of text, so the snippet has to find it.
+    const policy = kg.ingest(root, { title: 'Handbook', text: `${filler(60, 'intro')} Read the staff policies before the first shift.` });
+    assert.strictEqual(kg.search(root, 'refunds')[0]?.docId, refund.docId, 'refunds finds refund');
+    assert.strictEqual(kg.search(root, 'shipping')[0]?.docId, ship.docId, 'shipping finds ship');
+    const hits = kg.search(root, 'policy');
+    assert.strictEqual(hits[0]?.docId, policy.docId, 'policy finds policies');
+    assert.ok(hits[0].snippet.includes('policies'), 'the snippet shows the word that matched');
+  });
+
+  test('search: a word typed in two forms scores as it does typed once', () => {
+    const root = tmpRoot();
+    kg.ingest(root, { title: 'Orders', text: 'A late order gets a refund and a note from the owner.' });
+    const once = kg.search(root, 'late refunds')[0].score;
+    assert.strictEqual(kg.search(root, 'late refund refunds')[0].score, once);
   });
 
   test('search: a passage inside the overlap of two chunks comes back once', () => {
