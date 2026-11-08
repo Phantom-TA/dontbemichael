@@ -4552,11 +4552,16 @@ export class HiveManager {
       for (const u of fixed.untriaged) tell(untriagedNote(u.card, u.to), u.card.id);
     }
     this.guard = next;
+    // The board as the guard leaves it: a Done card an agent reopened this
+    // tick is Done again, and one it deleted is back. Leftovers and reminders
+    // both read this, so a note sent in the same tick is worded for the card
+    // the owner will see, not the one the agent wrote.
+    const guarded = applyGuardFixes(tasks, fixed.fixes, fixed.restored);
     // A leftover question kept for later comes back to Michael at its time,
     // on any card, a Done one included (docs/designs/ask-me-leftovers.md).
     if (godId) {
       const told = new Set(this.guard.leftoversTold ?? []);
-      const due = dueLeftovers(tasks as Parameters<typeof dueLeftovers>[0], Date.now(), told);
+      const due = dueLeftovers(guarded as Parameters<typeof dueLeftovers>[0], Date.now(), told);
       if (due.length) {
         // Recorded once it went out, so a failed write is tried again on the
         // next tick and the question is never lost (ship review, 2026-11-05).
@@ -4573,10 +4578,7 @@ export class HiveManager {
     }
     const reg = this.registry();
     const godName = resolveGodName(reg.agents[godId ?? 'god']?.name);
-    const reminders = dueReminders(tasks.map((t) => {
-      const id = (t as GuardCard | null)?.id;
-      return typeof id === 'string' && fixed.fixes[id] ? { ...(t as GuardCard), ...fixed.fixes[id] } : t;
-    }) as GuardCard[], this.guard.reminders, Date.now());
+    const reminders = dueReminders(guarded as GuardCard[], this.guard.reminders, Date.now());
     // The card's person, while they are on the team; otherwise Michael. Off the
     // team is closed by the owner (deleting closes first). `archived` only means
     // no terminal right now, which is every member at launch until the team is

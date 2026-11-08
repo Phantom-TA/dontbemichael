@@ -11,15 +11,6 @@
 **Effort:** S
 **Priority:** P2
 
-### Small board timing edges
-
-**What:** Give `dueLeftovers` the board with the guard's fixes merged in, as `dueReminders` gets, and have `gotItStreak` resolve the raiser with `raiserOf` itself.
-
-**Why:** A leftover that comes due in the same tick an agent reopens a Done card is worded for the same card; a notice whose member left the team counts under the old id while the clear names Michael, so the keep-showing question never comes. Both rare. Red team and state machines specialist, pass 2.
-
-**Effort:** S
-**Priority:** P3
-
 ### Wider phrasings for the two card checks
 
 **What:** Teach the email link check possessive and verb forms ("Will's email", "Dana emailed us", "the message Will sent") and to leave Slack and chat threads alone; teach the change option check "Approve with my changes", "Send with my changes, then show me again", and to apply a negation only to the words just before "show me again".
