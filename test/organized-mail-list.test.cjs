@@ -164,3 +164,13 @@ test('the tile opens the list, a name opens that member\'s, and every string is 
     assert.match(o.archivedTo, /\{\{folder\}\}/, l);
   }
 });
+
+test('a long sender or subject is cut to its limit, never through an emoji', () => {
+  // Value: protects=the kept sender and subject never end in a broken character; fails_when=the cut is a plain slice and lands between the two halves of an emoji; why_new=email subjects often carry emoji and the list keeps the words as they were; seam=none
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const cut = O.organizedText(`${'a'.repeat(299)}😀 tail`);
+  assert.ok(!lone.test(cut), 'no half emoji');
+  assert.equal(cut, 'a'.repeat(299));
+  assert.equal(O.organizedText(`${'a'.repeat(298)}😀 tail`), `${'a'.repeat(298)}😀`, 'an emoji that fits is kept whole');
+  assert.equal(O.organizedText('x'.repeat(900)).length, O.ORGANIZED_TEXT_MAX, 'the limit is unchanged');
+});

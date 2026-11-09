@@ -12,6 +12,8 @@
  * No electron or node imports: main and the renderer share it, tests load it.
  */
 
+import { clipUnits } from './cutText';
+
 export type OrganizeAction = 'archive' | 'mark_read' | 'mark_junk';
 
 export interface OrganizedRow {
@@ -39,7 +41,7 @@ const ACTIONS: readonly string[] = ['archive', 'mark_read', 'mark_junk'];
 
 /** A sender or subject as kept: one line, cut at the cap. */
 export function organizedText(text: unknown): string {
-  return String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, ORGANIZED_TEXT_MAX);
+  return clipUnits(String(text ?? '').replace(/\s+/g, ' ').trim(), ORGANIZED_TEXT_MAX);
 }
 
 /** One row as stored, or null for a line that is not one. */

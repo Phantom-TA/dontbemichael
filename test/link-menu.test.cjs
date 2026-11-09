@@ -39,6 +39,15 @@ test('the label the renderer sends becomes one short line, else the default', ()
   for (const v of ['', '  ', undefined, null, 7]) assert.equal(menuLabel(v), DEFAULT_COPY_LINK_LABEL);
 });
 
+test('a long label is cut to 60 units, never through an emoji', () => {
+  // Value: protects=the menu label never ends in a broken character; fails_when=the cut is a plain slice and lands between the two halves of an emoji; why_new=a translated label can end in an emoji at the cut; seam=none
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const cut = menuLabel(`${'a'.repeat(59)}😀 tail`);
+  assert.ok(!lone.test(cut), 'no half emoji');
+  assert.equal(cut, 'a'.repeat(59));
+  assert.equal(menuLabel(`${'a'.repeat(58)}😀 tail`), `${'a'.repeat(58)}😀`, 'an emoji that fits is kept whole');
+});
+
 test('every language has the label, and main and the app are wired to it', () => {
   // Value: protects=the label is translated and reaches main; fails_when=a locale misses the key or the menu or sync is unhooked; why_new=new key and IPC; seam=source pin like the neighbouring tests, no IPC harness; no_claim=runtime menu display
   for (const lng of ['en', 'zh-CN', 'ar']) {

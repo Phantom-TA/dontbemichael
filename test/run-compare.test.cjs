@@ -86,6 +86,15 @@ test('the reply gives at most three short changes and a reason; nothing to chang
   assert.equal(R.cleanNote('x'.repeat(400)).length, R.NOTE_MAX + 1);
 });
 
+test('a long note is cut to its limit, never through an emoji', () => {
+  // Value: protects=a note kept from a comparison never ends in a broken character; fails_when=the cut is a plain slice and lands between the two halves of an emoji; why_new=the note is the model's own text and can hold an emoji at the cut; seam=none
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const cut = R.cleanNote(`${'a'.repeat(299)}😀 tail`);
+  assert.ok(!lone.test(cut), 'no half emoji before the ellipsis');
+  assert.equal(cut, `${'a'.repeat(299)}…`);
+  assert.equal(R.cleanNote(`${'a'.repeat(298)}😀 tail`), `${'a'.repeat(298)}😀…`, 'an emoji that fits is kept whole');
+});
+
 test('the call is isolated on Michael\'s engine, and members\' sessions come from the private record only', () => {
   // Value: protects=D4 and the trust finding; fails_when=the call keeps a transcript or pasted text, has tools or hooks, or sessions are read from hive/log.jsonl; why_new=architecture finding 1, D4; seam=source; no_claim=Claude Code honoring the flags (hiddenClaude tests)
   const src = read('src/main/index.ts');

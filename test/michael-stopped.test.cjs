@@ -53,6 +53,16 @@ test('the naming option is added only when the installed Claude Code lists it', 
   assert.match(main, /const cliFlags = claudeCliFlags\(cliBin\);\s*const cliVersion = await claudeCliVersion\(cliBin\);/);
 });
 
+test('a long exit line is cut to its limit, never through an emoji', () => {
+  // Value: protects=the line shown on the owner's screen never ends in a broken character; fails_when=the cut is a plain slice and lands between the two halves of an emoji; why_new=an engine's error can quote text with an emoji at the cut; seam=none
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const cut = exitLine(`error: ${'a'.repeat(191)}😀 tail`);
+  assert.ok(!lone.test(cut), 'no half emoji before the ellipsis');
+  assert.equal(cut, `error: ${'a'.repeat(191)}…`);
+  assert.equal(exitLine(`error: ${'a'.repeat(190)}😀 tail`), `error: ${'a'.repeat(190)}😀…`, 'an emoji that fits is kept whole');
+  assert.ok(exitLine(`error: ${'x'.repeat(500)}`).length <= 200, 'the limit is unchanged');
+});
+
 test('an exit says why on screen, and the failure report carries the closed cause', () => {
   // Value: protects=the owner sees the line that explains the stop, and the report tells causes apart; fails_when=the line is lost to colour codes or the app's own "process exited" line, an unknown option reads as another cause, or the report's detail drops or loses the cause; why_new=report #5 said only code-1; seam=none; no_claim=wording of other engines' errors
   assert.equal(exitLine(TAIL), "error: unknown option '--remote-control-session-name-prefix'");

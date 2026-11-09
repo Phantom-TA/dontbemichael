@@ -7,6 +7,8 @@
  * renderer sends main the translated label and main keeps the last one.
  */
 
+import { clipUnits } from './cutText';
+
 /** Until the renderer sends its label, and whenever what it sends is unusable. */
 export const DEFAULT_COPY_LINK_LABEL = 'Copy link address';
 
@@ -23,6 +25,6 @@ export function copyableLink(linkURL: unknown): string | null {
  *  the default when it is not text at all. */
 export function menuLabel(label: unknown): string {
   if (typeof label !== 'string') return DEFAULT_COPY_LINK_LABEL;
-  const line = label.replace(/\s+/g, ' ').trim().slice(0, 60);
+  const line = clipUnits(label.replace(/\s+/g, ' ').trim(), 60);
   return line || DEFAULT_COPY_LINK_LABEL;
 }

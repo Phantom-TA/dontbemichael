@@ -14,6 +14,8 @@
  * and tests load it directly.
  */
 
+import { clipUnits } from './cutText';
+
 /** A finished run of a recurring job, from telemetry_runs. */
 export interface JobRun {
   id: number;
@@ -105,7 +107,7 @@ export function changesBetween(good: JobRun, bad: JobRun, changes: JobChangeMark
 
 const oneLine = (s: string, max: number): string => {
   const t = s.replace(/\s+/g, ' ').trim();
-  return t.length > max ? `${t.slice(0, max)}…` : t;
+  return t.length > max ? `${clipUnits(t, max)}…` : t;
 };
 
 /** A tool result's first lines, as the model needs them. */

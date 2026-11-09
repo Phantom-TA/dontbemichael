@@ -7,6 +7,8 @@
  * Plain TypeScript with no imports from either side, so the tests can run it.
  */
 
+import { clipUnits } from './cutText';
+
 /** Why an engine exited, as far as its last output tells. */
 export const EXIT_CAUSES = ['unknown-option', 'signed-out', 'not-found', 'other'] as const;
 export type ExitCause = (typeof EXIT_CAUSES)[number];
@@ -52,7 +54,7 @@ export function exitLine(tail: string | undefined): string | null {
   const lines = plainLines(tail).filter((l) => !OWN_LINE.test(l)).slice(-LAST_LINES);
   const why = [...lines].reverse().find((l) => SAYS_WHY.test(l)) ?? lines[lines.length - 1];
   if (!why) return null;
-  return why.length > 200 ? `${why.slice(0, 199)}…` : why;
+  return why.length > 200 ? `${clipUnits(why, 199)}…` : why;
 }
 
 /** The closed cause a failure report may carry. */
