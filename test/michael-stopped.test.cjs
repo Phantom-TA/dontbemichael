@@ -60,7 +60,7 @@ test('a long exit line is cut to its limit, never through an emoji', () => {
   assert.ok(!lone.test(cut), 'no half emoji before the ellipsis');
   assert.equal(cut, `error: ${'a'.repeat(191)}…`);
   assert.equal(exitLine(`error: ${'a'.repeat(190)}😀 tail`), `error: ${'a'.repeat(190)}😀…`, 'an emoji that fits is kept whole');
-  assert.ok(exitLine(`error: ${'x'.repeat(500)}`).length <= 200, 'the limit is unchanged');
+  assert.equal(exitLine(`error: ${'x'.repeat(500)}`), `error: ${'x'.repeat(192)}…`, 'the limit is unchanged');
 });
 
 test('an exit says why on screen, and the failure report carries the closed cause', () => {

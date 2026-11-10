@@ -4,7 +4,7 @@
  * know, and nothing outside his Work tab said so. The line is shown on the
  * owner's own screen only; the failure report carries the closed cause alone.
  *
- * Plain TypeScript with no imports from either side, so the tests can run it.
+ * Plain TypeScript with no main or renderer imports, so the tests can run it.
  */
 
 import { clipUnits } from './cutText';
